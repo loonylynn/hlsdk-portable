@@ -41,7 +41,7 @@ The entity reads the usual Half-Life skill level (1-3):
 | `sk_panthereye_health` | 80 | 100 | 120 |
 | `sk_panthereye_dmg_claw` | 20 | 25 | 30 |
 
-The optional server cvar `panthereye_cloak` defaults to `0` (disabled). Values above zero enable opacity-based cloaking when the creature has an enemy, is grounded, is not in its brief alerted/running window, and is at least 170 units from the enemy. A value of `1` leaves it fully opaque; smaller values make it more transparent.
+The optional server cvar `panthereye_cloak` defaults to `0.35` (a subtle partial cloak). Set it to `0` to disable cloaking; values above zero enable opacity-based cloaking when the creature has an enemy, is grounded, is not in its brief alerted/running window, and is at least 170 units from the enemy. A value of `1` leaves it fully opaque; smaller values make it more transparent.
 
 ## Required game assets
 
