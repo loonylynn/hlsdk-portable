@@ -935,12 +935,18 @@ int CBaseMonster::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, f
 	return 1;
 }
 
-// Forward the modifier-aware form through the existing virtual damage handler.
-// The timed-damage behavior will be added in the next step.
+// Preserve the secondary mask on the monster while dispatching the legacy
+// overload virtually. This keeps existing player/monster-specific damage
+// handling intact; timed effects are deliberately added in the next step.
 int CBaseMonster::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType, int bitsDamageTypeMod )
 {
-	(void)bitsDamageTypeMod;
-	return TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType );
+	int result = TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType );
+
+	// A rejected hit or a lethal hit cannot leave an active timed effect behind.
+	if( result && bitsDamageTypeMod )
+		m_bitsDamageTypeMod |= bitsDamageTypeMod;
+
+	return result;
 }
 
 //=========================================================
