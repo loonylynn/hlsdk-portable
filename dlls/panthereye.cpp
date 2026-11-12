@@ -1564,14 +1564,11 @@ void CPantherEye::PrescheduleThink( void )
         fFleeExpired = ( m_flFleeUntil > 0.0f &&
                          m_flFleeUntil <= flNow );
 
-        if( fAggressionExpired )
-            m_flAggressiveUntil = 0.0f;
-        if( fFleeExpired )
-            m_flFleeUntil = 0.0f;
-
+        // Keep expired positive timers intact until the end of this think.
+        // The source uses -1 as its inactive sentinel.
         m_bStalking = ( m_hEnemy != NULL &&
-                        m_flAggressiveUntil <= flNow &&
-                        m_flFleeUntil <= flNow );
+                        m_flAggressiveUntil == 0.0f &&
+                        m_flFleeUntil == 0.0f );
 
         if( m_hEnemy != NULL )
         {
@@ -1624,7 +1621,7 @@ void CPantherEye::PrescheduleThink( void )
                 m_flStareTime = 0.0f;
             }
 
-            if( m_flAggressiveUntil <= flNow && fCanObserveEnemy )
+            if( m_flAggressiveUntil == 0.0f && fCanObserveEnemy )
             {
                 if( fEnemyFacingMe )
                 {
