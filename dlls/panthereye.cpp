@@ -1545,7 +1545,39 @@ void CPantherEye::HandleAnimEvent( MonsterEvent_t *pEvent )
 
 void CPantherEye::MonsterThink( void )
 {
+    float flCloak;
+    float flTargetRender;
+    BOOL fCanCloak;
+
     pev->nextthink = gpGlobals->time + 0.1f;
+
+    // Absolute Zero updates cloak opacity at the start of MonsterThink,
+    // before the base AI recalculates its stalking/anger state. This preserves
+    // the original one-think transition and uses the original cvar name.
+    flCloak = CVAR_GET_FLOAT( "panthereyeHasCloakingAbility" );
+    fCanCloak = ( flCloak > 0.0f &&
+                  pev->deadflag == DEAD_NO &&
+                  m_bStalking &&
+                  m_hEnemy != NULL &&
+                  FBitSet( pev->flags, FL_ONGROUND ) &&
+                  ( m_vecEnemyLKP - pev->origin ).Length() >= 170.0f );
+
+    if( fCanCloak )
+        flTargetRender = min( flCloak, 1.0f ) * 255.0f;
+    else
+        flTargetRender = 255.0f;
+
+    if( pev->renderamt > flTargetRender )
+    {
+        pev->renderamt = max( pev->renderamt - 50.0f, flTargetRender );
+        pev->rendermode = kRenderTransTexture;
+    }
+    else if( pev->renderamt < flTargetRender )
+    {
+        pev->renderamt = min( pev->renderamt + 50.0f, flTargetRender );
+        if( pev->renderamt >= 255.0f )
+            pev->rendermode = kRenderNormal;
+    }
 
     RunAI();
 
@@ -1653,9 +1685,6 @@ void CPantherEye::DispatchPantherAnimationEvents( void )
 
 void CPantherEye::PrescheduleThink( void )
 {
-    float flCloak;
-    float flTargetRender;
-    BOOL fCanCloak = FALSE;
     BOOL fForceScheduleChange = FALSE;
     BOOL fAggressionExpired = FALSE;
     BOOL fFleeExpired = FALSE;
@@ -1971,32 +2000,7 @@ void CPantherEye::PrescheduleThink( void )
         }
     }
 
-    flCloak = CVAR_GET_FLOAT( "panthereye_cloak" );
-    fCanCloak = ( flCloak > 0.0f &&
-                  pev->deadflag == DEAD_NO &&
-                  m_bStalking &&
-                  m_hEnemy != NULL &&
-                  FBitSet( pev->flags, FL_ONGROUND ) &&
-                  gpGlobals->time >= m_flRunUntil &&
-                  ( m_vecEnemyLKP - pev->origin ).Length() >= 170.0f );
 
-    if( fCanCloak )
-        flTargetRender = min( flCloak, 1.0f ) * 255.0f;
-    else
-        flTargetRender = 255.0f;
-
-    if( pev->renderamt > flTargetRender )
-    {
-        pev->renderamt = max( pev->renderamt - 50.0f, flTargetRender );
-        pev->rendermode = kRenderTransTexture;
-    }
-    else if( pev->renderamt < flTargetRender )
-    {
-        pev->renderamt = min( pev->renderamt + 50.0f, flTargetRender );
-        if( pev->renderamt >= 255.0f )
-            pev->rendermode = kRenderNormal;
-    }
-}
 
 int CPantherEye::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType )
 {
