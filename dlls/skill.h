@@ -136,6 +136,10 @@ struct skilldata_t
 	float plrStomach;
 	float plrLeg;
 	float plrArm;
+
+	// Timed damage (secondary damage-mask effects).
+	float tdmg_bleeding_duration;
+	float tdmg_bleeding_damage;
 };
 
 extern	DLL_GLOBAL	skilldata_t	gSkillData;
