@@ -1903,6 +1903,7 @@ void CBasePlayer::PreThink( void )
 	UpdateClientData();
 
 	CheckTimeBasedDamage();
+	CheckBleedingDamage();
 
 	CheckSuitUpdate();
 
@@ -2926,6 +2927,8 @@ void CBasePlayer::Spawn( void )
 	m_bitsHUDDamage = -1;
 	m_bitsDamageType = 0;
 	m_bitsDamageTypeMod = 0;
+	m_iBleedingTicksRemaining = 0;
+	m_flBleedingNextDamageTime = 0;
 	m_afPhysicsFlags = 0;
 	m_fLongJump = FALSE;// no longjump module. 
 
