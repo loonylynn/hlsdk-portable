@@ -926,6 +926,8 @@ public:
 	void Precache( void );
 	int iItemSlot( void ) { return 5; }
 	int GetItemInfo( ItemInfo *p );
+	int AddToPlayer( CBasePlayer *pPlayer );
+	int UpdateClientData( CBasePlayer *pPlayer );
 	BOOL IsUseable( void );
 	BOOL Deploy( void );
 	BOOL CanHolster( void );
