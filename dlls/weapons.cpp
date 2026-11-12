@@ -92,6 +92,7 @@ void ClearMultiDamage( void )
 	gMultiDamage.pEntity = NULL;
 	gMultiDamage.amount = 0;
 	gMultiDamage.type = 0;
+	gMultiDamage.typeMod = 0;
 }
 
 //
@@ -101,32 +102,34 @@ void ClearMultiDamage( void )
 //		gMultiDamage
 void ApplyMultiDamage( entvars_t *pevInflictor, entvars_t *pevAttacker )
 {
-	Vector vecSpot1;//where blood comes from
-	Vector vecDir;//direction blood should go
-	TraceResult tr;
-
 	if( !gMultiDamage.pEntity )
 		return;
 
-	gMultiDamage.pEntity->TakeDamage( pevInflictor, pevAttacker, gMultiDamage.amount, gMultiDamage.type );
+	gMultiDamage.pEntity->TakeDamage( pevInflictor, pevAttacker, gMultiDamage.amount, gMultiDamage.type, gMultiDamage.typeMod );
 }
 
-// GLOBALS USED:
-//		gMultiDamage
+// Legacy callers intentionally supply no secondary damage flags.
 void AddMultiDamage( entvars_t *pevInflictor, CBaseEntity *pEntity, float flDamage, int bitsDamageType )
+{
+	AddMultiDamage( pevInflictor, pEntity, flDamage, bitsDamageType, 0 );
+}
+
+void AddMultiDamage( entvars_t *pevInflictor, CBaseEntity *pEntity, float flDamage, int bitsDamageType, int bitsDamageTypeMod )
 {
 	if( !pEntity )
 		return;
 
-	gMultiDamage.type |= bitsDamageType;
-
 	if( pEntity != gMultiDamage.pEntity )
 	{
-		ApplyMultiDamage( pevInflictor,pevInflictor ); // UNDONE: wrong attacker!
+		ApplyMultiDamage( pevInflictor, pevInflictor ); // UNDONE: wrong attacker!
 		gMultiDamage.pEntity = pEntity;
 		gMultiDamage.amount = 0;
+		gMultiDamage.type = 0;
+		gMultiDamage.typeMod = 0;
 	}
 
+	gMultiDamage.type |= bitsDamageType;
+	gMultiDamage.typeMod |= bitsDamageTypeMod;
 	gMultiDamage.amount += flDamage;
 }
 
