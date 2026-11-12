@@ -79,6 +79,7 @@ private:
     float m_flStalkWaitUntil;
     float m_flNextStalkMove;
     float m_flLastDamageReact;
+    float m_flPissedRunUntil;
     float m_flSecondClawHitTime;
     float m_flBugEventTime;
     float m_flBugCooldown;
