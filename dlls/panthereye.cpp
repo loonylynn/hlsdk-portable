@@ -1737,9 +1737,20 @@ void CPantherEye::PrescheduleThink( void )
             m_bAmbushLeapRequested = FALSE;
         }
 
-        // Expired anger/retreat timers explicitly release their corresponding
-        // schedules in the source; don't make the monster finish a stale chase
-        // or cover route before it returns to stalking.
+        // A timer can be renewed on the same think in which its previous
+        // value expired. In that case it is still active and must not trigger
+        // the source's "timer ended" schedule handoff.
+        if( m_flAggressiveUntil > flNow )
+            fAggressionExpired = FALSE;
+        if( m_flFleeUntil > flNow )
+            fFleeExpired = FALSE;
+        if( m_hEnemy == NULL )
+        {
+            fAggressionExpired = FALSE;
+            fFleeExpired = FALSE;
+        }
+
+        // Expired anger/retreat timers release their corresponding schedules.
         if( fAggressionExpired && m_pSchedule == &slPanthereyeChase[0] )
             fForceScheduleChange = TRUE;
 
