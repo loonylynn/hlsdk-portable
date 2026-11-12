@@ -471,7 +471,7 @@ cvar_t	sk_player_leg3	= { "sk_player_leg3","1" };
 // END Cvars for Skill Level settings
 
 // Panther Eye cloak opacity: 0 disables cloaking; 0.1-1.0 sets its opaque fraction.
-cvar_t panthereye_cloak = { "panthereye_cloak", "0" };
+cvar_t panthereye_cloak = { "panthereye_cloak", "0.35" };
 
 cvar_t sv_pushable_fixed_tick_fudge = { "sv_pushable_fixed_tick_fudge", "15" };
 cvar_t sv_busters = { "sv_busters", "0" };
