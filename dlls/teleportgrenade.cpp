@@ -10,6 +10,7 @@
  *   - 1000 u/s launch with the original five-degree upward pre-arc
  *   - teleport on collision except with the owner or the owner's active weapon
  *   - safe landing-space search around the impact point
+ *   - delayed projectile removal after a successful teleport
  *   - 30% projectile-velocity inheritance and retained player view angles
  *   - 1024-unit range limit, 3.5-second lifetime and 3-second recharge
  *   - primary-fire revoke window while the projectile is in flight
@@ -61,6 +62,7 @@ public:
 
 	void EXPORT ProjectileTouch( CBaseEntity *pOther );
 	void EXPORT LimitThink( void );
+	void EXPORT DelayedRemoveThink( void );
 
 	void TeleportPerformTeleport( void );
 	void TeleportPerformReset( void );
@@ -144,6 +146,11 @@ void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin )
 		WRITE_COORD( vecOrigin.y );
 		WRITE_COORD( vecOrigin.z );
 	MESSAGE_END();
+}
+
+void CTeleportProjectile::DelayedRemoveThink( void )
+{
+	UTIL_Remove( this );
 }
 
 BOOL CTeleportProjectile::CanTeleportPlayer( CBasePlayer *pPlayer, const Vector &vecCandidate, Vector &vecDestination )
@@ -264,7 +271,17 @@ void CTeleportProjectile::TeleportPerformTeleport( void )
 	EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "items/suitchargeok1.wav", 1.0f, ATTN_NORM );
 	UTIL_ScreenShake( vecDestination, 15.0f, 150.0f, 1.0f, 384.0f );
 
-	UTIL_Remove( this );
+	// Match the original grenade's short post-collision lifetime: it becomes
+	// harmless, non-solid and invisible immediately, then is removed 0.1s later.
+	pev->takedamage = DAMAGE_NO;
+	pev->solid = SOLID_NOT;
+	pev->movetype = MOVETYPE_NONE;
+	pev->effects |= EF_NODRAW;
+	pev->velocity = g_vecZero;
+	pev->avelocity = g_vecZero;
+	SetTouch( NULL );
+	SetThink( &CTeleportProjectile::DelayedRemoveThink );
+	pev->nextthink = gpGlobals->time + 0.1f;
 }
 
 void CTeleportProjectile::TeleportPerformReset( void )
