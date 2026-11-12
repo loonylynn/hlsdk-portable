@@ -12,7 +12,7 @@
  *   - blast/burn-only damage reception without projectile health loss
  *   - safe landing-space search around the impact point
  *   - delayed projectile removal after a successful teleport
- *   - 30% projectile-velocity inheritance and retained player view angles
+ *   - zero player arrival velocity and retained player view angles
  *   - 1024-unit range limit, 3.5-second lifetime and 3-second recharge
  *   - primary-fire revoke window while the projectile is in flight
  *
@@ -35,7 +35,6 @@
 #define TELEPORT_GRENADE_MAX_LIFETIME    3.5f
 #define TELEPORT_GRENADE_RECHARGE        3.0f
 #define TELEPORT_GRENADE_REVOKE_TIME     0.2f
-#define TELEPORT_GRENADE_VELOCITY_SCALE  0.3f
 #define TELEPORT_GRENADE_FLOOR_NORMAL    0.87f
 #define TELEPORT_GRENADE_GROUND_TRACE_DOWN 512.0f
 #define TELEPORT_GRENADE_GROUND_CLEARANCE 1.0f
@@ -291,7 +290,6 @@ void CTeleportProjectile::TeleportPerformTeleport( void )
 	}
 
 	const Vector vecOldOrigin = pPlayer->pev->origin;
-	const Vector vecExitVelocity = pev->velocity * TELEPORT_GRENADE_VELOCITY_SCALE;
 
 	FinishWeaponState();
 
@@ -299,7 +297,8 @@ void CTeleportProjectile::TeleportPerformTeleport( void )
 	SendTeleportEffect( vecDestination );
 
 	UTIL_SetOrigin( pPlayer->pev, vecDestination );
-	pPlayer->pev->velocity = vecExitVelocity;
+	// The original Source call passes vec3_origin as the teleport velocity.
+	pPlayer->pev->velocity = g_vecZero;
 	pPlayer->pev->flags &= ~FL_ONGROUND;
 	pPlayer->pev->groundentity = NULL;
 	pPlayer->pev->effects |= EF_NOINTERP;
