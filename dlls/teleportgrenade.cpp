@@ -18,8 +18,8 @@
  *   - primary-fire revoke window while the projectile is in flight
  *
  * Source-only NPC, physgun and particle-system integrations are intentionally
- * omitted.  The path-replay effect is also omitted; the actual teleport and
- * collision rules remain server authoritative.
+ * omitted.  The flight ribbon and player route replay are implemented with
+ * GoldSrc temp entities and server-authoritative movement.
  */
 
 #include "extdll.h"
