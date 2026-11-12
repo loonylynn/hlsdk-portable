@@ -650,6 +650,19 @@ int CBasePlayer::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, fl
 	return fTookDamage;
 }
 
+// Preserve the secondary damage mask for players and notify the HEV suit
+// only when a new bleeding effect becomes active.
+int CBasePlayer::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType, int bitsDamageTypeMod )
+{
+	BOOL wasBleeding = ( m_bitsDamageTypeMod & DMG_BLEEDING ) != 0;
+	int fTookDamage = CBaseMonster::TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType, bitsDamageTypeMod );
+
+	if( fTookDamage && !wasBleeding && ( m_bitsDamageTypeMod & DMG_BLEEDING ) )
+		SetSuitUpdate( "!HEV_DMG6", FALSE, SUIT_NEXT_IN_30SEC );	// blood loss detected
+
+	return fTookDamage;
+}
+
 //=========================================================
 // PackDeadPlayerItems - call this when a player dies to
 // pack up the appropriate weapons and ammo items, and to
