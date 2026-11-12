@@ -1166,40 +1166,57 @@ void CPantherEye::LeapTouch( CBaseEntity *pOther )
     SetTouch( NULL );
 }
 
+void CPantherEye::DoClawHit( float flDamageScale, BOOL bKnockback )
+{
+    CBaseEntity *pHurt;
+
+    UTIL_MakeVectors( pev->angles );
+    pHurt = CheckTraceHullAttack( 84.0f * 1.2f,
+                                  (int)( m_flClawDamage * flDamageScale ),
+                                  DMG_SLASH );
+
+    if( pHurt )
+    {
+        // Stock GoldSrc equivalent of the original punch / lateral knockback.
+        if( bKnockback && ( pHurt->pev->flags & ( FL_MONSTER | FL_CLIENT ) ) )
+        {
+            pHurt->pev->punchangle.z = -18;
+            pHurt->pev->punchangle.x = 5;
+            pHurt->pev->velocity = pHurt->pev->velocity - gpGlobals->v_right * 100.0f;
+        }
+
+        EMIT_SOUND_DYN(
+            ENT( pev ),
+            CHAN_WEAPON,
+            PantherRandomSound( g_PantherHitSounds, ARRAYSIZE( g_PantherHitSounds ) ),
+            1.0f,
+            ATTN_NORM,
+            0,
+            RANDOM_LONG( 95, 105 )
+        );
+    }
+    else
+    {
+        EMIT_SOUND_DYN(
+            ENT( pev ),
+            CHAN_WEAPON,
+            PantherRandomSound( g_PantherMissSounds, ARRAYSIZE( g_PantherMissSounds ) ),
+            1.0f,
+            ATTN_NORM,
+            0,
+            RANDOM_LONG( 95, 105 )
+        );
+    }
+
+    if( RANDOM_LONG( 0, 1 ) )
+        AttackSound();
+}
+
 void CPantherEye::HandleAnimEvent( MonsterEvent_t *pEvent )
 {
     if( pEvent->event == 1 )
     {
-        CBaseEntity *pHurt = CheckTraceHullAttack( 84.0f * 1.2f, (int)m_flClawDamage, DMG_SLASH );
-
-        if( pHurt )
-        {
-            EMIT_SOUND_DYN(
-                ENT( pev ),
-                CHAN_WEAPON,
-                PantherRandomSound( g_PantherHitSounds, ARRAYSIZE( g_PantherHitSounds ) ),
-                1.0f,
-                ATTN_NORM,
-                0,
-                RANDOM_LONG( 95, 105 )
-            );
-        }
-        else
-        {
-            EMIT_SOUND_DYN(
-                ENT( pev ),
-                CHAN_WEAPON,
-                PantherRandomSound( g_PantherMissSounds, ARRAYSIZE( g_PantherMissSounds ) ),
-                1.0f,
-                ATTN_NORM,
-                0,
-                RANDOM_LONG( 95, 105 )
-            );
-        }
-
-        if( RANDOM_LONG( 0, 1 ) )
-            AttackSound();
-
+        DoClawHit( 1.0f, TRUE );
         return;
     }
 
@@ -1216,6 +1233,20 @@ void CPantherEye::PrescheduleThink( void )
 
     if( m_afSoundTypes & ( bits_SOUND_COMBAT | bits_SOUND_PLAYER ) )
         m_flRunUntil = gpGlobals->time + 12.0f;
+
+    // Absolute Zero's animation queue schedules a second, half-strength
+    // swipe at 12/15 seconds into attack_primary. Recreate that event locally.
+    if( m_flSecondClawHitTime > 0.0f && gpGlobals->time >= m_flSecondClawHitTime )
+    {
+        if( pev->deadflag == DEAD_NO &&
+            m_Activity == ACT_MELEE_ATTACK1 &&
+            pev->sequence == LookupSequence( "attack_primary" ) )
+        {
+            DoClawHit( 0.5f, TRUE );
+        }
+
+        m_flSecondClawHitTime = 0.0f;
+    }
 
     if( pev->deadflag == DEAD_NO && m_hEnemy != NULL )
     {
@@ -1339,6 +1370,29 @@ void CPantherEye::PrescheduleThink( void )
     }
 
     CBaseMonster::PrescheduleThink();
+
+    // The original periodically looks for a cockroach while in its idle
+    // activity. The model's get_bug animation then delivers the kill event.
+    if( pev->deadflag == DEAD_NO &&
+        m_IdealActivity == ACT_IDLE &&
+        m_pSchedule != &slPanthereyeGetBug[0] &&
+        gpGlobals->time >= m_flBugCooldown &&
+        !HasConditions( bits_COND_CAN_MELEE_ATTACK1 | bits_COND_CAN_MELEE_ATTACK2 |
+                        bits_COND_HEAVY_DAMAGE ) )
+    {
+        CBaseEntity *pEntityScan = NULL;
+
+        while( ( pEntityScan = UTIL_FindEntityInSphere( pEntityScan, pev->origin, 68.0f ) ) != NULL )
+        {
+            CBaseMonster *pBug = pEntityScan->MyMonsterPointer();
+            if( pBug && FClassnameIs( pBug->pev, "monster_cockroach" ) )
+            {
+                MakeIdealYaw( pBug->pev->origin );
+                m_bGetBugRequested = TRUE;
+                break;
+            }
+        }
+    }
 
     flCloak = CVAR_GET_FLOAT( "panthereye_cloak" );
     fCanCloak = ( flCloak > 0.0f &&
@@ -1479,6 +1533,9 @@ DEFINE_CUSTOM_SCHEDULES( CPantherEye )
     slPanthereyeStalkWait,
     slPanthereyeStalkMove,
     slPanthereyeFlee,
+    slPanthereyeChase,
+    slPanthereyeUnstuck,
+    slPanthereyeGetBug,
 };
 
 IMPLEMENT_CUSTOM_SCHEDULES( CPantherEye, CBaseMonster )
