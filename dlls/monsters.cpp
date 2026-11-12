@@ -92,6 +92,7 @@ TYPEDESCRIPTION	CBaseMonster::m_SaveData[] =
 
 	DEFINE_FIELD( CBaseMonster, m_flNextAttack, FIELD_TIME ),
 	DEFINE_FIELD( CBaseMonster, m_bitsDamageType, FIELD_INTEGER ),
+	DEFINE_FIELD( CBaseMonster, m_bitsDamageTypeMod, FIELD_INTEGER ),
 	DEFINE_ARRAY( CBaseMonster, m_rgbTimeBasedDamage, FIELD_CHARACTER, CDMG_TIMEBASED ),
 	DEFINE_FIELD( CBaseMonster, m_bloodColor, FIELD_INTEGER ),
 	DEFINE_FIELD( CBaseMonster, m_failSchedule, FIELD_INTEGER ),
@@ -1994,6 +1995,7 @@ void CBaseMonster::MonsterInit( void )
 	}
 
 	// Set fields common to all monsters
+	m_bitsDamageTypeMod = 0;
 	pev->effects		= 0;
 	pev->takedamage		= DAMAGE_AIM;
 	pev->ideal_yaw		= pev->angles.y;
