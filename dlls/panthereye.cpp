@@ -199,7 +199,7 @@ Schedule_t slPanthereyeGetBug[] =
 Task_t tlPanthereyeGetIntoCirclingRange[] =
 {
     { TASK_SET_FAIL_SCHEDULE,       (float)SCHED_PANTHEREYE_GENERIC_FAIL },
-    { TASK_MOVE_TO_ENEMY_RANGE,    260.0f },
+    { TASK_MOVE_TO_TARGET_RANGE,    260.0f },
 };
 
 Schedule_t slPanthereyeGetIntoCirclingRange[] =
@@ -238,7 +238,7 @@ Task_t tlPanthereyeGenericFail[] =
     { TASK_SET_FAIL_SCHEDULE, (float)SCHED_PANTHEREYE_GENERIC_FAIL },
     { TASK_STOP_MOVING,       0 },
     { TASK_WAIT,              0.4f },
-    { TASK_UPDATE_LKP,        0 },
+    { TASK_WAIT_PVS,           0 },
 };
 
 Schedule_t slPanthereyeGenericFail[] =
@@ -864,8 +864,6 @@ Schedule_t *CPantherEye::GetScheduleOfType( int Type )
     case SCHED_TAKE_COVER_FROM_BEST_SOUND:
         return &slPanthereyeTakeCoverFromBestSound[0];
 
-    case SCHED_PATHFIND_STUMPED:
-        return &slPanthereyeStalkWait[0];
     }
 
     return CBaseMonster::GetScheduleOfType( Type );
@@ -923,6 +921,22 @@ Schedule_t *CPantherEye::GetSchedule( void )
 
 void CPantherEye::StartTask( Task_t *pTask )
 {
+    if( pTask->iTask == TASK_MOVE_TO_TARGET_RANGE &&
+        m_pSchedule == &slPanthereyeGetIntoCirclingRange[0] )
+    {
+        // The original TASK_PANTHER_NORMALMOVE follows the enemy entity.
+        // GoldSrc already has the same operation as MOVE_TO_TARGET_RANGE.
+        m_hTargetEnt = m_hEnemy;
+        if( m_hTargetEnt == NULL )
+        {
+            TaskFail();
+            return;
+        }
+
+        CBaseMonster::StartTask( pTask );
+        return;
+    }
+
     if( pTask->iTask != TASK_GET_PATH_TO_ENEMY )
         m_bWaitingForPath = FALSE;
 
@@ -1558,7 +1572,8 @@ void CPantherEye::PrescheduleThink( void )
         m_bStalking = ( m_flAggressiveUntil <= gpGlobals->time &&
                         m_flFleeUntil <= gpGlobals->time &&
                         FBitSet( pev->flags, FL_ONGROUND ) &&
-                        pev->sequence != LookupSequence( "crouch_to_jump" ) );
+                        pev->sequence != LookupSequence( "crouch_to_jump" ) &&
+                        !m_bAmbushLeapRequested );
 
         // Break a sneak move when the target spots the creature or the
         // anger/retreat logic has selected a different behavior.
