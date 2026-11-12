@@ -159,6 +159,8 @@ void CPantherEye::Spawn( void )
     pev->takedamage = DAMAGE_AIM;
     pev->flags |= FL_MONSTER;
     pev->effects = 0;
+    pev->renderamt = 255;
+    pev->rendermode = kRenderNormal;
 
     m_bloodColor = BLOOD_COLOR_GREEN;
     pev->health = PantherSkillValue( "sk_panthereye_health", 100.0f );
