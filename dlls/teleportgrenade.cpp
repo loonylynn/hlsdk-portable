@@ -37,6 +37,14 @@
 #define TELEPORT_GRENADE_FLOOR_NORMAL    0.87f
 #define TELEPORT_GRENADE_GROUND_TRACE_DOWN 512.0f
 #define TELEPORT_GRENADE_GROUND_CLEARANCE 1.0f
+#define TELEPORT_GRENADE_MAX_PATH_POINTS 512
+#define TELEPORT_GRENADE_PATH_POINT_SPACING 24.0f
+#define TELEPORT_GRENADE_PATH_THINK_INTERVAL 0.025f
+#define TELEPORT_GRENADE_PLAYER_TRAVEL_SPEED 1800.0f
+#define TELEPORT_GRENADE_PLAYER_TRAVEL_MIN_TIME 0.18f
+#define TELEPORT_GRENADE_PLAYER_TRAVEL_MAX_TIME 2.5f
+#define TELEPORT_GRENADE_TRAIL_LIFE 24
+#define TELEPORT_GRENADE_TRAIL_WIDTH 48
 
 enum teleport_grenade_e
 {
@@ -52,15 +60,62 @@ enum teleport_grenade_e
 
 #if !CLIENT_DLL
 
+static short g_sTeleportTrailSprite = 0;
+
+static void SendTeleportBeamFollow( int iEntity, const Vector &vecOrigin, int iLife, int iWidth, int r, int g, int b, int iBrightness )
+{
+	if( g_sTeleportTrailSprite <= 0 )
+		return;
+
+	MESSAGE_BEGIN( MSG_PVS, SVC_TEMPENTITY, vecOrigin );
+		WRITE_BYTE( TE_BEAMFOLLOW );
+		WRITE_SHORT( iEntity );
+		WRITE_SHORT( g_sTeleportTrailSprite );
+		WRITE_BYTE( iLife );
+		WRITE_BYTE( iWidth );
+		WRITE_BYTE( r );
+		WRITE_BYTE( g );
+		WRITE_BYTE( b );
+		WRITE_BYTE( iBrightness );
+	MESSAGE_END();
+}
+
+static void SendTeleportSpriteTrail( const Vector &vecStart, const Vector &vecEnd )
+{
+	if( g_sTeleportTrailSprite <= 0 || ( vecEnd - vecStart ).Length() < 1.0f )
+		return;
+
+	MESSAGE_BEGIN( MSG_PVS, SVC_TEMPENTITY, vecEnd );
+		WRITE_BYTE( TE_SPRITETRAIL );
+		WRITE_COORD( vecStart.x );
+		WRITE_COORD( vecStart.y );
+		WRITE_COORD( vecStart.z );
+		WRITE_COORD( vecEnd.x );
+		WRITE_COORD( vecEnd.y );
+		WRITE_COORD( vecEnd.z );
+		WRITE_SHORT( g_sTeleportTrailSprite );
+		WRITE_BYTE( 4 );
+		WRITE_BYTE( 16 );
+		WRITE_BYTE( 4 );
+		WRITE_BYTE( 2 );
+		WRITE_BYTE( 3 );
+	MESSAGE_END();
+}
+
 class CTeleportProjectile : public CGrenade
 {
 public:
+	int Save( CSave &save );
+	int Restore( CRestore &restore );
+	static TYPEDESCRIPTION m_SaveData[];
+
 	void Spawn( void );
 	void Precache( void );
 
 	void EXPORT ProjectileTouch( CBaseEntity *pOther );
 	void EXPORT LimitThink( void );
 	void EXPORT DelayedRemoveThink( void );
+	void EXPORT PlayerTravelThink( void );
 
 	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType );
 
@@ -70,8 +125,20 @@ public:
 protected:
 	BOOL FindTeleportDestination( CBasePlayer *pPlayer, Vector &vecDestination );
 	BOOL CanTeleportPlayer( CBasePlayer *pPlayer, const Vector &vecCandidate, Vector &vecDestination );
+	BOOL BeginPlayerTravel( CBasePlayer *pPlayer, const Vector &vecDestination );
+	void RecordPathPoint( void );
+	void CompletePlayerTravel( CBasePlayer *pPlayer );
+	void MakeProjectileInert( void );
 	void FinishWeaponState( void );
 	void SendTeleportEffect( const Vector &vecOrigin );
+
+	Vector m_vecPath[ TELEPORT_GRENADE_MAX_PATH_POINTS ];
+	int m_iPathPointCount;
+	int m_iTravelMoveType;
+	int m_iTravelWasFrozen;
+	float m_flTravelStartTime;
+	float m_flTravelDuration;
+	float m_flTravelPathLength;
 };
 
 LINK_ENTITY_TO_CLASS( teleport_projectile, CTeleportProjectile );
@@ -79,6 +146,7 @@ LINK_ENTITY_TO_CLASS( teleport_projectile, CTeleportProjectile );
 void CTeleportProjectile::Precache( void )
 {
 	PRECACHE_MODEL( "models/grenade.mdl" );
+	g_sTeleportTrailSprite = PRECACHE_MODEL( "sprites/laserbeam.spr" );
 
 	PRECACHE_SOUND( "weapons/grenade_hit1.wav" );
 	PRECACHE_SOUND( "weapons/grenade_hit2.wav" );
@@ -90,6 +158,14 @@ void CTeleportProjectile::Precache( void )
 void CTeleportProjectile::Spawn( void )
 {
 	Precache();
+
+	m_iPathPointCount = 1;
+	m_vecPath[0] = pev->origin;
+	m_iTravelMoveType = MOVETYPE_WALK;
+	m_iTravelWasFrozen = FALSE;
+	m_flTravelStartTime = 0.0f;
+	m_flTravelDuration = 0.0f;
+	m_flTravelPathLength = 0.0f;
 
 	pev->movetype = MOVETYPE_BOUNCE;
 	pev->solid = SOLID_BBOX;
@@ -112,7 +188,11 @@ void CTeleportProjectile::Spawn( void )
 
 	SetTouch( &CTeleportProjectile::ProjectileTouch );
 	SetThink( &CTeleportProjectile::LimitThink );
-	pev->nextthink = gpGlobals->time + 0.1f;
+	pev->nextthink = gpGlobals->time + TELEPORT_GRENADE_PATH_THINK_INTERVAL;
+
+	// Additive beam ribbon plus small fading glow sprites along the flight path.
+	SendTeleportBeamFollow( entindex(), pev->origin, TELEPORT_GRENADE_TRAIL_LIFE,
+		TELEPORT_GRENADE_TRAIL_WIDTH, 90, 205, 255, 235 );
 }
 
 int CTeleportProjectile::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType )
@@ -181,6 +261,72 @@ void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin )
 void CTeleportProjectile::DelayedRemoveThink( void )
 {
 	UTIL_Remove( this );
+}
+
+void CTeleportProjectile::RecordPathPoint( void )
+{
+	if( m_iPathPointCount < 1 )
+	{
+		m_vecPath[0] = pev->origin;
+		m_iPathPointCount = 1;
+		return;
+	}
+
+	Vector vecLastPoint = m_vecPath[m_iPathPointCount - 1];
+	if( ( pev->origin - vecLastPoint ).Length() < TELEPORT_GRENADE_PATH_POINT_SPACING )
+		return;
+
+	// Compact the route if it reaches capacity, preserving its launch and
+	// latest points while increasing spacing between older samples.
+	if( m_iPathPointCount >= TELEPORT_GRENADE_MAX_PATH_POINTS )
+	{
+		const int iOldCount = m_iPathPointCount;
+		int iWrite = 1;
+
+		for( int i = 2; i < iOldCount - 1; i += 2 )
+			m_vecPath[iWrite++] = m_vecPath[i];
+
+		m_vecPath[iWrite++] = m_vecPath[iOldCount - 1];
+		m_iPathPointCount = iWrite;
+		vecLastPoint = m_vecPath[m_iPathPointCount - 1];
+	}
+
+	SendTeleportSpriteTrail( vecLastPoint, pev->origin );
+	m_vecPath[m_iPathPointCount++] = pev->origin;
+}
+
+void CTeleportProjectile::MakeProjectileInert( void )
+{
+	pev->takedamage = DAMAGE_NO;
+	pev->solid = SOLID_NOT;
+	pev->movetype = MOVETYPE_NONE;
+	pev->effects |= EF_NODRAW;
+	pev->velocity = g_vecZero;
+	pev->avelocity = g_vecZero;
+	SetTouch( NULL );
+}
+
+void CTeleportProjectile::CompletePlayerTravel( CBasePlayer *pPlayer )
+{
+	if( !pPlayer )
+		return;
+
+	UTIL_SetOrigin( pPlayer->pev, m_vecPath[m_iPathPointCount - 1] );
+	pPlayer->pev->velocity = g_vecZero;
+	pPlayer->pev->flags &= ~FL_ONGROUND;
+	pPlayer->pev->groundentity = NULL;
+	pPlayer->pev->effects |= EF_NOINTERP;
+
+	pPlayer->pev->movetype = m_iTravelMoveType;
+	if( !m_iTravelWasFrozen )
+		pPlayer->pev->flags &= ~FL_FROZEN;
+
+	SendTeleportEffect( pPlayer->pev->origin );
+	EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "items/suitchargeok1.wav", 1.0f, ATTN_NORM );
+	UTIL_ScreenShake( pPlayer->pev->origin, 15.0f, 150.0f, 1.0f, 384.0f );
+
+	SetThink( &CTeleportProjectile::DelayedRemoveThink );
+	pev->nextthink = gpGlobals->time + 0.1f;
 }
 
 BOOL CTeleportProjectile::CanTeleportPlayer( CBasePlayer *pPlayer, const Vector &vecCandidate, Vector &vecDestination )
@@ -265,6 +411,117 @@ BOOL CTeleportProjectile::FindTeleportDestination( CBasePlayer *pPlayer, Vector 
 	return FALSE;
 }
 
+BOOL CTeleportProjectile::BeginPlayerTravel( CBasePlayer *pPlayer, const Vector &vecDestination )
+{
+	if( !pPlayer || m_iPathPointCount < 2 )
+		return FALSE;
+
+	const Vector vecStartOffset = pPlayer->pev->origin - m_vecPath[0];
+	const Vector vecEndOffset = vecDestination - m_vecPath[m_iPathPointCount - 1];
+	const float flLastIndex = (float)( m_iPathPointCount - 1 );
+
+	// Convert the grenade's recorded route into player-origin waypoints. The
+	// offset blends from the thrower's origin at launch to the safe landing
+	// origin at impact, keeping the final hull position exact.
+	for( int i = 0; i < m_iPathPointCount; ++i )
+	{
+		const float flFraction = (float)i / flLastIndex;
+		const Vector vecOffset = vecStartOffset + ( vecEndOffset - vecStartOffset ) * flFraction;
+		m_vecPath[i] = m_vecPath[i] + vecOffset;
+	}
+
+	m_vecPath[0] = pPlayer->pev->origin;
+	m_vecPath[m_iPathPointCount - 1] = vecDestination;
+
+	m_flTravelPathLength = 0.0f;
+	for( int i = 1; i < m_iPathPointCount; ++i )
+		m_flTravelPathLength += ( m_vecPath[i] - m_vecPath[i - 1] ).Length();
+
+	if( m_flTravelPathLength < 1.0f )
+		return FALSE;
+
+	m_iTravelMoveType = pPlayer->pev->movetype;
+	m_iTravelWasFrozen = ( pPlayer->pev->flags & FL_FROZEN ) ? TRUE : FALSE;
+	m_flTravelDuration = m_flTravelPathLength / TELEPORT_GRENADE_PLAYER_TRAVEL_SPEED;
+
+	if( m_flTravelDuration < TELEPORT_GRENADE_PLAYER_TRAVEL_MIN_TIME )
+		m_flTravelDuration = TELEPORT_GRENADE_PLAYER_TRAVEL_MIN_TIME;
+	else if( m_flTravelDuration > TELEPORT_GRENADE_PLAYER_TRAVEL_MAX_TIME )
+		m_flTravelDuration = TELEPORT_GRENADE_PLAYER_TRAVEL_MAX_TIME;
+
+	m_flTravelStartTime = gpGlobals->time;
+
+	// Lock normal movement while the server moves the player along the route.
+	pPlayer->pev->velocity = g_vecZero;
+	pPlayer->pev->flags |= FL_FROZEN;
+	pPlayer->pev->flags &= ~FL_ONGROUND;
+	pPlayer->pev->groundentity = NULL;
+	pPlayer->pev->movetype = MOVETYPE_NONE;
+	pPlayer->pev->effects |= EF_NOINTERP;
+
+	SendTeleportBeamFollow( pPlayer->entindex(), pPlayer->pev->origin,
+		TELEPORT_GRENADE_TRAIL_LIFE, TELEPORT_GRENADE_TRAIL_WIDTH,
+		175, 235, 255, 255 );
+
+	MakeProjectileInert();
+	SetThink( &CTeleportProjectile::PlayerTravelThink );
+	pev->nextthink = gpGlobals->time + 0.01f;
+	return TRUE;
+}
+
+void CTeleportProjectile::PlayerTravelThink( void )
+{
+	CBaseEntity *pOwnerEntity = CBaseEntity::Instance( pev->owner );
+	if( !pOwnerEntity || !pOwnerEntity->IsPlayer() )
+	{
+		TeleportPerformReset();
+		return;
+	}
+
+	CBasePlayer *pPlayer = (CBasePlayer *)pOwnerEntity;
+	if( pPlayer->pev->deadflag != DEAD_NO )
+	{
+		TeleportPerformReset();
+		return;
+	}
+
+	float flProgress = ( gpGlobals->time - m_flTravelStartTime ) / m_flTravelDuration;
+	if( flProgress >= 1.0f )
+	{
+		CompletePlayerTravel( pPlayer );
+		return;
+	}
+	if( flProgress < 0.0f )
+		flProgress = 0.0f;
+
+	const float flTargetDistance = m_flTravelPathLength * flProgress;
+	float flDistance = 0.0f;
+	Vector vecTarget = m_vecPath[m_iPathPointCount - 1];
+
+	for( int i = 1; i < m_iPathPointCount; ++i )
+	{
+		const Vector vecSegment = m_vecPath[i] - m_vecPath[i - 1];
+		const float flSegmentLength = vecSegment.Length();
+
+		if( flTargetDistance <= flDistance + flSegmentLength || i == m_iPathPointCount - 1 )
+		{
+			if( flSegmentLength > 0.001f )
+			{
+				const float flSegmentProgress = ( flTargetDistance - flDistance ) / flSegmentLength;
+				vecTarget = m_vecPath[i - 1] + vecSegment * flSegmentProgress;
+			}
+			break;
+		}
+
+		flDistance += flSegmentLength;
+	}
+
+	pPlayer->pev->velocity = g_vecZero;
+	pPlayer->pev->effects |= EF_NOINTERP;
+	UTIL_SetOrigin( pPlayer->pev, vecTarget );
+	pev->nextthink = gpGlobals->time + 0.01f;
+}
+
 void CTeleportProjectile::TeleportPerformTeleport( void )
 {
 	CBaseEntity *pOwnerEntity = CBaseEntity::Instance( pev->owner );
@@ -284,33 +541,27 @@ void CTeleportProjectile::TeleportPerformTeleport( void )
 		return;
 	}
 
+	RecordPathPoint();
 	const Vector vecOldOrigin = pPlayer->pev->origin;
 
 	FinishWeaponState();
-
 	SendTeleportEffect( vecOldOrigin );
-	SendTeleportEffect( vecDestination );
 
+	if( BeginPlayerTravel( pPlayer, vecDestination ) )
+		return;
+
+	// If the projectile barely moved, keep the safe instant-teleport fallback.
 	UTIL_SetOrigin( pPlayer->pev, vecDestination );
-	// The original Source call passes vec3_origin as the teleport velocity.
 	pPlayer->pev->velocity = g_vecZero;
 	pPlayer->pev->flags &= ~FL_ONGROUND;
 	pPlayer->pev->groundentity = NULL;
 	pPlayer->pev->effects |= EF_NOINTERP;
 
-	// The Source weapon preserves the player's current view angles by default.
+	SendTeleportEffect( vecDestination );
 	EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "items/suitchargeok1.wav", 1.0f, ATTN_NORM );
 	UTIL_ScreenShake( vecDestination, 15.0f, 150.0f, 1.0f, 384.0f );
 
-	// Match the original grenade's short post-collision lifetime: it becomes
-	// harmless, non-solid and invisible immediately, then is removed 0.1s later.
-	pev->takedamage = DAMAGE_NO;
-	pev->solid = SOLID_NOT;
-	pev->movetype = MOVETYPE_NONE;
-	pev->effects |= EF_NODRAW;
-	pev->velocity = g_vecZero;
-	pev->avelocity = g_vecZero;
-	SetTouch( NULL );
+	MakeProjectileInert();
 	SetThink( &CTeleportProjectile::DelayedRemoveThink );
 	pev->nextthink = gpGlobals->time + 0.1f;
 }
@@ -369,8 +620,25 @@ void CTeleportProjectile::LimitThink( void )
 		return;
 	}
 
-	pev->nextthink = gpGlobals->time + 0.1f;
+	RecordPathPoint();
+	pev->nextthink = gpGlobals->time + TELEPORT_GRENADE_PATH_THINK_INTERVAL;
 }
+
+TYPEDESCRIPTION CTeleportProjectile::m_SaveData[] =
+{
+	DEFINE_ARRAY( CTeleportProjectile, m_vecPath, FIELD_VECTOR, TELEPORT_GRENADE_MAX_PATH_POINTS ),
+	DEFINE_FIELD( CTeleportProjectile, m_iPathPointCount, FIELD_INTEGER ),
+	DEFINE_FIELD( CTeleportProjectile, m_iTravelMoveType, FIELD_INTEGER ),
+	DEFINE_FIELD( CTeleportProjectile, m_iTravelWasFrozen, FIELD_INTEGER ),
+	DEFINE_FIELD( CTeleportProjectile, m_flTravelStartTime, FIELD_TIME ),
+	DEFINE_FIELD( CTeleportProjectile, m_flTravelDuration, FIELD_FLOAT ),
+	DEFINE_FIELD( CTeleportProjectile, m_flTravelPathLength, FIELD_FLOAT ),
+	DEFINE_FUNCTION( CTeleportProjectile, LimitThink ),
+	DEFINE_FUNCTION( CTeleportProjectile, DelayedRemoveThink ),
+	DEFINE_FUNCTION( CTeleportProjectile, PlayerTravelThink ),
+};
+
+IMPLEMENT_SAVERESTORE( CTeleportProjectile, CGrenade )
 
 static CTeleportProjectile *FindTeleportProjectile( CBasePlayer *pPlayer )
 {
