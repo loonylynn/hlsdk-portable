@@ -9,6 +9,7 @@
  * Retained gameplay:
  *   - 1000 u/s launch with the original five-degree upward pre-arc
  *   - teleport on collision except with the owner or the owner's active weapon
+ *   - blast/burn-only damage reception without projectile health loss
  *   - safe landing-space search around the impact point
  *   - delayed projectile removal after a successful teleport
  *   - 30% projectile-velocity inheritance and retained player view angles
@@ -63,6 +64,8 @@ public:
 	void EXPORT LimitThink( void );
 	void EXPORT DelayedRemoveThink( void );
 
+	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType );
+
 	void TeleportPerformTeleport( void );
 	void TeleportPerformReset( void );
 
@@ -92,6 +95,12 @@ void CTeleportProjectile::Spawn( void )
 
 	pev->movetype = MOVETYPE_BOUNCE;
 	pev->solid = SOLID_BBOX;
+	// GoldSrc has no DAMAGE_EVENTS_ONLY mode. TakeDamage below provides the
+	// equivalent behavior by accepting selected damage events without reducing
+	// the projectile's health.
+	pev->takedamage = DAMAGE_YES;
+	pev->health = 1.0f;
+	pev->max_health = 1.0f;
 	pev->gravity = 1.0f;
 	pev->friction = 0.5f;
 
@@ -110,6 +119,34 @@ void CTeleportProjectile::Spawn( void )
 	SetTouch( &CTeleportProjectile::ProjectileTouch );
 	SetThink( &CTeleportProjectile::LimitThink );
 	pev->nextthink = gpGlobals->time + 0.1f;
+}
+
+int CTeleportProjectile::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType )
+{
+	// Match CGrenadeTeleport::OnTakeDamage: only blast and burn damage are
+	// accepted. Do not call CBaseMonster::TakeDamage, because its GoldSrc
+	// implementation subtracts health and can kill/detonate the projectile.
+	if( !( bitsDamageType & ( DMG_BLAST | DMG_BURN ) ) )
+		return 0;
+
+	// GoldSrc has no VPhysicsTakeDamage. Approximate its blast response using
+	// the stock monster damage-force calculation, but leave health unchanged.
+	if( ( bitsDamageType & DMG_BLAST ) && flDamage > 0.0f && !FNullEnt( pevInflictor ) )
+	{
+		CBaseEntity *pInflictor = CBaseEntity::Instance( pevInflictor );
+		if( pInflictor && pInflictor != this )
+		{
+			Vector vecDirection = pInflictor->Center() - Vector( 0, 0, 10 ) - Center();
+			if( vecDirection.Length() > 0.1f )
+			{
+				vecDirection = vecDirection.Normalize();
+				pev->velocity = pev->velocity - vecDirection * DamageForce( flDamage );
+			}
+		}
+	}
+
+	// Accepted damage is an event/physics interaction, not projectile health.
+	return 1;
 }
 
 void CTeleportProjectile::FinishWeaponState( void )
