@@ -32,7 +32,8 @@ enum
     TASK_PANTHEREYE_STALK_WAIT,
     TASK_PANTHEREYE_FIND_UNSTUCK_DIRECTION,
     TASK_PANTHEREYE_UNSTUCK_LEAP,
-    TASK_PANTHEREYE_GET_BUG_ANIM
+    TASK_PANTHEREYE_GET_BUG_ANIM,
+    TASK_PANTHEREYE_COVER_FAIL_WAIT
 };
 
 enum
@@ -42,7 +43,9 @@ enum
     SCHED_PANTHEREYE_CHASE,
     SCHED_PANTHEREYE_UNSTUCK_PRECHECK,
     SCHED_PANTHEREYE_UNSTUCK,
-    SCHED_PANTHEREYE_GET_BUG
+    SCHED_PANTHEREYE_GET_BUG,
+    SCHED_PANTHEREYE_COVER_FAIL,
+    SCHED_PANTHEREYE_GENERIC_FAIL
 };
 
 Task_t tlPanthereyeLeap[] =
@@ -86,7 +89,7 @@ Schedule_t slPanthereyeStalkWait[] =
 Task_t tlPanthereyeStalkMove[] =
 {
     { TASK_STOP_MOVING,                 0 },
-    { TASK_SET_FAIL_SCHEDULE,           (float)SCHED_PANTHEREYE_STALK_WAIT },
+    { TASK_SET_FAIL_SCHEDULE,           (float)SCHED_PANTHEREYE_COVER_FAIL },
     { TASK_PANTHEREYE_FIND_STALK_COVER, 0 },
     { TASK_WALK_PATH,                   0 },
     { TASK_WAIT_FOR_MOVEMENT,           0 },
@@ -193,6 +196,132 @@ Schedule_t slPanthereyeGetBug[] =
     },
 };
 
+Task_t tlPanthereyeGetIntoCirclingRange[] =
+{
+    { TASK_SET_FAIL_SCHEDULE,       (float)SCHED_PANTHEREYE_GENERIC_FAIL },
+    { TASK_MOVE_TO_ENEMY_RANGE,    260.0f },
+};
+
+Schedule_t slPanthereyeGetIntoCirclingRange[] =
+{
+    {
+        tlPanthereyeGetIntoCirclingRange,
+        ARRAYSIZE( tlPanthereyeGetIntoCirclingRange ),
+        bits_COND_NEW_ENEMY | bits_COND_ENEMY_DEAD |
+        bits_COND_CAN_RANGE_ATTACK1 | bits_COND_CAN_MELEE_ATTACK1 |
+        bits_COND_CAN_RANGE_ATTACK2 | bits_COND_CAN_MELEE_ATTACK2 |
+        bits_COND_TASK_FAILED | bits_COND_HEAR_SOUND |
+        bits_COND_LIGHT_DAMAGE | bits_COND_HEAVY_DAMAGE,
+        bits_SOUND_DANGER,
+        "PanthereyeGetIntoCirclingRange"
+    },
+};
+
+Task_t tlPanthereyeCoverFail[] =
+{
+    { TASK_PANTHEREYE_COVER_FAIL_WAIT, 0 },
+};
+
+Schedule_t slPanthereyeCoverFail[] =
+{
+    {
+        tlPanthereyeCoverFail,
+        ARRAYSIZE( tlPanthereyeCoverFail ),
+        bits_COND_CAN_ATTACK | bits_COND_HEAVY_DAMAGE,
+        0,
+        "PanthereyeCoverFail"
+    },
+};
+
+Task_t tlPanthereyeGenericFail[] =
+{
+    { TASK_SET_FAIL_SCHEDULE, (float)SCHED_PANTHEREYE_GENERIC_FAIL },
+    { TASK_STOP_MOVING,       0 },
+    { TASK_WAIT,              0.4f },
+    { TASK_UPDATE_LKP,        0 },
+};
+
+Schedule_t slPanthereyeGenericFail[] =
+{
+    {
+        tlPanthereyeGenericFail,
+        ARRAYSIZE( tlPanthereyeGenericFail ),
+        bits_COND_HEAVY_DAMAGE,
+        0,
+        "PanthereyeGenericFail"
+    },
+};
+
+// The original replaces the stock cover schedules so that its own fail and
+// wait behavior remains consistent across enemy-, origin-, and sound-cover.
+Task_t tlPanthereyeTakeCoverFromEnemy[] =
+{
+    { TASK_SET_FAIL_SCHEDULE,       (float)SCHED_PANTHEREYE_COVER_FAIL },
+    { TASK_STOP_MOVING,             0 },
+    { TASK_WAIT,                    0.2f },
+    { TASK_FIND_COVER_FROM_ENEMY,   0 },
+    { TASK_RUN_PATH,                0 },
+    { TASK_WAIT_FOR_MOVEMENT,       0 },
+    { TASK_REMEMBER,                (float)bits_MEMORY_INCOVER },
+    { TASK_FACE_ENEMY,              0 },
+    { TASK_WAIT,                    1.0f },
+};
+
+Schedule_t slPanthereyeTakeCoverFromEnemy[] =
+{
+    {
+        tlPanthereyeTakeCoverFromEnemy,
+        ARRAYSIZE( tlPanthereyeTakeCoverFromEnemy ),
+        bits_COND_NEW_ENEMY | bits_COND_HEAVY_DAMAGE,
+        0,
+        "PanthereyeTakeCoverFromEnemy"
+    },
+};
+
+Task_t tlPanthereyeTakeCoverFromOrigin[] =
+{
+    { TASK_SET_FAIL_SCHEDULE,       (float)SCHED_PANTHEREYE_COVER_FAIL },
+    { TASK_STOP_MOVING,             0 },
+    { TASK_FIND_COVER_FROM_ORIGIN,  0 },
+    { TASK_RUN_PATH,                0 },
+    { TASK_WAIT_FOR_MOVEMENT,       0 },
+    { TASK_REMEMBER,                (float)bits_MEMORY_INCOVER },
+    { TASK_TURN_LEFT,               179.0f },
+};
+
+Schedule_t slPanthereyeTakeCoverFromOrigin[] =
+{
+    {
+        tlPanthereyeTakeCoverFromOrigin,
+        ARRAYSIZE( tlPanthereyeTakeCoverFromOrigin ),
+        bits_COND_NEW_ENEMY | bits_COND_HEAVY_DAMAGE,
+        0,
+        "PanthereyeTakeCoverFromOrigin"
+    },
+};
+
+Task_t tlPanthereyeTakeCoverFromBestSound[] =
+{
+    { TASK_SET_FAIL_SCHEDULE,           (float)SCHED_PANTHEREYE_COVER_FAIL },
+    { TASK_STOP_MOVING,                 0 },
+    { TASK_FIND_COVER_FROM_BEST_SOUND,  0 },
+    { TASK_RUN_PATH,                    0 },
+    { TASK_WAIT_FOR_MOVEMENT,           0 },
+    { TASK_REMEMBER,                    (float)bits_MEMORY_INCOVER },
+    { TASK_TURN_LEFT,                   179.0f },
+};
+
+Schedule_t slPanthereyeTakeCoverFromBestSound[] =
+{
+    {
+        tlPanthereyeTakeCoverFromBestSound,
+        ARRAYSIZE( tlPanthereyeTakeCoverFromBestSound ),
+        bits_COND_NEW_ENEMY | bits_COND_HEAVY_DAMAGE,
+        0,
+        "PanthereyeTakeCoverFromBestSound"
+    },
+};
+
 static const char * const g_PantherIdleSounds[] =
 {
     "panthereye/pa_idle1.wav",
@@ -259,6 +388,7 @@ TYPEDESCRIPTION CPantherEye::m_SaveData[] =
     DEFINE_FIELD( CPantherEye, m_flStalkWaitUntil, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_flNextStalkMove, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_flLastDamageReact, FIELD_TIME ),
+    DEFINE_FIELD( CPantherEye, m_flPissedRunUntil, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_flSecondClawHitTime, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_flBugEventTime, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_flBugCooldown, FIELD_TIME ),
@@ -288,6 +418,7 @@ CPantherEye::CPantherEye( void )
     m_flStalkWaitUntil = 0.0f;
     m_flNextStalkMove = 0.0f;
     m_flLastDamageReact = -1.0f;
+    m_flPissedRunUntil = -1.0f;
     m_flSecondClawHitTime = 0.0f;
     m_flBugEventTime = 0.0f;
     m_flBugCooldown = 0.0f;
@@ -361,6 +492,7 @@ void CPantherEye::Spawn( void )
     m_flStalkWaitUntil = 0.0f;
     m_flNextStalkMove = 0.0f;
     m_flLastDamageReact = -1.0f;
+    m_flPissedRunUntil = -1.0f;
     m_flSecondClawHitTime = 0.0f;
     m_flBugEventTime = 0.0f;
     m_flBugCooldown = 0.0f;
