@@ -935,6 +935,14 @@ int CBaseMonster::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, f
 	return 1;
 }
 
+// Forward the modifier-aware form through the existing virtual damage handler.
+// The timed-damage behavior will be added in the next step.
+int CBaseMonster::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType, int bitsDamageTypeMod )
+{
+	(void)bitsDamageTypeMod;
+	return TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType );
+}
+
 //=========================================================
 // DeadTakeDamage - takedamage function called when a monster's
 // corpse is damaged.
@@ -1094,6 +1102,11 @@ void CBaseMonster::RadiusDamage( Vector vecSrc, entvars_t *pevInflictor, entvars
 //=========================================================
 CBaseEntity* CBaseMonster::CheckTraceHullAttack( float flDist, int iDamage, int iDmgType )
 {
+	return CheckTraceHullAttack( flDist, iDamage, iDmgType, 0 );
+}
+
+CBaseEntity* CBaseMonster::CheckTraceHullAttack( float flDist, int iDamage, int iDmgType, int iDmgTypeMod )
+{
 	TraceResult tr;
 
 	if( IsPlayer() )
@@ -1113,7 +1126,7 @@ CBaseEntity* CBaseMonster::CheckTraceHullAttack( float flDist, int iDamage, int 
 
 		if( iDamage > 0 )
 		{
-			pEntity->TakeDamage( pev, pev, iDamage, iDmgType );
+			pEntity->TakeDamage( pev, pev, iDamage, iDmgType, iDmgTypeMod );
 		}
 
 		return pEntity;
@@ -1260,6 +1273,15 @@ void CBaseEntity::TraceAttack(entvars_t *pevAttacker, float flDamage, Vector vec
 	}
 }
 
+// Preserve legacy TraceAttack overrides, then attach the secondary mask to
+// the same multi-damage accumulator without adding another point of damage.
+void CBaseEntity::TraceAttack( entvars_t *pevAttacker, float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType, int bitsDamageTypeMod )
+{
+	TraceAttack( pevAttacker, flDamage, vecDir, ptr, bitsDamageType );
+	if( bitsDamageTypeMod )
+		AddMultiDamage( pevAttacker, this, 0, 0, bitsDamageTypeMod );
+}
+
 /*
 //=========================================================
 // TraceAttack
@@ -1322,6 +1344,13 @@ void CBaseMonster::TraceAttack( entvars_t *pevAttacker, float flDamage, Vector v
 		TraceBleed( flDamage, vecDir, ptr, bitsDamageType );
 		AddMultiDamage( pevAttacker, this, flDamage, bitsDamageType );
 	}
+}
+
+// Keep CBaseMonster's hitgroup-aware legacy TraceAttack implementation in
+// the dispatch chain while allowing callers to carry the secondary mask.
+void CBaseMonster::TraceAttack( entvars_t *pevAttacker, float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType, int bitsDamageTypeMod )
+{
+	CBaseEntity::TraceAttack( pevAttacker, flDamage, vecDir, ptr, bitsDamageType, bitsDamageTypeMod );
 }
 
 /*
