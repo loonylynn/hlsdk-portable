@@ -5,12 +5,11 @@
 *   Behavioral reference:
 *   Cobalt-57/Half-Life-Absolute-Zero, dlls/entity/panthereye.cpp
 *
-*   This first integration keeps the Panther Eye's signature traits:
-*   predatory classification, fast turning, close claw attacks, a timed
-*   ballistic leap, high hearing sensitivity, and optional distance-based
-*   cloaking. Its original cover-selection / stalking state machine and
-*   custom animation framework are not transplanted; this version uses the
-*   standard Half-Life monster scheduler and sequence APIs.
+*   This port restores the original Panther Eye's stalking, cover-seeking,
+*   anger / retreat decisions, leap recovery, animation variants, and
+*   cockroach-feeding behavior using the stock GoldSrc monster scheduler.
+*   Absolute Zero's custom base-monster hooks and animation-event queue are
+*   replaced with local tasks and timed sequence events.
 *
 ****/
 
@@ -31,14 +30,20 @@ enum
     TASK_PANTHEREYE_LEAP = LAST_COMMON_TASK + 1,
     TASK_PANTHEREYE_FIND_STALK_COVER,
     TASK_PANTHEREYE_FIND_FLEE_COVER,
-    TASK_PANTHEREYE_STALK_WAIT
+    TASK_PANTHEREYE_STALK_WAIT,
+    TASK_PANTHEREYE_FIND_UNSTUCK_DIRECTION,
+    TASK_PANTHEREYE_UNSTUCK_LEAP,
+    TASK_PANTHEREYE_GET_BUG_ANIM
 };
 
 enum
 {
     SCHED_PANTHEREYE_STALK_WAIT = LAST_COMMON_SCHEDULE + 1,
     SCHED_PANTHEREYE_STALK_MOVE,
-    SCHED_PANTHEREYE_FLEE
+    SCHED_PANTHEREYE_FLEE,
+    SCHED_PANTHEREYE_CHASE,
+    SCHED_PANTHEREYE_UNSTUCK,
+    SCHED_PANTHEREYE_GET_BUG
 };
 
 Task_t tlPanthereyeLeap[] =
@@ -123,6 +128,70 @@ Schedule_t slPanthereyeFlee[] =
     },
 };
 
+Task_t tlPanthereyeChase[] =
+{
+    { TASK_SET_ACTIVITY,       (float)ACT_IDLE },
+    { TASK_SET_FAIL_SCHEDULE,  (float)SCHED_PANTHEREYE_UNSTUCK },
+    { TASK_GET_PATH_TO_ENEMY,  0 },
+    { TASK_RUN_PATH,           0 },
+    { TASK_WAIT_FOR_MOVEMENT,  0 },
+    { TASK_WAIT,               0.15f },
+};
+
+Schedule_t slPanthereyeChase[] =
+{
+    {
+        tlPanthereyeChase,
+        ARRAYSIZE( tlPanthereyeChase ),
+        bits_COND_NEW_ENEMY | bits_COND_ENEMY_DEAD |
+        bits_COND_CAN_MELEE_ATTACK1 | bits_COND_CAN_MELEE_ATTACK2 |
+        bits_COND_LIGHT_DAMAGE | bits_COND_HEAVY_DAMAGE,
+        bits_SOUND_DANGER,
+        "PanthereyeChase"
+    },
+};
+
+Task_t tlPanthereyeUnstuck[] =
+{
+    { TASK_STOP_MOVING,                         0 },
+    { TASK_SET_FAIL_SCHEDULE,                   (float)SCHED_COMBAT_FACE },
+    { TASK_PANTHEREYE_FIND_UNSTUCK_DIRECTION,   0 },
+    { TASK_FACE_IDEAL,                          0 },
+    { TASK_PANTHEREYE_UNSTUCK_LEAP,             0 },
+};
+
+Schedule_t slPanthereyeUnstuck[] =
+{
+    {
+        tlPanthereyeUnstuck,
+        ARRAYSIZE( tlPanthereyeUnstuck ),
+        bits_COND_NEW_ENEMY | bits_COND_ENEMY_DEAD |
+        bits_COND_CAN_MELEE_ATTACK1 | bits_COND_CAN_MELEE_ATTACK2,
+        bits_SOUND_DANGER,
+        "PanthereyeUnstuckLeap"
+    },
+};
+
+Task_t tlPanthereyeGetBug[] =
+{
+    { TASK_SET_FAIL_SCHEDULE,       (float)SCHED_COMBAT_FACE },
+    { TASK_STOP_MOVING,             0 },
+    { TASK_FACE_IDEAL,              0 },
+    { TASK_PANTHEREYE_GET_BUG_ANIM, 0 },
+};
+
+Schedule_t slPanthereyeGetBug[] =
+{
+    {
+        tlPanthereyeGetBug,
+        ARRAYSIZE( tlPanthereyeGetBug ),
+        bits_COND_CAN_MELEE_ATTACK1 | bits_COND_CAN_MELEE_ATTACK2 |
+        bits_COND_HEAVY_DAMAGE,
+        0,
+        "PanthereyeGetBug"
+    },
+};
+
 static const char * const g_PantherIdleSounds[] =
 {
     "panthereye/pa_idle1.wav",
@@ -189,6 +258,13 @@ TYPEDESCRIPTION CPantherEye::m_SaveData[] =
     DEFINE_FIELD( CPantherEye, m_flStalkWaitUntil, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_flNextStalkMove, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_flLastDamageReact, FIELD_TIME ),
+    DEFINE_FIELD( CPantherEye, m_flSecondClawHitTime, FIELD_TIME ),
+    DEFINE_FIELD( CPantherEye, m_flBugEventTime, FIELD_TIME ),
+    DEFINE_FIELD( CPantherEye, m_flBugCooldown, FIELD_TIME ),
+    DEFINE_FIELD( CPantherEye, m_flNextPathTry, FIELD_TIME ),
+    DEFINE_FIELD( CPantherEye, m_bWaitingForPath, FIELD_BOOLEAN ),
+    DEFINE_FIELD( CPantherEye, m_bGetBugRequested, FIELD_BOOLEAN ),
+    DEFINE_FIELD( CPantherEye, m_bUnstuckLeap, FIELD_BOOLEAN ),
     DEFINE_FIELD( CPantherEye, m_bLeapLaunched, FIELD_BOOLEAN ),
     DEFINE_FIELD( CPantherEye, m_bStalking, FIELD_BOOLEAN ),
     DEFINE_FIELD( CPantherEye, m_bEnemyLookingAtMe, FIELD_BOOLEAN ),
@@ -211,6 +287,13 @@ CPantherEye::CPantherEye( void )
     m_flStalkWaitUntil = 0.0f;
     m_flNextStalkMove = 0.0f;
     m_flLastDamageReact = -1.0f;
+    m_flSecondClawHitTime = 0.0f;
+    m_flBugEventTime = 0.0f;
+    m_flBugCooldown = 0.0f;
+    m_flNextPathTry = 0.0f;
+    m_bWaitingForPath = FALSE;
+    m_bGetBugRequested = FALSE;
+    m_bUnstuckLeap = FALSE;
     m_bLeapLaunched = FALSE;
     m_bStalking = FALSE;
     m_bEnemyLookingAtMe = FALSE;
@@ -277,6 +360,13 @@ void CPantherEye::Spawn( void )
     m_flStalkWaitUntil = 0.0f;
     m_flNextStalkMove = 0.0f;
     m_flLastDamageReact = -1.0f;
+    m_flSecondClawHitTime = 0.0f;
+    m_flBugEventTime = 0.0f;
+    m_flBugCooldown = 0.0f;
+    m_flNextPathTry = gpGlobals->time;
+    m_bWaitingForPath = FALSE;
+    m_bGetBugRequested = FALSE;
+    m_bUnstuckLeap = FALSE;
     m_bLeapLaunched = FALSE;
     m_bStalking = FALSE;
     m_bEnemyLookingAtMe = FALSE;
@@ -323,6 +413,21 @@ void CPantherEye::SetYawSpeed( void )
     pev->yaw_speed = 200;
 }
 
+void CPantherEye::SetObjectCollisionBox( void )
+{
+    // Original model-specific bounds; the death animation sprawls much wider.
+    if( pev->deadflag != DEAD_NO )
+    {
+        pev->absmin = pev->origin + Vector( -76, -76, 0 );
+        pev->absmax = pev->origin + Vector( 76, 76, 60 );
+    }
+    else
+    {
+        pev->absmin = pev->origin + Vector( -35, -35, 0 );
+        pev->absmax = pev->origin + Vector( 35, 35, 42 );
+    }
+}
+
 BOOL CPantherEye::SetPantherSequence( const char *pszSequence, Activity activity, float flRate )
 {
     int iSequence = LookupSequence( pszSequence );
@@ -347,16 +452,20 @@ void CPantherEye::SetActivity( Activity NewActivity )
 {
     const char *pszSequence = NULL;
     float flRate = 1.0f;
+    int iSkill = (int)CVAR_GET_FLOAT( "skill" );
+
+    if( NewActivity != ACT_MELEE_ATTACK1 )
+        m_flSecondClawHitTime = 0.0f;
 
     switch( NewActivity )
     {
     case ACT_IDLE:
-        if( RANDOM_LONG( 0, 4 ) == 0 )
-            pszSequence = "itch";
-        else if( RANDOM_LONG( 0, 2 ) == 0 )
-            pszSequence = "shakes";
+        // Original weights are 7:3. Sneaking uses subtle_motion / idle_figit;
+        // an ordinary idle uses itch / shakes.
+        if( m_bStalking )
+            pszSequence = ( RANDOM_LONG( 1, 10 ) <= 7 ) ? "subtle_motion" : "idle_figit";
         else
-            pszSequence = "subtle_motion";
+            pszSequence = ( RANDOM_LONG( 1, 10 ) <= 7 ) ? "itch" : "shakes";
         break;
 
     case ACT_WALK:
@@ -367,29 +476,48 @@ void CPantherEye::SetActivity( Activity NewActivity )
         if( gpGlobals->time < m_flRunUntil )
         {
             pszSequence = "run";
-            flRate = 1.05f;
+            flRate = ( iSkill >= 3 ) ? 1.10f : ( iSkill == 2 ) ? 1.05f : 1.00f;
         }
         else
         {
-            // The original model's deliberate walk is used for normal
-            // movement; the full run is reserved for alerted / hurt states.
             pszSequence = "walk";
-            flRate = 1.12f;
+            flRate = ( iSkill >= 3 ) ? 1.19f : ( iSkill == 2 ) ? 1.13f : 1.08f;
         }
         break;
 
     case ACT_MELEE_ATTACK1:
-        if( RANDOM_LONG( 0, 1 ) )
+    {
+        int iAttack = RANDOM_LONG( 0, 2 );
+        if( iAttack == 0 )
+        {
+            pszSequence = "attack_primary";
+            m_flSecondClawHitTime = gpGlobals->time + ( 12.0f / 15.0f );
+        }
+        else if( iAttack == 1 )
             pszSequence = "attack_main_claw";
         else
             pszSequence = "attack_simple_claw";
-        flRate = 1.2f;
+
+        flRate = ( iSkill >= 3 ) ? 1.45f : ( iSkill == 2 ) ? 1.30f : 1.22f;
         break;
+    }
 
     case ACT_MELEE_ATTACK2:
         pszSequence = "crouch_to_jump";
         flRate = 0.92f;
         break;
+
+    case ACT_SMALL_FLINCH:
+    case ACT_BIG_FLINCH:
+        CBaseMonster::SetActivity( NewActivity );
+        pev->framerate = ( iSkill >= 3 ) ? 2.0f : ( iSkill == 2 ) ? 1.6f : 1.0f;
+        return;
+
+    case ACT_TURN_LEFT:
+    case ACT_TURN_RIGHT:
+        CBaseMonster::SetActivity( NewActivity );
+        pev->framerate = 2.1f;
+        return;
 
     case ACT_DIEVIOLENT:
         pszSequence = "death_violent";
@@ -401,6 +529,19 @@ void CPantherEye::SetActivity( Activity NewActivity )
 
     if( pszSequence && SetPantherSequence( pszSequence, NewActivity, flRate ) )
         return;
+
+    // Some model conversions omit optional variants. Fall back to known
+    // Panthereye sequences instead of leaving the monster without animation.
+    if( NewActivity == ACT_IDLE && m_bStalking &&
+        SetPantherSequence( "subtle_motion", NewActivity, 1.0f ) )
+        return;
+
+    if( NewActivity == ACT_MELEE_ATTACK1 &&
+        SetPantherSequence( "attack_main_claw", NewActivity, flRate ) )
+    {
+        m_flSecondClawHitTime = 0.0f;
+        return;
+    }
 
     CBaseMonster::SetActivity( NewActivity );
 }
@@ -451,13 +592,55 @@ BOOL CPantherEye::CanLeapToEnemy( void )
     if( tr.flFraction >= 1.0f || tr.pHit == m_hEnemy->edict() )
         return TRUE;
 
+    if( tr.pHit )
+    {
+        CBaseEntity *pHit = CBaseEntity::Instance( tr.pHit );
+        if( pHit && pHit != this && IRelationship( pHit ) > R_NO )
+            return TRUE;
+    }
+
     // The second, higher trace permits a leap over low cover while still
     // rejecting a solid wall between the Panther Eye and its target.
     vecStart = pev->origin + Vector( 0, 0, 80 );
     vecEnd = m_vecEnemyLKP + Vector( 0, 0, 40 );
     UTIL_TraceHull( vecStart, vecEnd, dont_ignore_monsters, large_hull, edict(), &tr );
 
-    return ( tr.flFraction >= 1.0f || tr.pHit == m_hEnemy->edict() );
+    if( tr.flFraction >= 1.0f || tr.pHit == m_hEnemy->edict() )
+        return TRUE;
+
+    if( tr.pHit )
+    {
+        CBaseEntity *pHit = CBaseEntity::Instance( tr.pHit );
+        if( pHit && pHit != this && IRelationship( pHit ) > R_NO )
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
+BOOL CPantherEye::CanLeapForward( void )
+{
+    TraceResult tr;
+    Vector vecStart;
+    Vector vecEnd;
+
+    UTIL_MakeVectors( pev->angles );
+    vecStart = pev->origin + pev->view_ofs;
+    vecEnd = vecStart + gpGlobals->v_forward * 400.0f;
+
+    UTIL_TraceHull( vecStart, vecEnd, dont_ignore_monsters, large_hull, edict(), &tr );
+
+    if( tr.flFraction >= 1.0f )
+        return TRUE;
+
+    if( tr.pHit )
+    {
+        CBaseEntity *pHit = CBaseEntity::Instance( tr.pHit );
+        if( pHit && pHit != this && IRelationship( pHit ) > R_NO )
+            return TRUE;
+    }
+
+    return FALSE;
 }
 
 BOOL CPantherEye::CheckMeleeAttack2( float flDot, float flDist )
@@ -494,6 +677,17 @@ Schedule_t *CPantherEye::GetScheduleOfType( int Type )
     case SCHED_MELEE_ATTACK2:
         return &slPanthereyeLeap[0];
 
+    case SCHED_CHASE_ENEMY:
+    case SCHED_PANTHEREYE_CHASE:
+        return &slPanthereyeChase[0];
+
+    case SCHED_CHASE_ENEMY_FAILED:
+    case SCHED_PANTHEREYE_UNSTUCK:
+        return &slPanthereyeUnstuck[0];
+
+    case SCHED_PANTHEREYE_GET_BUG:
+        return &slPanthereyeGetBug[0];
+
     case SCHED_PANTHEREYE_STALK_WAIT:
         return &slPanthereyeStalkWait[0];
 
@@ -509,6 +703,16 @@ Schedule_t *CPantherEye::GetScheduleOfType( int Type )
 
 Schedule_t *CPantherEye::GetSchedule( void )
 {
+    if( pev->deadflag == DEAD_NO &&
+        m_bGetBugRequested &&
+        gpGlobals->time >= m_flBugCooldown &&
+        !HasConditions( bits_COND_CAN_MELEE_ATTACK1 | bits_COND_CAN_MELEE_ATTACK2 |
+                        bits_COND_HEAVY_DAMAGE ) )
+    {
+        m_bGetBugRequested = FALSE;
+        return GetScheduleOfType( SCHED_PANTHEREYE_GET_BUG );
+    }
+
     if( pev->deadflag != DEAD_NO ||
         m_MonsterState != MONSTERSTATE_COMBAT ||
         m_hEnemy == NULL ||
@@ -521,7 +725,7 @@ Schedule_t *CPantherEye::GetSchedule( void )
         return GetScheduleOfType( SCHED_PANTHEREYE_FLEE );
 
     if( m_flAggressiveUntil > gpGlobals->time )
-        return CBaseMonster::GetSchedule();
+        return GetScheduleOfType( SCHED_PANTHEREYE_CHASE );
 
     if( m_bAmbushLeapRequested )
     {
@@ -567,7 +771,7 @@ void CPantherEye::StartTask( Task_t *pTask )
         if( FindLateralCover( vecThreat, vecViewOffset ) ||
             FindCover( vecThreat, vecViewOffset, 0.0f, CoverRadius() * 1.8f ) )
         {
-            m_flNextStalkMove = gpGlobals->time + 1.0f;
+            m_flNextStalkMove = gpGlobals->time + RANDOM_FLOAT( 5.0f, 11.0f );
             m_movementActivity = ACT_WALK;
             m_bCornered = FALSE;
             m_bPissable = FALSE;
@@ -586,7 +790,7 @@ void CPantherEye::StartTask( Task_t *pTask )
 
             if( MoveToLocation( ACT_WALK, 1.5f, vecGoal ) )
             {
-                m_flNextStalkMove = gpGlobals->time + 1.0f;
+                m_flNextStalkMove = gpGlobals->time + RANDOM_FLOAT( 5.0f, 11.0f );
                 m_bCornered = FALSE;
                 TaskComplete();
                 return;
@@ -595,7 +799,7 @@ void CPantherEye::StartTask( Task_t *pTask )
 
         // If no concealed route can be found, the Panther Eye is effectively
         // cornered. That makes it more likely to turn and fight when noticed.
-        m_flNextStalkMove = gpGlobals->time + 2.0f;
+        m_flNextStalkMove = gpGlobals->time + RANDOM_FLOAT( 4.0f, 8.0f );
         m_bCornered = TRUE;
         m_bPissable = TRUE;
         TaskFail();
