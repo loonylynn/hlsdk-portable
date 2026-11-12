@@ -462,7 +462,7 @@ int CBasePlayer::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, fl
 	m_lastDamageAmount = (int)flDamage;
 
 	// Armor. 
-	if( !( pev->flags & FL_GODMODE ) && pev->armorvalue && !( bitsDamageType & ( DMG_FALL | DMG_DROWN ) ) )// armor doesn't protect against fall or drown damage!
+	if( !( pev->flags & FL_GODMODE ) && pev->armorvalue && !( bitsDamageType & ( DMG_FALL | DMG_DROWN ) ) && !m_fApplyingTimedDamage )// periodic timed damage bypasses armor
 	{
 		float flNew = flDamage * flRatio;
 
@@ -2929,6 +2929,7 @@ void CBasePlayer::Spawn( void )
 	m_bitsDamageTypeMod = 0;
 	m_iBleedingTicksRemaining = 0;
 	m_flBleedingNextDamageTime = 0;
+	m_fApplyingTimedDamage = FALSE;
 	m_afPhysicsFlags = 0;
 	m_fLongJump = FALSE;// no longjump module. 
 
