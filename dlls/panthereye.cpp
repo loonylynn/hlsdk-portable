@@ -91,7 +91,7 @@ Task_t tlPanthereyeStalkMove[] =
     { TASK_PANTHEREYE_FIND_STALK_COVER, 0 },
     { TASK_WALK_PATH,                   0 },
     { TASK_WAIT_FOR_MOVEMENT,           0 },
-    { TASK_WAIT_RANDOM,                 0.8f },
+    { TASK_PANTHEREYE_STALK_WAIT,       0 },
 };
 
 Schedule_t slPanthereyeStalkMove[] =
@@ -751,6 +751,88 @@ Schedule_t *CPantherEye::GetSchedule( void )
 
 void CPantherEye::StartTask( Task_t *pTask )
 {
+    if( pTask->iTask != TASK_GET_PATH_TO_ENEMY )
+        m_bWaitingForPath = FALSE;
+
+    // The original throttles route-building to one attempt every 0.5 seconds.
+    // Keep the stock task alive while waiting, then invoke the base task once.
+    if( pTask->iTask == TASK_GET_PATH_TO_ENEMY )
+    {
+        if( gpGlobals->time < m_flNextPathTry )
+        {
+            m_bWaitingForPath = TRUE;
+            TaskBegin();
+            return;
+        }
+
+        m_bWaitingForPath = FALSE;
+        CBaseMonster::StartTask( pTask );
+        m_flNextPathTry = gpGlobals->time + 0.5f;
+        return;
+    }
+
+    if( pTask->iTask == TASK_PANTHEREYE_FIND_UNSTUCK_DIRECTION )
+    {
+        static const float flYawOffsets[8] =
+            { 0.0f, 45.0f, -45.0f, 90.0f, -90.0f, 135.0f, -135.0f, 180.0f };
+        Vector vecStart = pev->origin + pev->view_ofs;
+        Vector vecAngles = pev->angles;
+        TraceResult tr;
+        int i;
+
+        // Match the source's 0, +45, -45, +90, -90, +135, -135, 180 scan.
+        for( i = 0; i < ARRAYSIZE( flYawOffsets ); ++i )
+        {
+            vecAngles.y = pev->angles.y + flYawOffsets[i];
+            while( vecAngles.y < 0.0f ) vecAngles.y += 360.0f;
+            while( vecAngles.y >= 360.0f ) vecAngles.y -= 360.0f;
+
+            UTIL_MakeVectors( vecAngles );
+            UTIL_TraceLine( vecStart, vecStart + gpGlobals->v_forward * 300.0f,
+                            ignore_monsters, edict(), &tr );
+
+            if( tr.flFraction >= 1.0f )
+            {
+                pev->ideal_yaw = vecAngles.y;
+                TaskComplete();
+                return;
+            }
+        }
+
+        TaskFail();
+        return;
+    }
+
+    if( pTask->iTask == TASK_PANTHEREYE_GET_BUG_ANIM )
+    {
+        if( !SetPantherSequence( "get_bug", ACT_IDLE, 2.3f ) )
+        {
+            m_flBugCooldown = gpGlobals->time + RANDOM_FLOAT( 6.0f, 15.0f );
+            TaskComplete();
+            return;
+        }
+
+        m_flBugEventTime = gpGlobals->time + ( 36.0f / 15.0f );
+        TaskBegin();
+        return;
+    }
+
+    if( pTask->iTask == TASK_PANTHEREYE_UNSTUCK_LEAP )
+    {
+        if( !CanLeapForward() )
+        {
+            TaskFail();
+            return;
+        }
+
+        SetActivity( ACT_MELEE_ATTACK2 );
+        m_flLeapLaunchTime = gpGlobals->time + ( 10.35f / 15.0f );
+        m_bLeapLaunched = FALSE;
+        m_bUnstuckLeap = TRUE;
+        TaskBegin();
+        return;
+    }
+
     if( pTask->iTask == TASK_PANTHEREYE_FIND_STALK_COVER )
     {
         Vector vecThreat;
@@ -779,24 +861,8 @@ void CPantherEye::StartTask( Task_t *pTask )
             return;
         }
 
-        // No graph cover found? Try to move behind the target, slightly
-        // offset to either side, rather than walking straight at its face.
-        {
-            float flYaw = m_hEnemy->pev->angles.y * 0.0174532925199433f;
-            float flSide = RANDOM_LONG( 0, 1 ) ? 1.0f : -1.0f;
-            Vector vecForward( cos( flYaw ), sin( flYaw ), 0.0f );
-            Vector vecRight( -sin( flYaw ), cos( flYaw ), 0.0f );
-            Vector vecGoal = vecThreat - vecForward * 280.0f + vecRight * ( 120.0f * flSide );
-
-            if( MoveToLocation( ACT_WALK, 1.5f, vecGoal ) )
-            {
-                m_flNextStalkMove = gpGlobals->time + RANDOM_FLOAT( 5.0f, 11.0f );
-                m_bCornered = FALSE;
-                TaskComplete();
-                return;
-            }
-        }
-
+        // As in Absolute Zero, failure to find either lateral or node cover
+        // routes to the cornered wait rather than inventing a third route.
         // If no concealed route can be found, the Panther Eye is effectively
         // cornered. That makes it more likely to turn and fight when noticed.
         m_flNextStalkMove = gpGlobals->time + RANDOM_FLOAT( 4.0f, 8.0f );
@@ -858,7 +924,14 @@ void CPantherEye::StartTask( Task_t *pTask )
 
     if( pTask->iTask == TASK_PANTHEREYE_STALK_WAIT )
     {
-        m_flStalkWaitUntil = max( gpGlobals->time + 0.2f, m_flNextStalkMove );
+        // The source's ordinary sneak wait is 5-11 seconds. After failed
+        // cover, its shortened reattempt interval is 4-8 seconds.
+        if( m_bCornered )
+            m_flStalkWaitUntil = gpGlobals->time + RANDOM_FLOAT( 4.0f, 8.0f );
+        else
+            m_flStalkWaitUntil = gpGlobals->time + RANDOM_FLOAT( 5.0f, 11.0f );
+
+        m_flNextStalkMove = m_flStalkWaitUntil;
         TaskBegin();
         return;
     }
@@ -877,6 +950,50 @@ void CPantherEye::StartTask( Task_t *pTask )
 
 void CPantherEye::RunTask( Task_t *pTask )
 {
+    if( pTask->iTask == TASK_GET_PATH_TO_ENEMY && m_bWaitingForPath )
+    {
+        if( gpGlobals->time < m_flNextPathTry )
+            return;
+
+        m_bWaitingForPath = FALSE;
+        CBaseMonster::StartTask( pTask );
+        m_flNextPathTry = gpGlobals->time + 0.5f;
+        return;
+    }
+
+    if( pTask->iTask == TASK_PANTHEREYE_GET_BUG_ANIM )
+    {
+        if( m_flBugEventTime > 0.0f && gpGlobals->time >= m_flBugEventTime )
+        {
+            Vector vecSearchStart;
+            CBaseEntity *pEntityScan = NULL;
+
+            UTIL_MakeVectors( pev->angles );
+            vecSearchStart = pev->origin + gpGlobals->v_forward * 40.0f;
+
+            while( ( pEntityScan = UTIL_FindEntityInSphere( pEntityScan, vecSearchStart, 40.0f ) ) != NULL )
+            {
+                CBaseMonster *pBug = pEntityScan->MyMonsterPointer();
+                if( pBug && FClassnameIs( pBug->pev, "monster_cockroach" ) )
+                {
+                    pBug->TakeDamage( pev, pev, pBug->pev->health, DMG_CRUSH );
+                    break;
+                }
+            }
+
+            m_flBugEventTime = 0.0f;
+            m_flBugCooldown = gpGlobals->time + RANDOM_FLOAT( 6.0f, 15.0f );
+        }
+
+        if( m_fSequenceFinished )
+        {
+            TaskComplete();
+            return;
+        }
+
+        return;
+    }
+
     if( pTask->iTask == TASK_PANTHEREYE_STALK_WAIT )
     {
         if( m_hEnemy == NULL ||
@@ -897,14 +1014,24 @@ void CPantherEye::RunTask( Task_t *pTask )
         return;
     }
 
-    if( pTask->iTask == TASK_PANTHEREYE_LEAP )
+    if( pTask->iTask == TASK_PANTHEREYE_LEAP ||
+        pTask->iTask == TASK_PANTHEREYE_UNSTUCK_LEAP )
     {
         if( !m_bLeapLaunched && gpGlobals->time >= m_flLeapLaunchTime )
-            LaunchLeap();
+            LaunchLeap( pTask->iTask == TASK_PANTHEREYE_LEAP );
 
-        if( m_fSequenceFinished )
+        // The original remains in the crouch-to-jump activity until it has
+        // landed. A small forward nudge helps it catch low ledges in midair.
+        if( !FBitSet( pev->flags, FL_ONGROUND ) )
+        {
+            UTIL_MakeVectors( pev->angles );
+            if( pev->velocity.Length2D() < 24.0f )
+                pev->velocity = pev->velocity + gpGlobals->v_forward * 8.0f;
+        }
+        else if( m_fSequenceFinished )
         {
             SetTouch( NULL );
+            m_bUnstuckLeap = FALSE;
             TaskComplete();
         }
         return;
@@ -913,7 +1040,7 @@ void CPantherEye::RunTask( Task_t *pTask )
     CBaseMonster::RunTask( pTask );
 }
 
-void CPantherEye::LaunchLeap( void )
+void CPantherEye::LaunchLeap( BOOL bEnemyAccurate )
 {
     Vector vecTarget;
     Vector vecDirection;
@@ -946,12 +1073,14 @@ void CPantherEye::LaunchLeap( void )
     pev->groundentity = NULL;
     UTIL_SetOrigin( pev, pev->origin + Vector( 0, 0, 1 ) );
 
-    if( m_hEnemy )
+    if( bEnemyAccurate && m_hEnemy )
         vecTarget = m_vecEnemyLKP + m_hEnemy->pev->view_ofs;
     else
     {
+        // The original unstuck jump follows the selected ideal yaw and probes
+        // a point roughly 400 units ahead instead of tracking enemy position.
         UTIL_MakeVectors( pev->angles );
-        vecTarget = pev->origin + gpGlobals->v_forward * 320.0f;
+        vecTarget = pev->origin + gpGlobals->v_forward * 400.0f;
     }
 
     vecDirection = vecTarget - pev->origin;
@@ -993,6 +1122,8 @@ void CPantherEye::LaunchLeap( void )
     flLength = pev->velocity.Length();
     if( flLength > 1100.0f )
         pev->velocity = pev->velocity * ( 1100.0f / flLength );
+
+    m_flRunUntil = gpGlobals->time + 12.0f;
 
     if( RANDOM_LONG( 0, 2 ) != 0 )
         AttackSound();
