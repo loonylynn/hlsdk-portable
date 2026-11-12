@@ -13,7 +13,8 @@
  *   - safe landing-space search around the impact point
  *   - delayed projectile removal after a successful teleport
  *   - zero player arrival velocity and retained player view angles
- *   - 1024-unit range limit, 3.5-second lifetime and 3-second recharge
+ *   - no artificial range or age limit; remove only when leaving the world
+ *   - 3-second recharge
  *   - primary-fire revoke window while the projectile is in flight
  *
  * Source-only NPC, physgun and particle-system integrations are intentionally
@@ -31,8 +32,6 @@
 
 #define TELEPORT_GRENADE_VELOCITY       1000.0f
 #define TELEPORT_GRENADE_ARC             5.0f
-#define TELEPORT_GRENADE_MAX_DISTANCE  1024.0f
-#define TELEPORT_GRENADE_MAX_LIFETIME    3.5f
 #define TELEPORT_GRENADE_RECHARGE        3.0f
 #define TELEPORT_GRENADE_REVOKE_TIME     0.2f
 #define TELEPORT_GRENADE_FLOOR_NORMAL    0.87f
@@ -110,10 +109,6 @@ void CTeleportProjectile::Spawn( void )
 		RANDOM_FLOAT( -1000.0f, 1000.0f ),
 		RANDOM_FLOAT( -1000.0f, 1000.0f ),
 		RANDOM_FLOAT( -1000.0f, 1000.0f ) );
-
-	// vuser1 stores the owner's launch origin.  dmgtime is the hard lifetime.
-	pev->vuser1 = pev->origin;
-	pev->dmgtime = gpGlobals->time + TELEPORT_GRENADE_MAX_LIFETIME;
 
 	SetTouch( &CTeleportProjectile::ProjectileTouch );
 	SetThink( &CTeleportProjectile::LimitThink );
@@ -358,7 +353,10 @@ void CTeleportProjectile::ProjectileTouch( CBaseEntity *pOther )
 
 void CTeleportProjectile::LimitThink( void )
 {
-	if( gpGlobals->time >= pev->dmgtime )
+	// The original grenade has no fixed fuse or distance leash. Keep only a
+	// GoldSrc safety check so a projectile that leaves the playable world (or
+	// exceeds the engine's valid velocity bounds) cannot remain orphaned.
+	if( !IsInWorld() )
 	{
 		TeleportPerformReset();
 		return;
@@ -370,12 +368,6 @@ void CTeleportProjectile::LimitThink( void )
 		TeleportPerformReset();
 		return;
 	}
-
-	// Once the grenade exceeds the owner's 1024-unit leash, stop it in place.
-	// It remains valid until its lifetime expires, matching the Source behavior.
-	Vector vecFromLaunch = pev->origin - pev->vuser1;
-	if( vecFromLaunch.Length() >= TELEPORT_GRENADE_MAX_DISTANCE )
-		pev->velocity = g_vecZero;
 
 	pev->nextthink = gpGlobals->time + 0.1f;
 }
@@ -561,7 +553,6 @@ void CTeleportGrenade::LaunchTeleportProjectile( void )
 	}
 
 	pProjectile->pev->velocity = vecVelocity;
-	pProjectile->pev->vuser1 = m_pPlayer->pev->origin;
 	pProjectile->pev->avelocity = Vector(
 		RANDOM_FLOAT( -1000.0f, 1000.0f ),
 		RANDOM_FLOAT( -1000.0f, 1000.0f ),
