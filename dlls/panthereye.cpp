@@ -893,7 +893,7 @@ void CPantherEye::PrescheduleThink( void )
 
         if( fEnemyVisible )
         {
-            float flYaw = m_hEnemy->pev->angles.y * (float)(M_PI / 180.0);
+            float flYaw = m_hEnemy->pev->angles.y * 0.0174532925199433f;
             Vector vecEnemyForward( cos( flYaw ), sin( flYaw ), 0.0f );
 
             vecToPanther.z = 0.0f;
