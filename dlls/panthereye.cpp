@@ -19,6 +19,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "schedule.h"
+#include "activity.h"
 #include "game.h"
 #include "soundent.h"
 #include "panthereye.h"
