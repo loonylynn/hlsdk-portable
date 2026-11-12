@@ -34,8 +34,6 @@
 #define TELEPORT_GRENADE_MAX_LIFETIME    3.5f
 #define TELEPORT_GRENADE_RECHARGE        3.0f
 #define TELEPORT_GRENADE_REVOKE_TIME     0.2f
-#define TELEPORT_GRENADE_BOUNCE_SCALE    0.5f
-#define TELEPORT_GRENADE_BOUNCE_DOWN     3.0f
 #define TELEPORT_GRENADE_VELOCITY_SCALE  0.3f
 #define TELEPORT_GRENADE_FLOOR_NORMAL    0.87f
 #define TELEPORT_GRENADE_GROUND_TRACE_UP 32.0f
@@ -283,38 +281,28 @@ void CTeleportProjectile::ProjectileTouch( CBaseEntity *pOther )
 	if( !pOther || pOther->edict() == pev->owner )
 		return;
 
-	// Ignore trigger-only entities; the Source projectile also passes through
-	// trigger volumes that cannot take damage.
+	// VPhysicsCollision in the original ignores the thrower and the weapon
+	// currently held by the thrower.  GoldSrc Touch needs these exclusions
+	// explicitly because the projectile is not using VPhysics.
 	if( pOther->pev->solid == SOLID_TRIGGER )
 		return;
+
+	CBaseEntity *pOwnerEntity = CBaseEntity::Instance( pev->owner );
+	if( pOwnerEntity && pOwnerEntity->IsPlayer() )
+	{
+		CBasePlayer *pPlayer = (CBasePlayer *)pOwnerEntity;
+		if( pPlayer->m_pActiveItem && pOther == pPlayer->m_pActiveItem )
+			return;
+	}
 
 	TraceResult tr = UTIL_GetGlobalTrace();
 	if( tr.fStartSolid || tr.flFraction == 1.0f )
 		return;
 
-	if( tr.vecPlaneNormal.z > TELEPORT_GRENADE_FLOOR_NORMAL )
-	{
-		EMIT_SOUND( ENT( pev ), CHAN_ITEM, "buttons/blip1.wav", 0.8f, ATTN_NORM );
-		TeleportPerformTeleport();
-		return;
-	}
-
-	// MOVETYPE_BOUNCE has already reflected the velocity at the collision.
-	// Apply the Source weapon's extra damping and downward bias.
-	Vector vecVelocity = pev->velocity;
-	const float flSpeed = vecVelocity.Length();
-
-	if( flSpeed > 0.1f )
-	{
-		vecVelocity = vecVelocity.Normalize();
-		vecVelocity.z -= TELEPORT_GRENADE_BOUNCE_DOWN;
-		vecVelocity = vecVelocity.Normalize();
-		pev->velocity = vecVelocity * ( flSpeed * TELEPORT_GRENADE_BOUNCE_SCALE );
-	}
-
-	pev->origin = pev->origin + tr.vecPlaneNormal * 0.5f;
-	UTIL_SetOrigin( pev, pev->origin );
-	BounceSound();
+	// The original projectile teleports on every collision except the two
+	// ignored entities above; walls are not bounce surfaces.
+	EMIT_SOUND( ENT( pev ), CHAN_ITEM, "buttons/blip1.wav", 0.8f, ATTN_NORM );
+	TeleportPerformTeleport();
 }
 
 void CTeleportProjectile::LimitThink( void )
