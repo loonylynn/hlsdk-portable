@@ -770,7 +770,7 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 		pCurrent->m_fInReload = pfrom->m_fInReload;
 		pCurrent->m_fInSpecialReload = pfrom->m_fInSpecialReload;
 		//pCurrent->m_flPumpTime = pfrom->m_flPumpTime;
-		pCurrent->m_iClip = pfrom->m_iClip;
+		pCurrent->m_iClip = ( pCurrent == &g_TeleportGrenade ) ? WEAPON_NOCLIP : pfrom->m_iClip;
 		pCurrent->m_flNextPrimaryAttack	= pfrom->m_flNextPrimaryAttack;
 		pCurrent->m_flNextSecondaryAttack = pfrom->m_flNextSecondaryAttack;
 		pCurrent->m_flTimeWeaponIdle = pfrom->m_flTimeWeaponIdle;
@@ -939,7 +939,7 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 		pto->m_fInReload = pCurrent->m_fInReload;
 		pto->m_fInSpecialReload = pCurrent->m_fInSpecialReload;
 		//pto->m_flPumpTime = pCurrent->m_flPumpTime;
-		pto->m_iClip = pCurrent->m_iClip; 
+		pto->m_iClip = ( pCurrent == &g_TeleportGrenade ) ? WEAPON_NOCLIP : pCurrent->m_iClip; 
 		pto->m_flNextPrimaryAttack = pCurrent->m_flNextPrimaryAttack;
 		pto->m_flNextSecondaryAttack = pCurrent->m_flNextSecondaryAttack;
 		pto->m_flTimeWeaponIdle = pCurrent->m_flTimeWeaponIdle;
