@@ -2925,6 +2925,7 @@ void CBasePlayer::Spawn( void )
 	pev->gravity = 1.0f;
 	m_bitsHUDDamage = -1;
 	m_bitsDamageType = 0;
+	m_bitsDamageTypeMod = 0;
 	m_afPhysicsFlags = 0;
 	m_fLongJump = FALSE;// no longjump module. 
 
