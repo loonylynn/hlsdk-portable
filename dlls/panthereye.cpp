@@ -976,6 +976,7 @@ void CPantherEye::PrescheduleThink( void )
         if( m_pSchedule == &slPanthereyeStalkMove[0] &&
             ( m_bEnemyLookingAtMe ||
               m_flAggressiveUntil > gpGlobals->time ||
+              m_flFleeUntil > gpGlobals->time ||
               m_bAmbushLeapRequested ) )
         {
             TaskFail();
