@@ -1666,7 +1666,7 @@ int GetWeaponData( struct edict_s *player, struct weapon_data_s *info )
 						item = &info[II.iId];
 					 	
 						item->m_iId			= II.iId;
-						item->m_iClip			= gun->m_iClip;
+						item->m_iClip			= ( II.iId == WEAPON_TELEPORT ) ? WEAPON_NOCLIP : gun->m_iClip;
 
 						item->m_flTimeWeaponIdle	= Q_max( gun->m_flTimeWeaponIdle, -0.001f );
 						item->m_flNextPrimaryAttack	= Q_max( gun->m_flNextPrimaryAttack, -0.001f );
