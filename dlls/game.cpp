@@ -476,6 +476,14 @@ cvar_t panthereyeHasCloakingAbility = { "panthereyeHasCloakingAbility", "0" };
 cvar_t sv_pushable_fixed_tick_fudge = { "sv_pushable_fixed_tick_fudge", "15" };
 cvar_t sv_busters = { "sv_busters", "0" };
 
+// Timed bleeding (Absolute Zero secondary damage-mask feature).
+cvar_t tdmg_bleeding_duration1 = { "tdmg_bleeding_duration1", "1" };
+cvar_t tdmg_bleeding_duration2 = { "tdmg_bleeding_duration2", "1" };
+cvar_t tdmg_bleeding_duration3 = { "tdmg_bleeding_duration3", "1" };
+cvar_t tdmg_bleeding_damage1 = { "tdmg_bleeding_damage1", "1" };
+cvar_t tdmg_bleeding_damage2 = { "tdmg_bleeding_damage2", "1" };
+cvar_t tdmg_bleeding_damage3 = { "tdmg_bleeding_damage3", "1" };
+
 // Register your console variables here
 // This gets called one time when the game is initialied
 void GameDLLInit( void )
@@ -909,6 +917,12 @@ void GameDLLInit( void )
 	CVAR_REGISTER( &sk_player_leg1 );
 	CVAR_REGISTER( &sk_player_leg2 );
 	CVAR_REGISTER( &sk_player_leg3 );
+	CVAR_REGISTER( &tdmg_bleeding_duration1 );
+	CVAR_REGISTER( &tdmg_bleeding_duration2 );
+	CVAR_REGISTER( &tdmg_bleeding_duration3 );
+	CVAR_REGISTER( &tdmg_bleeding_damage1 );
+	CVAR_REGISTER( &tdmg_bleeding_damage2 );
+	CVAR_REGISTER( &tdmg_bleeding_damage3 );
 // END REGISTER CVARS FOR SKILL LEVEL STUFF
 
 	CVAR_REGISTER( &sv_pushable_fixed_tick_fudge );
