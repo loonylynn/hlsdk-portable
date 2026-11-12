@@ -407,9 +407,15 @@ static BOOL PantherIsOrganicOrWorldHit( CBaseEntity *pEntity )
         return TRUE;
 
     // Stock GoldSrc has no isOrganic()/IsWorldOrAffiliated() extension.
-    // A classified non-machine actor is the closest portable equivalent.
+    // Map brushes and players are handled above; use monster identity as a
+    // fallback for custom organic monsters that report CLASS_NONE.
     iClass = pEntity->Classify();
-    return ( iClass != CLASS_NONE && iClass != CLASS_MACHINE );
+    if( iClass == CLASS_MACHINE )
+        return FALSE;
+    if( iClass != CLASS_NONE )
+        return TRUE;
+
+    return ( pEntity->MyMonsterPointer() != NULL );
 }
 
 static float PantherFacingDot( CBaseEntity *pObserver, const Vector &vecLookAt )
@@ -1464,13 +1470,19 @@ void CPantherEye::DoClawHit( float flDamageScale, BOOL bKnockback )
     CBaseEntity *pHurt;
 
     UTIL_MakeVectors( pev->angles );
+    // Absolute Zero supplies DMG_BLEEDING through its separate secondary
+    // damage mask. Stock GoldSrc exposes only bitsDamageType here, so retain
+    // the slash damage type (and its normal blood behavior) without inventing
+    // a conflicting primary damage bit.
     pHurt = CheckTraceHullAttack( 84.0f * 1.2f,
                                   (int)( m_flClawDamage * flDamageScale ),
                                   DMG_SLASH );
 
     if( pHurt )
     {
-        // Stock GoldSrc equivalent of the original punch / lateral knockback.
+        // Stock GoldSrc equivalent of Absolute Zero's punch / lateral
+        // knockback. The optional blocksImpact() suppression is a separate
+        // Absolute Zero entity API and is not present in this stock SDK.
         if( bKnockback && ( pHurt->pev->flags & ( FL_MONSTER | FL_CLIENT ) ) )
         {
             pHurt->pev->punchangle.z = -18;
