@@ -13,12 +13,15 @@
 *
 ****/
 
+#include <algorithm>
+
 #include "extdll.h"
 #include "util.h"
 #include "cbase.h"
 #include "monsters.h"
 #include "schedule.h"
 #include "activity.h"
+#include "animation.h"
 #include "game.h"
 #include "soundent.h"
 #include "panthereye.h"
@@ -903,7 +906,7 @@ Schedule_t *CPantherEye::GetScheduleOfType( int Type )
         // Absolute Zero's ChaseOrCircle(): when a floor trace below the
         // enemy's last-known position is on roughly the same level, use the
         // 260-unit move-to-enemy-range schedule. Otherwise use the chase.
-        if( m_hEnemy != NULL )
+        if( m_hEnemy.Get() != NULL )
         {
             TraceResult trFloor;
             Vector vecFloorStart = m_vecEnemyLKP + Vector( 0, 0, 1 );
@@ -989,7 +992,7 @@ Schedule_t *CPantherEye::GetSchedule( void )
 
     if( pev->deadflag != DEAD_NO ||
         m_MonsterState != MONSTERSTATE_COMBAT ||
-        m_hEnemy == NULL ||
+        m_hEnemy.Get() == NULL ||
         HasConditions( bits_COND_ENEMY_DEAD | bits_COND_NEW_ENEMY ) )
     {
         return CBaseMonster::GetSchedule();
@@ -1018,7 +1021,7 @@ Schedule_t *CPantherEye::GetSchedule( void )
         return GetScheduleOfType( SCHED_TAKE_COVER_FROM_ENEMY );
 
     if( m_bStalking ||
-        ( m_hEnemy != NULL &&
+        ( m_hEnemy.Get() != NULL &&
           m_flAggressiveUntil <= gpGlobals->time &&
           m_flFleeUntil <= gpGlobals->time &&
           FBitSet( pev->flags, FL_ONGROUND ) &&
@@ -1047,7 +1050,7 @@ void CPantherEye::StartTask( Task_t *pTask )
         // entity instead of treating the 260-unit task value as a stopping
         // distance. The value is used by RunTask as a route-refresh threshold.
         m_hTargetEnt = m_hEnemy;
-        if( m_hTargetEnt == NULL )
+        if( m_hTargetEnt.Get() == NULL )
         {
             TaskFail();
             return;
@@ -1158,7 +1161,7 @@ void CPantherEye::StartTask( Task_t *pTask )
         Vector vecThreat;
         Vector vecViewOffset;
 
-        if( m_hEnemy == NULL )
+        if( m_hEnemy.Get() == NULL )
         {
             TaskFail();
             return;
@@ -1262,7 +1265,7 @@ void CPantherEye::RunTask( Task_t *pTask )
         // may move while this schedule is active. Keep the route aimed at the
         // current enemy position instead of following a stale point.
         m_hTargetEnt = m_hEnemy;
-        if( m_hTargetEnt == NULL )
+        if( m_hTargetEnt.Get() == NULL )
         {
             TaskFail();
             return;
@@ -1303,7 +1306,7 @@ void CPantherEye::RunTask( Task_t *pTask )
     if( pTask->iTask == TASK_PANTHEREYE_STALK_WAIT ||
         pTask->iTask == TASK_PANTHEREYE_COVER_FAIL_WAIT )
     {
-        if( m_hEnemy == NULL ||
+        if( m_hEnemy.Get() == NULL ||
             m_flAggressiveUntil > gpGlobals->time ||
             m_flFleeUntil > gpGlobals->time ||
             ( !m_bCornered && m_bEnemyLookingAtMe ) ||
@@ -1410,7 +1413,7 @@ void CPantherEye::LaunchLeap( BOOL bEnemyAccurate )
 
     flVerticalSpeed = sqrt( 1.7f * flGravity * flHeight * flSpeedExtra );
     flFlightTime = flVerticalSpeed / flGravity;
-    flDistance = max( flDistance - 80.0f, 320.0f );
+    flDistance = std::max(  flDistance - 80.0f, 320.0f );
 
     if( flFlightTime < 0.05f )
         flFlightTime = 0.05f;
@@ -1447,8 +1450,8 @@ void CPantherEye::LeapTouch( CBaseEntity *pOther )
     if( flSpeed < 50.0f || FBitSet( pev->flags, FL_ONGROUND ) )
         return;
 
-    flDamageScale = ( min( flSpeed, 900.0f ) / 900.0f ) * 1.30f;
-    flDamageScale = max( flDamageScale, 0.25f );
+    flDamageScale = ( std::min(  flSpeed, 900.0f ) / 900.0f ) * 1.30f;
+    flDamageScale = std::max(  flDamageScale, 0.25f );
 
     pOther->TakeDamage( pev, pev, m_flClawDamage * flDamageScale, DMG_SLASH );
 
@@ -1558,23 +1561,23 @@ void CPantherEye::MonsterThink( void )
     fCanCloak = ( flCloak > 0.0f &&
                   pev->deadflag == DEAD_NO &&
                   m_bStalking &&
-                  m_hEnemy != NULL &&
+                  m_hEnemy.Get() != NULL &&
                   FBitSet( pev->flags, FL_ONGROUND ) &&
                   ( m_vecEnemyLKP - pev->origin ).Length() >= 170.0f );
 
     if( fCanCloak )
-        flTargetRender = min( flCloak, 1.0f ) * 255.0f;
+        flTargetRender = std::min(  flCloak, 1.0f ) * 255.0f;
     else
         flTargetRender = 255.0f;
 
     if( pev->renderamt > flTargetRender )
     {
-        pev->renderamt = max( pev->renderamt - 50.0f, flTargetRender );
+        pev->renderamt = std::max(  pev->renderamt - 50.0f, flTargetRender );
         pev->rendermode = kRenderTransTexture;
     }
     else if( pev->renderamt < flTargetRender )
     {
-        pev->renderamt = min( pev->renderamt + 50.0f, flTargetRender );
+        pev->renderamt = std::min(  pev->renderamt + 50.0f, flTargetRender );
         if( pev->renderamt >= 255.0f )
             pev->rendermode = kRenderNormal;
     }
@@ -1700,7 +1703,7 @@ void CPantherEye::PrescheduleThink( void )
             SetActivity( ACT_RUN );
     }
 
-    if( m_hEnemy != NULL )
+    if( m_hEnemy.Get() != NULL )
     {
         if( m_flPissedRunUntil != -1.0f &&
             gpGlobals->time >= m_flPissedRunUntil &&
@@ -1752,7 +1755,7 @@ void CPantherEye::PrescheduleThink( void )
         BOOL fTryRunAway = FALSE;
         BOOL fEnemyFacingMe = FALSE;
         BOOL fEnemyFacingAway = FALSE;
-        BOOL fCanObserveEnemy = ( m_hEnemy != NULL &&
+        BOOL fCanObserveEnemy = ( m_hEnemy.Get() != NULL &&
                                   !HasConditions( bits_COND_ENEMY_OCCLUDED ) );
         float flDistance = 99999.0f;
         float flLookRange = 115.0f * 20.0f;
@@ -1768,11 +1771,11 @@ void CPantherEye::PrescheduleThink( void )
 
         // Keep expired positive timers intact until the end of this think.
         // The source uses -1 as its inactive sentinel.
-        m_bStalking = ( m_hEnemy != NULL &&
+        m_bStalking = ( m_hEnemy.Get() != NULL &&
                         m_flAggressiveUntil == 0.0f &&
                         m_flFleeUntil == 0.0f );
 
-        if( m_hEnemy != NULL )
+        if( m_hEnemy.Get() != NULL )
         {
             flDistance = ( m_vecEnemyLKP - pev->origin ).Length();
 
@@ -1895,9 +1898,9 @@ void CPantherEye::PrescheduleThink( void )
                 BOOL fStartedAnger = ( m_flAggressiveUntil == 0.0f );
 
                 if( fPissOffHard )
-                    m_flAggressiveUntil = max( m_flAggressiveUntil, flNow + 8.0f );
+                    m_flAggressiveUntil = std::max(  m_flAggressiveUntil, flNow + 8.0f );
                 else
-                    m_flAggressiveUntil = max( m_flAggressiveUntil, flNow + 3.0f );
+                    m_flAggressiveUntil = std::max(  m_flAggressiveUntil, flNow + 3.0f );
 
                 m_flFleeUntil = 0.0f;
                 m_flRunUntil = flNow + 12.0f;
@@ -1943,7 +1946,7 @@ void CPantherEye::PrescheduleThink( void )
             fAggressionExpired = FALSE;
         if( m_flFleeUntil > flNow )
             fFleeExpired = FALSE;
-        if( m_hEnemy == NULL )
+        if( m_hEnemy.Get() == NULL )
         {
             fAggressionExpired = FALSE;
             fFleeExpired = FALSE;
@@ -1967,7 +1970,7 @@ void CPantherEye::PrescheduleThink( void )
     {
         m_bEnemyLookingAtMe = FALSE;
     }
-    else if( m_hEnemy == NULL )
+    else if( m_hEnemy.Get() == NULL )
     {
         m_bStalking = FALSE;
         m_bAmbushLeapRequested = FALSE;
@@ -1999,8 +2002,7 @@ void CPantherEye::PrescheduleThink( void )
             }
         }
     }
-
-
+}
 
 int CPantherEye::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType )
 {
