@@ -41,6 +41,7 @@ public:
     BOOL CheckMeleeAttack1( float flDot, float flDist );
     BOOL CheckMeleeAttack2( float flDot, float flDist );
 
+    virtual void MonsterThink( void );
     void PrescheduleThink( void );
     Schedule_t *GetScheduleOfType( int Type );
     Schedule_t *GetSchedule( void );
@@ -68,9 +69,10 @@ private:
     void LaunchLeap( BOOL bEnemyAccurate );
     void DoClawHit( float flDamageScale, BOOL bKnockback );
     void AttackSound( void );
+    void DispatchPantherAnimationEvents( void );
 
     float m_flNextLeapAttack;
-    float m_flLeapLaunchTime;
+    float m_flLeapLaunchFrame;
     float m_flRunUntil;
     float m_flClawDamage;
     float m_flStareTime;
@@ -80,8 +82,8 @@ private:
     float m_flNextStalkMove;
     float m_flLastDamageReact;
     float m_flPissedRunUntil;
-    float m_flSecondClawHitTime;
-    float m_flBugEventTime;
+    float m_flSecondClawHitFrame;
+    float m_flBugEventFrame;
     float m_flBugCooldown;
     float m_flNextPathTry;
     BOOL m_bWaitingForPath;
