@@ -9,7 +9,7 @@
 *   anger / retreat decisions, leap recovery, animation variants, and
 *   cockroach-feeding behavior using the stock GoldSrc monster scheduler.
 *   Absolute Zero's custom base-monster hooks and animation-event queue are
-*   replaced with local tasks and timed sequence events.
+*   replaced with local tasks and frame-synchronized sequence events.
 *
 ****/
 
@@ -25,6 +25,23 @@
 
 namespace
 {
+//
+// Convert an Absolute Zero animation-event offset into the same normalized
+// 0..255 frame threshold used by CBaseAnimating::animEventQueuePush().
+//
+float PantherAnimationEventFrame( CBaseMonster *pMonster, float flAnimationOffset, float flPlaybackRate )
+{
+    float flRate = ( flPlaybackRate < 0.0f ) ? -flPlaybackRate : flPlaybackRate;
+
+    if( !pMonster || pMonster->m_flFrameRate <= 0.0f || flRate <= 0.0f )
+        return -1.0f;
+
+    // This is the upstream queue's conversion:
+    // eventFrame = eventOffset / (256 / sequenceFrameRate / playbackRate) * 255.
+    float flAnimationDuration = 256.0f / pMonster->m_flFrameRate / flRate;
+    return ( flAnimationOffset / flAnimationDuration ) * 255.0f;
+}
+
 enum
 {
     TASK_PANTHEREYE_LEAP = LAST_COMMON_TASK + 1,
@@ -428,7 +445,7 @@ LINK_ENTITY_TO_CLASS( monster_panthereye, CPantherEye )
 TYPEDESCRIPTION CPantherEye::m_SaveData[] =
 {
     DEFINE_FIELD( CPantherEye, m_flNextLeapAttack, FIELD_TIME ),
-    DEFINE_FIELD( CPantherEye, m_flLeapLaunchTime, FIELD_TIME ),
+    DEFINE_FIELD( CPantherEye, m_flLeapLaunchFrame, FIELD_FLOAT ),
     DEFINE_FIELD( CPantherEye, m_flRunUntil, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_flClawDamage, FIELD_FLOAT ),
     DEFINE_FIELD( CPantherEye, m_flStareTime, FIELD_FLOAT ),
@@ -438,8 +455,8 @@ TYPEDESCRIPTION CPantherEye::m_SaveData[] =
     DEFINE_FIELD( CPantherEye, m_flNextStalkMove, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_flLastDamageReact, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_flPissedRunUntil, FIELD_TIME ),
-    DEFINE_FIELD( CPantherEye, m_flSecondClawHitTime, FIELD_TIME ),
-    DEFINE_FIELD( CPantherEye, m_flBugEventTime, FIELD_TIME ),
+    DEFINE_FIELD( CPantherEye, m_flSecondClawHitFrame, FIELD_FLOAT ),
+    DEFINE_FIELD( CPantherEye, m_flBugEventFrame, FIELD_FLOAT ),
     DEFINE_FIELD( CPantherEye, m_flBugCooldown, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_flNextPathTry, FIELD_TIME ),
     DEFINE_FIELD( CPantherEye, m_bWaitingForPath, FIELD_BOOLEAN ),
@@ -458,7 +475,7 @@ IMPLEMENT_SAVERESTORE( CPantherEye, CBaseMonster )
 CPantherEye::CPantherEye( void )
 {
     m_flNextLeapAttack = 0.0f;
-    m_flLeapLaunchTime = 0.0f;
+    m_flLeapLaunchFrame = -1.0f;
     m_flRunUntil = 0.0f;
     m_flClawDamage = 25.0f;
     m_flStareTime = 0.0f;
@@ -468,8 +485,8 @@ CPantherEye::CPantherEye( void )
     m_flNextStalkMove = 0.0f;
     m_flLastDamageReact = -1.0f;
     m_flPissedRunUntil = -1.0f;
-    m_flSecondClawHitTime = 0.0f;
-    m_flBugEventTime = 0.0f;
+    m_flSecondClawHitFrame = -1.0f;
+    m_flBugEventFrame = -1.0f;
     m_flBugCooldown = 0.0f;
     m_flNextPathTry = 0.0f;
     m_bWaitingForPath = FALSE;
@@ -535,7 +552,7 @@ void CPantherEye::Spawn( void )
     m_afCapability = bits_CAP_DOORS_GROUP | bits_CAP_MELEE_ATTACK1 | bits_CAP_MELEE_ATTACK2;
 
     m_flNextLeapAttack = gpGlobals->time;
-    m_flLeapLaunchTime = 0.0f;
+    m_flLeapLaunchFrame = -1.0f;
     m_flRunUntil = 0.0f;
     m_flStareTime = 0.0f;
     m_flAggressiveUntil = 0.0f;
@@ -544,8 +561,8 @@ void CPantherEye::Spawn( void )
     m_flNextStalkMove = 0.0f;
     m_flLastDamageReact = -1.0f;
     m_flPissedRunUntil = -1.0f;
-    m_flSecondClawHitTime = 0.0f;
-    m_flBugEventTime = 0.0f;
+    m_flSecondClawHitFrame = -1.0f;
+    m_flBugEventFrame = -1.0f;
     m_flBugCooldown = 0.0f;
     m_flNextPathTry = gpGlobals->time;
     m_bWaitingForPath = FALSE;
@@ -642,8 +659,9 @@ void CPantherEye::SetActivity( Activity NewActivity )
     float flRate = 1.0f;
     int iSkill = (int)CVAR_GET_FLOAT( "skill" );
 
-    if( NewActivity != ACT_MELEE_ATTACK1 )
-        m_flSecondClawHitTime = 0.0f;
+    m_flSecondClawHitFrame = -1.0f;
+    if( NewActivity != ACT_MELEE_ATTACK2 )
+        m_flLeapLaunchFrame = -1.0f;
 
     switch( NewActivity )
     {
@@ -687,10 +705,6 @@ void CPantherEye::SetActivity( Activity NewActivity )
 
         flRate = ( iSkill >= 3 ) ? 1.45f : ( iSkill == 2 ) ? 1.30f : 1.22f;
 
-        // The source queues this at animation time 12/15. Convert that
-        // animation-time offset to wall time using the selected playback rate.
-        if( fSecondSwipe )
-            m_flSecondClawHitTime = gpGlobals->time + ( 12.0f / 15.0f ) / flRate;
         break;
     }
 
@@ -720,7 +734,15 @@ void CPantherEye::SetActivity( Activity NewActivity )
     }
 
     if( pszSequence && SetPantherSequence( pszSequence, NewActivity, flRate ) )
+    {
+        if( NewActivity == ACT_MELEE_ATTACK1 &&
+            strcmp( pszSequence, "attack_primary" ) == 0 )
+        {
+            m_flSecondClawHitFrame =
+                PantherAnimationEventFrame( this, 12.0f / 15.0f, pev->framerate );
+        }
         return;
+    }
 
     // Some model conversions omit optional variants. Fall back to known
     // Panthereye sequences instead of leaving the monster without animation.
@@ -731,7 +753,7 @@ void CPantherEye::SetActivity( Activity NewActivity )
     if( NewActivity == ACT_MELEE_ATTACK1 &&
         SetPantherSequence( "attack_main_claw", NewActivity, flRate ) )
     {
-        m_flSecondClawHitTime = 0.0f;
+        m_flSecondClawHitFrame = -1.0f;
         return;
     }
 
@@ -1092,6 +1114,7 @@ void CPantherEye::StartTask( Task_t *pTask )
 
     if( pTask->iTask == TASK_PANTHEREYE_GET_BUG_ANIM )
     {
+        m_flBugEventFrame = -1.0f;
         if( !SetPantherSequence( "get_bug", ACT_IDLE, 2.3f ) )
         {
             m_flBugCooldown = gpGlobals->time + RANDOM_FLOAT( 6.0f, 15.0f );
@@ -1099,9 +1122,10 @@ void CPantherEye::StartTask( Task_t *pTask )
             return;
         }
 
-        // get_bug is played at 2.3x; the queued 36/15 animation-time
-        // event therefore occurs after 1.04 seconds of game time.
-        m_flBugEventTime = gpGlobals->time + ( 36.0f / 15.0f ) / 2.3f;
+        // Absolute Zero queues event 1 at animation offset 36/15.
+        // Resolve it to a frame threshold from this sequence's actual rate.
+        m_flBugEventFrame =
+            PantherAnimationEventFrame( this, 36.0f / 15.0f, pev->framerate );
         TaskBegin();
         return;
     }
@@ -1115,7 +1139,8 @@ void CPantherEye::StartTask( Task_t *pTask )
         }
 
         SetActivity( ACT_MELEE_ATTACK2 );
-        m_flLeapLaunchTime = gpGlobals->time + ( 10.35f / 15.0f ) / 0.92f;
+        m_flLeapLaunchFrame =
+            PantherAnimationEventFrame( this, 10.35f / 15.0f, pev->framerate );
         m_bLeapLaunched = FALSE;
         m_bUnstuckLeap = TRUE;
         TaskBegin();
@@ -1198,8 +1223,10 @@ void CPantherEye::StartTask( Task_t *pTask )
     if( pTask->iTask == TASK_PANTHEREYE_LEAP )
     {
         SetActivity( ACT_MELEE_ATTACK2 );
-        m_flLeapLaunchTime = gpGlobals->time + ( 10.35f / 15.0f ) / 0.92f;
+        m_flLeapLaunchFrame =
+            PantherAnimationEventFrame( this, 10.35f / 15.0f, pev->framerate );
         m_bLeapLaunched = FALSE;
+        m_bUnstuckLeap = FALSE;
         TaskBegin();
         return;
     }
@@ -1257,30 +1284,9 @@ void CPantherEye::RunTask( Task_t *pTask )
 
     if( pTask->iTask == TASK_PANTHEREYE_GET_BUG_ANIM )
     {
-        if( m_flBugEventTime > 0.0f && gpGlobals->time >= m_flBugEventTime )
-        {
-            Vector vecSearchStart;
-            CBaseEntity *pEntityScan = NULL;
-
-            UTIL_MakeVectors( pev->angles );
-            vecSearchStart = pev->origin + gpGlobals->v_forward * 40.0f;
-
-            while( ( pEntityScan = UTIL_FindEntityInSphere( pEntityScan, vecSearchStart, 40.0f ) ) != NULL )
-            {
-                CBaseMonster *pBug = pEntityScan->MyMonsterPointer();
-                if( pBug && FClassnameIs( pBug->pev, "monster_cockroach" ) )
-                {
-                    pBug->TakeDamage( pev, pev, pBug->pev->health, DMG_CRUSH );
-                    break;
-                }
-            }
-
-            m_flBugEventTime = 0.0f;
-            m_flBugCooldown = gpGlobals->time + RANDOM_FLOAT( 6.0f, 15.0f );
-        }
-
         if( m_fSequenceFinished )
         {
+            m_flBugEventFrame = -1.0f;
             TaskComplete();
             return;
         }
@@ -1307,9 +1313,6 @@ void CPantherEye::RunTask( Task_t *pTask )
     if( pTask->iTask == TASK_PANTHEREYE_LEAP ||
         pTask->iTask == TASK_PANTHEREYE_UNSTUCK_LEAP )
     {
-        if( !m_bLeapLaunched && gpGlobals->time >= m_flLeapLaunchTime )
-            LaunchLeap( pTask->iTask == TASK_PANTHEREYE_LEAP );
-
         // The original remains in the crouch-to-jump activity until it has
         // landed. A small forward nudge helps it catch low ledges in midair.
         if( !FBitSet( pev->flags, FL_ONGROUND ) )
@@ -1528,6 +1531,114 @@ void CPantherEye::HandleAnimEvent( MonsterEvent_t *pEvent )
     CBaseMonster::HandleAnimEvent( pEvent );
 }
 
+void CPantherEye::MonsterThink( void )
+{
+    pev->nextthink = gpGlobals->time + 0.1f;
+
+    RunAI();
+
+    float flInterval = StudioFrameAdvance();
+
+    // Keep the stock CBaseMonster::MonsterThink order. The custom Panther
+    // events are dispatched after animation advancement and model events,
+    // but before movement, exactly where Absolute Zero's queue runs.
+    if( m_MonsterState != MONSTERSTATE_SCRIPT &&
+        m_MonsterState != MONSTERSTATE_DEAD &&
+        m_Activity == ACT_IDLE && m_fSequenceFinished )
+    {
+        int iSequence;
+
+        if( m_fSequenceLoops )
+            iSequence = LookupActivity( m_Activity );
+        else
+            iSequence = LookupActivityHeaviest( m_Activity );
+
+        if( iSequence != ACTIVITY_NOT_AVAILABLE )
+        {
+            pev->sequence = iSequence;
+            ResetSequenceInfo();
+        }
+    }
+
+    DispatchAnimEvents( flInterval );
+    DispatchPantherAnimationEvents();
+
+    if( !MovementIsComplete() )
+    {
+        Move( flInterval );
+    }
+#if _DEBUG
+    else
+    {
+        if( !TaskIsRunning() && !TaskIsComplete() )
+            ALERT( at_error, "Schedule stalled!!\n" );
+    }
+#endif
+}
+
+void CPantherEye::DispatchPantherAnimationEvents( void )
+{
+    if( m_flBugEventFrame >= 0.0f )
+    {
+        if( pev->sequence != LookupSequence( "get_bug" ) )
+        {
+            m_flBugEventFrame = -1.0f;
+        }
+        else if( pev->frame >= m_flBugEventFrame )
+        {
+            Vector vecSearchStart;
+            CBaseEntity *pEntityScan = NULL;
+
+            UTIL_MakeVectors( pev->angles );
+            vecSearchStart = pev->origin + gpGlobals->v_forward * 40.0f;
+
+            while( ( pEntityScan = UTIL_FindEntityInSphere( pEntityScan, vecSearchStart, 40.0f ) ) != NULL )
+            {
+                CBaseMonster *pBug = pEntityScan->MyMonsterPointer();
+                if( pBug && FClassnameIs( pBug->pev, "monster_cockroach" ) )
+                {
+                    pBug->TakeDamage( pev, pev, pBug->pev->health, DMG_CRUSH );
+                    break;
+                }
+            }
+
+            m_flBugEventFrame = -1.0f;
+            m_flBugCooldown = gpGlobals->time + RANDOM_FLOAT( 6.0f, 15.0f );
+        }
+    }
+
+    if( m_flSecondClawHitFrame >= 0.0f )
+    {
+        if( pev->sequence == LookupSequence( "attack_primary" ) &&
+            m_Activity == ACT_MELEE_ATTACK1 &&
+            pev->deadflag == DEAD_NO )
+        {
+            if( pev->frame >= m_flSecondClawHitFrame )
+            {
+                DoClawHit( 0.5f, TRUE );
+                m_flSecondClawHitFrame = -1.0f;
+            }
+        }
+        else
+        {
+            m_flSecondClawHitFrame = -1.0f;
+        }
+    }
+
+    if( m_flLeapLaunchFrame >= 0.0f )
+    {
+        if( pev->sequence != LookupSequence( "crouch_to_jump" ) )
+        {
+            m_flLeapLaunchFrame = -1.0f;
+        }
+        else if( !m_bLeapLaunched && pev->frame >= m_flLeapLaunchFrame )
+        {
+            m_flLeapLaunchFrame = -1.0f;
+            LaunchLeap( !m_bUnstuckLeap );
+        }
+    }
+}
+
 void CPantherEye::PrescheduleThink( void )
 {
     float flCloak;
@@ -1582,19 +1693,6 @@ void CPantherEye::PrescheduleThink( void )
         {
             m_flPissedRunUntil = gpGlobals->time + 12.0f;
         }
-    }
-
-    // Timed follow-up swipe from attack_primary.
-    if( m_flSecondClawHitTime > 0.0f && gpGlobals->time >= m_flSecondClawHitTime )
-    {
-        if( pev->deadflag == DEAD_NO &&
-            m_Activity == ACT_MELEE_ATTACK1 &&
-            pev->sequence == LookupSequence( "attack_primary" ) )
-        {
-            DoClawHit( 0.5f, TRUE );
-        }
-
-        m_flSecondClawHitTime = 0.0f;
     }
 
     // The original recalculates this every think. Facing is evaluated against
