@@ -39,6 +39,7 @@ cvar_t chargerfix	= { "chargerfix", "0", FCVAR_SERVER };
 cvar_t satchelfix	= { "satchelfix", "1", FCVAR_SERVER };
 cvar_t explosionfix	= { "explosionfix", "0", FCVAR_SERVER };
 cvar_t monsteryawspeedfix	= { "monsteryawspeedfix", "1", FCVAR_SERVER };
+cvar_t timedDamageAffectsMonsters = { "timedDamageAffectsMonsters", "1" };
 cvar_t corpsephysics = { "corpsephysics", "0", FCVAR_SERVER };
 cvar_t pushablemode = { "pushablemode", "0", FCVAR_SERVER };
 cvar_t forcerespawn	= { "mp_forcerespawn","1", FCVAR_SERVER };
@@ -923,6 +924,7 @@ void GameDLLInit( void )
 	CVAR_REGISTER( &tdmg_bleeding_damage1 );
 	CVAR_REGISTER( &tdmg_bleeding_damage2 );
 	CVAR_REGISTER( &tdmg_bleeding_damage3 );
+	CVAR_REGISTER( &timedDamageAffectsMonsters );
 // END REGISTER CVARS FOR SKILL LEVEL STUFF
 
 	CVAR_REGISTER( &sv_pushable_fixed_tick_fudge );

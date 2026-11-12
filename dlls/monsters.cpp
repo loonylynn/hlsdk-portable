@@ -43,6 +43,8 @@ extern DLL_GLOBAL	BOOL	g_fDrawLines;
 extern DLL_GLOBAL	short	g_sModelIndexLaser;// holds the index for the laser beam
 extern DLL_GLOBAL	short	g_sModelIndexLaserDot;// holds the index for the laser beam dot
 
+extern cvar_t timedDamageAffectsMonsters;
+
 extern CGraph WorldGraph;// the world node graph
 
 // Global Savedata for monster
@@ -527,7 +529,8 @@ void CBaseMonster::MonsterThink( void )
 	pev->nextthink = gpGlobals->time + 0.1f;// keep monster thinking.
 
 	RunAI();
-	CheckBleedingDamage();
+	if( timedDamageAffectsMonsters.value != 0.0f )
+		CheckBleedingDamage();
 
 	float flInterval = StudioFrameAdvance( ); // animate
 
