@@ -8,8 +8,7 @@
  *
  * Retained gameplay:
  *   - 1000 u/s launch with the original five-degree upward pre-arc
- *   - wall/obstacle bouncing with velocity damping
- *   - teleport when the projectile contacts a sufficiently flat surface
+ *   - teleport on collision except with the owner or the owner's active weapon
  *   - safe landing-space search around the impact point
  *   - 30% projectile-velocity inheritance and retained player view angles
  *   - 1024-unit range limit, 3.5-second lifetime and 3-second recharge
