@@ -84,6 +84,7 @@ public:
 	float m_flNextAttack;		// cannot attack again until this time
 
 	int m_bitsDamageType;	// what types of damage has monster (player) taken
+	int m_bitsDamageTypeMod;	// secondary timed-damage flags, separate from engine DMG_* bits
 	BYTE m_rgbTimeBasedDamage[CDMG_TIMEBASED];
 
 	int m_lastDamageAmount;// how much damage did monster (player) last take
