@@ -78,6 +78,8 @@ BOOL CHealthKit::MyTouch( CBasePlayer *pPlayer )
 
 		EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "items/smallmedkit1.wav", 1, ATTN_NORM );
 
+		pPlayer->attemptCureBleeding();	// Healing items also stop active bleeding.
+
 		if( g_pGameRules->ItemShouldRespawn( this ) )
 		{
 			Respawn();
@@ -186,6 +188,10 @@ void CWallHealth::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE u
 		pev->frame = 1;			
 		Off();
 	}
+
+	// Match Absolute Zero: health treatment can stop bleeding even if the
+	// charger cannot restore health on this activation.
+	static_cast<CBasePlayer *>( pActivator )->attemptCureBleeding();
 
 	// if the player doesn't have the suit, or there is no juice left, make the deny noise
 	if( ( m_iJuice <= 0 ) || ( !( pActivator->pev->weapons & ( 1 << WEAPON_SUIT ) ) ) || ( ( chargerfix.value ) && ( pActivator->pev->health >= pActivator->pev->max_health ) ) )

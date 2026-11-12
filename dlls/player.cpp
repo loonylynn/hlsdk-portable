@@ -663,6 +663,22 @@ int CBasePlayer::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, fl
 	return fTookDamage;
 }
 
+// Stop an active bleed when the player receives a qualifying health treatment.
+// Keep the HEV response consistent with Absolute Zero's wound-sterilized /
+// morphine-shot alternatives.
+void CBasePlayer::attemptCureBleeding( void )
+{
+	if( !( m_bitsDamageTypeMod & DMG_BLEEDING ) )
+		return;
+
+	if( RANDOM_LONG( 0, 1 ) )
+		SetSuitUpdate( "!HEV_HEAL7", FALSE, SUIT_NEXT_IN_30SEC );	// morphine shot
+	else
+		SetSuitUpdate( "!HEV_HEAL6", FALSE, SUIT_NEXT_IN_30SEC );	// wound sterilized
+
+	ClearBleedingDamage();
+}
+
 //=========================================================
 // PackDeadPlayerItems - call this when a player dies to
 // pack up the appropriate weapons and ammo items, and to
