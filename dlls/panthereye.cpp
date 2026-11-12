@@ -948,10 +948,15 @@ Schedule_t *CPantherEye::GetSchedule( void )
     if( m_flFleeUntil > gpGlobals->time )
         return GetScheduleOfType( SCHED_TAKE_COVER_FROM_ENEMY );
 
-    if( m_bStalking )
+    if( m_bStalking ||
+        ( m_hEnemy != NULL &&
+          m_flAggressiveUntil <= gpGlobals->time &&
+          m_flFleeUntil <= gpGlobals->time &&
+          FBitSet( pev->flags, FL_ONGROUND ) &&
+          pev->sequence != LookupSequence( "crouch_to_jump" ) ) )
     {
-        // Stay hidden while the target is not looking and the move timer has
-        // not expired. If noticed, seek another lateral / node cover point.
+        // The source selects stealth as soon as both timers are inactive.
+        // This also handles the frame where an expired timer is just cleared.
         if( m_bEnemyLookingAtMe || gpGlobals->time < m_flNextStalkMove )
             return GetScheduleOfType( SCHED_PANTHEREYE_STALK_WAIT );
 
