@@ -74,7 +74,7 @@ The server cvar `timedDamageAffectsMonsters` defaults to `1`. Set it to `0` to d
 - Activating a wall-mounted `func_healthcharger` attempts to cure bleeding even if that activation cannot restore health, matching Absolute Zero's behavior.
 - A successful cure clears the bleeding mask, remaining ticks and scheduled tick time. The HEV suit randomly reports either `!HEV_HEAL6` (wound sterilized) or `!HEV_HEAL7` (morphine shot); both alternatives share a 30-second repeat block.
 
-The bleeding implementation is integrated, but it has **not yet been compiled or tested in-game**. In particular, verify claw hit registration, tick timing and damage, cure behavior, HEV sentence playback, save/load continuity, and the monster cvar in a local GoldSrc/Xash3D build.
+The bleeding implementation is integrated. The full SDK server and client targets have now both compiled successfully on Debian 13, producing 32-bit i386 ELF shared objects (`build/dlls/hl.so` and `build/cl_dll/client.so`). This confirms source compilation and linking, but the Panther Eye and bleeding behavior have **not yet been tested in-game**. In particular, verify claw hit registration, tick timing and damage, cure behavior, HEV sentence playback, save/load continuity, and the monster cvar in a local GoldSrc/Xash3D build.
 
 ## Required game assets
 
@@ -100,4 +100,4 @@ The following original Panther Eye features remain unported or are only approxim
 - Exact animation weighting / randomized sequence timing.
 - Map-editor FGD definitions and any custom asset package.
 
-The code has been adapted to the stock `CBaseMonster` API in hlsdk-portable. Neither the Panther Eye behavior nor its bleeding integration has been compiled or tested in-engine in this integration environment. The stalk/flee tasks depend on the SDK's normal navigation and local-cover checks; maps without a usable node graph can use the lateral-cover and behind-target fallbacks, but path success still needs in-engine testing. Compile and test locally before using it in maps.
+The code has been adapted to the stock `CBaseMonster` API in hlsdk-portable. The server and client targets compile successfully as 32-bit Linux shared libraries, but Panther Eye behavior has not yet been tested in-engine. The stalk/flee tasks depend on the SDK's normal navigation and local-cover checks; maps without a usable node graph can use the lateral-cover and behind-target fallbacks, but path success still needs in-engine testing. Test locally before using it in maps.
