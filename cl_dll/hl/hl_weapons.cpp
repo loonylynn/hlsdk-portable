@@ -780,6 +780,8 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 		pCurrent->m_chargeReady = pfrom->iuser1;
 		pCurrent->m_fInAttack = pfrom->iuser2;
 		pCurrent->m_fireState = pfrom->iuser3;
+		if( pCurrent == &g_TeleportGrenade )
+			g_TeleportGrenade.m_iProjectileActive = pfrom->iuser4;
 
 		pCurrent->m_iSecondaryAmmoType = (int)from->client.vuser3[2];
 		pCurrent->m_iPrimaryAmmoType = (int)from->client.vuser4[0];
@@ -947,6 +949,8 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 		pto->iuser1 = pCurrent->m_chargeReady;
 		pto->iuser2 = pCurrent->m_fInAttack;
 		pto->iuser3 = pCurrent->m_fireState;
+		if( pCurrent == &g_TeleportGrenade )
+			pto->iuser4 = g_TeleportGrenade.m_iProjectileActive;
 
 		// Decrement weapon counters, server does this at same time ( during post think, after doing everything else )
 		pto->m_flNextReload -= cmd->msec / 1000.0f;
