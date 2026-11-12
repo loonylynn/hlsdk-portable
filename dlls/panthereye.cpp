@@ -376,6 +376,25 @@ static const char *PantherRandomSound( const char * const *ppszSounds, int iCoun
     return ppszSounds[RANDOM_LONG( 0, iCount - 1 )];
 }
 
+static BOOL PantherIsOrganicOrWorldHit( CBaseEntity *pEntity )
+{
+    int iClass;
+
+    if( !pEntity )
+        return FALSE;
+
+    // Absolute Zero treats world-affiliated map geometry as a flesh-style
+    // impact because GoldSrc cannot identify the material plane here.
+    if( pEntity->pev->solid == SOLID_BSP ||
+        ( pEntity->pev->flags & FL_CLIENT ) )
+        return TRUE;
+
+    // Stock GoldSrc has no isOrganic()/IsWorldOrAffiliated() extension.
+    // A classified non-machine actor is the closest portable equivalent.
+    iClass = pEntity->Classify();
+    return ( iClass != CLASS_NONE && iClass != CLASS_MACHINE );
+}
+
 static float PantherFacingDot( CBaseEntity *pObserver, const Vector &vecLookAt )
 {
     Vector vecDirection;
@@ -480,6 +499,8 @@ void CPantherEye::Precache( void )
     PRECACHE_SOUND( "zombie/claw_strike3.wav" );
     PRECACHE_SOUND( "zombie/claw_miss1.wav" );
     PRECACHE_SOUND( "zombie/claw_miss2.wav" );
+    PRECACHE_SOUND( "weapons/cbar_hit1.wav" );
+    PRECACHE_SOUND( "weapons/cbar_hit2.wav" );
     PRECACHE_SOUND( "zombie/zo_alert10.wav" );
     PRECACHE_SOUND( "zombie/zo_alert20.wav" );
     PRECACHE_SOUND( "zombie/zo_alert30.wav" );
@@ -655,17 +676,21 @@ void CPantherEye::SetActivity( Activity NewActivity )
     case ACT_MELEE_ATTACK1:
     {
         int iAttack = RANDOM_LONG( 0, 2 );
-        if( iAttack == 0 )
-        {
+        BOOL fSecondSwipe = ( iAttack == 0 );
+
+        if( fSecondSwipe )
             pszSequence = "attack_primary";
-            m_flSecondClawHitTime = gpGlobals->time + ( 12.0f / 15.0f );
-        }
         else if( iAttack == 1 )
             pszSequence = "attack_main_claw";
         else
             pszSequence = "attack_simple_claw";
 
         flRate = ( iSkill >= 3 ) ? 1.45f : ( iSkill == 2 ) ? 1.30f : 1.22f;
+
+        // The source queues this at animation time 12/15. Convert that
+        // animation-time offset to wall time using the selected playback rate.
+        if( fSecondSwipe )
+            m_flSecondClawHitTime = gpGlobals->time + ( 12.0f / 15.0f ) / flRate;
         break;
     }
 
@@ -1074,7 +1099,9 @@ void CPantherEye::StartTask( Task_t *pTask )
             return;
         }
 
-        m_flBugEventTime = gpGlobals->time + ( 36.0f / 15.0f );
+        // get_bug is played at 2.3x; the queued 36/15 animation-time
+        // event therefore occurs after 1.04 seconds of game time.
+        m_flBugEventTime = gpGlobals->time + ( 36.0f / 15.0f ) / 2.3f;
         TaskBegin();
         return;
     }
@@ -1088,7 +1115,7 @@ void CPantherEye::StartTask( Task_t *pTask )
         }
 
         SetActivity( ACT_MELEE_ATTACK2 );
-        m_flLeapLaunchTime = gpGlobals->time + ( 10.35f / 15.0f );
+        m_flLeapLaunchTime = gpGlobals->time + ( 10.35f / 15.0f ) / 0.92f;
         m_bLeapLaunched = FALSE;
         m_bUnstuckLeap = TRUE;
         TaskBegin();
@@ -1171,7 +1198,7 @@ void CPantherEye::StartTask( Task_t *pTask )
     if( pTask->iTask == TASK_PANTHEREYE_LEAP )
     {
         SetActivity( ACT_MELEE_ATTACK2 );
-        m_flLeapLaunchTime = gpGlobals->time + ( 10.35f / 15.0f );
+        m_flLeapLaunchTime = gpGlobals->time + ( 10.35f / 15.0f ) / 0.92f;
         m_bLeapLaunched = FALSE;
         TaskBegin();
         return;
@@ -1448,15 +1475,30 @@ void CPantherEye::DoClawHit( float flDamageScale, BOOL bKnockback )
             pHurt->pev->velocity = pHurt->pev->velocity - gpGlobals->v_right * 100.0f;
         }
 
-        EMIT_SOUND_DYN(
-            ENT( pev ),
-            CHAN_WEAPON,
-            PantherRandomSound( g_PantherHitSounds, ARRAYSIZE( g_PantherHitSounds ) ),
-            1.0f,
-            ATTN_NORM,
-            0,
-            RANDOM_LONG( 95, 105 )
-        );
+        if( PantherIsOrganicOrWorldHit( pHurt ) )
+        {
+            EMIT_SOUND_DYN(
+                ENT( pev ),
+                CHAN_WEAPON,
+                PantherRandomSound( g_PantherHitSounds, ARRAYSIZE( g_PantherHitSounds ) ),
+                1.0f,
+                ATTN_NORM,
+                0,
+                RANDOM_LONG( 95, 105 )
+            );
+        }
+        else
+        {
+            EMIT_SOUND_DYN(
+                ENT( pev ),
+                CHAN_WEAPON,
+                RANDOM_LONG( 0, 1 ) ? "weapons/cbar_hit1.wav" : "weapons/cbar_hit2.wav",
+                0.71f,
+                ATTN_NORM,
+                0,
+                RANDOM_LONG( 103, 106 )
+            );
+        }
     }
     else
     {
