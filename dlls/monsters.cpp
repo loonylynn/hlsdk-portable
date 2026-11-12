@@ -2001,6 +2001,7 @@ void CBaseMonster::MonsterInit( void )
 	m_bitsDamageTypeMod = 0;
 	m_iBleedingTicksRemaining = 0;
 	m_flBleedingNextDamageTime = 0;
+	m_fApplyingTimedDamage = FALSE;
 	pev->effects		= 0;
 	pev->takedamage		= DAMAGE_AIM;
 	pev->ideal_yaw		= pev->angles.y;
