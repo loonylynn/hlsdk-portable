@@ -25,6 +25,12 @@ The entity is registered through `LINK_ENTITY_TO_CLASS` and included in the serv
 - Idle, attack, hit, miss, alert, pain and death sounds.
 - Sequence mapping for the original Panther Eye model's idle, walk/run, claw, leap and violent-death animations.
 - Optional distance-based cloak controlled by `panthereye_cloak`.
+- Stalking state that pauses in an idle/fidget when the enemy is looking directly at it.
+- Stalking movement that prefers lateral occlusion and navigation-node cover, then falls back to a point behind the target.
+- A prolonged-stare response that breaks stealth and initiates a short aggressive pursuit.
+- An ambush leap when the target looks away at practical leap range.
+- Fight-or-flight damage response: close-range damage provokes an attack run; distant damage triggers a cover-seeking escape.
+- A cornered state that makes the Panther Eye easier to provoke.
 
 ## Skill variables
 
@@ -55,11 +61,10 @@ The model is expected to contain sequences named `subtle_motion`, `itch`, `shake
 This is an initial gameplay port, not a behavior-identical transplant of Absolute Zero's 3,400-line implementation. It deliberately avoids Absolute Zero's custom base-monster framework, hidden-CVar system, custom animation event queue, debug-drawing utilities, and modified movement/pathfinding APIs.
 
 Not yet ported:
-- Full stalking / sneaking and cover-seeking state machine.
-- Original fight-or-flight logic based on whether the enemy is looking at the Panther Eye.
+- The entire original stalking state machine, including its exact timers, thresholds, dynamic path throttling and bespoke schedule transitions. The current implementation reproduces the core watch/pause, sneak/cover, ambush and flee loop using stock schedules.
 - Original bug-eating behavior.
 - Full custom flinch/death handling and movement-bound fixes.
 - Exact animation weighting / randomized sequence timing.
 - Map-editor FGD definitions and any custom asset package.
 
-The code has been adapted to the stock `CBaseMonster` API in hlsdk-portable, but it has not been compiled or tested in-engine in this integration environment. Treat it as a first integration pass to compile and tune locally before using it in maps.
+The code has been adapted to the stock `CBaseMonster` API in hlsdk-portable, but it has not been compiled or tested in-engine in this integration environment. The stalk/flee tasks depend on the SDK's normal navigation and local-cover checks; maps without a usable node graph can use the lateral-cover and behind-target fallbacks, but path success still needs in-engine testing. Treat it as a first integration pass to compile and tune locally before using it in maps.
