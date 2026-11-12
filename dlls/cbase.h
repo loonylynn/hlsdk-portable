@@ -628,6 +628,13 @@ public:
 #define DMG_SLOWFREEZE		(1 << 22)	// in a subzero freezer
 #define DMG_MORTAR			(1 << 23)	// Hit by air raid (done to distinguish grenade from mortar)
 
+// Secondary damage flags are carried separately from the engine DMG_* mask.
+// Keep these values in their own bit space; they are not passed as engine damage types.
+#define DMG_TIMEDEFFECT			(1 << 0)	// Periodic damage, not the initial strike.
+#define DMG_BLEEDING			(1 << 1)	// Timed bleeding from a wound.
+#define DMG_TIMEDEFFECTIGNORE	(1 << 2)	// Periodic damage that bypasses player armor.
+#define DMG_TIMEBASEDMOD		(DMG_BLEEDING)
+
 // these are the damage types that are allowed to gib corpses
 #define DMG_GIB_CORPSE		( DMG_CRUSH | DMG_FALL | DMG_BLAST | DMG_SONIC | DMG_CLUB )
 
