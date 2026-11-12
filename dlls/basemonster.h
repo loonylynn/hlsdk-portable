@@ -87,6 +87,7 @@ public:
 	int m_bitsDamageTypeMod;	// secondary timed-damage flags, separate from engine DMG_* bits
 	int m_iBleedingTicksRemaining;	// remaining two-second bleeding damage intervals
 	float m_flBleedingNextDamageTime;	// next scheduled bleeding tick
+	BOOL m_fApplyingTimedDamage;	// transient: suppress armor and AI reactions for periodic damage
 	BYTE m_rgbTimeBasedDamage[CDMG_TIMEBASED];
 
 	int m_lastDamageAmount;// how much damage did monster (player) last take
