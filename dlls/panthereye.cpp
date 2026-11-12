@@ -1805,6 +1805,7 @@ void CPantherEye::PrescheduleThink( void )
 
     flCloak = CVAR_GET_FLOAT( "panthereye_cloak" );
     fCanCloak = ( flCloak > 0.0f &&
+                  pev->deadflag == DEAD_NO &&
                   m_bStalking &&
                   m_hEnemy != NULL &&
                   FBitSet( pev->flags, FL_ONGROUND ) &&
