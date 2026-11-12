@@ -181,6 +181,16 @@ cvar_t	sk_houndeye_dmg_blast2 = {"sk_houndeye_dmg_blast2","0"};
 cvar_t	sk_houndeye_dmg_blast3 = {"sk_houndeye_dmg_blast3","0"};
 
 
+// Panther Eye (Absolute Zero cut-content integration)
+cvar_t sk_panthereye_health1 = {"sk_panthereye_health1","80"};
+cvar_t sk_panthereye_health2 = {"sk_panthereye_health2","100"};
+cvar_t sk_panthereye_health3 = {"sk_panthereye_health3","120"};
+
+cvar_t sk_panthereye_dmg_claw1 = {"sk_panthereye_dmg_claw1","20"};
+cvar_t sk_panthereye_dmg_claw2 = {"sk_panthereye_dmg_claw2","25"};
+cvar_t sk_panthereye_dmg_claw3 = {"sk_panthereye_dmg_claw3","30"};
+
+
 // ISlave
 cvar_t	sk_islave_health1 = {"sk_islave_health1","0"};
 cvar_t	sk_islave_health2 = {"sk_islave_health2","0"};
@@ -460,6 +470,9 @@ cvar_t	sk_player_leg3	= { "sk_player_leg3","1" };
 
 // END Cvars for Skill Level settings
 
+// Panther Eye cloak opacity: 0 disables cloaking; 0.1-1.0 sets its opaque fraction.
+cvar_t panthereye_cloak = { "panthereye_cloak", "0.35" };
+
 cvar_t sv_pushable_fixed_tick_fudge = { "sv_pushable_fixed_tick_fudge", "15" };
 cvar_t sv_busters = { "sv_busters", "0" };
 
@@ -498,6 +511,7 @@ void GameDLLInit( void )
 	CVAR_REGISTER( &explosionfix );
 	CVAR_REGISTER( &monsteryawspeedfix );
 	CVAR_REGISTER( &corpsephysics );
+	CVAR_REGISTER( &panthereye_cloak );
 	CVAR_REGISTER( &pushablemode );
 	CVAR_REGISTER( &forcerespawn );
 	CVAR_REGISTER( &flashlight );
@@ -623,6 +637,14 @@ void GameDLLInit( void )
 	CVAR_REGISTER( &sk_houndeye_dmg_blast1 );// {"sk_houndeye_dmg_blast1","0"};
 	CVAR_REGISTER( &sk_houndeye_dmg_blast2 );// {"sk_houndeye_dmg_blast2","0"};
 	CVAR_REGISTER( &sk_houndeye_dmg_blast3 );// {"sk_houndeye_dmg_blast3","0"};
+
+	// Panther Eye
+	CVAR_REGISTER( &sk_panthereye_health1 );
+	CVAR_REGISTER( &sk_panthereye_health2 );
+	CVAR_REGISTER( &sk_panthereye_health3 );
+	CVAR_REGISTER( &sk_panthereye_dmg_claw1 );
+	CVAR_REGISTER( &sk_panthereye_dmg_claw2 );
+	CVAR_REGISTER( &sk_panthereye_dmg_claw3 );
 
 	// ISlave
 	CVAR_REGISTER( &sk_islave_health1 );// {"sk_islave_health1","0"};
