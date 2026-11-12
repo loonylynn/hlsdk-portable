@@ -34,6 +34,7 @@ public:
 
     void SetYawSpeed( void );
     void SetActivity( Activity NewActivity );
+    void SetObjectCollisionBox( void );
     void HandleAnimEvent( MonsterEvent_t *pEvent );
 
     BOOL FCanCheckAttacks( void );
@@ -63,7 +64,9 @@ public:
 private:
     BOOL SetPantherSequence( const char *pszSequence, Activity activity, float flRate );
     BOOL CanLeapToEnemy( void );
-    void LaunchLeap( void );
+    BOOL CanLeapForward( void );
+    void LaunchLeap( BOOL bEnemyAccurate );
+    void DoClawHit( float flDamageScale, BOOL bKnockback );
     void AttackSound( void );
 
     float m_flNextLeapAttack;
@@ -76,6 +79,13 @@ private:
     float m_flStalkWaitUntil;
     float m_flNextStalkMove;
     float m_flLastDamageReact;
+    float m_flSecondClawHitTime;
+    float m_flBugEventTime;
+    float m_flBugCooldown;
+    float m_flNextPathTry;
+    BOOL m_bWaitingForPath;
+    BOOL m_bGetBugRequested;
+    BOOL m_bUnstuckLeap;
     BOOL m_bLeapLaunched;
     BOOL m_bStalking;
     BOOL m_bEnemyLookingAtMe;
