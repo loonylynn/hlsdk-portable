@@ -1,6 +1,6 @@
-# Panther Eye integration (first pass)
+# Panther Eye integration
 
-This branch adds an initial, portable-SDK implementation of the Absolute Zero Panther Eye as a server-side monster entity.
+This branch contains a partial, portable-SDK implementation of the Absolute Zero Panther Eye as a server-side monster entity. The core stalking, stealth, ambush and combat loop is integrated, while the remaining differences and unported behavior are listed below.
 
 ## Entity
 
@@ -43,6 +43,39 @@ The entity reads the usual Half-Life skill level (1-3):
 
 The optional server cvar `panthereye_cloak` defaults to `0.35` (a subtle partial cloak). Set it to `0` to disable cloaking; values above zero enable opacity-based cloaking when the creature has an enemy, is grounded, is not in its brief alerted/running window, and is at least 170 units from the enemy. A value of `1` leaves it fully opaque; smaller values make it more transparent.
 
+## Timed bleeding
+
+Panther Eye claw hits apply Absolute Zero's timed bleeding effect:
+
+- Both claw strikes go through `DoClawHit()`. The first strike uses full claw damage; the follow-up uses half claw damage. Both pass `DMG_SLASH` as the engine damage type and `DMG_BLEEDING` as the separate secondary damage modifier.
+- The airborne leap attack is unchanged and does **not** inflict bleeding, matching the original Absolute Zero behavior.
+- Bleeding is tracked with a dedicated secondary mask, remaining-tick counter and next-tick time. It uses a two-second interval and does not occupy or renumber GoldSrc's original eight time-based damage slots.
+- A new wound starts its first tick two seconds later. Further claw hits refresh the remaining duration without postponing an already scheduled tick.
+- The timed damage and blood-drip effect are processed for players from `CBasePlayer::PreThink()`. Monster bleeding is processed from `CBaseMonster::MonsterThink()` when `timedDamageAffectsMonsters` is nonzero.
+- Bleeding state and its remaining time are included in monster save/restore data and are reset on player respawn / monster initialization.
+
+### Bleeding skill cvars
+
+These skill cvars are registered for easy, medium and hard difficulty:
+
+| Cvar | Default on each skill level | Meaning |
+|---|---:|---|
+| `tdmg_bleeding_duration` | `1` | Number of two-second bleeding ticks |
+| `tdmg_bleeding_damage` | `1` | Damage applied on each tick |
+
+With the defaults, a wound causes one tick of 1 damage after approximately two seconds. A duration of zero or a negative value disables bleeding in this port. Adjust the numbered cvars in the mod's skill configuration (for example, `tdmg_bleeding_duration1` and `tdmg_bleeding_damage1`) to tune each difficulty independently.
+
+The server cvar `timedDamageAffectsMonsters` defaults to `1`. Set it to `0` to disable timed bleeding on monsters; player bleeding is unaffected.
+
+### Player feedback and cures
+
+- When a player first starts bleeding, the HEV suit queues `!HEV_DMG6` ("blood loss detected"). Refreshing an existing wound does not queue the warning again.
+- A world first-aid kit cures bleeding after it successfully restores health.
+- Activating a wall-mounted `func_healthcharger` attempts to cure bleeding even if that activation cannot restore health, matching Absolute Zero's behavior.
+- A successful cure clears the bleeding mask, remaining ticks and scheduled tick time. The HEV suit randomly reports either `!HEV_HEAL6` (wound sterilized) or `!HEV_HEAL7` (morphine shot); both alternatives share a 30-second repeat block.
+
+The bleeding implementation is integrated, but it has **not yet been compiled or tested in-game**. In particular, verify claw hit registration, tick timing and damage, cure behavior, HEV sentence playback, save/load continuity, and the monster cvar in a local GoldSrc/Xash3D build.
+
 ## Required game assets
 
 This code does not add proprietary game assets. Supply the model and sounds in the mod's game directory:
@@ -60,11 +93,11 @@ The model is expected to contain sequences named `subtle_motion`, `itch`, `shake
 
 This is an initial gameplay port, not a behavior-identical transplant of Absolute Zero's 3,400-line implementation. It deliberately avoids Absolute Zero's custom base-monster framework, hidden-CVar system, custom animation event queue, debug-drawing utilities, and modified movement/pathfinding APIs.
 
-Not yet ported:
+The following original Panther Eye features remain unported or are only approximated:
 - The entire original stalking state machine, including its exact timers, thresholds, dynamic path throttling and bespoke schedule transitions. The current implementation reproduces the core watch/pause, sneak/cover, ambush and flee loop using stock schedules.
 - Original bug-eating behavior.
 - Full custom flinch/death handling and movement-bound fixes.
 - Exact animation weighting / randomized sequence timing.
 - Map-editor FGD definitions and any custom asset package.
 
-The code has been adapted to the stock `CBaseMonster` API in hlsdk-portable, but it has not been compiled or tested in-engine in this integration environment. The stalk/flee tasks depend on the SDK's normal navigation and local-cover checks; maps without a usable node graph can use the lateral-cover and behind-target fallbacks, but path success still needs in-engine testing. Treat it as a first integration pass to compile and tune locally before using it in maps.
+The code has been adapted to the stock `CBaseMonster` API in hlsdk-portable. Neither the Panther Eye behavior nor its bleeding integration has been compiled or tested in-engine in this integration environment. The stalk/flee tasks depend on the SDK's normal navigation and local-cover checks; maps without a usable node graph can use the lateral-cover and behind-target fallbacks, but path success still needs in-engine testing. Compile and test locally before using it in maps.
