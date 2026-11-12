@@ -561,6 +561,7 @@ Killed
 */
 void CBaseMonster::Killed( entvars_t *pevAttacker, int iGib )
 {
+	ClearBleedingDamage();
 	//unsigned int	cCount = 0;
 	//BOOL		fDone = FALSE;
 
@@ -936,17 +937,87 @@ int CBaseMonster::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, f
 }
 
 // Preserve the secondary mask on the monster while dispatching the legacy
-// overload virtually. This keeps existing player/monster-specific damage
-// handling intact; timed effects are deliberately added in the next step.
+// overload virtually. Only timed-effect bits persist on the victim; transient
+// secondary modifiers are consumed by the damage call itself.
 int CBaseMonster::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType, int bitsDamageTypeMod )
 {
 	int result = TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType );
 
-	// A rejected hit or a lethal hit cannot leave an active timed effect behind.
-	if( result && bitsDamageTypeMod )
-		m_bitsDamageTypeMod |= bitsDamageTypeMod;
+	if( !result || !IsAlive() )
+		return result;
+
+	if( bitsDamageTypeMod & DMG_BLEEDING )
+	{
+		int duration = (int)gSkillData.tdmg_bleeding_duration;
+		if( duration > 0 && duration < 255 )
+		{
+			m_bitsDamageTypeMod |= DMG_BLEEDING;
+			m_iBleedingTicksRemaining = duration;
+			m_flBleedingNextDamageTime = gpGlobals->time + 2.0f;
+		}
+		else
+		{
+			// A zero or negative configured duration disables bleeding.
+			ClearBleedingDamage();
+		}
+	}
 
 	return result;
+}
+
+// Stop an active bleed without disturbing unrelated secondary damage flags.
+void CBaseMonster::ClearBleedingDamage( void )
+{
+	m_bitsDamageTypeMod &= ~DMG_BLEEDING;
+	m_iBleedingTicksRemaining = 0;
+	m_flBleedingNextDamageTime = 0;
+}
+
+// Bleeding uses the same two-second cadence as GoldSrc's time-based effects,
+// but has its own counter so the original player poison/radiation array stays
+// exactly eight entries long and keeps its original bit mapping.
+void CBaseMonster::CheckBleedingDamage( void )
+{
+	if( !( m_bitsDamageTypeMod & DMG_BLEEDING ) )
+		return;
+
+	if( pev->health <= 0 || pev->deadflag != DEAD_NO || m_iBleedingTicksRemaining <= 0 )
+	{
+		ClearBleedingDamage();
+		return;
+	}
+
+	if( gpGlobals->time < m_flBleedingNextDamageTime )
+		return;
+
+	// Schedule from the current time so a long frame does not cause a burst
+	// of catch-up damage in one think.
+	m_flBleedingNextDamageTime = gpGlobals->time + 2.0f;
+
+	if( gSkillData.tdmg_bleeding_damage > 0.0f )
+		TakeDamage( pev, pev, gSkillData.tdmg_bleeding_damage, DMG_GENERIC );
+
+	if( pev->health <= 0 || pev->deadflag != DEAD_NO )
+	{
+		ClearBleedingDamage();
+		return;
+	}
+
+	// Emit the recurring blood drip in the same place as the original timed
+	// bleeding effect. Non-blooded entities still take the timed damage.
+	if( BloodColor() != DONT_BLEED )
+	{
+		UTIL_MakeAimVectors( pev->angles );
+		SpawnBlood(
+			pev->origin + pev->view_ofs + gpGlobals->v_forward * RANDOM_FLOAT( 9.0f, 13.0f ) + gpGlobals->v_right * RANDOM_FLOAT( -5.0f, 5.0f ) + gpGlobals->v_up * RANDOM_FLOAT( 4.0f, 7.0f ),
+			BloodColor(),
+			RANDOM_LONG( 8, 15 )
+		);
+	}
+
+	--m_iBleedingTicksRemaining;
+	if( m_iBleedingTicksRemaining <= 0 )
+		ClearBleedingDamage();
 }
 
 //=========================================================
