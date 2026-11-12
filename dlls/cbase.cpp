@@ -572,6 +572,14 @@ int CBaseEntity::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, fl
 	return 1;
 }
 
+// Compatibility entry point for the secondary damage mask. Until a derived
+// class handles the modifier explicitly, preserve its legacy TakeDamage path.
+int CBaseEntity::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType, int bitsDamageTypeMod )
+{
+	(void)bitsDamageTypeMod;
+	return TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType );
+}
+
 void CBaseEntity::Killed( entvars_t *pevAttacker, int iGib )
 {
 	pev->takedamage = DAMAGE_NO;
