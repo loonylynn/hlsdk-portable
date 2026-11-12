@@ -563,7 +563,11 @@ int CPantherEye::IRelationship( CBaseEntity *pTarget )
 
 int CPantherEye::ISoundMask( void )
 {
-    return bits_SOUND_WORLD | bits_SOUND_COMBAT | bits_SOUND_PLAYER;
+    // Absolute Zero declared a best-sound cover schedule but commented
+    // DANGER out of this mask. Enable it in the GoldSrc port so that the
+    // existing PantherEyeTakeCoverFromBestSound route can actually be used.
+    return bits_SOUND_WORLD | bits_SOUND_COMBAT | bits_SOUND_PLAYER |
+           bits_SOUND_DANGER;
 }
 
 float CPantherEye::HearingSensitivity( void )
@@ -889,9 +893,13 @@ Schedule_t *CPantherEye::GetScheduleOfType( int Type )
         return &slPanthereyeTakeCoverFromEnemy[0];
 
     case SCHED_TAKE_COVER_FROM_ORIGIN:
+        // The stock alert-state damage response selects this schedule when
+        // FlYawDiff() places the hit direction within the Panthereye's FOV.
         return &slPanthereyeTakeCoverFromOrigin[0];
 
     case SCHED_TAKE_COVER_FROM_BEST_SOUND:
+        // PBestSound() supplies the selected sound's origin and volume to the
+        // stock TASK_FIND_COVER_FROM_BEST_SOUND implementation.
         return &slPanthereyeTakeCoverFromBestSound[0];
 
     }
@@ -901,8 +909,23 @@ Schedule_t *CPantherEye::GetScheduleOfType( int Type )
 
 Schedule_t *CPantherEye::GetSchedule( void )
 {
-    if( pev->deadflag == DEAD_NO &&
-        m_bGetBugRequested &&
+    if( pev->deadflag != DEAD_NO )
+        return CBaseMonster::GetSchedule();
+
+    // A pending danger sound is more urgent than stalking, bug-feeding, or
+    // pursuing an enemy. Route it through PBestSound() via the stock
+    // TASK_FIND_COVER_FROM_BEST_SOUND task.
+    if( ( m_MonsterState == MONSTERSTATE_IDLE ||
+          m_MonsterState == MONSTERSTATE_ALERT ||
+          m_MonsterState == MONSTERSTATE_COMBAT ) &&
+        HasConditions( bits_COND_HEAR_SOUND ) &&
+        ( m_afSoundTypes & bits_SOUND_DANGER ) &&
+        !HasConditions( bits_COND_LIGHT_DAMAGE | bits_COND_HEAVY_DAMAGE ) )
+    {
+        return GetScheduleOfType( SCHED_TAKE_COVER_FROM_BEST_SOUND );
+    }
+
+    if( m_bGetBugRequested &&
         gpGlobals->time >= m_flBugCooldown &&
         !HasConditions( bits_COND_CAN_MELEE_ATTACK1 | bits_COND_CAN_MELEE_ATTACK2 |
                         bits_COND_HEAVY_DAMAGE ) )
@@ -918,13 +941,6 @@ Schedule_t *CPantherEye::GetSchedule( void )
     {
         return CBaseMonster::GetSchedule();
     }
-
-    // A danger sound takes precedence over stalking and ordinary pursuit.
-    // Its source is selected by the shared sound system; the custom schedule
-    // then preserves the Panthereye-specific cover-failure response.
-    if( HasConditions( bits_COND_HEAR_SOUND ) &&
-        ( m_afSoundTypes & bits_SOUND_DANGER ) )
-        return GetScheduleOfType( SCHED_TAKE_COVER_FROM_BEST_SOUND );
 
     if( m_bAmbushLeapRequested )
     {
