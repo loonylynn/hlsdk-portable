@@ -364,10 +364,12 @@ void CTeleportGrenade::Spawn( void )
 
 	m_iId = WEAPON_TELEPORT;
 	SET_MODEL( ENT( pev ), "models/w_grenade.mdl" );
-	m_iDefaultAmmo = 1;
+	m_iDefaultAmmo = 0;
 	m_iClip = WEAPON_NOCLIP;
 	m_fInSpecialReload = FALSE;
 	m_iProjectileActive = FALSE;
+	m_iPrimaryAmmoType = 0;
+	m_iSecondaryAmmoType = 0;
 
 	FallInit();
 }
@@ -386,8 +388,10 @@ void CTeleportGrenade::Precache( void )
 int CTeleportGrenade::GetItemInfo( ItemInfo *p )
 {
 	p->pszName = STRING( pev->classname );
-	p->pszAmmo1 = "Teleport Charge";
-	p->iMaxAmmo1 = 1;
+	// Teleportation is governed by its recharge timer, not ammunition.
+	// No ammo type prevents a misleading reserve count in the stock HUD.
+	p->pszAmmo1 = NULL;
+	p->iMaxAmmo1 = WEAPON_NOCLIP;
 	p->pszAmmo2 = NULL;
 	p->iMaxAmmo2 = -1;
 	p->iMaxClip = WEAPON_NOCLIP;
@@ -398,6 +402,27 @@ int CTeleportGrenade::GetItemInfo( ItemInfo *p )
 	p->iFlags = ITEM_FLAG_LIMITINWORLD;
 
 	return 1;
+}
+
+
+int CTeleportGrenade::AddToPlayer( CBasePlayer *pPlayer )
+{
+	const int iResult = CBasePlayerWeapon::AddToPlayer( pPlayer );
+
+	// GoldSrc clientdata carries ammo indices even for ammo-less weapons.
+	// Use the reserved zero slot rather than leaving an invalid -1 index.
+	m_iPrimaryAmmoType = 0;
+	m_iSecondaryAmmoType = 0;
+
+	return iResult;
+}
+
+int CTeleportGrenade::UpdateClientData( CBasePlayer *pPlayer )
+{
+	// This weapon has no clip. Never expose a projectile-state sentinel as
+	// ammunition through the stock CurWeapon message.
+	m_iClip = WEAPON_NOCLIP;
+	return CBasePlayerWeapon::UpdateClientData( pPlayer );
 }
 
 BOOL CTeleportGrenade::IsUseable( void )
