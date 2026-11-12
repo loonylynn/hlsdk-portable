@@ -339,7 +339,7 @@ BOOL CPantherEye::CanLeapToEnemy( void )
     vecStart = pev->origin + Vector( 0, 0, 30 );
     vecEnd = m_vecEnemyLKP + Vector( 0, 0, 30 );
 
-    TRACE_MONSTER_HULL( edict(), vecStart, vecEnd, dont_ignore_monsters, edict(), &tr );
+    UTIL_TraceHull( vecStart, vecEnd, dont_ignore_monsters, large_hull, edict(), &tr );
 
     if( tr.flFraction >= 1.0f || tr.pHit == m_hEnemy->edict() )
         return TRUE;
@@ -348,7 +348,7 @@ BOOL CPantherEye::CanLeapToEnemy( void )
     // rejecting a solid wall between the Panther Eye and its target.
     vecStart = pev->origin + Vector( 0, 0, 80 );
     vecEnd = m_vecEnemyLKP + Vector( 0, 0, 40 );
-    TRACE_MONSTER_HULL( edict(), vecStart, vecEnd, dont_ignore_monsters, edict(), &tr );
+    UTIL_TraceHull( vecStart, vecEnd, dont_ignore_monsters, large_hull, edict(), &tr );
 
     return ( tr.flFraction >= 1.0f || tr.pHit == m_hEnemy->edict() );
 }
