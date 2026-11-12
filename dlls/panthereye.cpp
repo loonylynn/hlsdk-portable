@@ -1470,13 +1470,12 @@ void CPantherEye::DoClawHit( float flDamageScale, BOOL bKnockback )
     CBaseEntity *pHurt;
 
     UTIL_MakeVectors( pev->angles );
-    // Absolute Zero supplies DMG_BLEEDING through its separate secondary
-    // damage mask. Stock GoldSrc exposes only bitsDamageType here, so retain
-    // the slash damage type (and its normal blood behavior) without inventing
-    // a conflicting primary damage bit.
+    // Absolute Zero applies timed bleeding on both claw strikes. Keep the
+    // GoldSrc slash damage type separate from the bleeding modifier.
     pHurt = CheckTraceHullAttack( 84.0f * 1.2f,
                                   (int)( m_flClawDamage * flDamageScale ),
-                                  DMG_SLASH );
+                                  DMG_SLASH,
+                                  DMG_BLEEDING );
 
     if( pHurt )
     {
