@@ -275,6 +275,7 @@ public:
 	void Eat( float flFullDuration );// make the monster 'full' for a while.
 
 	CBaseEntity *CheckTraceHullAttack( float flDist, int iDamage, int iDmgType );
+	CBaseEntity *CheckTraceHullAttack( float flDist, int iDamage, int iDmgType, int iDmgTypeMod );
 	BOOL FacingIdeal( void );
 
 	BOOL FCheckAITrigger( void );// checks and, if necessary, fires the monster's trigger target. 
@@ -288,6 +289,7 @@ public:
 	BOOL GetEnemy( void );
 	void MakeDamageBloodDecal( int cCount, float flNoise, TraceResult *ptr, const Vector &vecDir );
 	void TraceAttack( entvars_t *pevAttacker, float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType);
+	virtual void TraceAttack( entvars_t *pevAttacker, float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType, int bitsDamageTypeMod);
 
 	// combat functions
 	float UpdateTarget( entvars_t *pevTarget );
@@ -308,6 +310,7 @@ public:
 
 	virtual int TakeHealth( float flHealth, int bitsDamageType );
 	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType);
+	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType, int bitsDamageTypeMod);
 	int DeadTakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType );
 
 	void RadiusDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int iClassIgnore, int bitsDamageType );
