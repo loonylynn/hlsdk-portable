@@ -367,6 +367,7 @@ void CTeleportGrenade::Spawn( void )
 	m_iDefaultAmmo = 1;
 	m_iClip = WEAPON_NOCLIP;
 	m_fInSpecialReload = FALSE;
+	m_iProjectileActive = FALSE;
 
 	FallInit();
 }
@@ -426,8 +427,6 @@ void CTeleportGrenade::PrimaryAttack( void )
 {
 	const float flTime = UTIL_WeaponTimeBase();
 
-	// m_iClip == -2 is our projectile-active flag.  Since this weapon has no
-	// clip, this sentinel is carried by weapon_data without displaying ammo.
 	if( m_fInSpecialReload )
 	{
 		if( flTime >= m_flNextPrimaryAttack )
@@ -435,7 +434,7 @@ void CTeleportGrenade::PrimaryAttack( void )
 		return;
 	}
 
-	if( m_iClip == WEAPON_NOCLIP - 1 )
+	if( m_iProjectileActive )
 	{
 		if( flTime >= m_flNextPrimaryAttack )
 		{
@@ -464,6 +463,7 @@ void CTeleportGrenade::LaunchTeleportProjectile( void )
 	if( !m_pPlayer )
 	{
 		m_fInSpecialReload = FALSE;
+		m_iProjectileActive = FALSE;
 		return;
 	}
 
@@ -490,7 +490,7 @@ void CTeleportGrenade::LaunchTeleportProjectile( void )
 
 	if( !pProjectile )
 	{
-		m_iClip = WEAPON_NOCLIP;
+		m_iProjectileActive = FALSE;
 		m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 0.5f;
 		SendWeaponAnim( TELEPORT_GRENADE_DRAW );
 		return;
@@ -504,7 +504,9 @@ void CTeleportGrenade::LaunchTeleportProjectile( void )
 		RANDOM_FLOAT( -1000.0f, 1000.0f ) );
 #endif
 
-	m_iClip = WEAPON_NOCLIP - 1;
+	// Keep the actual no-clip value in m_iClip.  This state is separately
+	// transferred through weapon_data_t::iuser4 for prediction.
+	m_iProjectileActive = TRUE;
 	SendWeaponAnim( TELEPORT_GRENADE_THROW3 );
 	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
 
@@ -515,7 +517,7 @@ void CTeleportGrenade::LaunchTeleportProjectile( void )
 
 void CTeleportGrenade::OnProjectileFinished( void )
 {
-	m_iClip = WEAPON_NOCLIP;
+	m_iProjectileActive = FALSE;
 }
 
 void CTeleportGrenade::WeaponIdle( void )
@@ -541,3 +543,12 @@ void CTeleportGrenade::WeaponIdle( void )
 		m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 75.0f / 30.0f;
 	}
 }
+
+#if !CLIENT_DLL
+TYPEDESCRIPTION CTeleportGrenade::m_SaveData[] =
+{
+	DEFINE_FIELD( CTeleportGrenade, m_iProjectileActive, FIELD_INTEGER ),
+};
+
+IMPLEMENT_SAVERESTORE( CTeleportGrenade, CBasePlayerWeapon )
+#endif
