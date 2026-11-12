@@ -1480,10 +1480,11 @@ void CPantherEye::DoClawHit( float flDamageScale, BOOL bKnockback )
 
     if( pHurt )
     {
-        // Stock GoldSrc equivalent of Absolute Zero's punch / lateral
-        // knockback. The optional blocksImpact() suppression is a separate
-        // Absolute Zero entity API and is not present in this stock SDK.
-        if( bKnockback && ( pHurt->pev->flags & ( FL_MONSTER | FL_CLIENT ) ) )
+        // Match Absolute Zero: only entities that do not block impact receive
+        // the punch angles and lateral knockback.
+        if( bKnockback &&
+            ( pHurt->pev->flags & ( FL_MONSTER | FL_CLIENT ) ) &&
+            !pHurt->blocksImpact() )
         {
             pHurt->pev->punchangle.z = -18;
             pHurt->pev->punchangle.x = 5;
