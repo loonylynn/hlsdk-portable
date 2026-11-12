@@ -375,6 +375,33 @@ static const char *PantherRandomSound( const char * const *ppszSounds, int iCoun
 {
     return ppszSounds[RANDOM_LONG( 0, iCount - 1 )];
 }
+
+static float PantherFacingDot( CBaseEntity *pObserver, const Vector &vecLookAt )
+{
+    Vector vecDirection;
+    float flYaw;
+    float flRadians;
+
+    if( !pObserver )
+        return -1.0f;
+
+    vecDirection = vecLookAt - pObserver->pev->origin;
+    vecDirection.z = 0.0f;
+
+    if( vecDirection.Length() < 1.0f )
+        return 0.0f;
+
+    vecDirection = vecDirection.Normalize();
+
+    // Absolute Zero's UTIL_IsFacing uses v_angle for players and angles for
+    // non-player entities. FL_CLIENT is the stock GoldSrc player marker.
+    flYaw = ( pObserver->pev->flags & FL_CLIENT ) ?
+        pObserver->pev->v_angle.y : pObserver->pev->angles.y;
+    flRadians = flYaw * 0.0174532925199433f;
+
+    return cos( flRadians ) * vecDirection.x +
+           sin( flRadians ) * vecDirection.y;
+}
 }
 
 LINK_ENTITY_TO_CLASS( monster_panthereye, CPantherEye )
@@ -899,22 +926,27 @@ Schedule_t *CPantherEye::GetSchedule( void )
         ( m_afSoundTypes & bits_SOUND_DANGER ) )
         return GetScheduleOfType( SCHED_TAKE_COVER_FROM_BEST_SOUND );
 
-    if( m_flFleeUntil > gpGlobals->time )
-        return GetScheduleOfType( SCHED_TAKE_COVER_FROM_ENEMY );
-
-    if( m_flAggressiveUntil > gpGlobals->time )
-        return GetScheduleOfType( SCHED_PANTHEREYE_CHASE );
-
     if( m_bAmbushLeapRequested )
     {
         m_bAmbushLeapRequested = FALSE;
         return GetScheduleOfType( SCHED_MELEE_ATTACK2 );
     }
 
-    // If the target is already within claw range, do not sacrifice a clear
-    // attack opportunity just to keep stalking.
-    if( HasConditions( bits_COND_CAN_MELEE_ATTACK1 ) )
+    // Preserve the original combat decision order: attacks take priority
+    // over chase/retreat schedules when an attack is actually available.
+    if( HasConditions( bits_COND_CAN_RANGE_ATTACK1 | bits_COND_CAN_RANGE_ATTACK2 |
+                       bits_COND_CAN_MELEE_ATTACK1 ) )
         return CBaseMonster::GetSchedule();
+
+    if( HasConditions( bits_COND_CAN_MELEE_ATTACK2 ) )
+        return GetScheduleOfType( SCHED_MELEE_ATTACK2 );
+
+    // Absolute Zero checks the anger timer before the retreat timer.
+    if( m_flAggressiveUntil > gpGlobals->time )
+        return GetScheduleOfType( SCHED_PANTHEREYE_CHASE );
+
+    if( m_flFleeUntil > gpGlobals->time )
+        return GetScheduleOfType( SCHED_TAKE_COVER_FROM_ENEMY );
 
     if( m_bStalking )
     {
@@ -931,6 +963,10 @@ Schedule_t *CPantherEye::GetSchedule( void )
 
 void CPantherEye::StartTask( Task_t *pTask )
 {
+    // These flags describe the currently running task, not permanent AI state.
+    m_bPissable = FALSE;
+    m_bCornered = FALSE;
+
     if( pTask->iTask == TASK_PANTHEREYE_NORMALMOVE )
     {
         // Absolute Zero's TASK_PANTHER_NORMALMOVE follows the live enemy
@@ -1086,8 +1122,9 @@ void CPantherEye::StartTask( Task_t *pTask )
         if( pTask->iTask == TASK_PANTHEREYE_COVER_FAIL_WAIT )
             m_bCornered = TRUE;
 
-        // The original sets 5-11 seconds first, then shortens the retry to
-        // 4-8 seconds unless the target has stared long enough to provoke it.
+        // Source behavior: start with a normal 5-11 second pause. If the
+        // target has stared for >2.6 seconds (or the Panther is cornered)
+        // inside 350 units, it becomes aggressive immediately.
         m_flStalkWaitUntil = gpGlobals->time + RANDOM_FLOAT( 5.0f, 11.0f );
 
         if( m_hEnemy && !HasConditions( bits_COND_ENEMY_OCCLUDED ) &&
@@ -1098,7 +1135,8 @@ void CPantherEye::StartTask( Task_t *pTask )
             m_flAggressiveUntil = gpGlobals->time + 5.0f;
             m_flFleeUntil = 0.0f;
             m_flRunUntil = gpGlobals->time + 12.0f;
-            TaskComplete();
+            m_bAmbushLeapRequested = FALSE;
+            ChangeSchedule( GetSchedule() );
             return;
         }
 
@@ -1431,15 +1469,14 @@ void CPantherEye::PrescheduleThink( void )
 {
     float flCloak;
     float flTargetRender;
-    float flDistance = 0.0f;
-    BOOL fEnemyVisible = FALSE;
-    BOOL fCanObserveEnemy = FALSE;
     BOOL fCanCloak = FALSE;
+    BOOL fForceScheduleChange = FALSE;
+    BOOL fAggressionExpired = FALSE;
+    BOOL fFleeExpired = FALSE;
 
-    // Original alert-run memory: nearby combat/player sounds start a
-    // 12-second frenzy. Seeing the enemy keeps refreshing that memory.
-    if( pev->deadflag == DEAD_NO &&
-        ( m_afSoundTypes & ( bits_SOUND_COMBAT | bits_SOUND_PLAYER ) ) )
+    // The original starts or refreshes a 12-second alert/run memory whenever
+    // combat or player sounds are heard.
+    if( m_afSoundTypes & ( bits_SOUND_COMBAT | bits_SOUND_PLAYER ) )
     {
         m_flPissedRunUntil = gpGlobals->time + 12.0f;
         m_flRunUntil = gpGlobals->time + 12.0f;
@@ -1448,25 +1485,26 @@ void CPantherEye::PrescheduleThink( void )
             SetActivity( ACT_RUN );
     }
 
-    if( pev->deadflag == DEAD_NO && m_hEnemy != NULL )
+    if( m_hEnemy != NULL )
     {
         if( m_flPissedRunUntil != -1.0f &&
             gpGlobals->time >= m_flPissedRunUntil &&
             !HasConditions( bits_COND_SEE_ENEMY | bits_COND_NEW_ENEMY ) )
         {
-            // The source drops an enemy after its alert memory expires and
-            // there is no renewed sighting. GoldSrc has no ForgetEnemy()
-            // helper here, so clear the handle and return to alert state.
+            // Stock GoldSrc has no matching ForgetEnemy() helper. Clear the
+            // active enemy and its visibility conditions, then return to alert.
             m_flPissedRunUntil = -1.0f;
             m_hEnemy = NULL;
             ClearConditions( bits_COND_SEE_ENEMY | bits_COND_ENEMY_OCCLUDED |
-                             bits_COND_NEW_ENEMY );
+                             bits_COND_NEW_ENEMY | bits_COND_ENEMY_DEAD );
             m_flAggressiveUntil = 0.0f;
             m_flFleeUntil = 0.0f;
+            m_flStareTime = 0.0f;
             m_bEnemyLookingAtMe = FALSE;
             m_bStalking = FALSE;
             m_bAmbushLeapRequested = FALSE;
-            m_flStareTime = 0.0f;
+            m_bCornered = FALSE;
+            m_bPissable = FALSE;
             SetState( MONSTERSTATE_ALERT );
             CBaseMonster::PrescheduleThink();
             return;
@@ -1479,13 +1517,11 @@ void CPantherEye::PrescheduleThink( void )
         }
         else if( ( m_vecEnemyLKP - pev->origin ).Length() < 500.0f )
         {
-            // Close enemies keep the Panther Eye in its alert/run mode.
             m_flPissedRunUntil = gpGlobals->time + 12.0f;
         }
     }
 
-    // Timed follow-up swipe from attack_primary. This is the local equivalent
-    // of the extra event Absolute Zero queued at 12/15 seconds.
+    // Timed follow-up swipe from attack_primary.
     if( m_flSecondClawHitTime > 0.0f && gpGlobals->time >= m_flSecondClawHitTime )
     {
         if( pev->deadflag == DEAD_NO &&
@@ -1498,173 +1534,241 @@ void CPantherEye::PrescheduleThink( void )
         m_flSecondClawHitTime = 0.0f;
     }
 
-    if( pev->deadflag == DEAD_NO && m_hEnemy != NULL )
+    // The original recalculates this every think. Facing is evaluated against
+    // v_angle for players and angles for other entities.
+    m_bEnemyLookingAtMe = FALSE;
+
+    // The threat/stalking state machine only runs while alive, grounded, and
+    // outside the crouch-to-jump sequence. Airborne leap state is left alone.
+    if( pev->deadflag == DEAD_NO &&
+        FBitSet( pev->flags, FL_ONGROUND ) &&
+        pev->sequence != LookupSequence( "crouch_to_jump" ) )
     {
-        Vector vecToPanther = pev->origin - m_hEnemy->pev->origin;
-        float flFacingDot = -1.0f;
-        BOOL fEnemyFacingMe;
+        const float flNow = gpGlobals->time;
         BOOL fPissOff = FALSE;
         BOOL fPissOffHard = FALSE;
         BOOL fTryRunAway = FALSE;
-        float flLookRange = 2300.0f;
-        float flCloseRange = 1400.0f;
-        float flFightOrFlightRange = 8000.0f;
+        BOOL fEnemyFacingMe = FALSE;
+        BOOL fEnemyFacingAway = FALSE;
+        BOOL fCanObserveEnemy = ( m_hEnemy != NULL &&
+                                  !HasConditions( bits_COND_ENEMY_OCCLUDED ) );
+        float flDistance = 99999.0f;
+        float flLookRange = 115.0f * 20.0f;
+        float flDistancePissRange = 70.0f * 20.0f;
+        float flFightOrFlightRange = 400.0f * 20.0f;
+        float flFacingDot = -1.0f;
         float flHealthFactor = 1.0f;
 
-        flDistance = ( m_vecEnemyLKP - pev->origin ).Length();
-        fCanObserveEnemy = !HasConditions( bits_COND_ENEMY_OCCLUDED );
-        fEnemyVisible = fCanObserveEnemy && HasConditions( bits_COND_SEE_ENEMY );
+        fAggressionExpired = ( m_flAggressiveUntil > 0.0f &&
+                               m_flAggressiveUntil <= flNow );
+        fFleeExpired = ( m_flFleeUntil > 0.0f &&
+                         m_flFleeUntil <= flNow );
 
-        if( fCanObserveEnemy )
+        if( fAggressionExpired )
+            m_flAggressiveUntil = 0.0f;
+        if( fFleeExpired )
+            m_flFleeUntil = 0.0f;
+
+        m_bStalking = ( m_hEnemy != NULL &&
+                        m_flAggressiveUntil <= flNow &&
+                        m_flFleeUntil <= flNow );
+
+        if( m_hEnemy != NULL )
         {
-            float flYaw = m_hEnemy->pev->angles.y * 0.0174532925199433f;
-            Vector vecEnemyForward( cos( flYaw ), sin( flYaw ), 0.0f );
+            flDistance = ( m_vecEnemyLKP - pev->origin ).Length();
 
-            vecToPanther.z = 0.0f;
-            if( vecToPanther.Length() > 1.0f )
+            if( m_bCornered )
             {
-                vecToPanther = vecToPanther.Normalize();
-                flFacingDot = DotProduct( vecEnemyForward, vecToPanther );
+                flLookRange = 340.0f * 20.0f;
+                flDistancePissRange = 230.0f * 20.0f;
+                flFightOrFlightRange = 1600.0f * 20.0f;
             }
-        }
-
-        // The original uses separate facing tolerances for "looking at me"
-        // and "is facing me enough to become hostile".
-        m_bEnemyLookingAtMe = fCanObserveEnemy && ( flFacingDot > 0.30f );
-        fEnemyFacingMe = fCanObserveEnemy && ( flFacingDot > 0.20f );
-
-        if( m_bEnemyLookingAtMe )
-            m_flStareTime += 0.1f;
-        else
-            m_flStareTime = 0.0f;
-
-        if( m_bCornered )
-        {
-            flLookRange = 6800.0f;       // 340 * 20
-            flCloseRange = 4600.0f;      // 230 * 20
-            flFightOrFlightRange = 32000.0f; // 1600 * 20
-        }
-        else if( m_bPissable )
-        {
-            flLookRange = 4000.0f;       // 200 * 20
-            flCloseRange = 1600.0f;      // 80 * 20
-            flFightOrFlightRange = 10000.0f; // 500 * 20
-        }
-
-        if( pev->max_health > 0.0f )
-            flHealthFactor += ( 1.0f - pev->health / pev->max_health ) * 0.6f;
-        flLookRange *= flHealthFactor;
-
-        if( m_flAggressiveUntil <= gpGlobals->time )
-        {
-            if( fEnemyFacingMe )
+            else if( m_bPissable )
             {
-                // A direct look provokes the animal inside its look radius.
-                if( flDistance < flLookRange )
-                    fPissOff = TRUE;
+                flLookRange = 200.0f * 20.0f;
+                flDistancePissRange = 80.0f * 20.0f;
+                flFightOrFlightRange = 500.0f * 20.0f;
             }
-            else if( fCanObserveEnemy && flFacingDot < -0.30f )
+
+            if( pev->max_health > 0.0f )
+                flHealthFactor += ( 1.0f - pev->health / pev->max_health ) * 0.6f;
+            flLookRange *= flHealthFactor;
+
+            if( fCanObserveEnemy )
             {
-                // When the target turns its back, the Panthereye ambushes
-                // between 130 and 360 source-relative units; at closer range
-                // it abandons stealth and attacks conventionally.
-                if( flDistance < 7200.0f )
+                flFacingDot = PantherFacingDot( m_hEnemy, pev->origin );
+                m_bEnemyLookingAtMe = ( flFacingDot >= 0.70f ); // 1 - 0.30
+                fEnemyFacingMe = ( flFacingDot >= 0.80f );       // 1 - 0.20
+
+                // Absolute Zero's panthereyeJumpDotTol default is 1.2:
+                // dot <= -1 + 1.2 means facing away or sufficiently sideways.
+                fEnemyFacingAway = ( flFacingDot <= 0.20f );
+
+                if( m_bEnemyLookingAtMe )
                 {
-                    if( flDistance < 2600.0f )
-                        fPissOff = TRUE;
-                    else if( flDistance >= 2600.0f &&
-                             gpGlobals->time >= m_flNextLeapAttack &&
-                             CanLeapToEnemy() )
-                        m_bAmbushLeapRequested = TRUE;
+                    m_flStareTime += 0.1f;
+
+                    if( m_bCornered ||
+                        m_pSchedule == &slPanthereyeStalkWait[0] )
+                    {
+                        MakeIdealYaw( m_vecEnemyLKP );
+                    }
+                }
+                else
+                {
+                    m_flStareTime = 0.0f;
                 }
             }
-            else if( flDistance < flCloseRange )
+            else
             {
+                m_flStareTime = 0.0f;
+            }
+
+            if( m_flAggressiveUntil <= flNow )
+            {
+                if( fCanObserveEnemy && fEnemyFacingMe )
+                {
+                    if( flDistance < flLookRange )
+                        fPissOff = TRUE;
+                }
+                else if( fCanObserveEnemy && fEnemyFacingAway )
+                {
+                    // The original jumps when the target's back is turned and
+                    // it is between 130 and 360 units away.
+                    if( flDistance < 360.0f * 20.0f )
+                    {
+                        if( flDistance < 130.0f * 20.0f )
+                        {
+                            fPissOff = TRUE;
+                        }
+                        else if( gpGlobals->time >= m_flNextLeapAttack &&
+                                 CanLeapToEnemy() )
+                        {
+                            if( m_pSchedule != &slPanthereyeLeap[0] )
+                            {
+                                RouteClear();
+                                MakeIdealYaw( m_vecEnemyLKP );
+                                ChangeSchedule( &slPanthereyeLeap[0] );
+                                CBaseMonster::PrescheduleThink();
+                                return;
+                            }
+                        }
+                    }
+                }
+                else if( flDistance < flDistancePissRange )
+                {
+                    fPissOff = TRUE;
+                }
+            }
+            else if( fCanObserveEnemy &&
+                     HasConditions( bits_COND_SEE_ENEMY ) &&
+                     flDistance < 300.0f * 20.0f )
+            {
+                // Once angered, seeing the target within 300 units sustains it.
                 fPissOff = TRUE;
             }
-        }
-        else if( fEnemyVisible && flDistance < 6000.0f )
-        {
-            // While already angry, seeing the target within 300*20 keeps the
-            // anger timer alive as in the original PrescheduleThink.
-            fPissOff = TRUE;
-        }
 
-        // Damage produces the original fight-or-flight choice. A nearby
-        // threat is fought for eight seconds; a distant one is evaded for 7.
-        if( ( !fPissOff && HasConditions( bits_COND_LIGHT_DAMAGE ) ) ||
-            HasConditions( bits_COND_HEAVY_DAMAGE ) )
-        {
-            if( flDistance < flFightOrFlightRange )
-                fPissOffHard = TRUE;
-            else
-                fTryRunAway = TRUE;
-        }
+            // Damage causes fight-or-flight. Keep the original condition
+            // precedence: heavy damage always qualifies; light damage does
+            // so only when the ordinary proximity/facing test did not.
+            if( ( !fPissOff && HasConditions( bits_COND_LIGHT_DAMAGE ) ) ||
+                HasConditions( bits_COND_HEAVY_DAMAGE ) )
+            {
+                if( flDistance < flFightOrFlightRange )
+                    fPissOffHard = TRUE;
+                else
+                    fTryRunAway = TRUE;
+            }
 
-        if( fTryRunAway )
+            if( fTryRunAway )
+            {
+                BOOL fStartedRunningAway = ( m_flFleeUntil <= flNow );
+                m_flFleeUntil = flNow + 7.0f;
+
+                // As in the original, a new retreat only changes schedules
+                // immediately when there is no active anger timer.
+                if( fStartedRunningAway && m_flAggressiveUntil <= flNow )
+                    fForceScheduleChange = TRUE;
+            }
+
+            if( fPissOffHard || fPissOff )
+            {
+                BOOL fStartedAnger = ( m_flAggressiveUntil <= flNow );
+
+                if( fPissOffHard )
+                    m_flAggressiveUntil = max( m_flAggressiveUntil, flNow + 8.0f );
+                else
+                    m_flAggressiveUntil = max( m_flAggressiveUntil, flNow + 3.0f );
+
+                m_flFleeUntil = 0.0f;
+                m_flRunUntil = flNow + 12.0f;
+                m_bAmbushLeapRequested = FALSE;
+
+                if( fStartedAnger )
+                    fForceScheduleChange = TRUE;
+            }
+
+            if( m_flFleeUntil <= flNow )
+                m_flFleeUntil = 0.0f;
+            if( m_flAggressiveUntil <= flNow )
+                m_flAggressiveUntil = 0.0f;
+
+            m_bStalking = ( m_flAggressiveUntil <= flNow &&
+                            m_flFleeUntil <= flNow );
+
+            // If the target notices the Panther while it is moving between
+            // cover positions, abandon that route. Its next schedule is
+            // selected from the state just computed above.
+            if( m_pSchedule == &slPanthereyeStalkMove[0] &&
+                ( m_bEnemyLookingAtMe ||
+                  m_flAggressiveUntil > flNow ||
+                  m_flFleeUntil > flNow ) )
+            {
+                TaskFail();
+            }
+        }
+        else
         {
-            m_flFleeUntil = gpGlobals->time + 7.0f;
+            // No enemy: the original clears both threat timers and stare memory.
             m_flAggressiveUntil = 0.0f;
+            m_flFleeUntil = 0.0f;
+            m_flStareTime = 0.0f;
+            m_bStalking = FALSE;
             m_bAmbushLeapRequested = FALSE;
         }
 
-        if( fPissOffHard || fPissOff )
+        // Expired anger/retreat timers explicitly release their corresponding
+        // schedules in the source; don't make the monster finish a stale chase
+        // or cover route before it returns to stalking.
+        if( fAggressionExpired && m_pSchedule == &slPanthereyeChase[0] )
+            fForceScheduleChange = TRUE;
+
+        if( fFleeExpired &&
+            ( m_pSchedule == &slPanthereyeTakeCoverFromEnemy[0] ||
+              m_pSchedule == &slPanthereyeTakeCoverFromBestSound[0] ) )
         {
-            float flAngerDuration = fPissOffHard ? 8.0f : 3.0f;
-            m_flAggressiveUntil = max( m_flAggressiveUntil,
-                                       gpGlobals->time + flAngerDuration );
-            m_flFleeUntil = 0.0f;
-            m_flRunUntil = gpGlobals->time + 12.0f;
-            m_bAmbushLeapRequested = FALSE;
+            fForceScheduleChange = TRUE;
         }
 
-        if( m_flFleeUntil <= gpGlobals->time )
-            m_flFleeUntil = 0.0f;
-        if( m_flAggressiveUntil <= gpGlobals->time )
-            m_flAggressiveUntil = 0.0f;
-
-        m_bStalking = ( m_flAggressiveUntil <= gpGlobals->time &&
-                        m_flFleeUntil <= gpGlobals->time &&
-                        FBitSet( pev->flags, FL_ONGROUND ) &&
-                        pev->sequence != LookupSequence( "crouch_to_jump" ) &&
-                        !m_bAmbushLeapRequested );
-
-        // Break a sneak move when the target spots the creature or the
-        // anger/retreat logic has selected a different behavior.
-        if( m_pSchedule == &slPanthereyeStalkMove[0] &&
-            ( m_bEnemyLookingAtMe ||
-              m_flAggressiveUntil > gpGlobals->time ||
-              m_flFleeUntil > gpGlobals->time ||
-              m_bAmbushLeapRequested ) )
-        {
-            TaskFail();
-        }
-
-        if( m_flAggressiveUntil <= gpGlobals->time &&
-            m_flFleeUntil <= gpGlobals->time &&
-            !m_bStalking )
-        {
-            m_bCornered = FALSE;
-            m_bPissable = FALSE;
-        }
+        if( fForceScheduleChange )
+            ChangeSchedule( GetSchedule() );
     }
-    else
+    else if( pev->deadflag != DEAD_NO )
     {
         m_bEnemyLookingAtMe = FALSE;
+    }
+    else if( m_hEnemy == NULL )
+    {
         m_bStalking = FALSE;
         m_bAmbushLeapRequested = FALSE;
         m_flStareTime = 0.0f;
-
-        if( m_flAggressiveUntil <= gpGlobals->time )
-            m_flAggressiveUntil = 0.0f;
-        if( m_flFleeUntil <= gpGlobals->time )
-            m_flFleeUntil = 0.0f;
+        m_flAggressiveUntil = 0.0f;
+        m_flFleeUntil = 0.0f;
     }
 
     CBaseMonster::PrescheduleThink();
 
-    // Idle cockroach interaction from Absolute Zero: the nearby creature is
-    // selected here; the get_bug animation's queued event handles the bite.
+    // Idle cockroach interaction from Absolute Zero.
     if( pev->deadflag == DEAD_NO &&
         m_IdealActivity == ACT_IDLE &&
         m_pSchedule != &slPanthereyeGetBug[0] &&
@@ -1714,52 +1818,9 @@ void CPantherEye::PrescheduleThink( void )
 
 int CPantherEye::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType )
 {
-    int iResult = CBaseMonster::TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType );
-
-    if( iResult > 0 && pev->deadflag == DEAD_NO &&
-        flDamage > 0.0f && gpGlobals->time >= m_flLastDamageReact )
-    {
-        CBaseEntity *pThreat = NULL;
-        float flThreatDistance = 99999.0f;
-
-        if( pevAttacker != NULL && ( pevAttacker->flags & ( FL_MONSTER | FL_CLIENT ) ) )
-            pThreat = CBaseEntity::Instance( pevAttacker );
-
-        if( pThreat == this )
-            pThreat = NULL;
-
-        if( pThreat != NULL )
-            flThreatDistance = ( pThreat->pev->origin - pev->origin ).Length();
-        else if( m_hEnemy != NULL )
-        {
-            pThreat = m_hEnemy;
-            flThreatDistance = ( pThreat->pev->origin - pev->origin ).Length();
-        }
-
-        if( pThreat != NULL )
-        {
-            m_flLastDamageReact = gpGlobals->time + 0.75f;
-            m_flRunUntil = gpGlobals->time + 12.0f;
-
-            // Wounded at close range: fight back. Wounded at range: vanish
-            // into cover and try to break line of sight before re-engaging.
-            if( flThreatDistance < ( m_bCornered ? 1100.0f : 850.0f ) )
-            {
-                m_flAggressiveUntil = gpGlobals->time + 8.0f;
-                m_flFleeUntil = 0.0f;
-            }
-            else
-            {
-                m_flFleeUntil = gpGlobals->time + 7.0f;
-                m_flAggressiveUntil = 0.0f;
-            }
-
-            m_bStalking = FALSE;
-            m_bAmbushLeapRequested = FALSE;
-        }
-    }
-
-    return iResult;
+    // Preserve stock damage/condition handling. PrescheduleThink consumes
+    // LIGHT_DAMAGE / HEAVY_DAMAGE and applies the original fight-or-flight rules.
+    return CBaseMonster::TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType );
 }
 
 void CPantherEye::AttackSound( void )
