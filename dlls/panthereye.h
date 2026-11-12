@@ -22,6 +22,8 @@
 class CPantherEye : public CBaseMonster
 {
 public:
+    CPantherEye( void );
+
     void Spawn( void );
     void Precache( void );
 
