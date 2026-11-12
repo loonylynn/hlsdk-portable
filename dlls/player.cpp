@@ -668,13 +668,56 @@ int CBasePlayer::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, fl
 // morphine-shot alternatives.
 void CBasePlayer::attemptCureBleeding( void )
 {
-	if( !( m_bitsDamageTypeMod & DMG_BLEEDING ) )
+	if( m_iBleedingTicksRemaining <= 0 && !( m_bitsDamageTypeMod & DMG_BLEEDING ) )
 		return;
 
 	if( RANDOM_LONG( 0, 1 ) )
 		SetSuitUpdate( "!HEV_HEAL7", FALSE, SUIT_NEXT_IN_30SEC );	// morphine shot
 	else
 		SetSuitUpdate( "!HEV_HEAL6", FALSE, SUIT_NEXT_IN_30SEC );	// wound sterilized
+
+	// Treat both alternative cure announcements as one event. This prevents
+	// a nearby second health treatment from immediately playing the other line.
+	if( ( pev->weapons & ( 1 << WEAPON_SUIT ) ) && !g_pGameRules->IsMultiplayer() )
+	{
+		const char *cureSentences[] = { "!HEV_HEAL6", "!HEV_HEAL7" };
+		for( int iSentence = 0; iSentence < 2; ++iSentence )
+		{
+			int sentence = SENTENCEG_Lookup( cureSentences[iSentence], NULL );
+			if( sentence < 0 )
+				continue;
+
+			int iEmpty = -1;
+			BOOL alreadyBlocked = FALSE;
+			for( int i = 0; i < CSUITNOREPEAT; ++i )
+			{
+				if( m_rgiSuitNoRepeat[i] == sentence )
+				{
+					if( m_rgflSuitNoRepeatTime[i] >= gpGlobals->time )
+						alreadyBlocked = TRUE;
+					else
+					{
+						m_rgiSuitNoRepeat[i] = 0;
+						m_rgflSuitNoRepeatTime[i] = 0.0f;
+						iEmpty = i;
+					}
+					break;
+				}
+
+				if( !m_rgiSuitNoRepeat[i] )
+					iEmpty = i;
+			}
+
+			if( alreadyBlocked )
+				continue;
+
+			if( iEmpty < 0 )
+				iEmpty = RANDOM_LONG( 0, CSUITNOREPEAT - 1 );
+
+			m_rgiSuitNoRepeat[iEmpty] = sentence;
+			m_rgflSuitNoRepeatTime[iEmpty] = gpGlobals->time + SUIT_NEXT_IN_30SEC;
+		}
+	}
 
 	ClearBleedingDamage();
 }

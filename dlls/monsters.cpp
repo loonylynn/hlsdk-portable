@@ -526,8 +526,8 @@ void CBaseMonster::MonsterThink( void )
 {
 	pev->nextthink = gpGlobals->time + 0.1f;// keep monster thinking.
 
-	CheckBleedingDamage();
 	RunAI();
+	CheckBleedingDamage();
 
 	float flInterval = StudioFrameAdvance( ); // animate
 

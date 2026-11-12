@@ -951,12 +951,16 @@ int CBaseMonster::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, f
 
 	if( bitsDamageTypeMod & DMG_BLEEDING )
 	{
+		// Repeated hits refresh the remaining duration, but must not postpone
+		// a tick that was already scheduled by the original wound.
+		BOOL wasBleeding = ( m_bitsDamageTypeMod & DMG_BLEEDING ) && m_iBleedingTicksRemaining > 0;
 		int duration = (int)gSkillData.tdmg_bleeding_duration;
 		if( duration > 0 && duration < 255 )
 		{
 			m_bitsDamageTypeMod |= DMG_BLEEDING;
 			m_iBleedingTicksRemaining = duration;
-			m_flBleedingNextDamageTime = gpGlobals->time + 2.0f;
+			if( !wasBleeding )
+				m_flBleedingNextDamageTime = gpGlobals->time + 2.0f;
 		}
 		else
 		{
@@ -1010,7 +1014,13 @@ void CBaseMonster::CheckBleedingDamage( void )
 	// bleeding effect. Non-blooded entities still take the timed damage.
 	if( BloodColor() != DONT_BLEED )
 	{
-		UTIL_MakeAimVectors( pev->angles );
+		// Absolute Zero uses the player's view angles for player blood drips;
+		// monsters use their body angles.
+		if( IsPlayer() )
+			UTIL_MakeVectors( pev->v_angle + pev->punchangle );
+		else
+			UTIL_MakeAimVectors( pev->angles );
+
 		SpawnBlood(
 			pev->origin + pev->view_ofs + gpGlobals->v_forward * RANDOM_FLOAT( 9.0f, 13.0f ) + gpGlobals->v_right * RANDOM_FLOAT( -5.0f, 5.0f ) + gpGlobals->v_up * RANDOM_FLOAT( 4.0f, 7.0f ),
 			BloodColor(),
