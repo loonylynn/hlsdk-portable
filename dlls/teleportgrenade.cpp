@@ -171,7 +171,11 @@ BOOL CTeleportProjectile::CanTeleportPlayer( CBasePlayer *pPlayer, const Vector 
 	if( trGround.vecPlaneNormal.z < TELEPORT_GRENADE_FLOOR_NORMAL )
 		return FALSE;
 
-	vecDestination = trGround.vecEndPos + Vector( 0, 0, TELEPORT_GRENADE_GROUND_CLEARANCE );
+	// GoldSrc player origins are centred in their collision hulls:
+	// standing is 72 units tall (-36..+36), ducking is 36 (-18..+18).
+	// Convert the floor contact point into the matching player-origin height.
+	const float flHullHalfHeight = ( pPlayer->pev->flags & FL_DUCKING ) ? 18.0f : 36.0f;
+	vecDestination = trGround.vecEndPos + Vector( 0, 0, flHullHalfHeight + TELEPORT_GRENADE_GROUND_CLEARANCE );
 
 	// Test the complete player hull at the resolved feet position.  This
 	// catches walls, other actors, low ceilings and other landing obstructions.
