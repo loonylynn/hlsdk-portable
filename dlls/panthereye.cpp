@@ -1684,18 +1684,18 @@ void CPantherEye::PrescheduleThink( void )
 
             if( fTryRunAway )
             {
-                BOOL fStartedRunningAway = ( m_flFleeUntil <= flNow );
+                BOOL fStartedRunningAway = ( m_flFleeUntil == 0.0f );
                 m_flFleeUntil = flNow + 7.0f;
 
                 // As in the original, a new retreat only changes schedules
                 // immediately when there is no active anger timer.
-                if( fStartedRunningAway && m_flAggressiveUntil <= flNow )
+                if( fStartedRunningAway && m_flAggressiveUntil == 0.0f )
                     fForceScheduleChange = TRUE;
             }
 
             if( fPissOffHard || fPissOff )
             {
-                BOOL fStartedAnger = ( m_flAggressiveUntil <= flNow );
+                BOOL fStartedAnger = ( m_flAggressiveUntil == 0.0f );
 
                 if( fPissOffHard )
                     m_flAggressiveUntil = max( m_flAggressiveUntil, flNow + 8.0f );
@@ -1710,13 +1710,8 @@ void CPantherEye::PrescheduleThink( void )
                     fForceScheduleChange = TRUE;
             }
 
-            if( m_flFleeUntil <= flNow )
-                m_flFleeUntil = 0.0f;
-            if( m_flAggressiveUntil <= flNow )
-                m_flAggressiveUntil = 0.0f;
-
-            m_bStalking = ( m_flAggressiveUntil <= flNow &&
-                            m_flFleeUntil <= flNow );
+            // Do not recompute m_bStalking here. The original sets sneakMode
+            // before evaluating the threat and updates it on the next think.
 
             // If the target notices the Panther while it is moving between
             // cover positions, abandon that route. Its next schedule is
@@ -1739,9 +1734,14 @@ void CPantherEye::PrescheduleThink( void )
             m_bAmbushLeapRequested = FALSE;
         }
 
-        // A timer can be renewed on the same think in which its previous
-        // value expired. In that case it is still active and must not trigger
-        // the source's "timer ended" schedule handoff.
+        // Expired timers are reset only after all behavior decisions, matching
+        // the source's -1 sentinel transitions.
+        if( m_flAggressiveUntil > 0.0f && m_flAggressiveUntil <= flNow )
+            m_flAggressiveUntil = 0.0f;
+        if( m_flFleeUntil > 0.0f && m_flFleeUntil <= flNow )
+            m_flFleeUntil = 0.0f;
+
+        // A timer renewed on this think is no longer considered expired.
         if( m_flAggressiveUntil > flNow )
             fAggressionExpired = FALSE;
         if( m_flFleeUntil > flNow )
