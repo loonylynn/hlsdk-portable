@@ -93,6 +93,8 @@ TYPEDESCRIPTION	CBaseMonster::m_SaveData[] =
 	DEFINE_FIELD( CBaseMonster, m_flNextAttack, FIELD_TIME ),
 	DEFINE_FIELD( CBaseMonster, m_bitsDamageType, FIELD_INTEGER ),
 	DEFINE_FIELD( CBaseMonster, m_bitsDamageTypeMod, FIELD_INTEGER ),
+	DEFINE_FIELD( CBaseMonster, m_iBleedingTicksRemaining, FIELD_INTEGER ),
+	DEFINE_FIELD( CBaseMonster, m_flBleedingNextDamageTime, FIELD_TIME ),
 	DEFINE_ARRAY( CBaseMonster, m_rgbTimeBasedDamage, FIELD_CHARACTER, CDMG_TIMEBASED ),
 	DEFINE_FIELD( CBaseMonster, m_bloodColor, FIELD_INTEGER ),
 	DEFINE_FIELD( CBaseMonster, m_failSchedule, FIELD_INTEGER ),
@@ -524,6 +526,7 @@ void CBaseMonster::MonsterThink( void )
 {
 	pev->nextthink = gpGlobals->time + 0.1f;// keep monster thinking.
 
+	CheckBleedingDamage();
 	RunAI();
 
 	float flInterval = StudioFrameAdvance( ); // animate
@@ -1996,6 +1999,8 @@ void CBaseMonster::MonsterInit( void )
 
 	// Set fields common to all monsters
 	m_bitsDamageTypeMod = 0;
+	m_iBleedingTicksRemaining = 0;
+	m_flBleedingNextDamageTime = 0;
 	pev->effects		= 0;
 	pev->takedamage		= DAMAGE_AIM;
 	pev->ideal_yaw		= pev->angles.y;
