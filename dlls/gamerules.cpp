@@ -301,6 +301,10 @@ void CGameRules::RefreshSkillData ( void )
 	gSkillData.plrStomach = GetSkillCvar( "sk_player_stomach" );
 	gSkillData.plrLeg = GetSkillCvar( "sk_player_leg" );
 	gSkillData.plrArm = GetSkillCvar( "sk_player_arm" );
+
+	// Timed bleeding uses the same difficulty-specific skill.cfg convention.
+	gSkillData.tdmg_bleeding_duration = GetSkillCvar( "tdmg_bleeding_duration" );
+	gSkillData.tdmg_bleeding_damage = GetSkillCvar( "tdmg_bleeding_damage" );
 }
 
 void CGameRules::ClientUserInfoChanged( CBasePlayer *pPlayer, char *infobuffer )
