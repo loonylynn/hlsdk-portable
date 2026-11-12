@@ -29,7 +29,6 @@ enum
 {
     TASK_PANTHEREYE_LEAP = LAST_COMMON_TASK + 1,
     TASK_PANTHEREYE_FIND_STALK_COVER,
-    TASK_PANTHEREYE_FIND_FLEE_COVER,
     TASK_PANTHEREYE_STALK_WAIT,
     TASK_PANTHEREYE_FIND_UNSTUCK_DIRECTION,
     TASK_PANTHEREYE_UNSTUCK_LEAP,
@@ -40,7 +39,6 @@ enum
 {
     SCHED_PANTHEREYE_STALK_WAIT = LAST_COMMON_SCHEDULE + 1,
     SCHED_PANTHEREYE_STALK_MOVE,
-    SCHED_PANTHEREYE_FLEE,
     SCHED_PANTHEREYE_CHASE,
     SCHED_PANTHEREYE_UNSTUCK,
     SCHED_PANTHEREYE_GET_BUG
@@ -104,27 +102,6 @@ Schedule_t slPanthereyeStalkMove[] =
         bits_COND_LIGHT_DAMAGE | bits_COND_HEAVY_DAMAGE,
         bits_SOUND_DANGER,
         "PanthereyeStalkMove"
-    },
-};
-
-Task_t tlPanthereyeFlee[] =
-{
-    { TASK_STOP_MOVING,                 0 },
-    { TASK_SET_FAIL_SCHEDULE,           (float)SCHED_TAKE_COVER_FROM_ENEMY },
-    { TASK_PANTHEREYE_FIND_FLEE_COVER,  0 },
-    { TASK_RUN_PATH,                    0 },
-    { TASK_WAIT_FOR_MOVEMENT,           0 },
-    { TASK_WAIT,                        0.6f },
-};
-
-Schedule_t slPanthereyeFlee[] =
-{
-    {
-        tlPanthereyeFlee,
-        ARRAYSIZE( tlPanthereyeFlee ),
-        bits_COND_NEW_ENEMY | bits_COND_ENEMY_DEAD,
-        bits_SOUND_DANGER,
-        "PanthereyeFlee"
     },
 };
 
@@ -694,8 +671,6 @@ Schedule_t *CPantherEye::GetScheduleOfType( int Type )
     case SCHED_PANTHEREYE_STALK_MOVE:
         return &slPanthereyeStalkMove[0];
 
-    case SCHED_PANTHEREYE_FLEE:
-        return &slPanthereyeFlee[0];
     }
 
     return CBaseMonster::GetScheduleOfType( Type );
@@ -722,7 +697,7 @@ Schedule_t *CPantherEye::GetSchedule( void )
     }
 
     if( m_flFleeUntil > gpGlobals->time )
-        return GetScheduleOfType( SCHED_PANTHEREYE_FLEE );
+        return CBaseMonster::GetScheduleOfType( SCHED_TAKE_COVER_FROM_ENEMY );
 
     if( m_flAggressiveUntil > gpGlobals->time )
         return GetScheduleOfType( SCHED_PANTHEREYE_CHASE );
@@ -740,7 +715,9 @@ Schedule_t *CPantherEye::GetSchedule( void )
 
     if( m_bStalking )
     {
-        if( m_bEnemyLookingAtMe || gpGlobals->time < m_flNextStalkMove )
+        // Stay hidden while the target is not looking and the move timer has
+        // not expired. If noticed, seek another lateral / node cover point.
+        if( m_bCornered || ( !m_bEnemyLookingAtMe && gpGlobals->time < m_flNextStalkMove ) )
             return GetScheduleOfType( SCHED_PANTHEREYE_STALK_WAIT );
 
         return GetScheduleOfType( SCHED_PANTHEREYE_STALK_MOVE );
@@ -851,7 +828,7 @@ void CPantherEye::StartTask( Task_t *pTask )
         // navigation-node cover position. This mirrors Absolute Zero's
         // original cover-first stalking logic.
         if( FindLateralCover( vecThreat, vecViewOffset ) ||
-            FindCover( vecThreat, vecViewOffset, 0.0f, CoverRadius() * 1.8f ) )
+            FindCover( vecThreat, vecViewOffset, 0.0f, CoverRadius() ) )
         {
             m_flNextStalkMove = gpGlobals->time + RANDOM_FLOAT( 5.0f, 11.0f );
             m_movementActivity = ACT_WALK;
@@ -868,56 +845,6 @@ void CPantherEye::StartTask( Task_t *pTask )
         m_flNextStalkMove = gpGlobals->time + RANDOM_FLOAT( 4.0f, 8.0f );
         m_bCornered = TRUE;
         m_bPissable = TRUE;
-        TaskFail();
-        return;
-    }
-
-    if( pTask->iTask == TASK_PANTHEREYE_FIND_FLEE_COVER )
-    {
-        Vector vecThreat;
-        Vector vecViewOffset;
-
-        if( m_hEnemy == NULL )
-        {
-            TaskFail();
-            return;
-        }
-
-        vecThreat = m_hEnemy->pev->origin;
-        vecViewOffset = m_hEnemy->pev->view_ofs;
-
-        if( FindLateralCover( vecThreat, vecViewOffset ) ||
-            FindCover( vecThreat, vecViewOffset, 0.0f, CoverRadius() * 2.0f ) )
-        {
-            m_movementActivity = ACT_RUN;
-            TaskComplete();
-            return;
-        }
-
-        // As a last resort, run away from the threat along the opposite
-        // horizontal vector. This still works on maps without a node graph.
-        {
-            Vector vecAway = pev->origin - vecThreat;
-            vecAway.z = 0.0f;
-
-            if( vecAway.Length() < 1.0f )
-            {
-                UTIL_MakeVectors( pev->angles );
-                vecAway = Vector( -gpGlobals->v_forward.x, -gpGlobals->v_forward.y, 0.0f );
-            }
-
-            vecAway = vecAway.Normalize();
-            if( MoveToLocation( ACT_RUN, 0.0f, pev->origin + vecAway * 320.0f ) )
-            {
-                TaskComplete();
-                return;
-            }
-        }
-
-        // No viable escape route. Drop the flee timer so the normal AI can
-        // select its best available combat response instead of retrying forever.
-        m_flFleeUntil = gpGlobals->time;
-        m_bCornered = TRUE;
         TaskFail();
         return;
     }
@@ -999,17 +926,12 @@ void CPantherEye::RunTask( Task_t *pTask )
         if( m_hEnemy == NULL ||
             m_flAggressiveUntil > gpGlobals->time ||
             m_flFleeUntil > gpGlobals->time ||
-            ( !m_bEnemyLookingAtMe && gpGlobals->time >= m_flStalkWaitUntil ) )
+            ( !m_bCornered && m_bEnemyLookingAtMe ) ||
+            gpGlobals->time >= m_flStalkWaitUntil )
         {
             TaskComplete();
             return;
         }
-
-        // Keep the idle/fidget sequence playing while the player watches.
-        // PrescheduleThink accumulates the stare duration and flips to anger
-        // after the same prolonged-look threshold used by the original.
-        if( gpGlobals->time >= m_flStalkWaitUntil )
-            m_flStalkWaitUntil = gpGlobals->time + 0.2f;
 
         return;
     }
@@ -1282,35 +1204,38 @@ void CPantherEye::PrescheduleThink( void )
 
         // If the player keeps the Panther Eye in view for long enough, its
         // cautious stalking state breaks and it commits to a short attack run.
-        if( m_bEnemyLookingAtMe &&
-            m_flAggressiveUntil <= gpGlobals->time &&
-            flDistance < ( m_bCornered ? 2100.0f : 1600.0f ) )
+        // Original anger thresholds are expressed in model-relative units:
+        // ordinary sight range 115*20, cornered 340*20, and "pissable" 200*20.
+        // The health modifier makes a wounded creature noticeably less patient.
+        if( m_flAggressiveUntil <= gpGlobals->time &&
+            m_flFleeUntil <= gpGlobals->time )
         {
-            float flRequiredStare = m_bCornered ? 1.2f : ( m_bPissable ? 1.8f : 2.6f );
+            float flLookRange = m_bCornered ? 6800.0f : ( m_bPissable ? 4000.0f : 2300.0f );
+            float flCloseRange = m_bCornered ? 4600.0f : ( m_bPissable ? 1600.0f : 1400.0f );
+            float flHealthFactor = 1.0f;
 
-            if( m_flStareTime >= flRequiredStare )
+            if( pev->max_health > 0.0f )
+                flHealthFactor += ( 1.0f - pev->health / pev->max_health ) * 0.6f;
+
+            flLookRange *= flHealthFactor;
+
+            if( m_bEnemyLookingAtMe && flDistance < flLookRange )
             {
-                m_flAggressiveUntil = gpGlobals->time + ( m_bCornered ? 8.0f : 5.0f );
+                m_flAggressiveUntil = gpGlobals->time + ( m_bCornered ? 8.0f : 3.0f );
                 m_flFleeUntil = 0.0f;
                 m_flRunUntil = gpGlobals->time + 12.0f;
                 m_bAmbushLeapRequested = FALSE;
             }
-        }
-
-        // At very close range the creature stops playing games. When the
-        // player turns away at leap distance, it uses the model's crouch-to-
-        // jump attack as an ambush instead of announcing a conventional chase.
-        if( m_flAggressiveUntil <= gpGlobals->time &&
-            m_flFleeUntil <= gpGlobals->time )
-        {
-            if( flDistance < 220.0f )
+            else if( !m_bEnemyLookingAtMe && flDistance < flCloseRange )
             {
-                m_flAggressiveUntil = gpGlobals->time + 4.0f;
+                // When close enough, the creature gives up sneaking even if
+                // the target has not noticed it.
+                m_flAggressiveUntil = gpGlobals->time + 3.0f;
                 m_flRunUntil = gpGlobals->time + 12.0f;
             }
             else if( fEnemyVisible &&
                      !m_bEnemyLookingAtMe &&
-                     flFacingDot < 0.15f &&
+                     flFacingDot < -0.30f &&
                      flDistance >= 180.0f &&
                      flDistance <= 850.0f &&
                      gpGlobals->time >= m_flNextLeapAttack &&
@@ -1532,7 +1457,6 @@ DEFINE_CUSTOM_SCHEDULES( CPantherEye )
     slPanthereyeLeap,
     slPanthereyeStalkWait,
     slPanthereyeStalkMove,
-    slPanthereyeFlee,
     slPanthereyeChase,
     slPanthereyeUnstuck,
     slPanthereyeGetBug,
