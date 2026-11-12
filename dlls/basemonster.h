@@ -85,6 +85,8 @@ public:
 
 	int m_bitsDamageType;	// what types of damage has monster (player) taken
 	int m_bitsDamageTypeMod;	// secondary timed-damage flags, separate from engine DMG_* bits
+	int m_iBleedingTicksRemaining;	// remaining two-second bleeding damage intervals
+	float m_flBleedingNextDamageTime;	// next scheduled bleeding tick
 	BYTE m_rgbTimeBasedDamage[CDMG_TIMEBASED];
 
 	int m_lastDamageAmount;// how much damage did monster (player) last take
@@ -312,6 +314,8 @@ public:
 	virtual int TakeHealth( float flHealth, int bitsDamageType );
 	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType);
 	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType, int bitsDamageTypeMod);
+	void CheckBleedingDamage( void );
+	void ClearBleedingDamage( void );
 	int DeadTakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType );
 
 	void RadiusDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int iClassIgnore, int bitsDamageType );
