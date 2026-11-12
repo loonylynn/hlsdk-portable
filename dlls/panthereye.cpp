@@ -889,6 +889,13 @@ Schedule_t *CPantherEye::GetSchedule( void )
         return CBaseMonster::GetSchedule();
     }
 
+    // A danger sound takes precedence over stalking and ordinary pursuit.
+    // Its source is selected by the shared sound system; the custom schedule
+    // then preserves the Panthereye-specific cover-failure response.
+    if( HasConditions( bits_COND_HEAR_SOUND ) &&
+        ( m_afSoundTypes & bits_SOUND_DANGER ) )
+        return GetScheduleOfType( SCHED_TAKE_COVER_FROM_BEST_SOUND );
+
     if( m_flFleeUntil > gpGlobals->time )
         return GetScheduleOfType( SCHED_TAKE_COVER_FROM_ENEMY );
 
