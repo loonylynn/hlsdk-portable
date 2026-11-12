@@ -515,6 +515,12 @@ int CBaseEntity::TakeHealth( float flHealth, int bitsDamageType )
 	return 1;
 }
 
+// Does this entity suppress physical reactions to impacts such as punch / knockback?
+BOOL CBaseEntity::blocksImpact( void )
+{
+	return FALSE;
+}
+
 // inflict damage on this entity.  bitsDamageType indicates type of damage inflicted, ie: DMG_CRUSH
 
 int CBaseEntity::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType )
