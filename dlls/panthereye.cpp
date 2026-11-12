@@ -40,6 +40,7 @@ enum
     SCHED_PANTHEREYE_STALK_WAIT = LAST_COMMON_SCHEDULE + 1,
     SCHED_PANTHEREYE_STALK_MOVE,
     SCHED_PANTHEREYE_CHASE,
+    SCHED_PANTHEREYE_UNSTUCK_PRECHECK,
     SCHED_PANTHEREYE_UNSTUCK,
     SCHED_PANTHEREYE_GET_BUG
 };
@@ -108,7 +109,7 @@ Schedule_t slPanthereyeStalkMove[] =
 Task_t tlPanthereyeChase[] =
 {
     { TASK_SET_ACTIVITY,       (float)ACT_IDLE },
-    { TASK_SET_FAIL_SCHEDULE,  (float)SCHED_PANTHEREYE_UNSTUCK },
+    { TASK_SET_FAIL_SCHEDULE,  (float)SCHED_PANTHEREYE_UNSTUCK_PRECHECK },
     { TASK_GET_PATH_TO_ENEMY,  0 },
     { TASK_RUN_PATH,           0 },
     { TASK_WAIT_FOR_MOVEMENT,  0 },
@@ -125,6 +126,29 @@ Schedule_t slPanthereyeChase[] =
         bits_COND_LIGHT_DAMAGE | bits_COND_HEAVY_DAMAGE,
         bits_SOUND_DANGER,
         "PanthereyeChase"
+    },
+};
+
+Task_t tlPanthereyeUnstuckPrecheck[] =
+{
+    { TASK_STOP_MOVING,                         0 },
+    { TASK_SET_FAIL_SCHEDULE,                   (float)SCHED_PANTHEREYE_UNSTUCK },
+    { TASK_WAIT_FACE_ENEMY,                     1.8f },
+    { TASK_GET_PATH_TO_ENEMY,                   0 },
+    { TASK_RUN_PATH,                            0 },
+    { TASK_WAIT_FOR_MOVEMENT,                   0 },
+};
+
+Schedule_t slPanthereyeUnstuckPrecheck[] =
+{
+    {
+        tlPanthereyeUnstuckPrecheck,
+        ARRAYSIZE( tlPanthereyeUnstuckPrecheck ),
+        bits_COND_NEW_ENEMY | bits_COND_ENEMY_DEAD |
+        bits_COND_CAN_MELEE_ATTACK1 | bits_COND_CAN_MELEE_ATTACK2 |
+        bits_COND_HEAVY_DAMAGE,
+        bits_SOUND_DANGER,
+        "PanthereyeUnstuckPrecheck"
     },
 };
 
@@ -659,6 +683,9 @@ Schedule_t *CPantherEye::GetScheduleOfType( int Type )
         return &slPanthereyeChase[0];
 
     case SCHED_CHASE_ENEMY_FAILED:
+    case SCHED_PANTHEREYE_UNSTUCK_PRECHECK:
+        return &slPanthereyeUnstuckPrecheck[0];
+
     case SCHED_PANTHEREYE_UNSTUCK:
         return &slPanthereyeUnstuck[0];
 
@@ -1458,6 +1485,7 @@ DEFINE_CUSTOM_SCHEDULES( CPantherEye )
     slPanthereyeStalkWait,
     slPanthereyeStalkMove,
     slPanthereyeChase,
+    slPanthereyeUnstuckPrecheck,
     slPanthereyeUnstuck,
     slPanthereyeGetBug,
 };
