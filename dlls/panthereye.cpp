@@ -1624,14 +1624,14 @@ void CPantherEye::PrescheduleThink( void )
                 m_flStareTime = 0.0f;
             }
 
-            if( m_flAggressiveUntil <= flNow )
+            if( m_flAggressiveUntil <= flNow && fCanObserveEnemy )
             {
-                if( fCanObserveEnemy && fEnemyFacingMe )
+                if( fEnemyFacingMe )
                 {
                     if( flDistance < flLookRange )
                         fPissOff = TRUE;
                 }
-                else if( fCanObserveEnemy && fEnemyFacingAway )
+                else if( fEnemyFacingAway )
                 {
                     // The original jumps when the target's back is turned and
                     // it is between 130 and 360 units away.
