@@ -87,6 +87,7 @@ set (SVDLL_SOURCES
 	h_cycler.cpp
 	h_export.cpp
 	handgrenade.cpp
+	teleportgrenade.cpp
 	hassassin.cpp
 	headcrab.cpp
 	healthkit.cpp

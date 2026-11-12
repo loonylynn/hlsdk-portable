@@ -79,6 +79,7 @@ public:
 #define	WEAPON_SATCHEL			14
 #define	WEAPON_SNARK			15
 
+#define WEAPON_TELEPORT			16
 #define WEAPON_ALLWEAPONS		(~(1<<WEAPON_SUIT))
 
 #define WEAPON_SUIT				31	// ?????
@@ -900,6 +901,32 @@ public:
 
 	virtual BOOL UseDecrement( void )
 	{ 
+#if CLIENT_WEAPONS
+		return TRUE;
+#else
+		return FALSE;
+#endif
+	}
+};
+
+class CTeleportGrenade : public CBasePlayerWeapon
+{
+public:
+	void Spawn( void );
+	void Precache( void );
+	int iItemSlot( void ) { return 5; }
+	int GetItemInfo( ItemInfo *p );
+	BOOL IsUseable( void );
+	BOOL Deploy( void );
+	BOOL CanHolster( void );
+	void Holster( int skiplocal = 0 );
+	void PrimaryAttack( void );
+	void WeaponIdle( void );
+	void LaunchTeleportProjectile( void );
+	void OnProjectileFinished( void );
+
+	virtual BOOL UseDecrement( void )
+	{
 #if CLIENT_WEAPONS
 		return TRUE;
 #else

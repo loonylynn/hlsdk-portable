@@ -62,6 +62,7 @@ set (CLDLL_SOURCES
 	../dlls/egon.cpp
 	../dlls/gauss.cpp
 	../dlls/handgrenade.cpp
+	../dlls/teleportgrenade.cpp
 	../dlls/hornetgun.cpp
 	../dlls/mp5.cpp
 	../dlls/python.cpp

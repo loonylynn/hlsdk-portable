@@ -348,6 +348,7 @@ void W_Precache( void )
 #endif
 	// hand grenade
 	UTIL_PrecacheOtherWeapon("weapon_handgrenade");
+	UTIL_PrecacheOtherWeapon( "weapon_teleport" );
 #if !OEM_BUILD && !HLDEMO_BUILD
 	// squeak grenade
 	UTIL_PrecacheOtherWeapon( "weapon_snark" );
