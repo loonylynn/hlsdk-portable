@@ -33,7 +33,8 @@ enum
     TASK_PANTHEREYE_FIND_UNSTUCK_DIRECTION,
     TASK_PANTHEREYE_UNSTUCK_LEAP,
     TASK_PANTHEREYE_GET_BUG_ANIM,
-    TASK_PANTHEREYE_COVER_FAIL_WAIT
+    TASK_PANTHEREYE_COVER_FAIL_WAIT,
+    TASK_PANTHEREYE_NORMALMOVE
 };
 
 enum
@@ -199,7 +200,9 @@ Schedule_t slPanthereyeGetBug[] =
 Task_t tlPanthereyeGetIntoCirclingRange[] =
 {
     { TASK_SET_FAIL_SCHEDULE,       (float)SCHED_PANTHEREYE_GENERIC_FAIL },
-    { TASK_MOVE_TO_TARGET_RANGE,    260.0f },
+    { TASK_PANTHEREYE_NORMALMOVE,   260.0f },
+    { TASK_RUN_PATH,                0 },
+    { TASK_WAIT_FOR_MOVEMENT,       0 },
 };
 
 Schedule_t slPanthereyeGetIntoCirclingRange[] =
@@ -928,11 +931,11 @@ Schedule_t *CPantherEye::GetSchedule( void )
 
 void CPantherEye::StartTask( Task_t *pTask )
 {
-    if( pTask->iTask == TASK_MOVE_TO_TARGET_RANGE &&
-        m_pSchedule == &slPanthereyeGetIntoCirclingRange[0] )
+    if( pTask->iTask == TASK_PANTHEREYE_NORMALMOVE )
     {
-        // The original TASK_PANTHER_NORMALMOVE follows the enemy entity.
-        // GoldSrc already has the same operation as MOVE_TO_TARGET_RANGE.
+        // Absolute Zero's TASK_PANTHER_NORMALMOVE follows the live enemy
+        // entity instead of treating the 260-unit task value as a stopping
+        // distance. The value is used by RunTask as a route-refresh threshold.
         m_hTargetEnt = m_hEnemy;
         if( m_hTargetEnt == NULL )
         {
@@ -940,7 +943,16 @@ void CPantherEye::StartTask( Task_t *pTask )
             return;
         }
 
-        CBaseMonster::StartTask( pTask );
+        if( ( m_hTargetEnt->pev->origin - pev->origin ).Length() < 1.0f )
+        {
+            TaskComplete();
+            return;
+        }
+
+        m_vecMoveGoal = m_hTargetEnt->pev->origin;
+        if( !MoveToTarget( ACT_WALK, 2.0f ) )
+            TaskFail();
+
         return;
     }
 
@@ -1119,6 +1131,41 @@ void CPantherEye::RunTask( Task_t *pTask )
         m_bWaitingForPath = FALSE;
         CBaseMonster::StartTask( pTask );
         m_flNextPathTry = gpGlobals->time + 0.5f;
+        return;
+    }
+
+    if( pTask->iTask == TASK_PANTHEREYE_NORMALMOVE )
+    {
+        float flDistance;
+        float flTargetDiscrepancy;
+
+        // The source updates the target handle every think because enemies
+        // may move while this schedule is active. Keep the route aimed at the
+        // current enemy position instead of following a stale point.
+        m_hTargetEnt = m_hEnemy;
+        if( m_hTargetEnt == NULL )
+        {
+            TaskFail();
+            return;
+        }
+
+        flDistance = ( m_vecMoveGoal - pev->origin ).Length2D();
+        flTargetDiscrepancy =
+            ( m_vecMoveGoal - m_hTargetEnt->pev->origin ).Length();
+
+        m_vecMoveGoal = m_hTargetEnt->pev->origin;
+        FRefreshRoute();
+
+        // Preserve Absolute Zero's 230-unit near-goal refresh and its
+        // task-data-based moved-target threshold (260 * 0.5 by default).
+        if( flDistance < 230.0f ||
+            flTargetDiscrepancy > pTask->flData * 0.5f )
+        {
+            m_vecMoveGoal = m_hTargetEnt->pev->origin;
+            flDistance = ( m_vecMoveGoal - pev->origin ).Length2D();
+        }
+
+        m_movementActivity = ACT_RUN;
         return;
     }
 
