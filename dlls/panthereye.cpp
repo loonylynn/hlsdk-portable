@@ -1040,7 +1040,7 @@ int CPantherEye::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, fl
         CBaseEntity *pThreat = NULL;
         float flThreatDistance = 99999.0f;
 
-        if( pevAttacker != NULL )
+        if( pevAttacker != NULL && ( pevAttacker->flags & ( FL_MONSTER | FL_CLIENT ) ) )
             pThreat = CBaseEntity::Instance( pevAttacker );
 
         if( pThreat == this )
