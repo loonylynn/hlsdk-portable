@@ -42,8 +42,10 @@ public:
 
     void PrescheduleThink( void );
     Schedule_t *GetScheduleOfType( int Type );
+    Schedule_t *GetSchedule( void );
     void StartTask( Task_t *pTask );
     void RunTask( Task_t *pTask );
+    virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType );
 
     void IdleSound( void );
     void AlertSound( void );
@@ -68,7 +70,17 @@ private:
     float m_flLeapLaunchTime;
     float m_flRunUntil;
     float m_flClawDamage;
+    float m_flStareTime;
+    float m_flAggressiveUntil;
+    float m_flFleeUntil;
+    float m_flStalkWaitUntil;
+    float m_flLastDamageReact;
     BOOL m_bLeapLaunched;
+    BOOL m_bStalking;
+    BOOL m_bEnemyLookingAtMe;
+    BOOL m_bAmbushLeapRequested;
+    BOOL m_bCornered;
+    BOOL m_bPissable;
 };
 
 #endif // PANTHEREYE_H
