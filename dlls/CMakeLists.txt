@@ -110,6 +110,7 @@ set (SVDLL_SOURCES
 	nodes.cpp
 	observer.cpp
 	osprey.cpp
+	panthereye.cpp
 	pathcorner.cpp
 	plane.cpp
 	plats.cpp
