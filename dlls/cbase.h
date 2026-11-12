@@ -173,13 +173,15 @@ public:
 	static TYPEDESCRIPTION m_SaveData[];
 
 	virtual void TraceAttack( entvars_t *pevAttacker, float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType);
-	// Secondary damage flags are kept separate from the engine's DMG_* mask.
-	// The legacy overloads remain available for existing entity implementations.
+	virtual void TraceAttack( entvars_t *pevAttacker, float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType);
+#ifndef CLIENT_DLL
+	// Secondary damage flags and impact handling are server-side entity behavior.
+	// Keep these virtuals out of the client DLL's class/vtable declarations.
 	virtual void TraceAttack( entvars_t *pevAttacker, float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType, int bitsDamageTypeMod );
-	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType );
 	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType, int bitsDamageTypeMod );
-	// Entities may override this to suppress physical reactions such as claw knockback.
 	virtual BOOL blocksImpact( void );
+#endif
+	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType );
 	virtual int TakeHealth( float flHealth, int bitsDamageType );
 	virtual void Killed( entvars_t *pevAttacker, int iGib );
 	virtual int BloodColor( void ) { return DONT_BLEED; }
