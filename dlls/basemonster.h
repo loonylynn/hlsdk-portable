@@ -293,7 +293,9 @@ public:
 	BOOL GetEnemy( void );
 	void MakeDamageBloodDecal( int cCount, float flNoise, TraceResult *ptr, const Vector &vecDir );
 	void TraceAttack( entvars_t *pevAttacker, float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType);
+#ifndef CLIENT_DLL
 	virtual void TraceAttack( entvars_t *pevAttacker, float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType, int bitsDamageTypeMod);
+#endif
 
 	// combat functions
 	float UpdateTarget( entvars_t *pevTarget );
@@ -314,7 +316,9 @@ public:
 
 	virtual int TakeHealth( float flHealth, int bitsDamageType );
 	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType);
+#ifndef CLIENT_DLL
 	virtual int TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType, int bitsDamageTypeMod);
+#endif
 	void CheckBleedingDamage( void );
 	void ClearBleedingDamage( void );
 	int DeadTakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType );
