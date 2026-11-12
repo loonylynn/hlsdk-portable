@@ -74,6 +74,7 @@ private:
     float m_flAggressiveUntil;
     float m_flFleeUntil;
     float m_flStalkWaitUntil;
+    float m_flNextStalkMove;
     float m_flLastDamageReact;
     BOOL m_bLeapLaunched;
     BOOL m_bStalking;
