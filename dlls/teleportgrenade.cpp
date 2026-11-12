@@ -36,8 +36,7 @@
 #define TELEPORT_GRENADE_REVOKE_TIME     0.2f
 #define TELEPORT_GRENADE_VELOCITY_SCALE  0.3f
 #define TELEPORT_GRENADE_FLOOR_NORMAL    0.87f
-#define TELEPORT_GRENADE_GROUND_TRACE_UP 32.0f
-#define TELEPORT_GRENADE_GROUND_TRACE_DOWN 96.0f
+#define TELEPORT_GRENADE_GROUND_TRACE_DOWN 512.0f
 #define TELEPORT_GRENADE_GROUND_CLEARANCE 1.0f
 
 enum teleport_grenade_e
@@ -158,10 +157,11 @@ BOOL CTeleportProjectile::CanTeleportPlayer( CBasePlayer *pPlayer, const Vector 
 	TraceResult trGround;
 	const int iHull = ( pPlayer->pev->flags & FL_DUCKING ) ? head_hull : human_hull;
 
-	// Resolve the actual floor height at this candidate.  The grenade's
-	// origin is its centre, not the player's feet, so it must not be used
-	// directly as the player's teleport origin.
-	const Vector vecTraceStart = vecCandidate + Vector( 0, 0, TELEPORT_GRENADE_GROUND_TRACE_UP );
+	// Resolve the actual floor height at this candidate. The grenade can hit
+	// walls or ceilings well above the floor, so trace farther down from the
+	// candidate itself. Starting above the grenade can put the trace inside a
+	// ceiling and incorrectly reject an otherwise valid landing position.
+	const Vector vecTraceStart = vecCandidate;
 	const Vector vecTraceEnd = vecCandidate - Vector( 0, 0, TELEPORT_GRENADE_GROUND_TRACE_DOWN );
 
 	// Monsters and players must not be mistaken for supporting ground.
@@ -317,7 +317,6 @@ void CTeleportProjectile::ProjectileTouch( CBaseEntity *pOther )
 
 	// The original projectile teleports on every collision except the two
 	// ignored entities above; walls are not bounce surfaces.
-	EMIT_SOUND( ENT( pev ), CHAN_ITEM, "buttons/blip1.wav", 0.8f, ATTN_NORM );
 	TeleportPerformTeleport();
 }
 
