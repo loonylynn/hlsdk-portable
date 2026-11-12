@@ -1679,6 +1679,8 @@ int GetWeaponData( struct edict_s *player, struct weapon_data_s *info )
 						item->iuser1			= gun->m_chargeReady;
 						item->iuser2			= gun->m_fInAttack;
 						item->iuser3			= gun->m_fireState;
+						if( II.iId == WEAPON_TELEPORT )
+							item->iuser4 = ((CTeleportGrenade *)gun)->m_iProjectileActive;
 
 						//item->m_flPumpTime		= max( gun->m_flPumpTime, -0.001 );
 					}
