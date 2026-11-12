@@ -37,8 +37,10 @@
 #define TELEPORT_GRENADE_BOUNCE_SCALE    0.5f
 #define TELEPORT_GRENADE_BOUNCE_DOWN     3.0f
 #define TELEPORT_GRENADE_VELOCITY_SCALE  0.3f
-#define TELEPORT_GRENADE_SEARCH_RADIUS  30.0f
 #define TELEPORT_GRENADE_FLOOR_NORMAL    0.87f
+#define TELEPORT_GRENADE_GROUND_TRACE_UP 32.0f
+#define TELEPORT_GRENADE_GROUND_TRACE_DOWN 96.0f
+#define TELEPORT_GRENADE_GROUND_CLEARANCE 1.0f
 
 enum teleport_grenade_e
 {
@@ -68,7 +70,7 @@ public:
 
 protected:
 	BOOL FindTeleportDestination( CBasePlayer *pPlayer, Vector &vecDestination );
-	BOOL CanTeleportPlayer( CBasePlayer *pPlayer, const Vector &vecStart, const Vector &vecOffset );
+	BOOL CanTeleportPlayer( CBasePlayer *pPlayer, const Vector &vecCandidate, Vector &vecDestination );
 	void FinishWeaponState( void );
 	void SendTeleportEffect( const Vector &vecOrigin );
 };
@@ -147,21 +149,36 @@ void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin )
 	MESSAGE_END();
 }
 
-BOOL CTeleportProjectile::CanTeleportPlayer( CBasePlayer *pPlayer, const Vector &vecStart, const Vector &vecOffset )
+BOOL CTeleportProjectile::CanTeleportPlayer( CBasePlayer *pPlayer, const Vector &vecCandidate, Vector &vecDestination )
 {
-	TraceResult tr;
-	const Vector vecEnd = vecStart + vecOffset;
+	TraceResult trGround;
 	const int iHull = ( pPlayer->pev->flags & FL_DUCKING ) ? head_hull : human_hull;
 
-	// Reject offsets that cross solid geometry.
-	UTIL_TraceLine( vecStart, vecEnd, dont_ignore_monsters, edict(), &tr );
-	if( tr.fStartSolid || tr.fAllSolid || tr.flFraction < 1.0f )
+	// Resolve the actual floor height at this candidate.  The grenade's
+	// origin is its centre, not the player's feet, so it must not be used
+	// directly as the player's teleport origin.
+	const Vector vecTraceStart = vecCandidate + Vector( 0, 0, TELEPORT_GRENADE_GROUND_TRACE_UP );
+	const Vector vecTraceEnd = vecCandidate - Vector( 0, 0, TELEPORT_GRENADE_GROUND_TRACE_DOWN );
+
+	// Monsters and players must not be mistaken for supporting ground.
+	UTIL_TraceLine( vecTraceStart, vecTraceEnd, ignore_monsters, edict(), &trGround );
+	if( trGround.fStartSolid || trGround.fAllSolid || trGround.flFraction >= 1.0f )
 		return FALSE;
 
-	// Then test the complete player hull at the destination.  The teleported
-	// player's own hull is ignored; other players/monsters still block it.
-	UTIL_TraceHull( vecEnd, vecEnd, dont_ignore_monsters, iHull, edict(), &tr );
-	if( tr.fStartSolid || tr.fAllSolid )
+	// Reject walls and excessively steep surfaces.  Each candidate gets its
+	// own floor trace, allowing nearby stairs and uneven ground to resolve
+	// to their actual local height.
+	if( trGround.vecPlaneNormal.z < TELEPORT_GRENADE_FLOOR_NORMAL )
+		return FALSE;
+
+	vecDestination = trGround.vecEndPos + Vector( 0, 0, TELEPORT_GRENADE_GROUND_CLEARANCE );
+
+	// Test the complete player hull at the resolved feet position.  This
+	// catches walls, other actors, low ceilings and other landing obstructions.
+	// The projectile itself is ignored because it is removed on success.
+	TraceResult trHull;
+	UTIL_TraceHull( vecDestination, vecDestination, dont_ignore_monsters, iHull, edict(), &trHull );
+	if( trHull.fStartSolid || trHull.fAllSolid )
 		return FALSE;
 
 	return TRUE;
@@ -177,22 +194,20 @@ BOOL CTeleportProjectile::FindTeleportDestination( CBasePlayer *pPlayer, Vector 
 	else
 		vecAway = Vector( 1, 0, 0 );
 
-	// Prefer a small step away from the impact point, just as the Source
-	// implementation does before trying its wider set of candidate offsets.
-	if( CanTeleportPlayer( pPlayer, pev->origin, vecAway ) )
-	{
-		vecDestination = pev->origin + vecAway;
-		return TRUE;
-	}
-
-	const Vector vecSearch = vecAway * TELEPORT_GRENADE_SEARCH_RADIUS;
+	// Search outward from the impact point, preferring the direction away
+	// from the owner.  Every candidate is independently grounded and checked
+	// against the owner's current standing/crouching hull.
+	const float flCandidateRadii[] = { 20.0f, 36.0f, 52.0f };
 	const float flRadiansPerDegree = 0.017453292519943295f;
 
-	for( int iZ = 1; iZ >= 0; --iZ )
+	for( int iRadius = 0; iRadius < 3; ++iRadius )
 	{
-		for( int i = 1; i < 9; ++i )
+		const Vector vecSearch = vecAway * flCandidateRadii[iRadius];
+
+		// Try the direction away from the player first, then sweep around it.
+		for( int i = 0; i < 8; ++i )
 		{
-			const float flYaw = (float)( i / 2 ) * 45.0f * ( i % 2 ? 1.0f : -1.0f );
+			const float flYaw = (float)i * 45.0f;
 			const float flRadians = flYaw * flRadiansPerDegree;
 			const float flCos = cosf( flRadians );
 			const float flSin = sinf( flRadians );
@@ -200,13 +215,11 @@ BOOL CTeleportProjectile::FindTeleportDestination( CBasePlayer *pPlayer, Vector 
 			Vector vecOffset;
 			vecOffset.x = vecSearch.x * flCos - vecSearch.y * flSin;
 			vecOffset.y = vecSearch.x * flSin + vecSearch.y * flCos;
-			vecOffset.z = 12.0f * (float)iZ;
+			vecOffset.z = 0.0f;
 
-			if( CanTeleportPlayer( pPlayer, pev->origin, vecOffset ) )
-			{
-				vecDestination = pev->origin + vecOffset;
+			const Vector vecCandidate = pev->origin + vecOffset;
+			if( CanTeleportPlayer( pPlayer, vecCandidate, vecDestination ) )
 				return TRUE;
-			}
 		}
 	}
 
