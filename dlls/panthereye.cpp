@@ -812,7 +812,26 @@ Schedule_t *CPantherEye::GetScheduleOfType( int Type )
 
     case SCHED_CHASE_ENEMY:
     case SCHED_PANTHEREYE_CHASE:
+    {
+        // Absolute Zero's ChaseOrCircle(): when a floor trace below the
+        // enemy's last-known position is on roughly the same level, use the
+        // 260-unit move-to-enemy-range schedule. Otherwise use the chase.
+        if( m_hEnemy != NULL )
+        {
+            TraceResult trFloor;
+            Vector vecFloorStart = m_vecEnemyLKP + Vector( 0, 0, 1 );
+            Vector vecFloorEnd = vecFloorStart - Vector( 0, 0, 800 );
+
+            UTIL_TraceLine( vecFloorStart, vecFloorEnd, ignore_monsters,
+                            m_hEnemy->edict(), &trFloor );
+
+            if( trFloor.flFraction < 1.0f &&
+                ( trFloor.vecEndPos.z - pev->origin.z ) <= 18.0f )
+                return &slPanthereyeGetIntoCirclingRange[0];
+        }
+
         return &slPanthereyeChase[0];
+    }
 
     case SCHED_CHASE_ENEMY_FAILED:
     case SCHED_PANTHEREYE_UNSTUCK_PRECHECK:
@@ -830,6 +849,23 @@ Schedule_t *CPantherEye::GetScheduleOfType( int Type )
     case SCHED_PANTHEREYE_STALK_MOVE:
         return &slPanthereyeStalkMove[0];
 
+    case SCHED_PANTHEREYE_COVER_FAIL:
+        return &slPanthereyeCoverFail[0];
+
+    case SCHED_PANTHEREYE_GENERIC_FAIL:
+        return &slPanthereyeGenericFail[0];
+
+    case SCHED_TAKE_COVER_FROM_ENEMY:
+        return &slPanthereyeTakeCoverFromEnemy[0];
+
+    case SCHED_TAKE_COVER_FROM_ORIGIN:
+        return &slPanthereyeTakeCoverFromOrigin[0];
+
+    case SCHED_TAKE_COVER_FROM_BEST_SOUND:
+        return &slPanthereyeTakeCoverFromBestSound[0];
+
+    case SCHED_PATHFIND_STUMPED:
+        return &slPanthereyeStalkWait[0];
     }
 
     return CBaseMonster::GetScheduleOfType( Type );
@@ -856,7 +892,7 @@ Schedule_t *CPantherEye::GetSchedule( void )
     }
 
     if( m_flFleeUntil > gpGlobals->time )
-        return CBaseMonster::GetScheduleOfType( SCHED_TAKE_COVER_FROM_ENEMY );
+        return GetScheduleOfType( SCHED_TAKE_COVER_FROM_ENEMY );
 
     if( m_flAggressiveUntil > gpGlobals->time )
         return GetScheduleOfType( SCHED_PANTHEREYE_CHASE );
@@ -876,7 +912,7 @@ Schedule_t *CPantherEye::GetSchedule( void )
     {
         // Stay hidden while the target is not looking and the move timer has
         // not expired. If noticed, seek another lateral / node cover point.
-        if( m_bCornered || ( !m_bEnemyLookingAtMe && gpGlobals->time < m_flNextStalkMove ) )
+        if( m_bEnemyLookingAtMe || gpGlobals->time < m_flNextStalkMove )
             return GetScheduleOfType( SCHED_PANTHEREYE_STALK_WAIT );
 
         return GetScheduleOfType( SCHED_PANTHEREYE_STALK_MOVE );
@@ -1008,15 +1044,33 @@ void CPantherEye::StartTask( Task_t *pTask )
         return;
     }
 
-    if( pTask->iTask == TASK_PANTHEREYE_STALK_WAIT )
+    if( pTask->iTask == TASK_PANTHEREYE_STALK_WAIT ||
+        pTask->iTask == TASK_PANTHEREYE_COVER_FAIL_WAIT )
     {
-        // The source's ordinary sneak wait is 5-11 seconds. After failed
-        // cover, its shortened reattempt interval is 4-8 seconds.
-        if( m_bCornered )
-            m_flStalkWaitUntil = gpGlobals->time + RANDOM_FLOAT( 4.0f, 8.0f );
-        else
-            m_flStalkWaitUntil = gpGlobals->time + RANDOM_FLOAT( 5.0f, 11.0f );
+        float flDistance = m_hEnemy ?
+            ( m_vecEnemyLKP - pev->origin ).Length() : 99999.0f;
 
+        if( pTask->iTask == TASK_PANTHEREYE_COVER_FAIL_WAIT )
+            m_bCornered = TRUE;
+
+        // The original sets 5-11 seconds first, then shortens the retry to
+        // 4-8 seconds unless the target has stared long enough to provoke it.
+        m_flStalkWaitUntil = gpGlobals->time + RANDOM_FLOAT( 5.0f, 11.0f );
+
+        if( m_hEnemy && !HasConditions( bits_COND_ENEMY_OCCLUDED ) &&
+            m_bEnemyLookingAtMe &&
+            ( ( m_bCornered && flDistance < 7000.0f ) ||
+              ( m_flStareTime > 2.6f && flDistance < 7000.0f ) ) )
+        {
+            m_flAggressiveUntil = gpGlobals->time + 5.0f;
+            m_flFleeUntil = 0.0f;
+            m_flRunUntil = gpGlobals->time + 12.0f;
+            TaskComplete();
+            return;
+        }
+
+        m_bPissable = TRUE;
+        m_flStalkWaitUntil = gpGlobals->time + RANDOM_FLOAT( 4.0f, 8.0f );
         m_flNextStalkMove = m_flStalkWaitUntil;
         TaskBegin();
         return;
@@ -1080,7 +1134,8 @@ void CPantherEye::RunTask( Task_t *pTask )
         return;
     }
 
-    if( pTask->iTask == TASK_PANTHEREYE_STALK_WAIT )
+    if( pTask->iTask == TASK_PANTHEREYE_STALK_WAIT ||
+        pTask->iTask == TASK_PANTHEREYE_COVER_FAIL_WAIT )
     {
         if( m_hEnemy == NULL ||
             m_flAggressiveUntil > gpGlobals->time ||
@@ -1620,6 +1675,12 @@ DEFINE_CUSTOM_SCHEDULES( CPantherEye )
     slPanthereyeUnstuckPrecheck,
     slPanthereyeUnstuck,
     slPanthereyeGetBug,
+    slPanthereyeGetIntoCirclingRange,
+    slPanthereyeCoverFail,
+    slPanthereyeGenericFail,
+    slPanthereyeTakeCoverFromEnemy,
+    slPanthereyeTakeCoverFromOrigin,
+    slPanthereyeTakeCoverFromBestSound,
 };
 
 IMPLEMENT_CUSTOM_SCHEDULES( CPantherEye, CBaseMonster )
