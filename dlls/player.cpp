@@ -654,7 +654,7 @@ int CBasePlayer::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, fl
 // only when a new bleeding effect becomes active.
 int CBasePlayer::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType, int bitsDamageTypeMod )
 {
-	BOOL wasBleeding = ( m_bitsDamageTypeMod & DMG_BLEEDING ) != 0;
+	BOOL wasBleeding = ( m_bitsDamageTypeMod & DMG_BLEEDING ) && m_iBleedingTicksRemaining > 0;
 	int fTookDamage = CBaseMonster::TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType, bitsDamageTypeMod );
 
 	if( fTookDamage && !wasBleeding && ( m_bitsDamageTypeMod & DMG_BLEEDING ) )

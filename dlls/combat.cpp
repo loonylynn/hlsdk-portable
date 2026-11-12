@@ -1001,17 +1001,12 @@ void CBaseMonster::CheckBleedingDamage( void )
 	// of catch-up damage in one think.
 	m_flBleedingNextDamageTime = gpGlobals->time + 2.0f;
 
-	if( gSkillData.tdmg_bleeding_damage > 0.0f )
-		TakeDamage( pev, pev, gSkillData.tdmg_bleeding_damage, DMG_GENERIC, DMG_TIMEDEFFECT | DMG_TIMEDEFFECTIGNORE );
-
-	if( pev->health <= 0 || pev->deadflag != DEAD_NO )
-	{
-		ClearBleedingDamage();
-		return;
-	}
+	// Absolute Zero dispatches the timed-damage call even when the configured
+	// damage is zero; the call still carries the timed-effect semantics.
+	TakeDamage( pev, pev, gSkillData.tdmg_bleeding_damage, DMG_GENERIC, DMG_TIMEDEFFECT | DMG_TIMEDEFFECTIGNORE );
 
 	// Emit the recurring blood drip in the same place as the original timed
-	// bleeding effect. Non-blooded entities still take the timed damage.
+	// bleeding effect, including the final tick if it is lethal.
 	if( BloodColor() != DONT_BLEED )
 	{
 		// Absolute Zero uses the player's view angles for player blood drips;
@@ -1026,6 +1021,12 @@ void CBaseMonster::CheckBleedingDamage( void )
 			BloodColor(),
 			RANDOM_LONG( 8, 15 )
 		);
+	}
+
+	if( pev->health <= 0 || pev->deadflag != DEAD_NO )
+	{
+		ClearBleedingDamage();
+		return;
 	}
 
 	--m_iBleedingTicksRemaining;
