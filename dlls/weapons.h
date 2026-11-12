@@ -914,6 +914,14 @@ public:
 class CTeleportGrenade : public CBasePlayerWeapon
 {
 public:
+	CTeleportGrenade( void ) : m_iProjectileActive( FALSE ) {}
+
+#if !CLIENT_DLL
+	int Save( CSave &save );
+	int Restore( CRestore &restore );
+	static TYPEDESCRIPTION m_SaveData[];
+#endif
+
 	void Spawn( void );
 	void Precache( void );
 	int iItemSlot( void ) { return 5; }
@@ -926,6 +934,10 @@ public:
 	void WeaponIdle( void );
 	void LaunchTeleportProjectile( void );
 	void OnProjectileFinished( void );
+
+	// Independent of m_iClip: this weapon has no magazine.
+	// Packed through weapon_data_t::iuser4 for client prediction.
+	int m_iProjectileActive;
 
 	virtual BOOL UseDecrement( void )
 	{
