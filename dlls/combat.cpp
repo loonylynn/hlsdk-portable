@@ -898,7 +898,7 @@ int CBaseMonster::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, f
 	}
 
 	// react to the damage (get mad)
-	if( ( pev->flags & FL_MONSTER ) && !FNullEnt( pevAttacker ) )
+	if( !m_fApplyingTimedDamage && ( pev->flags & FL_MONSTER ) && !FNullEnt( pevAttacker ) )
 	{
 		if( pevAttacker->flags & ( FL_MONSTER | FL_CLIENT ) )
 		{
@@ -941,7 +941,10 @@ int CBaseMonster::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, f
 // secondary modifiers are consumed by the damage call itself.
 int CBaseMonster::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType, int bitsDamageTypeMod )
 {
+	BOOL wasApplyingTimedDamage = m_fApplyingTimedDamage;
+	m_fApplyingTimedDamage = ( bitsDamageTypeMod & ( DMG_TIMEDEFFECT | DMG_TIMEDEFFECTIGNORE ) ) ? TRUE : FALSE;
 	int result = TakeDamage( pevInflictor, pevAttacker, flDamage, bitsDamageType );
+	m_fApplyingTimedDamage = wasApplyingTimedDamage;
 
 	if( !result || !IsAlive() )
 		return result;
@@ -995,7 +998,7 @@ void CBaseMonster::CheckBleedingDamage( void )
 	m_flBleedingNextDamageTime = gpGlobals->time + 2.0f;
 
 	if( gSkillData.tdmg_bleeding_damage > 0.0f )
-		TakeDamage( pev, pev, gSkillData.tdmg_bleeding_damage, DMG_GENERIC );
+		TakeDamage( pev, pev, gSkillData.tdmg_bleeding_damage, DMG_GENERIC, DMG_TIMEDEFFECT | DMG_TIMEDEFFECTIGNORE );
 
 	if( pev->health <= 0 || pev->deadflag != DEAD_NO )
 	{
