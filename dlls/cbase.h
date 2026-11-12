@@ -173,7 +173,6 @@ public:
 	static TYPEDESCRIPTION m_SaveData[];
 
 	virtual void TraceAttack( entvars_t *pevAttacker, float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType);
-	virtual void TraceAttack( entvars_t *pevAttacker, float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType);
 #ifndef CLIENT_DLL
 	// Secondary damage flags and impact handling are server-side entity behavior.
 	// Keep these virtuals out of the client DLL's class/vtable declarations.
