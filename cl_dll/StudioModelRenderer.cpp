@@ -277,9 +277,13 @@ static void StudioDrawBlobShadow( cl_entity_t *entity, const vec3_t modelOrigin 
 
 	// Use the exact world-space origin saved by StudioSetUpTransform().
 	if( modelOrigin )
+	{
 		VectorCopy( modelOrigin, shadowOrigin );
+	}
 	else
+	{
 		VectorCopy( entity->origin, shadowOrigin );
+	}
 
 	/*
 	 * Match Quake III CG_PlayerShadow exactly: sweep a 30 x 30 x 2 box
