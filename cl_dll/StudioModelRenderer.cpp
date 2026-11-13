@@ -37,8 +37,102 @@
 engine_studio_api_t IEngineStudio;
 
 static cvar_t *cl_blobshadows = NULL;
+static cvar_t *cl_blobshadows_opacity = NULL;
+static cvar_t *cl_blobshadows_smooth = NULL;
 static model_t *cl_blobshadow_sprite = NULL;
 static int cl_blobshadow_texture = 0;
+
+#define BLOB_SHADOW_HISTORY_SIZE 4096
+
+typedef struct blob_shadow_history_s
+{
+	qboolean valid;
+	model_t *model;
+	double time;
+	vec3_t center;
+	vec3_t normal;
+	float alpha;
+} blob_shadow_history_t;
+
+static blob_shadow_history_t g_BlobShadowHistory[BLOB_SHADOW_HISTORY_SIZE];
+
+/*
+====================
+StudioSmoothBlobShadow
+
+Apply a small frame-time-based low-pass filter to each entity's mark.
+Reset on teleports, long gaps, model changes, or substantial floor changes.
+The final center is projected back onto the current hit plane.
+====================
+*/
+static void StudioSmoothBlobShadow( cl_entity_t *entity, double currentTime,
+	float smoothTime, float planeDist, const vec3_t normal, vec3_t center, float *alpha )
+{
+	blob_shadow_history_t *history;
+	float dt, weight;
+	float dx, dy, dz;
+	float normalDot;
+
+	if( !entity || entity->index <= 0 || entity->index >= BLOB_SHADOW_HISTORY_SIZE ||
+		!alpha )
+		return;
+
+	history = &g_BlobShadowHistory[entity->index];
+
+	if( smoothTime <= 0.0f )
+	{
+		history->valid = false;
+		return;
+	}
+
+	dt = (float)( currentTime - history->time );
+	if( !history->valid || history->model != entity->model ||
+		dt <= 0.0f || dt > 0.25f )
+	{
+		history->valid = true;
+		history->model = entity->model;
+		history->time = currentTime;
+		VectorCopy( center, history->center );
+		VectorCopy( normal, history->normal );
+		history->alpha = *alpha;
+		return;
+	}
+
+	dx = center[0] - history->center[0];
+	dy = center[1] - history->center[1];
+	dz = center[2] - history->center[2];
+	normalDot = DotProduct( normal, history->normal );
+
+	// Do not interpolate across teleports or a change to a different floor.
+	if( ( dx * dx + dy * dy + dz * dz ) > ( 32.0f * 32.0f ) ||
+		normalDot < 0.90f )
+	{
+		history->time = currentTime;
+		VectorCopy( center, history->center );
+		VectorCopy( normal, history->normal );
+		history->alpha = *alpha;
+		return;
+	}
+
+	weight = 1.0f - expf( -dt / smoothTime );
+	if( weight < 0.0f ) weight = 0.0f;
+	if( weight > 1.0f ) weight = 1.0f;
+
+	center[0] = history->center[0] + ( center[0] - history->center[0] ) * weight;
+	center[1] = history->center[1] + ( center[1] - history->center[1] ) * weight;
+
+	// Keep the smoothed center on the current BSP plane.
+	if( normal[2] > 0.001f )
+		center[2] = ( planeDist - normal[0] * center[0] -
+			normal[1] * center[1] ) / normal[2] + normal[2];
+
+	*alpha = history->alpha + ( *alpha - history->alpha ) * weight;
+
+	history->time = currentTime;
+	VectorCopy( center, history->center );
+	VectorCopy( normal, history->normal );
+	history->alpha = *alpha;
+}
 
 // Minimal Xash sprite metadata mirrors. We temporarily substitute the frame's
 // texture index so TriAPI can bind our generated alpha-mask texture.
@@ -205,8 +299,10 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	msurface_t *surfaces[25];
 	xash_decal_v37_t decal;
 	float *verts;
-	float alpha, strength, planeZ, depth, length;
+	float alpha, strength, opacity, smoothTime, planeZ, depth, length;
 	float gridX, gridY;
+	double currentTime, oldTime;
+	int frameCount;
 	int texture, textureWidth, textureHeight;
 	int surfaceCount = 0;
 	int numVerts;
@@ -378,13 +474,23 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 		return;
 
 	// Q3 cg_shadows 1 uses alpha = 1 - swept-box trace fraction.
+	// A modest default boost makes the shadow easier to read in bright rooms.
 	alpha = 1.0f - bestTrace.fraction;
 	strength = cl_blobshadows->value;
 	if( strength > 1.0f ) strength = 1.0f;
 	if( strength < 0.0f ) strength = 0.0f;
-	alpha *= strength;
+
+	opacity = cl_blobshadows_opacity ? cl_blobshadows_opacity->value : 1.25f;
+	if( opacity < 0.0f ) opacity = 0.0f;
+	if( opacity > 2.0f ) opacity = 2.0f;
+	alpha *= strength * opacity;
+	if( alpha > 1.0f ) alpha = 1.0f;
 	if( alpha <= 0.0f )
 		return;
+
+	smoothTime = cl_blobshadows_smooth ? cl_blobshadows_smooth->value : 0.06f;
+	if( smoothTime < 0.0f ) smoothTime = 0.0f;
+	if( smoothTime > 0.25f ) smoothTime = 0.25f;
 
 	VectorCopy( bestTrace.plane.normal, normal );
 	length = sqrtf( DotProduct( normal, normal ));
@@ -403,6 +509,14 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	center[0] = entity->origin[0] + normal[0];
 	center[1] = entity->origin[1] + normal[1];
 	center[2] = planeZ + normal[2];
+
+	IEngineStudio.GetTimes( &frameCount, &currentTime, &oldTime );
+	StudioSmoothBlobShadow(
+		entity, currentTime, smoothTime, bestTrace.plane.dist,
+		normal, center, &alpha
+	);
+	if( alpha <= 0.0f )
+		return;
 
 	VectorCopy( center, decal.position );
 
@@ -485,6 +599,10 @@ void CStudioModelRenderer::Init( void )
 
 	if( !cl_blobshadows )
 		cl_blobshadows = CVAR_CREATE( "cl_blobshadows", "1", FCVAR_ARCHIVE );
+	if( !cl_blobshadows_opacity )
+		cl_blobshadows_opacity = CVAR_CREATE( "cl_blobshadows_opacity", "1.25", FCVAR_ARCHIVE );
+	if( !cl_blobshadows_smooth )
+		cl_blobshadows_smooth = CVAR_CREATE( "cl_blobshadows_smooth", "0.06", FCVAR_ARCHIVE );
 
 	m_pChromeSprite			= IEngineStudio.GetChromeSprite();
 
