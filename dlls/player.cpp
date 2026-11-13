@@ -1727,7 +1727,7 @@ void CUseableGraphic::Spawn( void )
 	pev->movetype = MOVETYPE_NONE;
 	pev->solid = SOLID_NOT;
 	SET_MODEL( ENT( pev ), USEABLE_BRACKET_SPRITE );
-	pev->rendermode = kRenderTransAlpha;
+	pev->rendermode = kRenderTransAdd;
 	pev->rendercolor = Vector( 255, 160, 0 );
 	pev->renderamt = 220;
 	pev->effects = 0;
