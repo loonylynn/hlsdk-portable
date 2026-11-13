@@ -20,6 +20,7 @@
 #include "byteswap.h"
 #include "pm_defs.h"
 #include "event_api.h"
+#include "xash_render_api.h"
 
 #include <math.h>
 
@@ -54,28 +55,33 @@ so the five point samples approximate Quake III's small box trace.
 */
 static void StudioDrawBlobShadow( cl_entity_t *entity )
 {
-	static const float traceOffsets[5][2] =
-	{
-		{  0.0f,   0.0f },
-		{ -15.0f, -15.0f },
-		{  15.0f, -15.0f },
-		{  15.0f,  15.0f },
-		{ -15.0f,  15.0f }
-	};
+	static const float sampleOffsets[5] = { -24.0f, -15.0f, 0.0f, 15.0f, 24.0f };
+	static const char shadowTextureName[] = "#sprites/glow01(frame:00).spr";
+	static qboolean warnedTexture = false;
 
 	pmtrace_t trace, bestTrace;
 	vec3_t traceStart, traceEnd;
-	vec3_t normal, right, forward, center;
-	vec3_t p1, p2, p3, p4, cross;
-	float alpha, strength, radius, planeZ;
-	float dot, length, yaw, c, s, bestFraction;
-	int i;
+	vec3_t normal, center;
+	vec3_t surfacePoints[25];
+	vec3_t surfaceNormals[25];
+	msurface_t *surfaces[25];
+	xash_decal_v37_t decal;
+	float *verts;
+	float alpha, strength, planeZ, depth, length;
+	float gridX, gridY;
+	int texture, textureWidth, textureHeight;
+	int surfaceCount = 0;
+	int bestFractionValid = 0;
+	int numVerts;
+	int i, j, k, n;
 	triangleapi_t *tri = gEngfuncs.pTriAPI;
 
 	if( !cl_blobshadows || cl_blobshadows->value <= 0.0f )
 		return;
 
-	if( !entity || !entity->model || !tri || !gEngfuncs.pEventAPI )
+	if( !entity || !entity->model || !tri || !gEngfuncs.pEventAPI ||
+		!gXashRenderAPI || !gXashRenderAPI->RenderGetParm ||
+		!gXashRenderAPI->GL_FindTexture || !gXashRenderAPI->R_DecalSetupVerts )
 		return;
 
 	if( entity->index == 0 || ( gEngfuncs.GetViewModel && entity == gEngfuncs.GetViewModel() ))
@@ -90,130 +96,152 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 		!gEngfuncs.pEventAPI->EV_PushPMStates ||
 		!gEngfuncs.pEventAPI->EV_SetTraceHull ||
 		!gEngfuncs.pEventAPI->EV_PlayerTrace ||
+		!gEngfuncs.pEventAPI->EV_TraceSurface ||
 		!gEngfuncs.pEventAPI->EV_PopPMStates ||
 		!IEngineStudio.Mod_ForName )
 		return;
 
-	// The sprite supplies the radial alpha mask used by the temporary mark.
 	if( !cl_blobshadow_sprite )
 		cl_blobshadow_sprite = IEngineStudio.Mod_ForName( "sprites/glow01.spr", false );
 
 	if( !cl_blobshadow_sprite || !tri->SpriteTexture( cl_blobshadow_sprite, 0 ))
 		return;
 
-	/*
-	 * Quake III traces from the feet, not from high above the player.
-	 * A point trace is placed at the center of the original 2-unit-high
-	 * box (origin + 1), with a 128-unit downward travel.
-	 */
-	bestFraction = 1.0f;
+	// Xash stores sprite frame textures under this deterministic internal name.
+	// The renderer needs the texture index and dimensions to clip the mark.
+	texture = gXashRenderAPI->GL_FindTexture( shadowTextureName );
+	if( texture <= 0 )
+	{
+		if( !warnedTexture && gEngfuncs.Con_Printf )
+		{
+			gEngfuncs.Con_Printf(
+				"[Blob shadows] Could not find sprite texture %s\n",
+				shadowTextureName
+			);
+			warnedTexture = true;
+		}
+		return;
+	}
+
+	textureWidth = (int)gXashRenderAPI->RenderGetParm( XASH_RENDER_PARM_TEX_WIDTH, texture );
+	textureHeight = (int)gXashRenderAPI->RenderGetParm( XASH_RENDER_PARM_TEX_HEIGHT, texture );
+	if( textureWidth <= 0 || textureHeight <= 0 )
+		return;
+
+	memset( &decal, 0, sizeof( decal ));
+	decal.texture = (short)texture;
+	decal.scale = (float)textureWidth / 48.0f; // 48 world units, matching Q3's radius-24 mark.
+
 	memset( &bestTrace, 0, sizeof( bestTrace ));
 
+	/*
+	 * Sample a 48 x 48-unit area around the entity. The inner 3 x 3 samples
+	 * approximate Quake III's 30 x 30 x 2 player box trace; the outer ring
+	 * discovers neighboring BSP faces that the 24-unit impact mark can touch.
+	 */
 	gEngfuncs.pEventAPI->EV_SetUpPlayerPrediction( false, true );
 	gEngfuncs.pEventAPI->EV_PushPMStates();
 	gEngfuncs.pEventAPI->EV_SetTraceHull( 2 );
 
 	for( i = 0; i < 5; i++ )
 	{
-		traceStart[0] = entity->origin[0] + traceOffsets[i][0];
-		traceStart[1] = entity->origin[1] + traceOffsets[i][1];
-		traceStart[2] = entity->origin[2] + 1.0f;
+		for( j = 0; j < 5; j++ )
+		{
+			gridX = sampleOffsets[i];
+			gridY = sampleOffsets[j];
 
-		traceEnd[0] = traceStart[0];
-		traceEnd[1] = traceStart[1];
-		traceEnd[2] = traceStart[2] - 128.0f;
+			traceStart[0] = entity->origin[0] + gridX;
+			traceStart[1] = entity->origin[1] + gridY;
+			traceStart[2] = entity->origin[2] + 1.0f;
 
-		memset( &trace, 0, sizeof( trace ));
-		gEngfuncs.pEventAPI->EV_PlayerTrace( traceStart, traceEnd, PM_WORLD_ONLY, -1, &trace );
+			traceEnd[0] = traceStart[0];
+			traceEnd[1] = traceStart[1];
+			traceEnd[2] = traceStart[2] - 128.0f;
 
-		// Keep the first upward-facing surface hit, matching a swept box's
-		// earliest contact while preventing side walls from receiving blobs.
-		if( trace.fraction >= bestFraction || trace.fraction >= 1.0f ||
-			trace.startsolid || trace.allsolid || trace.inwater ||
-			trace.plane.normal[2] < 0.5f )
-			continue;
+			memset( &trace, 0, sizeof( trace ));
+			gEngfuncs.pEventAPI->EV_PlayerTrace(
+				traceStart, traceEnd, PM_WORLD_ONLY, -1, &trace
+			);
 
-		bestFraction = trace.fraction;
-		bestTrace = trace;
+			if( trace.fraction >= 1.0f || trace.startsolid || trace.allsolid ||
+				trace.inwater || trace.plane.normal[2] < 0.5f )
+				continue;
+
+			// Only the inner 30 x 30 area contributes to the Q3-style trace alpha.
+			if( fabsf( gridX ) <= 15.0f && fabsf( gridY ) <= 15.0f &&
+				( !bestFractionValid || trace.fraction < bestTrace.fraction ))
+			{
+				bestTrace = trace;
+				bestFractionValid = 1;
+			}
+
+			// EV_TraceSurface resolves the actual BSP face for this hit physent.
+			if( trace.ent < 0 )
+				continue;
+
+			{
+				msurface_t *surface = gEngfuncs.pEventAPI->EV_TraceSurface(
+					trace.ent, traceStart, traceEnd
+				);
+				int alreadyAdded = 0;
+
+				if( !surface )
+					continue;
+
+				for( k = 0; k < surfaceCount; k++ )
+				{
+					if( surfaces[k] == surface )
+					{
+						alreadyAdded = 1;
+						break;
+					}
+				}
+
+				if( alreadyAdded || surfaceCount >= 25 )
+					continue;
+
+				surfaces[surfaceCount] = surface;
+				VectorCopy( trace.endpos, surfacePoints[surfaceCount] );
+				VectorCopy( trace.plane.normal, surfaceNormals[surfaceCount] );
+
+				length = sqrtf( DotProduct( surfaceNormals[surfaceCount], surfaceNormals[surfaceCount] ));
+				if( length > 0.001f )
+				{
+					surfaceNormals[surfaceCount][0] /= length;
+					surfaceNormals[surfaceCount][1] /= length;
+					surfaceNormals[surfaceCount][2] /= length;
+				}
+
+				surfaceCount++;
+			}
+		}
 	}
 
 	gEngfuncs.pEventAPI->EV_PopPMStates();
 
-	if( bestFraction >= 1.0f )
+	if( !bestFractionValid || surfaceCount == 0 )
 		return;
 
-	trace = bestTrace;
-
-	// This is Quake III's cg_shadows 1 fade calculation.
-	alpha = 1.0f - bestFraction;
+	// Q3 cg_shadows 1 uses alpha = 1 - trace.fraction.
+	alpha = 1.0f - bestTrace.fraction;
 	strength = cl_blobshadows->value;
 	if( strength > 1.0f ) strength = 1.0f;
 	if( strength < 0.0f ) strength = 0.0f;
 	alpha *= strength;
+	if( alpha <= 0.0f )
+		return;
 
-	VectorCopy( trace.plane.normal, normal );
+	VectorCopy( bestTrace.plane.normal, normal );
 	length = sqrtf( DotProduct( normal, normal ));
-	if( length <= 0.001f )
+	if( length <= 0.001f || normal[2] < 0.5f )
 		return;
 
 	normal[0] /= length;
 	normal[1] /= length;
 	normal[2] /= length;
 
-	// Quake III builds a perpendicular basis, rotates it by player yaw,
-	// then derives the second tangent with a cross product.
-	right[0] = 1.0f;
-	right[1] = 0.0f;
-	right[2] = 0.0f;
-
-	dot = DotProduct( right, normal );
-	right[0] -= normal[0] * dot;
-	right[1] -= normal[1] * dot;
-	right[2] -= normal[2] * dot;
-
-	length = sqrtf( DotProduct( right, right ));
-	if( length <= 0.001f )
-	{
-		right[0] = 0.0f;
-		right[1] = 1.0f;
-		right[2] = 0.0f;
-		dot = DotProduct( right, normal );
-		right[0] -= normal[0] * dot;
-		right[1] -= normal[1] * dot;
-		right[2] -= normal[2] * dot;
-		length = sqrtf( DotProduct( right, right ));
-		if( length <= 0.001f )
-			return;
-	}
-
-	right[0] /= length;
-	right[1] /= length;
-	right[2] /= length;
-
-	cross[0] = normal[1] * right[2] - normal[2] * right[1];
-	cross[1] = normal[2] * right[0] - normal[0] * right[2];
-	cross[2] = normal[0] * right[1] - normal[1] * right[0];
-
-	yaw = entity->angles[1] * ( M_PI_F / 180.0f );
-	c = cosf( yaw );
-	s = sinf( yaw );
-
-	forward[0] = right[0] * c + cross[0] * s;
-	forward[1] = right[1] * c + cross[1] * s;
-	forward[2] = right[2] * c + cross[2] * s;
-
-	// Recompute the other axis as cross(normal, forward), like CG_ImpactMark.
-	right[0] = normal[1] * forward[2] - normal[2] * forward[1];
-	right[1] = normal[2] * forward[0] - normal[0] * forward[2];
-	right[2] = normal[0] * forward[1] - normal[1] * forward[0];
-
-	// CG_ImpactMark uses a fixed 24-unit radius.
-	radius = 24.0f;
-
-	// The five point traces hit at their individual sample X/Y positions.
-	// Reconstruct the plane height at the entity center, as Quake's swept
-	// box trace would have returned the box-origin X/Y coordinates.
-	planeZ = ( trace.plane.dist -
+	// Reconstruct the impact point at the entity center from the hit plane.
+	planeZ = ( bestTrace.plane.dist -
 		normal[0] * entity->origin[0] -
 		normal[1] * entity->origin[1] ) / normal[2];
 
@@ -221,45 +249,47 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	center[1] = entity->origin[1] + normal[1];
 	center[2] = planeZ + normal[2];
 
-	VectorCopy( center, p1 );
-	VectorCopy( center, p2 );
-	VectorCopy( center, p3 );
-	VectorCopy( center, p4 );
-
-	p1[0] -= radius * ( right[0] + forward[0] );
-	p1[1] -= radius * ( right[1] + forward[1] );
-	p1[2] -= radius * ( right[2] + forward[2] );
-
-	p2[0] += radius * ( right[0] - forward[0] );
-	p2[1] += radius * ( right[1] - forward[1] );
-	p2[2] += radius * ( right[2] - forward[2] );
-
-	p3[0] += radius * ( right[0] + forward[0] );
-	p3[1] += radius * ( right[1] + forward[1] );
-	p3[2] += radius * ( right[2] + forward[2] );
-
-	p4[0] += radius * ( forward[0] - right[0] );
-	p4[1] += radius * ( forward[1] - right[1] );
-	p4[2] += radius * ( forward[2] - right[2] );
+	VectorCopy( center, decal.position );
 
 	tri->CullFace( TRI_NONE );
 	tri->RenderMode( kRenderTransAlpha );
 	tri->SpriteTexture( cl_blobshadow_sprite, 0 );
-	tri->Begin( TRI_QUADS );
-
-	// The radial sprite is black-modulated and its alpha is driven by
-	// Quake III's trace-fraction fade.
 	tri->Color4f( 0.0f, 0.0f, 0.0f, alpha );
-	tri->TexCoord2f( 0.0f, 0.0f );
-	tri->Vertex3fv( p1 );
-	tri->TexCoord2f( 1.0f, 0.0f );
-	tri->Vertex3fv( p2 );
-	tri->TexCoord2f( 1.0f, 1.0f );
-	tri->Vertex3fv( p3 );
-	tri->TexCoord2f( 0.0f, 1.0f );
-	tri->Vertex3fv( p4 );
 
-	tri->End();
+	for( n = 0; n < surfaceCount; n++ )
+	{
+		// Q3's CG_ImpactMark projects fragments 20 units along -normal.
+		// Keep faces inside that projection depth and reject floors above it.
+		depth =
+			( center[0] - surfacePoints[n][0] ) * normal[0] +
+			( center[1] - surfacePoints[n][1] ) * normal[1] +
+			( center[2] - surfacePoints[n][2] ) * normal[2];
+
+		if( depth < -0.5f || depth > 21.0f )
+			continue;
+
+		verts = gXashRenderAPI->R_DecalSetupVerts(
+			&decal, surfaces[n], texture, &numVerts
+		);
+		if( !verts || numVerts < 3 )
+			continue;
+
+		tri->Begin( TRI_POLYGON );
+		for( k = 0; k < numVerts; k++, verts += 7 )
+		{
+			vec3_t vertex;
+
+			// Small normal bias prevents depth fighting with the BSP face.
+			vertex[0] = verts[0] + surfaceNormals[n][0] * 0.5f;
+			vertex[1] = verts[1] + surfaceNormals[n][1] * 0.5f;
+			vertex[2] = verts[2] + surfaceNormals[n][2] * 0.5f;
+
+			tri->TexCoord2f( verts[3], verts[4] );
+			tri->Vertex3fv( vertex );
+		}
+		tri->End();
+	}
+
 	tri->Color4f( 1.0f, 1.0f, 1.0f, 1.0f );
 	tri->RenderMode( kRenderNormal );
 	tri->CullFace( TRI_FRONT );
