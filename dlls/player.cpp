@@ -3207,8 +3207,11 @@ void CBasePlayer::Spawn( void )
 	m_iClientFOV = -1; // make sure fov reset is sent
 
 	m_flNextDecalTime = 0;// let this player decal as soon as he spawns.
+
+	// These handles are transient and intentionally not part of save data.
+	m_hUseableHighlight = NULL;
+	m_hLastUseableItem = NULL;
 	m_flNextUseableCheck = gpGlobals->time;
-	ClearUseableHighlight();
 
 	m_flgeigerDelay = gpGlobals->time + 2.0f;	// wait a few seconds until user-defined message registrations
 							// are recieved by all clients
