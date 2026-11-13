@@ -36,7 +36,7 @@
 engine_studio_api_t IEngineStudio;
 
 static cvar_t *cl_blobshadows = NULL;
-static int cl_blobshadow_sprite = 0;
+static model_t *cl_blobshadow_sprite = NULL;
 
 static float StudioMaxAbs( float a, float b )
 {
@@ -65,7 +65,6 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	float height, fade, strength;
 	float radiusX, radiusY;
 	float dot, length;
-	model_t *shadowSprite;
 	triangleapi_t *tri = gEngfuncs.pTriAPI;
 
 	if( !cl_blobshadows || cl_blobshadows->value <= 0.0f )
@@ -87,20 +86,15 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 		!gEngfuncs.pEventAPI->EV_SetTraceHull ||
 		!gEngfuncs.pEventAPI->EV_PlayerTrace ||
 		!gEngfuncs.pEventAPI->EV_PopPMStates ||
-		!gEngfuncs.pEventAPI->EV_FindModelIndex ||
-		!IEngineStudio.GetModelByIndex )
+		!IEngineStudio.Mod_ForName )
 		return;
 
-	// glow01 is a stock Half-Life radial sprite. Bind it explicitly so the
-	// blob does not inherit whichever studio texture was last active.
+	// glow01 is a stock Half-Life radial sprite. Load and bind it explicitly
+	// so the blob does not inherit whichever studio texture was last active.
 	if( !cl_blobshadow_sprite )
-		cl_blobshadow_sprite = gEngfuncs.pEventAPI->EV_FindModelIndex( "sprites/glow01.spr" );
+		cl_blobshadow_sprite = IEngineStudio.Mod_ForName( "sprites/glow01.spr", false );
 
-	if( cl_blobshadow_sprite <= 0 )
-		return;
-
-	shadowSprite = IEngineStudio.GetModelByIndex( cl_blobshadow_sprite );
-	if( !shadowSprite || !tri->SpriteTexture( shadowSprite, 0 ))
+	if( !cl_blobshadow_sprite || !tri->SpriteTexture( cl_blobshadow_sprite, 0 ))
 		return;
 
 	VectorCopy( entity->curstate.mins, mins );
@@ -224,7 +218,7 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 
 	tri->CullFace( TRI_NONE );
 	tri->RenderMode( kRenderTransAlpha );
-	tri->SpriteTexture( shadowSprite, 0 );
+	tri->SpriteTexture( cl_blobshadow_sprite, 0 );
 	tri->Begin( TRI_QUADS );
 
 	tri->Color4f( 0.0f, 0.0f, 0.0f, 0.45f * fade * strength );
