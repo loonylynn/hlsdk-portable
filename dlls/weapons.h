@@ -557,6 +557,12 @@ private:
 class CMP5 : public CBasePlayerWeapon
 {
 public:
+#if !CLIENT_DLL
+	int Save( CSave &save );
+	int Restore( CRestore &restore );
+	static TYPEDESCRIPTION m_SaveData[];
+#endif
+
 	void Spawn( void );
 	void Precache( void );
 	int iItemSlot( void ) { return 3; }
@@ -569,8 +575,18 @@ public:
 	BOOL Deploy( void );
 	void Reload( void );
 	void WeaponIdle( void );
+	void ItemPostFrame( void );
+#if !CLIENT_DLL
+	void TeleportAttack( void );
+	void OnTeleportProjectileFinished( void );
+#endif
 	float m_flNextAnimTime;
 	int m_iShell;
+
+	// Server-authoritative tertiary fire state for the middle-mouse teleport frag.
+	int m_iTeleportProjectileActive;
+	float m_flNextTeleportAttack;
+	float m_flNextTeleportRevoke;
 
 	virtual BOOL UseDecrement( void )
 	{ 
@@ -910,6 +926,12 @@ public:
 #endif
 	}
 };
+
+#if !CLIENT_DLL
+// Shared teleport-frag projectile API used by weapon_teleport and MP5 tertiary fire.
+BOOL TeleportGrenadeLaunchProjectile( CBasePlayer *pPlayer, int iWeaponId );
+BOOL TeleportGrenadeRevokeProjectile( CBasePlayer *pPlayer, int iWeaponId );
+#endif
 
 class CTeleportGrenade : public CBasePlayerWeapon
 {
