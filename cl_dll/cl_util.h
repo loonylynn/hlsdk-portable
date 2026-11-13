@@ -154,10 +154,17 @@ inline client_textmessage_t *TextMessageGet( const char *pName )
 	return gEngfuncs.pfnTextMessageGet( pName );
 }
 
-inline int TextMessageDrawChar( int x, int y, int number, int r, int g, int b )
+// Draw a character at an already-adjusted position. Text strings use this to
+// move as a block while retaining the font's native glyph spacing.
+inline int TextMessageDrawCharAt( int x, int y, int number, int r, int g, int b )
 {
 	HUD_ApplyTextColor( r, g, b );
-	return gEngfuncs.pfnDrawCharacter( HUD_AdjustX( x ), HUD_AdjustY( y ), number, r, g, b );
+	return gEngfuncs.pfnDrawCharacter( x, y, number, r, g, b );
+}
+
+inline int TextMessageDrawChar( int x, int y, int number, int r, int g, int b )
+{
+	return TextMessageDrawCharAt( HUD_AdjustX( x ), HUD_AdjustY( y ), number, r, g, b );
 }
 
 inline int DrawConsoleString( int x, int y, const char *string )
