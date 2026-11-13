@@ -633,9 +633,8 @@ TYPEDESCRIPTION CTeleportProjectile::m_SaveData[] =
 	DEFINE_FIELD( CTeleportProjectile, m_flTravelStartTime, FIELD_TIME ),
 	DEFINE_FIELD( CTeleportProjectile, m_flTravelDuration, FIELD_FLOAT ),
 	DEFINE_FIELD( CTeleportProjectile, m_flTravelPathLength, FIELD_FLOAT ),
-	DEFINE_FUNCTION( CTeleportProjectile, LimitThink ),
-	DEFINE_FUNCTION( CTeleportProjectile, DelayedRemoveThink ),
-	DEFINE_FUNCTION( CTeleportProjectile, PlayerTravelThink ),
+	// Think/touch callbacks are stored in entvars by the engine; there are no
+	// separate C++ function-pointer members to register in this save table.
 };
 
 IMPLEMENT_SAVERESTORE( CTeleportProjectile, CGrenade )
