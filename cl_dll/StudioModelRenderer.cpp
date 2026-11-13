@@ -19,6 +19,7 @@
 #include "triangleapi.h"
 #include "byteswap.h"
 #include "pm_defs.h"
+#include "event_api.h"
 
 #include <math.h>
 
@@ -77,7 +78,7 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 
 	if( entity->curstate.rendermode != kRenderNormal ||
 		entity->curstate.renderfx != kRenderFxNone ||
-		FBitSet( entity->curstate.effects, EF_NOSHADOW | EF_NODRAW ))
+		( entity->curstate.effects & ( EF_NOSHADOW | EF_NODRAW )))
 		return;
 
 	if( !gEngfuncs.pEventAPI->EV_SetUpPlayerPrediction ||
