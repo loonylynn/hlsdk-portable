@@ -411,7 +411,7 @@ static void StudioDrawBlobShadow( cl_entity_t *entity, const vec3_t modelOrigin 
 	if( strength > 1.0f ) strength = 1.0f;
 	if( strength < 0.0f ) strength = 0.0f;
 
-	opacity = cl_blobshadows_opacity ? cl_blobshadows_opacity->value : 0.60f;
+	opacity = cl_blobshadows_opacity ? cl_blobshadows_opacity->value : 0.53f;
 	if( opacity < 0.0f ) opacity = 0.0f;
 	if( opacity > 2.0f ) opacity = 2.0f;
 	alpha *= strength * opacity;
@@ -519,7 +519,7 @@ void CStudioModelRenderer::Init( void )
 	if( !cl_blobshadows )
 		cl_blobshadows = CVAR_CREATE( "cl_blobshadows", "1", FCVAR_ARCHIVE );
 	if( !cl_blobshadows_opacity )
-		cl_blobshadows_opacity = CVAR_CREATE( "cl_blobshadows_opacity", "0.60", FCVAR_ARCHIVE );
+		cl_blobshadows_opacity = CVAR_CREATE( "cl_blobshadows_opacity", "0.53", FCVAR_ARCHIVE );
 
 	m_pChromeSprite			= IEngineStudio.GetChromeSprite();
 
