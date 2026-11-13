@@ -459,10 +459,6 @@ BOOL CTeleportProjectile::BeginPlayerTravel( CBasePlayer *pPlayer, const Vector 
 	pPlayer->pev->movetype = MOVETYPE_NONE;
 	pPlayer->pev->effects |= EF_NOINTERP;
 
-	SendTeleportBeamFollow( pPlayer->entindex(), pPlayer->pev->origin,
-		TELEPORT_GRENADE_TRAIL_LIFE, TELEPORT_GRENADE_TRAIL_WIDTH,
-		175, 235, 255, 255 );
-
 	MakeProjectileInert();
 	SetThink( &CTeleportProjectile::PlayerTravelThink );
 	pev->nextthink = gpGlobals->time + 0.01f;
