@@ -55,6 +55,8 @@ int HUD_AdjustX( int x );
 int HUD_AdjustY( int y );
 int HUD_AdjustScissorWidth( int x, int width );
 int HUD_AdjustScissorHeight( int y, int height );
+int HUD_AdjustWidth( int x, int width );
+int HUD_AdjustHeight( int y, int height );
 
 inline void HUD_SPR_Draw( int frame, int x, int y, const wrect_t *prc )
 {
@@ -75,11 +77,11 @@ inline void HUD_SPR_EnableScissor( int x, int y, int width, int height )
 }
 inline void HUD_FillRGBA( int x, int y, int width, int height, int r, int g, int b, int a )
 {
-	gEngfuncs.pfnFillRGBA( HUD_AdjustX( x ), HUD_AdjustY( y ), width, height, r, g, b, a );
+	gEngfuncs.pfnFillRGBA( HUD_AdjustX( x ), HUD_AdjustY( y ), HUD_AdjustWidth( x, width ), HUD_AdjustHeight( y, height ), r, g, b, a );
 }
 inline void HUD_FillRGBABlend( int x, int y, int width, int height, int r, int g, int b, int a )
 {
-	gEngfuncs.pfnFillRGBABlend( HUD_AdjustX( x ), HUD_AdjustY( y ), width, height, r, g, b, a );
+	gEngfuncs.pfnFillRGBABlend( HUD_AdjustX( x ), HUD_AdjustY( y ), HUD_AdjustWidth( x, width ), HUD_AdjustHeight( y, height ), r, g, b, a );
 }
 
 #define SPR_Draw HUD_SPR_Draw
