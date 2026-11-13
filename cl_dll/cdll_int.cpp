@@ -73,6 +73,31 @@ void	DLLEXPORT HUD_Frame( double time );
 void	DLLEXPORT HUD_VoiceStatus(int entindex, qboolean bTalking);
 void	DLLEXPORT HUD_DirectorMessage( int iSize, void *pbuf );
 int DLLEXPORT HUD_MobilityInterface( mobile_engfuncs_t *gpMobileEngfuncs );
+int DLLEXPORT HUD_GetRenderInterface( int version, void *renderfuncs, void *callbacks );
+}
+
+/*
+===============================
+HUD_GetRenderInterface
+
+Temporary Xash3D FWGS diagnostic. Report the render API version requested
+by the engine, then reject the interface until the matching ABI is verified.
+===============================
+*/
+extern "C" int DLLEXPORT HUD_GetRenderInterface( int version, void *renderfuncs, void *callbacks )
+{
+	(void)renderfuncs;
+	(void)callbacks;
+
+	if( gEngfuncs.Con_Printf )
+	{
+		gEngfuncs.Con_Printf(
+			"[Render API probe] Engine requested interface version: %d\\n",
+			version
+		);
+	}
+
+	return 0;
 }
 
 /*
