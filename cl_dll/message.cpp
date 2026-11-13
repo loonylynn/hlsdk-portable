@@ -194,7 +194,7 @@ void CHudMessage::MessageScanNextChar( void )
 	if( m_parms.pMessage->effect == 1 && m_parms.charTime != 0 )
 	{
 		if( m_parms.x >= 0 && m_parms.y >= 0 && ( m_parms.x + gHUD.m_scrinfo.charWidths[m_parms.text] ) <= ScreenWidth )
-			TextMessageDrawChar( m_parms.x, m_parms.y, m_parms.text, m_parms.pMessage->r2, m_parms.pMessage->g2, m_parms.pMessage->b2 );
+			gEngfuncs.pfnDrawCharacter( m_parms.x, m_parms.y, m_parms.text, m_parms.pMessage->r2, m_parms.pMessage->g2, m_parms.pMessage->b2 );
 	}
 }
 
@@ -299,7 +299,7 @@ void CHudMessage::MessageDrawScan( client_textmessage_t *pMessage, float time )
 			MessageScanNextChar();
 
 			if( m_parms.x >= 0 && m_parms.y >= 0 && next <= ScreenWidth )
-				TextMessageDrawChar( m_parms.x, m_parms.y, m_parms.text, m_parms.r, m_parms.g, m_parms.b );
+				gEngfuncs.pfnDrawCharacter( m_parms.x, m_parms.y, m_parms.text, m_parms.r, m_parms.g, m_parms.b );
 			m_parms.x = next;
 		}
 
@@ -338,10 +338,10 @@ int CHudMessage::Draw( float fTime )
 			int y = YPosition( m_pGameTitle->y, fullHeight );
 
 			SPR_Set( gHUD.GetSprite( m_HUD_title_half ), brightness * m_pGameTitle->r1, brightness * m_pGameTitle->g1, brightness * m_pGameTitle->b1 );
-			SPR_DrawAdditive( 0, x, y, &gHUD.GetSpriteRect( m_HUD_title_half ) );
+			gEngfuncs.pfnSPR_DrawAdditive( 0, x, y, &gHUD.GetSpriteRect( m_HUD_title_half ) );
 
 			SPR_Set( gHUD.GetSprite( m_HUD_title_life ), brightness * m_pGameTitle->r1, brightness * m_pGameTitle->g1, brightness * m_pGameTitle->b1 );
-			SPR_DrawAdditive( 0, x + halfWidth, y, &gHUD.GetSpriteRect( m_HUD_title_life ) );
+			gEngfuncs.pfnSPR_DrawAdditive( 0, x + halfWidth, y, &gHUD.GetSpriteRect( m_HUD_title_life ) );
 
 			drawn = 1;
 		}
