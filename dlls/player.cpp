@@ -32,6 +32,7 @@
 #include "monsters.h"
 #include "shake.h"
 #include "decals.h"
+#include "effects.h"
 #include "gamerules.h"
 #include "game.h"
 #include "pm_shared.h"
@@ -67,17 +68,24 @@ extern CGraph WorldGraph;
 #define	FLASH_DRAIN_TIME	 1.2f //100 units/3 minutes
 #define	FLASH_CHARGE_TIME	 0.2f // 100 units/20 seconds  (seconds per unit)
 
-// PS2-style usable-object marker. The sprite model is intentionally not assigned
-// yet; the entity and target-selection logic can be tested before the art is ready.
+// PS2-style usable-object marker. Until the original bracket sprite is available,
+// draw a camera-facing set of corner brackets with the stock laserbeam sprite.
+#define USEABLE_BRACKET_BEAM_COUNT 8
+#define USEABLE_BRACKET_SPRITE "sprites/laserbeam.spr"
+
 class CUseableGraphic : public CBaseEntity
 {
+	EHANDLE m_hBracketBeams[USEABLE_BRACKET_BEAM_COUNT];
+
 public:
 	void Spawn( void );
 	virtual int ObjectCaps( void )
 	{
 		return ( CBaseEntity::ObjectCaps() & ~FCAP_ACROSS_TRANSITION ) | FCAP_DONT_SAVE;
 	}
-	static CUseableGraphic *Create( CBaseEntity *pTarget );
+	void UpdateBrackets( CBaseEntity *pTarget, CBasePlayer *pPlayer );
+	void RemoveBrackets( void );
+	static CUseableGraphic *Create( CBaseEntity *pTarget, CBasePlayer *pPlayer );
 };
 LINK_ENTITY_TO_CLASS( useable_graphic, CUseableGraphic );
 
@@ -1719,31 +1727,36 @@ void CBasePlayer::PlayerUse( void )
 	}
 }
 
-// Create an invisible marker entity now; its PS2 sprite will be assigned once a
-// compatible PC .spr version of bracket_02 is available.
 void CUseableGraphic::Spawn( void )
 {
 	pev->movetype = MOVETYPE_NONE;
 	pev->solid = SOLID_NOT;
-	pev->modelindex = 0; // No bracket sprite is assigned yet.
+	pev->modelindex = 0;
 	pev->rendermode = kRenderTransAlpha;
 	pev->rendercolor = Vector( 255, 160, 0 );
 	pev->renderamt = 0;
-	pev->effects = EF_NODRAW; // Clear this when the PC bracket sprite is added.
+	pev->effects = EF_NODRAW;
 	pev->scale = 1.0f;
+
+	for( int i = 0; i < USEABLE_BRACKET_BEAM_COUNT; ++i )
+		m_hBracketBeams[i] = NULL;
 }
 
-CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget )
+void CUseableGraphic::RemoveBrackets( void )
 {
-	if( !pTarget )
-		return NULL;
+	for( int i = 0; i < USEABLE_BRACKET_BEAM_COUNT; ++i )
+	{
+		CBaseEntity *pBeam = CBaseEntity::Instance( m_hBracketBeams[i].Get() );
+		if( pBeam )
+			UTIL_Remove( pBeam );
+		m_hBracketBeams[i] = NULL;
+	}
+}
 
-	CUseableGraphic *pGraphic = GetClassPtr( (CUseableGraphic *)NULL );
-	if( !pGraphic )
-		return NULL;
-
-	pGraphic->Spawn();
-	pGraphic->pev->classname = MAKE_STRING( "useable_graphic" );
+void CUseableGraphic::UpdateBrackets( CBaseEntity *pTarget, CBasePlayer *pPlayer )
+{
+	if( !pTarget || !pPlayer )
+		return;
 
 	Vector vecOrigin = pTarget->pev->origin;
 	BOOL fBModel = pTarget->IsBSPModel();
@@ -1762,22 +1775,22 @@ CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget )
 	float flScaleX = fabs( ( pTarget->pev->absmax.x - pTarget->pev->absmin.x ) * 0.5f );
 	float flScaleY = fabs( ( pTarget->pev->absmax.y - pTarget->pev->absmin.y ) * 0.5f );
 
-	pGraphic->pev->scale = flScaleZ;
-	if( pGraphic->pev->scale < flScaleX )
-		pGraphic->pev->scale = flScaleX;
-	if( pGraphic->pev->scale < flScaleY )
-		pGraphic->pev->scale = flScaleY;
-	if( pGraphic->pev->scale > 32.0f )
-		pGraphic->pev->scale = 32.0f;
+	pev->scale = flScaleZ;
+	if( pev->scale < flScaleX )
+		pev->scale = flScaleX;
+	if( pev->scale < flScaleY )
+		pev->scale = flScaleY;
+	if( pev->scale > 32.0f )
+		pev->scale = 32.0f;
 
-	// Keep the same placement corrections used by the PS2 port.
+	// Retain the positioning adjustments from the PS2 implementation.
 	const char *pszClassname = STRING( pTarget->pev->classname );
 	if( pszClassname && !strcmp( pszClassname, "item_eyescanner" ) )
 	{
 		UTIL_MakeVectors( pTarget->pev->angles );
 		vecOrigin = vecOrigin + gpGlobals->v_right * -2.3f;
 		vecOrigin.z += 45.0f;
-		pGraphic->pev->scale *= 0.5f;
+		pev->scale *= 0.5f;
 	}
 	else if( pszClassname &&
 		( !strcmp( pszClassname, "item_healthcharger" ) ||
@@ -1787,29 +1800,94 @@ CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget )
 	}
 	else if( pszClassname && !strcmp( pszClassname, "func_tankcontrols" ) )
 	{
-		pGraphic->pev->scale *= 0.25f;
+		pev->scale *= 0.25f;
 	}
 
-	pGraphic->pev->origin = vecOrigin;
-	UTIL_SetOrigin( pGraphic->pev, vecOrigin );
+	pev->origin = vecOrigin;
+	UTIL_SetOrigin( pev, vecOrigin );
+
+	// Rebuild the player's view basis after any target-specific MakeVectors call.
+	UTIL_MakeVectors( pPlayer->pev->v_angle );
+	Vector vecRight = gpGlobals->v_right;
+	Vector vecUp = gpGlobals->v_up;
+	Vector vecForward = gpGlobals->v_forward;
+
+	// A small view-facing frame is easier to read than a full wireframe box.
+	float flRadius = pev->scale + 4.0f;
+	if( flRadius < 10.0f )
+		flRadius = 10.0f;
+	if( flRadius > 36.0f )
+		flRadius = 36.0f;
+
+	float flArm = flRadius * 0.35f;
+	if( flArm < 4.0f )
+		flArm = 4.0f;
+	if( flArm > 12.0f )
+		flArm = 12.0f;
+
+	Vector vecCenter = vecOrigin - vecForward * 2.0f;
+	Vector vecStart[USEABLE_BRACKET_BEAM_COUNT];
+	Vector vecEnd[USEABLE_BRACKET_BEAM_COUNT];
+
+	for( int corner = 0; corner < 4; ++corner )
+	{
+		float flX = ( corner & 1 ) ? 1.0f : -1.0f;
+		float flY = ( corner & 2 ) ? 1.0f : -1.0f;
+		Vector vecCorner = vecCenter + vecRight * ( flX * flRadius ) + vecUp * ( flY * flRadius );
+
+		vecStart[corner * 2] = vecCorner;
+		vecEnd[corner * 2] = vecCorner - vecRight * ( flX * flArm );
+		vecStart[corner * 2 + 1] = vecCorner;
+		vecEnd[corner * 2 + 1] = vecCorner - vecUp * ( flY * flArm );
+	}
+
+	for( int i = 0; i < USEABLE_BRACKET_BEAM_COUNT; ++i )
+	{
+		CBeam *pBeam = (CBeam *)CBaseEntity::Instance( m_hBracketBeams[i].Get() );
+		if( !pBeam )
+		{
+			pBeam = CBeam::BeamCreate( USEABLE_BRACKET_SPRITE, 2 );
+			if( !pBeam )
+				continue;
+
+			pBeam->pev->spawnflags |= SF_BEAM_TEMPORARY;
+			pBeam->SetColor( 255, 160, 0 );
+			pBeam->SetBrightness( 220 );
+			pBeam->SetNoise( 0 );
+			pBeam->SetFrame( 0 );
+			pBeam->SetScrollRate( 0 );
+			m_hBracketBeams[i] = pBeam;
+		}
+
+		pBeam->SetStartPos( vecStart[i] );
+		pBeam->SetEndPos( vecEnd[i] );
+		pBeam->RelinkBeam();
+	}
+}
+
+CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget, CBasePlayer *pPlayer )
+{
+	if( !pTarget || !pPlayer )
+		return NULL;
+
+	CUseableGraphic *pGraphic = GetClassPtr( (CUseableGraphic *)NULL );
+	if( !pGraphic )
+		return NULL;
+
+	pGraphic->Spawn();
+	pGraphic->pev->classname = MAKE_STRING( "useable_graphic" );
+	pGraphic->UpdateBrackets( pTarget, pPlayer );
 	return pGraphic;
 }
 
 void CBasePlayer::ClearUseableHighlight( void )
 {
-	CBaseEntity *pLastObject = CBaseEntity::Instance( m_hLastUseableItem.Get() );
-	if( pLastObject )
+	CUseableGraphic *pGraphic = (CUseableGraphic *)CBaseEntity::Instance( m_hUseableHighlight.Get() );
+	if( pGraphic )
 	{
-		const char *pszClassname = STRING( pLastObject->pev->classname );
-		if( !pszClassname || !pszClassname[0] )
-			pszClassname = "<unnamed>";
-
-		ALERT( at_console, "[PS2 usable] Focus lost: %s (entity %d)\n",
-			pszClassname, pLastObject->entindex() );
+		pGraphic->RemoveBrackets();
+		UTIL_Remove( pGraphic );
 	}
-
-	if( m_hUseableHighlight.Get() )
-		UTIL_Remove( m_hUseableHighlight );
 
 	m_hUseableHighlight = NULL;
 	m_hLastUseableItem = NULL;
@@ -1824,20 +1902,18 @@ void CBasePlayer::HighlightUseable( CBaseEntity *pObject )
 	}
 
 	if( (CBaseEntity *)m_hLastUseableItem == pObject && m_hUseableHighlight.Get() )
+	{
+		CUseableGraphic *pGraphic = (CUseableGraphic *)CBaseEntity::Instance( m_hUseableHighlight.Get() );
+		if( pGraphic )
+			pGraphic->UpdateBrackets( pObject, this );
 		return;
+	}
 
 	ClearUseableHighlight();
-	m_hUseableHighlight = CUseableGraphic::Create( pObject );
-	if( m_hUseableHighlight.Get() )
-	{
-		const char *pszClassname = STRING( pObject->pev->classname );
-		if( !pszClassname || !pszClassname[0] )
-			pszClassname = "<unnamed>";
-
+	CUseableGraphic *pGraphic = CUseableGraphic::Create( pObject, this );
+	m_hUseableHighlight = pGraphic;
+	if( pGraphic )
 		m_hLastUseableItem = pObject;
-		ALERT( at_console, "[PS2 usable] Focus acquired: %s (entity %d)\n",
-			pszClassname, pObject->entindex() );
-	}
 }
 
 // Find the nearest usable object in the player's forward view cone.
