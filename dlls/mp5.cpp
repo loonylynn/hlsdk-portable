@@ -35,6 +35,10 @@ enum mp5_e
 	MP5_FIRE3
 };
 
+// Keep the MP5's teleport-frag timings aligned with weapon_teleport.
+#define MP5_TELEPORT_RECHARGE 3.0f
+#define MP5_TELEPORT_REVOKE_TIME 0.2f
+
 LINK_ENTITY_TO_CLASS( weapon_mp5, CMP5 )
 LINK_ENTITY_TO_CLASS( weapon_9mmAR, CMP5 )
 
@@ -173,15 +177,15 @@ void CMP5::TeleportAttack( void )
 		return;
 	}
 
-	if( flTime < m_flNextTeleportAttack || m_pPlayer->pev->waterlevel == 3 )
+	if( flTime < m_flNextTeleportAttack )
 		return;
 
 	if( !TeleportGrenadeLaunchProjectile( m_pPlayer, WEAPON_MP5 ) )
 		return;
 
 	m_iTeleportProjectileActive = TRUE;
-	m_flNextTeleportAttack = flTime + 3.0f;
-	m_flNextTeleportRevoke = flTime + 0.2f;
+	m_flNextTeleportAttack = flTime + MP5_TELEPORT_RECHARGE;
+	m_flNextTeleportRevoke = flTime + MP5_TELEPORT_REVOKE_TIME;
 
 	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
 	// This is server-authoritative (not locally predicted), so do not skip the owner.
