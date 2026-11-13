@@ -171,15 +171,21 @@ void CMP5::TeleportAttack( void )
 	const float flTime = UTIL_WeaponTimeBase();
 
 	// A second right-click recalls the projectile, matching weapon_teleport's
-	// short revoke window. The three-second recharge remains independent.
+	// short revoke window. Reconcile the cached flag with the actual entity:
+	// if the projectile already impacted/expired, clear stale state and let
+	// this same press launch again once the recharge has elapsed.
 	if( m_iTeleportProjectileActive )
 	{
 		if( flTime < m_flNextTeleportRevoke )
 			return;
 
-		if( !TeleportGrenadeRevokeProjectile( m_pPlayer, WEAPON_MP5 ) )
+		if( TeleportGrenadeRevokeProjectile( m_pPlayer, WEAPON_MP5 ) )
+		{
 			OnTeleportProjectileFinished();
-		return;
+			return;
+		}
+
+		OnTeleportProjectileFinished();
 	}
 
 	if( flTime < m_flNextTeleportAttack )
