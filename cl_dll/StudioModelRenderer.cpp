@@ -18,6 +18,9 @@
 #include "dlight.h"
 #include "triangleapi.h"
 #include "byteswap.h"
+#include "pm_defs.h"
+
+#include <math.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -30,6 +33,183 @@
 
 // Global engine <-> studio model rendering code interface
 engine_studio_api_t IEngineStudio;
+
+static cvar_t *cl_blobshadows = NULL;
+
+static float StudioMaxAbs( float a, float b )
+{
+	float absA = fabsf( a );
+	float absB = fabsf( b );
+	return ( absA > absB ) ? absA : absB;
+}
+
+/*
+====================
+StudioDrawBlobShadow
+
+Draw a lightweight Quake-style blob shadow for a studio entity.
+The shadow is a radial alpha fan placed on the world surface below
+the entity; it deliberately does not use the engine's old projected
+studio-geometry shadow routine.
+====================
+*/
+static void StudioDrawBlobShadow( cl_entity_t *entity )
+{
+	const int segments = 24;
+	pmtrace_t trace;
+	vec3_t traceStart, traceEnd;
+	vec3_t normal, right, forward, center, edge;
+	float mins[3], maxs[3];
+	float bottomZ, height, fade, strength;
+	float radiusX, radiusY, radiusScale;
+	float dot, length, angle;
+	int i;
+	triangleapi_t *tri = gEngfuncs.pTriAPI;
+
+	if( !cl_blobshadows || cl_blobshadows->value <= 0.0f )
+		return;
+
+	if( !entity || !entity->model || !tri || !gEngfuncs.pEventAPI )
+		return;
+
+	if( entity->index == 0 || ( gEngfuncs.GetViewModel && entity == gEngfuncs.GetViewModel() ))
+		return;
+
+	if( entity->curstate.rendermode != kRenderNormal ||
+		entity->curstate.renderfx != kRenderFxNone ||
+		FBitSet( entity->curstate.effects, EF_NOSHADOW | EF_NODRAW ))
+		return;
+
+	if( !gEngfuncs.pEventAPI->EV_SetUpPlayerPrediction ||
+		!gEngfuncs.pEventAPI->EV_PushPMStates ||
+		!gEngfuncs.pEventAPI->EV_SetTraceHull ||
+		!gEngfuncs.pEventAPI->EV_PlayerTrace ||
+		!gEngfuncs.pEventAPI->EV_PopPMStates )
+		return;
+
+	VectorCopy( entity->curstate.mins, mins );
+	VectorCopy( entity->curstate.maxs, maxs );
+
+	// Client-only studio entities may not have networked bounds.
+	if( mins[0] == 0.0f && mins[1] == 0.0f && mins[2] == 0.0f &&
+		maxs[0] == 0.0f && maxs[1] == 0.0f && maxs[2] == 0.0f )
+	{
+		VectorCopy( entity->model->mins, mins );
+		VectorCopy( entity->model->maxs, maxs );
+	}
+
+	bottomZ = entity->origin[2] + mins[2];
+
+	traceStart[0] = entity->origin[0];
+	traceStart[1] = entity->origin[1];
+	traceStart[2] = entity->origin[2] + maxs[2] + 8.0f;
+
+	traceEnd[0] = entity->origin[0];
+	traceEnd[1] = entity->origin[1];
+	traceEnd[2] = bottomZ - 128.0f;
+
+	memset( &trace, 0, sizeof( trace ) );
+
+	// Only the BSP world is tested, so another actor cannot become
+	// the receiving surface for this entity's shadow.
+	gEngfuncs.pEventAPI->EV_SetUpPlayerPrediction( false, true );
+	gEngfuncs.pEventAPI->EV_PushPMStates();
+	gEngfuncs.pEventAPI->EV_SetTraceHull( 0 );
+	gEngfuncs.pEventAPI->EV_PlayerTrace( traceStart, traceEnd, PM_WORLD_ONLY, -1, &trace );
+	gEngfuncs.pEventAPI->EV_PopPMStates();
+
+	if( trace.fraction >= 1.0f || trace.startsolid || trace.allsolid || trace.inwater )
+		return;
+
+	VectorCopy( trace.plane.normal, normal );
+	length = sqrtf( normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2] );
+	if( length <= 0.001f )
+		return;
+
+	normal[0] /= length;
+	normal[1] /= length;
+	normal[2] /= length;
+
+	// Avoid drawing blobs onto near-vertical walls.
+	if( normal[2] < 0.5f )
+		return;
+
+	height = bottomZ - trace.endpos[2];
+	if( height < -8.0f || height > 128.0f )
+		return;
+	if( height < 0.0f )
+		height = 0.0f;
+
+	fade = 1.0f - ( height / 128.0f );
+	strength = cl_blobshadows->value;
+	if( strength > 1.0f )
+		strength = 1.0f;
+
+	radiusX = StudioMaxAbs( mins[0], maxs[0] );
+	radiusY = StudioMaxAbs( mins[1], maxs[1] );
+
+	if( radiusX < 8.0f ) radiusX = 16.0f;
+	if( radiusY < 8.0f ) radiusY = 16.0f;
+
+	radiusX *= 1.10f;
+	radiusY *= 1.10f;
+
+	if( radiusX > 40.0f ) radiusX = 40.0f;
+	if( radiusY > 40.0f ) radiusY = 40.0f;
+
+	radiusScale = 1.0f + ( height / 128.0f ) * 0.35f;
+	radiusX *= radiusScale;
+	radiusY *= radiusScale;
+
+	// Build a stable tangent basis for the receiving plane.
+	right[0] = 1.0f;
+	right[1] = 0.0f;
+	right[2] = 0.0f;
+
+	dot = DotProduct( right, normal );
+	right[0] -= normal[0] * dot;
+	right[1] -= normal[1] * dot;
+	right[2] -= normal[2] * dot;
+
+	length = sqrtf( DotProduct( right, right ));
+	if( length <= 0.001f )
+		return;
+
+	right[0] /= length;
+	right[1] /= length;
+	right[2] /= length;
+
+	forward[0] = normal[1] * right[2] - normal[2] * right[1];
+	forward[1] = normal[2] * right[0] - normal[0] * right[2];
+	forward[2] = normal[0] * right[1] - normal[1] * right[0];
+
+	center[0] = trace.endpos[0] + normal[0] * 0.5f;
+	center[1] = trace.endpos[1] + normal[1] * 0.5f;
+	center[2] = trace.endpos[2] + normal[2] * 0.5f;
+
+	tri->RenderMode( kRenderTransAlpha );
+	tri->Begin( TRI_TRIANGLE_FAN );
+
+	// A black center fading smoothly to a fully transparent edge.
+	tri->Color4f( 0.0f, 0.0f, 0.0f, 0.28f * fade * strength );
+	tri->Vertex3fv( center );
+
+	for( i = 0; i <= segments; i++ )
+	{
+		angle = ( 6.28318530718f * (float)i ) / (float)segments;
+
+		edge[0] = center[0] + right[0] * cosf( angle ) * radiusX + forward[0] * sinf( angle ) * radiusY;
+		edge[1] = center[1] + right[1] * cosf( angle ) * radiusX + forward[1] * sinf( angle ) * radiusY;
+		edge[2] = center[2] + right[2] * cosf( angle ) * radiusX + forward[2] * sinf( angle ) * radiusY;
+
+		tri->Color4f( 0.0f, 0.0f, 0.0f, 0.0f );
+		tri->Vertex3fv( edge );
+	}
+
+	tri->End();
+	tri->Color4f( 1.0f, 1.0f, 1.0f, 1.0f );
+	tri->RenderMode( kRenderNormal );
+}
 
 /////////////////////
 // Implementation of CStudioModelRenderer.h
@@ -60,6 +240,9 @@ void CStudioModelRenderer::Init( void )
 	m_pCvarHiModels			= IEngineStudio.GetCvar( "cl_himodels" );
 	m_pCvarDeveloper		= IEngineStudio.GetCvar( "developer" );
 	m_pCvarDrawEntities		= IEngineStudio.GetCvar( "r_drawentities" );
+
+	if( !cl_blobshadows )
+		cl_blobshadows = CVAR_CREATE( "cl_blobshadows", "1", FCVAR_ARCHIVE );
 
 	m_pChromeSprite			= IEngineStudio.GetChromeSprite();
 
@@ -1602,6 +1785,8 @@ void CStudioModelRenderer::StudioRenderFinal_Software( void )
 			IEngineStudio.StudioSetupModel( i, (void **)&m_pBodyPart, (void **)&m_pSubModel );
 			IEngineStudio.StudioDrawPoints();
 		}
+
+		StudioDrawBlobShadow( m_pCurrentEntity );
 	}
 
 	if( m_pCvarDrawEntities->value == 4 )
@@ -1657,6 +1842,8 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 			IEngineStudio.StudioDrawPoints();
 			IEngineStudio.GL_StudioDrawShadow();
 		}
+
+		StudioDrawBlobShadow( m_pCurrentEntity );
 	}
 
 	if( m_pCvarDrawEntities->value == 4 )
