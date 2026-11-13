@@ -21,6 +21,14 @@
 #include "nodes.h"
 #include "player.h"
 
+#define PISTOL_FASTEST_REFIRE_TIME		0.1f
+#define PISTOL_FASTEST_DRY_REFIRE_TIME	0.2f
+#define PISTOL_FIRE_RATE				0.5f
+#define PISTOL_ACCURACY_SHOT_PENALTY_TIME	0.2f
+#define PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME	1.5f
+#define PISTOL_CONE_1DEGREES			0.00873f
+#define PISTOL_CONE_6DEGREES			0.05234f
+
 enum glock_e
 {
 	GLOCK_IDLE1 = 0,
@@ -35,6 +43,16 @@ enum glock_e
 	GLOCK_ADD_SILENCER
 };
 
+#if !CLIENT_DLL
+TYPEDESCRIPTION CGlock::m_SaveData[] =
+{
+	DEFINE_FIELD( CGlock, m_flSoonestPrimaryAttack, FIELD_TIME ),
+	DEFINE_FIELD( CGlock, m_flAccuracyPenalty, FIELD_FLOAT ),
+};
+
+IMPLEMENT_SAVERESTORE( CGlock, CBasePlayerWeapon )
+#endif
+
 LINK_ENTITY_TO_CLASS( weapon_glock, CGlock )
 LINK_ENTITY_TO_CLASS( weapon_9mmhandgun, CGlock )
 
@@ -46,6 +64,9 @@ void CGlock::Spawn()
 	SET_MODEL( ENT( pev ), "models/w_9mmhandgun.mdl" );
 
 	m_iDefaultAmmo = GLOCK_DEFAULT_GIVE;
+
+	m_flSoonestPrimaryAttack = gpGlobals->time;
+	m_flAccuracyPenalty = 0.0f;
 
 	FallInit();// get ready to fall down.
 }
@@ -104,28 +125,36 @@ BOOL CGlock::Deploy()
 	return DefaultDeploy( "models/v_9mmhandgun.mdl", "models/p_9mmhandgun.mdl", GLOCK_DRAW, "onehanded", /*UseDecrement() ? 1 : 0*/ 0 );
 }
 
-void CGlock::SecondaryAttack( void )
-{
-	GlockFire( 0.1f, 0.2f, FALSE );
-}
-
 void CGlock::PrimaryAttack( void )
-{
-	GlockFire( 0.01f, 0.3f, TRUE );
-}
-
-void CGlock::GlockFire( float flSpread, float flCycleTime, BOOL fUseAutoAim )
 {
 	if( m_iClip <= 0 )
 	{
 		if( m_fFireOnEmpty )
-		{
-			PlayEmptySound();
-			m_flNextPrimaryAttack = GetNextAttackDelay( 0.2f );
-		}
+			DryFire();
 
 		return;
 	}
+
+	m_flSoonestPrimaryAttack = UTIL_WeaponTimeBase() + PISTOL_FASTEST_REFIRE_TIME;
+
+	GlockFire( TRUE );
+
+	// Match HL2's pistol: each shot adds 0.2 seconds of inaccuracy.
+	m_flAccuracyPenalty += PISTOL_ACCURACY_SHOT_PENALTY_TIME;
+}
+
+void CGlock::GlockFire( BOOL fUseAutoAim )
+{
+	float flRamp = m_flAccuracyPenalty / PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME;
+	if( flRamp < 0.0f )
+		flRamp = 0.0f;
+	else if( flRamp > 1.0f )
+		flRamp = 1.0f;
+
+	// GoldSrc's cone constants use the same half-angle convention as its
+	// existing EV_HLDM spread definitions: 1 degree through 6 degrees.
+	float flSpread = PISTOL_CONE_1DEGREES +
+		( PISTOL_CONE_6DEGREES - PISTOL_CONE_1DEGREES ) * flRamp;
 
 	m_iClip--;
 
@@ -170,13 +199,69 @@ void CGlock::GlockFire( float flSpread, float flCycleTime, BOOL fUseAutoAim )
 
 	PLAYBACK_EVENT_FULL( flags, m_pPlayer->edict(), fUseAutoAim ? m_usFireGlock1 : m_usFireGlock2, 0.0, g_vecZero, g_vecZero, vecDir.x, vecDir.y, 0, 0, ( m_iClip == 0 ) ? 1 : 0, 0 );
 
-	m_flNextPrimaryAttack = m_flNextSecondaryAttack = GetNextAttackDelay( flCycleTime );
+	// HL2's pistol uses a 0.5-second held-fire rate. Releasing the trigger
+	// after the 0.1-second minimum lockout enables immediate click-to-fire.
+	m_flNextPrimaryAttack = UTIL_WeaponTimeBase() + PISTOL_FIRE_RATE;
 
 	if( !m_iClip && m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 )
 		// HEV suit - indicate out of ammo condition
 		m_pPlayer->SetSuitUpdate( "!HEV_AMO0", FALSE, 0 );
 
 	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10, 15 );
+}
+
+void CGlock::DryFire( void )
+{
+	PlayEmptySound();
+
+	m_flSoonestPrimaryAttack = UTIL_WeaponTimeBase() + PISTOL_FASTEST_DRY_REFIRE_TIME;
+	m_flNextPrimaryAttack = UTIL_WeaponTimeBase() + PISTOL_FASTEST_DRY_REFIRE_TIME;
+}
+
+void CGlock::UpdatePenaltyTime( void )
+{
+	if( !m_pPlayer )
+		return;
+
+	// Recover accuracy only after the trigger is released and the minimum
+	// refire lockout has elapsed, as in HL2's weapon_pistol.
+	if( !( m_pPlayer->pev->button & IN_ATTACK ) &&
+		m_flSoonestPrimaryAttack < UTIL_WeaponTimeBase() )
+	{
+		m_flAccuracyPenalty -= gpGlobals->frametime;
+
+		if( m_flAccuracyPenalty < 0.0f )
+			m_flAccuracyPenalty = 0.0f;
+		else if( m_flAccuracyPenalty > PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME )
+			m_flAccuracyPenalty = PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME;
+	}
+}
+
+void CGlock::ItemPreFrame( void )
+{
+	UpdatePenaltyTime();
+	CBasePlayerWeapon::ItemPreFrame();
+}
+
+void CGlock::ItemPostFrame( void )
+{
+	CBasePlayerWeapon::ItemPostFrame();
+
+	if( m_fInReload || !m_pPlayer )
+		return;
+
+	// Do not wait for the full 0.5-second held-fire interval after a
+	// deliberate trigger release. This is HL2's click-to-fire behavior.
+	if( !( m_pPlayer->pev->button & IN_ATTACK ) &&
+		m_flSoonestPrimaryAttack < UTIL_WeaponTimeBase() )
+	{
+		m_flNextPrimaryAttack = UTIL_WeaponTimeBase() - PISTOL_FASTEST_REFIRE_TIME;
+	}
+	else if( ( m_pPlayer->pev->button & IN_ATTACK ) &&
+		m_flNextPrimaryAttack < UTIL_WeaponTimeBase() && m_iClip <= 0 )
+	{
+		DryFire();
+	}
 }
 
 void CGlock::Reload( void )
@@ -193,6 +278,7 @@ void CGlock::Reload( void )
 
 	if( iResult )
 	{
+		m_flAccuracyPenalty = 0.0f;
 		m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10, 15 );
 	}
 }
