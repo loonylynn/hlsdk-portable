@@ -152,7 +152,7 @@ void CTeleportProjectile::Precache( void )
 	PRECACHE_SOUND( "weapons/grenade_hit2.wav" );
 	PRECACHE_SOUND( "weapons/grenade_hit3.wav" );
 	PRECACHE_SOUND( "buttons/blip1.wav" );
-	PRECACHE_SOUND( "items/suitchargeok1.wav" );
+	PRECACHE_SOUND( "debris/beamstart11.wav" );
 }
 
 void CTeleportProjectile::Spawn( void )
@@ -377,7 +377,7 @@ void CTeleportProjectile::CompletePlayerTravel( CBasePlayer *pPlayer )
 		pPlayer->pev->flags &= ~FL_FROZEN;
 
 	SendTeleportEffect( pPlayer->pev->origin, TRUE );
-	EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "items/suitchargeok1.wav", 1.0f, ATTN_NORM );
+	EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "debris/beamstart11.wav", 1.0f, ATTN_NORM );
 	SendTeleportArrivalShake( pPlayer );
 
 	SetThink( &CTeleportProjectile::DelayedRemoveThink );
@@ -609,7 +609,7 @@ void CTeleportProjectile::TeleportPerformTeleport( void )
 	pPlayer->pev->effects |= EF_NOINTERP;
 
 	SendTeleportEffect( vecDestination, TRUE );
-	EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "items/suitchargeok1.wav", 1.0f, ATTN_NORM );
+	EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "debris/beamstart11.wav", 1.0f, ATTN_NORM );
 	SendTeleportArrivalShake( pPlayer );
 
 	MakeProjectileInert();
