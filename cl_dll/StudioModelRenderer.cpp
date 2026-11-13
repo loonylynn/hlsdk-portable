@@ -145,8 +145,8 @@ static int StudioGetBlobShadowTexture( void )
 StudioBindBlobShadowTexture
 
 TriAPI's SpriteTexture accepts a model rather than a raw GL texture ID.
-Temporarily replace frame zero's GPU texture, bind it, then immediately
-restore the original sprite metadata.
+The studio API's Mod_Extradata is studio-only in Xash, so access the sprite's
+generic model cache directly and temporarily replace frame zero's texture.
 ====================
 */
 static qboolean StudioBindBlobShadowTexture( triangleapi_t *tri, int texture )
@@ -157,11 +157,11 @@ static qboolean StudioBindBlobShadowTexture( triangleapi_t *tri, int texture )
 	int result;
 
 	if( !tri || !tri->SpriteTexture || !cl_blobshadow_sprite ||
-		!IEngineStudio.Mod_Extradata )
+		!cl_blobshadow_sprite->cache.data )
 		return false;
 
-	sprite = (xash_msprite_v37_t *)IEngineStudio.Mod_Extradata( cl_blobshadow_sprite );
-	if( !sprite || sprite->numframes < 1 || sprite->frames[0].type != 0 )
+	sprite = (xash_msprite_v37_t *)cl_blobshadow_sprite->cache.data;
+	if( sprite->numframes < 1 || sprite->frames[0].type != 0 )
 		return false;
 
 	frame = sprite->frames[0].frameptr;
@@ -244,7 +244,7 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	if( !cl_blobshadow_sprite )
 		cl_blobshadow_sprite = IEngineStudio.Mod_ForName( "sprites/glow01.spr", false );
 
-	if( !cl_blobshadow_sprite || !IEngineStudio.Mod_Extradata || !tri->SpriteTexture )
+	if( !cl_blobshadow_sprite || !cl_blobshadow_sprite->cache.data || !tri->SpriteTexture )
 		return;
 
 	// Build a real alpha-mask texture; the stock glow sprite has a black
