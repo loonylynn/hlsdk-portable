@@ -2651,7 +2651,7 @@ void PM_Jump( void )
 			pmove->punchangle[0] = -5;
 			didlongjump = true;
 
-			for( i = 0; i < 2; i++
+			for( i = 0; i < 2; i++ )
 			{
 				pmove->velocity[i] = pmove->forward[i] * PLAYER_LONGJUMP_SPEED * 1.6f;
 			}
