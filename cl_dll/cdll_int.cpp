@@ -33,11 +33,13 @@ extern "C"
 
 #include <string.h>
 #include "vcs_info.h"
+#include "xash_render_api.h"
 
 cl_enginefunc_t gEngfuncs;
 CHud gHUD;
 TeamFortressViewport *gViewPort = NULL;
 mobile_engfuncs_t *gMobileEngfuncs = NULL;
+xash_render_api_v37_t *gXashRenderAPI = NULL;
 
 #if defined( INTERNAL_VGUI_SUPPORT )
 // declare InitVGUISupportAPI so that linker doesn't remove it because nothing references it
@@ -80,24 +82,36 @@ int DLLEXPORT HUD_GetRenderInterface( int version, void *renderfuncs, void *call
 ===============================
 HUD_GetRenderInterface
 
-Temporary Xash3D FWGS diagnostic. Report the render API version requested
-by the engine, then reject the interface until the matching ABI is verified.
+Accept the verified Xash3D FWGS render API v37 and retain the renderer's
+decal-clipping function for client-side blob-shadow marks.
 ===============================
 */
 extern "C" int DLLEXPORT HUD_GetRenderInterface( int version, void *renderfuncs, void *callbacks )
 {
-	(void)renderfuncs;
 	(void)callbacks;
+	gXashRenderAPI = NULL;
 
-	if( gEngfuncs.Con_Printf )
+	if( version != 37 || !renderfuncs )
 	{
-		gEngfuncs.Con_Printf(
-			"[Render API probe] Engine requested interface version: %d\n",
-			version
-		);
+		if( gEngfuncs.Con_Printf )
+			gEngfuncs.Con_Printf( "[Render API] Unsupported interface version %d\n", version );
+		return 0;
 	}
 
-	return 0;
+	xash_render_api_v37_t *api = (xash_render_api_v37_t *)renderfuncs;
+	if( !api->R_DecalSetupVerts )
+	{
+		if( gEngfuncs.Con_Printf )
+			gEngfuncs.Con_Printf( "[Render API] v37 is missing R_DecalSetupVerts\n" );
+		return 0;
+	}
+
+	gXashRenderAPI = api;
+
+	if( gEngfuncs.Con_Printf )
+		gEngfuncs.Con_Printf( "[Render API] accepted v37; decal clipping is available\n" );
+
+	return 1;
 }
 
 /*
