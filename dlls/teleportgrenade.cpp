@@ -230,17 +230,22 @@ void CTeleportProjectile::FinishWeaponState( void )
 		return;
 
 	CBasePlayer *pPlayer = (CBasePlayer *)pOwnerEntity;
+	const int iWeaponId = pev->iuser1;
 
-	// m_iClip is unused by this weapon; it is the networked/predicted
-	// "projectile currently exists" bit.  Clear it when the entity goes away.
+	// The same projectile class serves both weapons. Its launcher tag keeps
+	// simultaneous MP5 and standalone teleport frags from clearing each
+	// other's active state.
 	for( int i = 0; i < MAX_ITEM_TYPES; ++i )
 	{
 		CBasePlayerItem *pItem = pPlayer->m_rgpPlayerItems[i];
 		while( pItem )
 		{
-			if( pItem->m_iId == WEAPON_TELEPORT )
+			if( pItem->m_iId == iWeaponId )
 			{
-				((CTeleportGrenade *)pItem)->OnProjectileFinished();
+				if( iWeaponId == WEAPON_TELEPORT )
+					((CTeleportGrenade *)pItem)->OnProjectileFinished();
+				else if( iWeaponId == WEAPON_MP5 )
+					((CMP5 *)pItem)->OnTeleportProjectileFinished();
 				return;
 			}
 			pItem = pItem->m_pNext;
@@ -697,17 +702,62 @@ TYPEDESCRIPTION CTeleportProjectile::m_SaveData[] =
 
 IMPLEMENT_SAVERESTORE( CTeleportProjectile, CGrenade )
 
-static CTeleportProjectile *FindTeleportProjectile( CBasePlayer *pPlayer )
+static CTeleportProjectile *FindTeleportProjectile( CBasePlayer *pPlayer, int iWeaponId )
 {
 	CBaseEntity *pEntity = NULL;
 
 	while( ( pEntity = UTIL_FindEntityByClassname( pEntity, "teleport_projectile" ) ) != NULL )
 	{
-		if( pEntity->pev->owner == pPlayer->edict() )
+		if( pEntity->pev->owner == pPlayer->edict() && pEntity->pev->iuser1 == iWeaponId )
 			return (CTeleportProjectile *)pEntity;
 	}
 
 	return NULL;
+}
+
+BOOL TeleportGrenadeLaunchProjectile( CBasePlayer *pPlayer, int iWeaponId )
+{
+	if( !pPlayer )
+		return FALSE;
+
+	Vector angThrow = pPlayer->pev->v_angle + pPlayer->pev->punchangle;
+	angThrow.x -= TELEPORT_GRENADE_ARC;
+	UTIL_MakeVectors( angThrow );
+
+	Vector vecSource = pPlayer->pev->origin
+		+ pPlayer->pev->view_ofs
+		+ gpGlobals->v_forward * 16.0f;
+	Vector vecVelocity = gpGlobals->v_forward * TELEPORT_GRENADE_VELOCITY
+		+ pPlayer->pev->velocity;
+
+	CBaseEntity *pProjectile = CBaseEntity::Create(
+		"teleport_projectile", vecSource, angThrow, pPlayer->edict() );
+
+	if( !pProjectile )
+		return FALSE;
+
+	// iuser1 identifies which inventory weapon owns the projectile state.
+	pProjectile->pev->iuser1 = iWeaponId;
+	pProjectile->pev->velocity = vecVelocity;
+	pProjectile->pev->avelocity = Vector(
+		RANDOM_FLOAT( -1000.0f, 1000.0f ),
+		RANDOM_FLOAT( -1000.0f, 1000.0f ),
+		RANDOM_FLOAT( -1000.0f, 1000.0f ) );
+
+	return TRUE;
+}
+
+BOOL TeleportGrenadeRevokeProjectile( CBasePlayer *pPlayer, int iWeaponId )
+{
+	if( !pPlayer )
+		return FALSE;
+
+	CTeleportProjectile *pProjectile = FindTeleportProjectile( pPlayer, iWeaponId );
+	if( !pProjectile )
+		return FALSE;
+
+	pProjectile->TeleportPerformReset();
+	return TRUE;
 }
 
 #endif // !CLIENT_DLL
@@ -820,9 +870,7 @@ void CTeleportGrenade::PrimaryAttack( void )
 		if( flTime >= m_flNextPrimaryAttack )
 		{
 #if !CLIENT_DLL
-			CTeleportProjectile *pProjectile = FindTeleportProjectile( m_pPlayer );
-			if( pProjectile )
-				pProjectile->TeleportPerformReset();
+			TeleportGrenadeRevokeProjectile( m_pPlayer, WEAPON_TELEPORT );
 #endif
 			OnProjectileFinished();
 			m_flNextPrimaryAttack = GetNextAttackDelay( TELEPORT_GRENADE_REVOKE_TIME );
@@ -850,38 +898,14 @@ void CTeleportGrenade::LaunchTeleportProjectile( void )
 
 	m_fInSpecialReload = FALSE;
 
-	Vector angThrow = m_pPlayer->pev->v_angle + m_pPlayer->pev->punchangle;
-	angThrow.x -= TELEPORT_GRENADE_ARC;
-
-	UTIL_MakeVectors( angThrow );
-
-	Vector vecSource = m_pPlayer->pev->origin
-		+ m_pPlayer->pev->view_ofs
-		+ gpGlobals->v_forward * 16.0f;
-
-	Vector vecVelocity = gpGlobals->v_forward * TELEPORT_GRENADE_VELOCITY
-		+ m_pPlayer->pev->velocity;
-
 #if !CLIENT_DLL
-	CBaseEntity *pProjectile = CBaseEntity::Create(
-		"teleport_projectile",
-		vecSource,
-		angThrow,
-		m_pPlayer->edict() );
-
-	if( !pProjectile )
+	if( !TeleportGrenadeLaunchProjectile( m_pPlayer, WEAPON_TELEPORT ) )
 	{
 		m_iProjectileActive = FALSE;
 		m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 0.5f;
 		SendWeaponAnim( TELEPORT_GRENADE_DRAW );
 		return;
 	}
-
-	pProjectile->pev->velocity = vecVelocity;
-	pProjectile->pev->avelocity = Vector(
-		RANDOM_FLOAT( -1000.0f, 1000.0f ),
-		RANDOM_FLOAT( -1000.0f, 1000.0f ),
-		RANDOM_FLOAT( -1000.0f, 1000.0f ) );
 #endif
 
 	// Keep the actual no-clip value in m_iClip.  This state is separately
