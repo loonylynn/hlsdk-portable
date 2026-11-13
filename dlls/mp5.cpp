@@ -49,7 +49,7 @@ void CMP5::Spawn()
 	Precache();
 	SET_MODEL( ENT( pev ), "models/w_9mmAR.mdl" );
 	m_iId = WEAPON_MP5;
-m_flNextSecondaryAttack = 0.0f;
+	m_flNextSecondaryAttack = 0.0f;
 
 	m_iDefaultAmmo = MP5_DEFAULT_GIVE;
 
