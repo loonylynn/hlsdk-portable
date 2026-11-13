@@ -38,6 +38,143 @@ engine_studio_api_t IEngineStudio;
 
 static cvar_t *cl_blobshadows = NULL;
 static model_t *cl_blobshadow_sprite = NULL;
+static int cl_blobshadow_texture = 0;
+
+// Minimal Xash sprite metadata mirrors. We temporarily substitute the frame's
+// texture index so TriAPI can bind our generated alpha-mask texture.
+typedef struct xash_mspriteframe_v37_s
+{
+	int width;
+	int height;
+	float up, down, left, right;
+	int gl_texturenum;
+} xash_mspriteframe_v37_t;
+
+typedef struct xash_mspriteframedesc_v37_s
+{
+	int type;
+	xash_mspriteframe_v37_t *frameptr;
+} xash_mspriteframedesc_v37_t;
+
+typedef struct xash_msprite_v37_s
+{
+	short type;
+	short texFormat;
+	int maxwidth;
+	int maxheight;
+	int numframes;
+	int radius;
+	int facecull;
+	int synctype;
+	xash_mspriteframedesc_v37_t frames[1];
+} xash_msprite_v37_t;
+
+/*
+====================
+StudioGetBlobShadowTexture
+
+Create a small white RGBA texture whose alpha is a radial falloff. glow01.spr
+is an additive glow sprite with a black background, so it cannot be used as
+an ordinary alpha-blended shadow mask.
+====================
+*/
+static int StudioGetBlobShadowTexture( void )
+{
+	static const char textureName[] = "cl_blobshadow_radial_v1";
+	static byte pixels[64 * 64 * 4];
+	static qboolean pixelsBuilt = false;
+	int texture;
+	int x, y;
+
+	if( !gXashRenderAPI || !gXashRenderAPI->GL_FindTexture ||
+		!gXashRenderAPI->GL_CreateTexture )
+		return 0;
+
+	if( cl_blobshadow_texture > 0 )
+		return cl_blobshadow_texture;
+
+	texture = gXashRenderAPI->GL_FindTexture( textureName );
+	if( texture > 0 )
+	{
+		cl_blobshadow_texture = texture;
+		return texture;
+	}
+
+	if( !pixelsBuilt )
+	{
+		for( y = 0; y < 64; y++ )
+		{
+			for( x = 0; x < 64; x++ )
+			{
+				float nx = ((float)x + 0.5f - 32.0f) / 32.0f;
+				float ny = ((float)y + 0.5f - 32.0f) / 32.0f;
+				float radius = sqrtf( nx * nx + ny * ny );
+				float fade = 0.0f;
+				int alpha;
+				int offset = ( y * 64 + x ) * 4;
+
+				if( radius < 1.0f )
+				{
+					float edge = 1.0f - radius;
+					fade = edge * edge * ( 3.0f - 2.0f * edge );
+				}
+
+				alpha = (int)( fade * 255.0f + 0.5f );
+				pixels[offset + 0] = 255;
+				pixels[offset + 1] = 255;
+				pixels[offset + 2] = 255;
+				pixels[offset + 3] = (byte)alpha;
+			}
+		}
+		pixelsBuilt = true;
+	}
+
+	// TF_CLAMP | TF_NOMIPMAP | TF_HAS_ALPHA from Xash render_api.h.
+	texture = gXashRenderAPI->GL_CreateTexture(
+		textureName, 64, 64, pixels, ( 1 << 11 ) | ( 1 << 12 ) | ( 1 << 16 )
+	);
+
+	if( texture > 0 )
+		cl_blobshadow_texture = texture;
+
+	return texture;
+}
+
+/*
+====================
+StudioBindBlobShadowTexture
+
+TriAPI's SpriteTexture accepts a model rather than a raw GL texture ID.
+Temporarily replace frame zero's GPU texture, bind it, then immediately
+restore the original sprite metadata.
+====================
+*/
+static qboolean StudioBindBlobShadowTexture( triangleapi_t *tri, int texture )
+{
+	xash_msprite_v37_t *sprite;
+	xash_mspriteframe_v37_t *frame;
+	int originalTexture;
+	int result;
+
+	if( !tri || !tri->SpriteTexture || !cl_blobshadow_sprite ||
+		!IEngineStudio.Mod_Extradata )
+		return false;
+
+	sprite = (xash_msprite_v37_t *)IEngineStudio.Mod_Extradata( cl_blobshadow_sprite );
+	if( !sprite || sprite->numframes < 1 || sprite->frames[0].type != 0 )
+		return false;
+
+	frame = sprite->frames[0].frameptr;
+	if( !frame )
+		return false;
+
+	originalTexture = frame->gl_texturenum;
+	frame->gl_texturenum = texture;
+	result = tri->SpriteTexture( cl_blobshadow_sprite, 0 );
+	frame->gl_texturenum = originalTexture;
+
+	return result ? true : false;
+}
 
 /*
 ====================
@@ -58,7 +195,6 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	static const float sampleOffsets[5] = { -24.0f, -15.0f, 0.0f, 15.0f, 24.0f };
 	static const float q3TraceMins[3] = { -15.0f, -15.0f, 0.0f };
 	static const float q3TraceMaxs[3] = {  15.0f,  15.0f, 2.0f };
-	static const char shadowTextureName[] = "#sprites/glow01(frame:00).spr";
 	static qboolean warnedTexture = false;
 
 	pmtrace_t trace, bestTrace;
@@ -82,7 +218,8 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 
 	if( !entity || !entity->model || !tri || !gEngfuncs.pEventAPI ||
 		!gXashRenderAPI || !gXashRenderAPI->RenderGetParm ||
-		!gXashRenderAPI->GL_FindTexture || !gXashRenderAPI->R_DecalSetupVerts )
+		!gXashRenderAPI->GL_FindTexture || !gXashRenderAPI->GL_CreateTexture ||
+		!gXashRenderAPI->R_DecalSetupVerts )
 		return;
 
 	if( entity->index == 0 || ( gEngfuncs.GetViewModel && entity == gEngfuncs.GetViewModel() ))
@@ -107,20 +244,17 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	if( !cl_blobshadow_sprite )
 		cl_blobshadow_sprite = IEngineStudio.Mod_ForName( "sprites/glow01.spr", false );
 
-	if( !cl_blobshadow_sprite || !tri->SpriteTexture( cl_blobshadow_sprite, 0 ))
+	if( !cl_blobshadow_sprite || !IEngineStudio.Mod_Extradata || !tri->SpriteTexture )
 		return;
 
-	// Xash stores sprite frame textures under this deterministic internal name.
-	// The renderer needs the texture index and dimensions to clip the mark.
-	texture = gXashRenderAPI->GL_FindTexture( shadowTextureName );
+	// Build a real alpha-mask texture; the stock glow sprite has a black
+	// background and produces opaque black quads with kRenderTransAlpha.
+	texture = StudioGetBlobShadowTexture();
 	if( texture <= 0 )
 	{
 		if( !warnedTexture && gEngfuncs.Con_Printf )
 		{
-			gEngfuncs.Con_Printf(
-				"[Blob shadows] Could not find sprite texture %s\n",
-				shadowTextureName
-			);
+			gEngfuncs.Con_Printf( "[Blob shadows] Could not create radial alpha texture\n" );
 			warnedTexture = true;
 		}
 		return;
@@ -271,6 +405,9 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	center[2] = planeZ + normal[2];
 
 	VectorCopy( center, decal.position );
+
+	if( !StudioBindBlobShadowTexture( tri, texture ))
+		return;
 
 	tri->CullFace( TRI_NONE );
 	tri->RenderMode( kRenderTransAlpha );
