@@ -114,8 +114,26 @@ inline void HUD_FillRGBABlend( int x, int y, int width, int height, int r, int g
 #define AngleVectors ( *gEngfuncs.pfnAngleVectors )
 extern cvar_t *hud_textmode;
 extern float g_hud_text_color[3];
+
+// Replace the original amber accent when it is used for HUD or console-font text.
+inline void HUD_ApplyTextColor( int &r, int &g, int &b )
+{
+	if( r == 255 && g == 160 && b == 0 )
+		r = 79, g = 26, b = 35;
+}
+
+inline void HUD_ApplyTextColor( float &r, float &g, float &b )
+{
+	if( (int)( r * 255.0f + 0.5f ) == 255 &&
+		(int)( g * 255.0f + 0.5f ) == 160 &&
+		(int)( b * 255.0f + 0.5f ) == 0 )
+		r = 79.0f / 255.0f, g = 26.0f / 255.0f, b = 35.0f / 255.0f;
+}
+
 inline void DrawSetTextColor( float r, float g, float b )
 {
+	HUD_ApplyTextColor( r, g, b );
+
 	if( hud_textmode->value == 1 )
 		g_hud_text_color[0] = r, g_hud_text_color[1] = g, g_hud_text_color[2] = b;
 	else
@@ -131,9 +149,10 @@ inline client_textmessage_t *TextMessageGet( const char *pName )
 	return gEngfuncs.pfnTextMessageGet( pName );
 }
 
-inline int TextMessageDrawChar( int x, int y, int number, int r, int g, int b ) 
+inline int TextMessageDrawChar( int x, int y, int number, int r, int g, int b )
 {
-	return gEngfuncs.pfnDrawCharacter( HUD_AdjustX( x ), HUD_AdjustY( y ), number, r, g, b ); 
+	HUD_ApplyTextColor( r, g, b );
+	return gEngfuncs.pfnDrawCharacter( HUD_AdjustX( x ), HUD_AdjustY( y ), number, r, g, b );
 }
 
 inline int DrawConsoleString( int x, int y, const char *string )
