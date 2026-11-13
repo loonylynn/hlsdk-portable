@@ -1746,7 +1746,8 @@ void CUseableGraphic::RemoveBrackets( void )
 {
 	for( int i = 0; i < USEABLE_BRACKET_BEAM_COUNT; ++i )
 	{
-		CBaseEntity *pBeam = CBaseEntity::Instance( m_hBracketBeams[i].Get() );
+		edict_t *pentBeam = m_hBracketBeams[i].Get();
+		CBaseEntity *pBeam = pentBeam ? CBaseEntity::Instance( pentBeam ) : NULL;
 		if( pBeam )
 			UTIL_Remove( pBeam );
 		m_hBracketBeams[i] = NULL;
@@ -1843,7 +1844,8 @@ void CUseableGraphic::UpdateBrackets( CBaseEntity *pTarget, CBasePlayer *pPlayer
 
 	for( int i = 0; i < USEABLE_BRACKET_BEAM_COUNT; ++i )
 	{
-		CBeam *pBeam = (CBeam *)CBaseEntity::Instance( m_hBracketBeams[i].Get() );
+		edict_t *pentBeam = m_hBracketBeams[i].Get();
+		CBeam *pBeam = pentBeam ? (CBeam *)CBaseEntity::Instance( pentBeam ) : NULL;
 		if( !pBeam )
 		{
 			pBeam = CBeam::BeamCreate( USEABLE_BRACKET_SPRITE, 2 );
@@ -1882,7 +1884,8 @@ CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget, CBasePlayer *pPl
 
 void CBasePlayer::ClearUseableHighlight( void )
 {
-	CUseableGraphic *pGraphic = (CUseableGraphic *)CBaseEntity::Instance( m_hUseableHighlight.Get() );
+	edict_t *pentGraphic = m_hUseableHighlight.Get();
+	CUseableGraphic *pGraphic = pentGraphic ? (CUseableGraphic *)CBaseEntity::Instance( pentGraphic ) : NULL;
 	if( pGraphic )
 	{
 		pGraphic->RemoveBrackets();
@@ -1903,7 +1906,8 @@ void CBasePlayer::HighlightUseable( CBaseEntity *pObject )
 
 	if( (CBaseEntity *)m_hLastUseableItem == pObject && m_hUseableHighlight.Get() )
 	{
-		CUseableGraphic *pGraphic = (CUseableGraphic *)CBaseEntity::Instance( m_hUseableHighlight.Get() );
+		edict_t *pentGraphic = m_hUseableHighlight.Get();
+	CUseableGraphic *pGraphic = pentGraphic ? (CUseableGraphic *)CBaseEntity::Instance( pentGraphic ) : NULL;
 		if( pGraphic )
 			pGraphic->UpdateBrackets( pObject, this );
 		return;
