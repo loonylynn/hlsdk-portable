@@ -1791,7 +1791,7 @@ void CUseableGraphic::UpdateBrackets( CBaseEntity *pTarget, CBasePlayer *pPlayer
 		if( tr.pHit == pTarget->edict() )
 			vecOrigin = tr.vecEndPos - vecDirection * 3.0f;
 		else
-			vecOrigin -= vecDirection * 3.0f;
+			vecOrigin = vecOrigin - vecDirection * 3.0f;
 	}
 
 	pev->effects &= ~EF_NODRAW;
