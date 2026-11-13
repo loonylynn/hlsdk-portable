@@ -22,7 +22,7 @@ static cvar_t build_commit = { "sv_game_build_commit", g_VCSInfo_Commit };
 static cvar_t build_branch = { "sv_game_build_branch", g_VCSInfo_Branch };
 
 // Global multiplier for the PS2-style usable-object bracket sprite.
-cvar_t sv_useable_bracket_scale = { "sv_useable_bracket_scale", "1.0", FCVAR_SERVER };
+cvar_t sv_useable_bracket_scale = { "sv_useable_bracket_scale", "0.5", FCVAR_SERVER };
 
 cvar_t displaysoundlist = {"displaysoundlist","0"};
 
