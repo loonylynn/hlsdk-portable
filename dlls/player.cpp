@@ -1727,9 +1727,11 @@ void CUseableGraphic::Spawn( void )
 	pev->movetype = MOVETYPE_NONE;
 	pev->solid = SOLID_NOT;
 	SET_MODEL( ENT( pev ), USEABLE_BRACKET_SPRITE );
-	pev->rendermode = kRenderTransAdd;
+	// Match the PS2's glow mode. In Xash3D this also disables Z-buffer
+	// checks, so the sprite is not cut up by the target's brush surfaces.
+	pev->rendermode = kRenderGlow;
 	pev->rendercolor = Vector( 255, 160, 0 );
-	pev->renderamt = 220;
+	pev->renderamt = 255;
 	pev->effects = 0;
 	pev->scale = 1.0f;
 }
@@ -1737,7 +1739,10 @@ void CUseableGraphic::Spawn( void )
 void CUseableGraphic::UpdateBrackets( CBaseEntity *pTarget, CBasePlayer *pPlayer )
 {
 	if( !pTarget || !pPlayer )
+	{
+		pev->effects |= EF_NODRAW;
 		return;
+	}
 
 	Vector vecOrigin = pTarget->pev->origin;
 	BOOL fBModel = pTarget->IsBSPModel();
@@ -1752,13 +1757,28 @@ void CUseableGraphic::UpdateBrackets( CBaseEntity *pTarget, CBasePlayer *pPlayer
 	if( fBModel )
 		vecOrigin = VecBModelOrigin( pTarget->pev );
 
-	// Retain the positioning adjustments from the PS2 implementation.
+	// Original PS2 scale: use the largest half-extent of the target bounds,
+	// capped at 32 world units.
+	float flZ = fabsf( ( pTarget->pev->absmax.z - pTarget->pev->absmin.z ) * 0.5f );
+	float flX = fabsf( ( pTarget->pev->absmax.x - pTarget->pev->absmin.x ) * 0.5f );
+	float flY = fabsf( ( pTarget->pev->absmax.y - pTarget->pev->absmin.y ) * 0.5f );
+
+	pev->scale = flZ;
+	if( pev->scale < flX )
+		pev->scale = flX;
+	if( pev->scale < flY )
+		pev->scale = flY;
+	if( pev->scale > 32.0f )
+		pev->scale = 32.0f;
+
+	// Preserve the PS2's per-entity placement and scale adjustments.
 	const char *pszClassname = STRING( pTarget->pev->classname );
 	if( pszClassname && !strcmp( pszClassname, "item_eyescanner" ) )
 	{
 		UTIL_MakeVectors( pTarget->pev->angles );
 		vecOrigin = vecOrigin + gpGlobals->v_right * -2.3f;
 		vecOrigin.z += 45.0f;
+		pev->scale *= 0.5f;
 	}
 	else if( pszClassname &&
 		( !strcmp( pszClassname, "item_healthcharger" ) ||
@@ -1766,40 +1786,39 @@ void CUseableGraphic::UpdateBrackets( CBaseEntity *pTarget, CBasePlayer *pPlayer
 	{
 		vecOrigin.z += 15.0f;
 	}
-
-	// Place the marker on the player-facing side of the object instead of
-	// inside its origin. This keeps the sprite from being buried in brush models.
-	Vector vecEye = pPlayer->pev->origin + pPlayer->pev->view_ofs;
-	Vector vecToTarget = vecOrigin - vecEye;
-	float flDistance = vecToTarget.Length();
-
-	if( flDistance > 0.01f )
+	else if( pszClassname && !strcmp( pszClassname, "func_tankcontrols" ) )
 	{
-		Vector vecDirection = vecToTarget / flDistance;
-		TraceResult tr;
-		UTIL_TraceLine( vecEye, vecOrigin, dont_ignore_monsters, pPlayer->edict(), &tr );
+		pev->scale *= 0.25f;
+	}
 
-		// If world geometry or another entity blocks the view, hide the marker.
+	// Xash3D's kRenderGlow does not use Z-buffer tests, but it does a
+	// visibility trace to the sprite origin. Anchor the marker just outside
+	// the target's player-facing surface so the target does not occlude itself.
+	// Keep the trace check so an intervening wall or solid entity still hides it.
+	Vector vecEye = pPlayer->pev->origin + pPlayer->pev->view_ofs;
+	Vector vecToMarker = vecOrigin - vecEye;
+	Vector vecLOS = UTIL_ClampVectorToBox( vecToMarker, pTarget->pev->size * 0.5f );
+	float flTraceDistance = vecLOS.Length();
+
+	if( flTraceDistance > 0.01f )
+	{
+		Vector vecDirection = vecLOS / flTraceDistance;
+		TraceResult tr;
+		UTIL_TraceLine( vecEye, vecEye + vecLOS, dont_ignore_monsters, pPlayer->edict(), &tr );
+
 		if( tr.fStartSolid || ( tr.flFraction < 1.0f && tr.pHit != pTarget->edict() ) )
 		{
 			pev->effects |= EF_NODRAW;
 			return;
 		}
 
-		// If the trace hits the usable entity, use its visible front surface.
-		// For non-solid usable entities, keep the marker just in front of its origin.
 		if( tr.pHit == pTarget->edict() )
 			vecOrigin = tr.vecEndPos - vecDirection * 3.0f;
-		else
-			vecOrigin = vecOrigin - vecDirection * 3.0f;
 	}
 
 	pev->effects &= ~EF_NODRAW;
 	pev->origin = vecOrigin;
 	UTIL_SetOrigin( pev, vecOrigin );
-
-	// Keep one consistent world-space size for every usable object.
-	pev->scale = 1.0f;
 }
 CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget, CBasePlayer *pPlayer )
 {
