@@ -99,17 +99,18 @@ extern "C" int DLLEXPORT HUD_GetRenderInterface( int version, void *renderfuncs,
 	}
 
 	xash_render_api_v37_t *api = (xash_render_api_v37_t *)renderfuncs;
-	if( !api->RenderGetParm || !api->GL_FindTexture || !api->R_DecalSetupVerts )
+	if( !api->RenderGetParm || !api->GL_FindTexture ||
+		!api->GL_CreateTexture || !api->R_DecalSetupVerts )
 	{
 		if( gEngfuncs.Con_Printf )
-			gEngfuncs.Con_Printf( "[Render API] v37 is missing texture lookup or decal clipping functions\n" );
+			gEngfuncs.Con_Printf( "[Render API] v37 is missing texture or decal functions\n" );
 		return 0;
 	}
 
 	gXashRenderAPI = api;
 
 	if( gEngfuncs.Con_Printf )
-		gEngfuncs.Con_Printf( "[Render API] accepted v37; decal clipping is available\n" );
+		gEngfuncs.Con_Printf( "[Render API] accepted v37; radial alpha textures and decal clipping are available\n" );
 
 	return 1;
 }
