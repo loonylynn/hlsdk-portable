@@ -411,7 +411,7 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 
 	tri->CullFace( TRI_NONE );
 	tri->RenderMode( kRenderTransAlpha );
-	tri->SpriteTexture( cl_blobshadow_sprite, 0 );
+	// StudioBindBlobShadowTexture already bound the generated radial mask.
 	tri->Color4f( 0.0f, 0.0f, 0.0f, alpha );
 
 	for( n = 0; n < surfaceCount; n++ )
