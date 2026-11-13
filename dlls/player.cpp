@@ -1725,10 +1725,11 @@ void CUseableGraphic::Spawn( void )
 {
 	pev->movetype = MOVETYPE_NONE;
 	pev->solid = SOLID_NOT;
-	pev->rendermode = kRenderGlow;
+	pev->modelindex = 0; // No bracket sprite is assigned yet.
+	pev->rendermode = kRenderTransAlpha;
 	pev->rendercolor = Vector( 255, 160, 0 );
-	pev->renderamt = 255;
-	pev->effects = 0;
+	pev->renderamt = 0;
+	pev->effects = EF_NODRAW; // Clear this when the PC bracket sprite is added.
 	pev->scale = 1.0f;
 }
 
