@@ -244,8 +244,7 @@ void CTeleportProjectile::FinishWeaponState( void )
 			{
 				if( iWeaponId == WEAPON_TELEPORT )
 					((CTeleportGrenade *)pItem)->OnProjectileFinished();
-				else if( iWeaponId == WEAPON_MP5 )
-					((CMP5 *)pItem)->OnTeleportProjectileFinished();
+				// MP5 projectiles have no single-active-projectile state.
 				return;
 			}
 			pItem = pItem->m_pNext;
