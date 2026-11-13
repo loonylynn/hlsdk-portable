@@ -88,6 +88,55 @@ static CHLVoiceStatusHelper g_VoiceStatusHelper;
 cvar_t *hud_textmode;
 float g_hud_text_color[3];
 
+// HUD-only overscan compensation. Values are a fraction of each screen dimension.
+static cvar_t *hud_overscan = NULL;
+
+static float HUD_GetOverscanFraction( void )
+{
+	float value = hud_overscan ? hud_overscan->value : 0.0f;
+	if( value < 0.0f ) value = 0.0f;
+	if( value > 0.10f ) value = 0.10f;
+	return value;
+}
+
+int HUD_AdjustX( int x )
+{
+	int width = gHUD.m_scrinfo.iWidth;
+	if( width <= 0 || x < 0 || x > width )
+		return x;
+
+	int inset = (int)( (float)width * HUD_GetOverscanFraction() + 0.5f );
+	if( x < width / 2 )
+		return x + inset;
+	if( x > width / 2 )
+		return x - inset;
+	return x;
+}
+
+int HUD_AdjustY( int y )
+{
+	int height = gHUD.m_scrinfo.iHeight;
+	if( height <= 0 || y < 0 || y > height )
+		return y;
+
+	int inset = (int)( (float)height * HUD_GetOverscanFraction() + 0.5f );
+	if( y < height / 2 )
+		return y + inset;
+	if( y > height / 2 )
+		return y - inset;
+	return y;
+}
+
+int HUD_AdjustScissorWidth( int x, int width )
+{
+	return HUD_AdjustX( x + width ) - HUD_AdjustX( x );
+}
+
+int HUD_AdjustScissorHeight( int y, int height )
+{
+	return HUD_AdjustY( y + height ) - HUD_AdjustY( y );
+}
+
 extern client_sprite_t *GetSpriteList( client_sprite_t *pList, const char *psz, int iRes, int iCount );
 
 extern cvar_t *sensitivity;
@@ -332,6 +381,7 @@ void CHud::Init( void )
 	CVAR_CREATE( "hud_classautokill", "1", FCVAR_ARCHIVE | FCVAR_USERINFO );		// controls whether or not to suicide immediately on TF class switch
 	CVAR_CREATE( "hud_takesshots", "0", FCVAR_ARCHIVE );		// controls whether or not to automatically take screenshots at the end of a round
 	hud_textmode = CVAR_CREATE ( "hud_textmode", "0", FCVAR_ARCHIVE );
+	hud_overscan = CVAR_CREATE( "hud_overscan", "0", FCVAR_ARCHIVE );
 
 	m_iLogo = 0;
 	m_iFOV = 0;
