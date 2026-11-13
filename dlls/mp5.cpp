@@ -66,9 +66,11 @@ void CMP5::Spawn()
 	Precache();
 	SET_MODEL( ENT( pev ), "models/w_9mmAR.mdl" );
 	m_iId = WEAPON_MP5;
+#if !CLIENT_DLL
 	m_iTeleportProjectileActive = FALSE;
 	m_flNextTeleportAttack = 0.0f;
 	m_flNextTeleportRevoke = 0.0f;
+#endif
 
 	m_iDefaultAmmo = MP5_DEFAULT_GIVE;
 
@@ -145,19 +147,17 @@ BOOL CMP5::Deploy()
 	return DefaultDeploy( "models/v_9mmAR.mdl", "models/p_9mmAR.mdl", MP5_DEPLOY, "mp5" );
 }
 
+#if !CLIENT_DLL
 void CMP5::ItemPostFrame( void )
 {
-#if !CLIENT_DLL
 	// IN_ALT1 is bound to MOUSE3. Handle its press edge separately so it
 	// never replaces or interferes with the MP5's normal M203 secondary fire.
 	if( m_pPlayer && ( m_pPlayer->m_afButtonPressed & IN_ALT1 ) )
 		TeleportAttack();
-#endif
 
 	CBasePlayerWeapon::ItemPostFrame();
 }
 
-#if !CLIENT_DLL
 void CMP5::TeleportAttack( void )
 {
 	if( !m_pPlayer )
