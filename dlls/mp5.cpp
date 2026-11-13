@@ -37,7 +37,6 @@ enum mp5_e
 
 // Keep the MP5's teleport-frag timings aligned with weapon_teleport.
 #define MP5_TELEPORT_RECHARGE 3.0f
-#define MP5_TELEPORT_REVOKE_TIME 0.2f
 
 LINK_ENTITY_TO_CLASS( weapon_mp5, CMP5 )
 LINK_ENTITY_TO_CLASS( weapon_9mmAR, CMP5 )
@@ -45,9 +44,7 @@ LINK_ENTITY_TO_CLASS( weapon_9mmAR, CMP5 )
 #if !CLIENT_DLL
 TYPEDESCRIPTION CMP5::m_SaveData[] =
 {
-	DEFINE_FIELD( CMP5, m_iTeleportProjectileActive, FIELD_INTEGER ),
 	DEFINE_FIELD( CMP5, m_flNextTeleportAttack, FIELD_TIME ),
-	DEFINE_FIELD( CMP5, m_flNextTeleportRevoke, FIELD_TIME ),
 };
 
 IMPLEMENT_SAVERESTORE( CMP5, CBasePlayerWeapon )
@@ -62,9 +59,7 @@ void CMP5::Spawn()
 	SET_MODEL( ENT( pev ), "models/w_9mmAR.mdl" );
 	m_iId = WEAPON_MP5;
 #if !CLIENT_DLL
-	m_iTeleportProjectileActive = FALSE;
 	m_flNextTeleportAttack = 0.0f;
-	m_flNextTeleportRevoke = 0.0f;
 #endif
 
 	m_iDefaultAmmo = MP5_DEFAULT_GIVE;
@@ -171,31 +166,14 @@ void CMP5::TeleportAttack( void )
 
 	const float flTime = UTIL_WeaponTimeBase();
 
-	// Treat the live projectile entity as the source of truth instead of
-	// relying on m_iTeleportProjectileActive. A missed cleanup callback must
-	// never permanently lock the MP5's secondary fire.
-	if( flTime >= m_flNextTeleportRevoke )
-	{
-		if( TeleportGrenadeRevokeProjectile( m_pPlayer, WEAPON_MP5 ) )
-		{
-			OnTeleportProjectileFinished();
-			return;
-		}
-
-		// No live projectile remains (it may already have teleported or
-		// expired), so discard any stale cached state.
-		OnTeleportProjectileFinished();
-	}
-
+	// Teleport ammunition is unlimited. Existing projectiles do not
+	// block another launch; only the recharge timer limits firing.
 	if( flTime < m_flNextTeleportAttack )
 		return;
 
 	if( !TeleportGrenadeLaunchProjectile( m_pPlayer, WEAPON_MP5 ) )
 		return;
-
-	m_iTeleportProjectileActive = TRUE;
 	m_flNextTeleportAttack = flTime + MP5_TELEPORT_RECHARGE;
-	m_flNextTeleportRevoke = flTime + MP5_TELEPORT_REVOKE_TIME;
 
 	EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON, "weapons/tp_launcher.wav", 1.0f, ATTN_NORM );
 
@@ -205,10 +183,6 @@ void CMP5::TeleportAttack( void )
 	m_flTimeWeaponIdle = flTime + 0.5f;
 }
 
-void CMP5::OnTeleportProjectileFinished( void )
-{
-	m_iTeleportProjectileActive = FALSE;
-}
 #endif
 
 void CMP5::PrimaryAttack()
