@@ -105,12 +105,8 @@ int HUD_AdjustX( int x )
 	if( width <= 0 || x < 0 || x > width )
 		return x;
 
-	int inset = (int)( (float)width * HUD_GetOverscanFraction() + 0.5f );
-	if( x < width / 2 )
-		return x + inset;
-	if( x > width / 2 )
-		return x - inset;
-	return x;
+	float scale = 1.0f - 2.0f * HUD_GetOverscanFraction();
+	return (int)( (float)width * 0.5f + ( (float)x - (float)width * 0.5f ) * scale + 0.5f );
 }
 
 int HUD_AdjustY( int y )
@@ -119,22 +115,28 @@ int HUD_AdjustY( int y )
 	if( height <= 0 || y < 0 || y > height )
 		return y;
 
-	int inset = (int)( (float)height * HUD_GetOverscanFraction() + 0.5f );
-	if( y < height / 2 )
-		return y + inset;
-	if( y > height / 2 )
-		return y - inset;
-	return y;
+	float scale = 1.0f - 2.0f * HUD_GetOverscanFraction();
+	return (int)( (float)height * 0.5f + ( (float)y - (float)height * 0.5f ) * scale + 0.5f );
 }
 
-int HUD_AdjustScissorWidth( int x, int width )
+int HUD_AdjustWidth( int x, int width )
 {
 	return HUD_AdjustX( x + width ) - HUD_AdjustX( x );
 }
 
-int HUD_AdjustScissorHeight( int y, int height )
+int HUD_AdjustHeight( int y, int height )
 {
 	return HUD_AdjustY( y + height ) - HUD_AdjustY( y );
+}
+
+int HUD_AdjustScissorWidth( int x, int width )
+{
+	return HUD_AdjustWidth( x, width );
+}
+
+int HUD_AdjustScissorHeight( int y, int height )
+{
+	return HUD_AdjustHeight( y, height );
 }
 
 extern client_sprite_t *GetSpriteList( client_sprite_t *pList, const char *psz, int iRes, int iCount );
