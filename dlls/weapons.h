@@ -461,6 +461,12 @@ void LoadVModel ( const char *szViewModel, CBasePlayer *m_pPlayer );
 class CGlock : public CBasePlayerWeapon
 {
 public:
+#if !CLIENT_DLL
+	int Save( CSave &save );
+	int Restore( CRestore &restore );
+	static TYPEDESCRIPTION m_SaveData[];
+#endif
+
 	void Spawn( void );
 	void Precache( void );
 	int iItemSlot( void ) { return 2; }
@@ -468,8 +474,11 @@ public:
 	int AddToPlayer( CBasePlayer *pPlayer );
 
 	void PrimaryAttack( void );
-	void SecondaryAttack( void );
-	void GlockFire( float flSpread, float flCycleTime, BOOL fUseAutoAim );
+	void GlockFire( BOOL fUseAutoAim );
+	void DryFire( void );
+	void UpdatePenaltyTime( void );
+	void ItemPreFrame( void );
+	void ItemPostFrame( void );
 	BOOL Deploy( void );
 	void Reload( void );
 	void WeaponIdle( void );
@@ -485,6 +494,9 @@ public:
 
 private:
 	int m_iShell;
+
+	float m_flSoonestPrimaryAttack;
+	float m_flAccuracyPenalty;
 
 	unsigned short m_usFireGlock1;
 	unsigned short m_usFireGlock2;
