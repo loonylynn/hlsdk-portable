@@ -67,7 +67,7 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	vec3_t traceStart, traceEnd;
 	vec3_t normal, right, forward, center;
 	vec3_t p1, p2, p3, p4, cross;
-	float alpha, strength, radius;
+	float alpha, strength, radius, planeZ;
 	float dot, length, yaw, c, s, bestFraction;
 	int i;
 	triangleapi_t *tri = gEngfuncs.pTriAPI;
@@ -209,9 +209,17 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 
 	// CG_ImpactMark uses a fixed 24-unit radius.
 	radius = 24.0f;
-	center[0] = trace.endpos[0] + normal[0];
-	center[1] = trace.endpos[1] + normal[1];
-	center[2] = trace.endpos[2] + normal[2];
+
+	// The five point traces hit at their individual sample X/Y positions.
+	// Reconstruct the plane height at the entity center, as Quake's swept
+	// box trace would have returned the box-origin X/Y coordinates.
+	planeZ = ( trace.plane.dist -
+		normal[0] * entity->origin[0] -
+		normal[1] * entity->origin[1] ) / normal[2];
+
+	center[0] = entity->origin[0] + normal[0];
+	center[1] = entity->origin[1] + normal[1];
+	center[2] = planeZ + normal[2];
 
 	VectorCopy( center, p1 );
 	VectorCopy( center, p2 );
