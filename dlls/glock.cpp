@@ -43,16 +43,6 @@ enum glock_e
 	GLOCK_ADD_SILENCER
 };
 
-#if !CLIENT_DLL
-TYPEDESCRIPTION CGlock::m_SaveData[] =
-{
-	DEFINE_FIELD( CGlock, m_flSoonestPrimaryAttack, FIELD_TIME ),
-	DEFINE_FIELD( CGlock, m_flAccuracyPenalty, FIELD_FLOAT ),
-};
-
-IMPLEMENT_SAVERESTORE( CGlock, CBasePlayerWeapon )
-#endif
-
 LINK_ENTITY_TO_CLASS( weapon_glock, CGlock )
 LINK_ENTITY_TO_CLASS( weapon_9mmhandgun, CGlock )
 
@@ -65,8 +55,8 @@ void CGlock::Spawn()
 
 	m_iDefaultAmmo = GLOCK_DEFAULT_GIVE;
 
-	m_flSoonestPrimaryAttack = gpGlobals->time;
-	m_flAccuracyPenalty = 0.0f;
+	pev->fuser1 = UTIL_WeaponTimeBase();
+	pev->fuser4 = 0.0f;
 
 	FallInit();// get ready to fall down.
 }
@@ -135,17 +125,17 @@ void CGlock::PrimaryAttack( void )
 		return;
 	}
 
-	m_flSoonestPrimaryAttack = UTIL_WeaponTimeBase() + PISTOL_FASTEST_REFIRE_TIME;
+	pev->fuser1 = UTIL_WeaponTimeBase() + PISTOL_FASTEST_REFIRE_TIME;
 
 	GlockFire( TRUE );
 
 	// Match HL2's pistol: each shot adds 0.2 seconds of inaccuracy.
-	m_flAccuracyPenalty += PISTOL_ACCURACY_SHOT_PENALTY_TIME;
+	pev->fuser4 += PISTOL_ACCURACY_SHOT_PENALTY_TIME;
 }
 
 void CGlock::GlockFire( BOOL fUseAutoAim )
 {
-	float flRamp = m_flAccuracyPenalty / PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME;
+	float flRamp = pev->fuser4 / PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME;
 	if( flRamp < 0.0f )
 		flRamp = 0.0f;
 	else if( flRamp > 1.0f )
@@ -214,7 +204,7 @@ void CGlock::DryFire( void )
 {
 	PlayEmptySound();
 
-	m_flSoonestPrimaryAttack = UTIL_WeaponTimeBase() + PISTOL_FASTEST_DRY_REFIRE_TIME;
+	pev->fuser1 = UTIL_WeaponTimeBase() + PISTOL_FASTEST_DRY_REFIRE_TIME;
 	m_flNextPrimaryAttack = UTIL_WeaponTimeBase() + PISTOL_FASTEST_DRY_REFIRE_TIME;
 }
 
@@ -226,14 +216,14 @@ void CGlock::UpdatePenaltyTime( void )
 	// Recover accuracy only after the trigger is released and the minimum
 	// refire lockout has elapsed, as in HL2's weapon_pistol.
 	if( !( m_pPlayer->pev->button & IN_ATTACK ) &&
-		m_flSoonestPrimaryAttack < UTIL_WeaponTimeBase() )
+		pev->fuser1 < UTIL_WeaponTimeBase() )
 	{
-		m_flAccuracyPenalty -= gpGlobals->frametime;
+		pev->fuser4 -= gpGlobals->frametime;
 
-		if( m_flAccuracyPenalty < 0.0f )
-			m_flAccuracyPenalty = 0.0f;
-		else if( m_flAccuracyPenalty > PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME )
-			m_flAccuracyPenalty = PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME;
+		if( pev->fuser4 < 0.0f )
+			pev->fuser4 = 0.0f;
+		else if( pev->fuser4 > PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME )
+			pev->fuser4 = PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME;
 	}
 }
 
@@ -253,7 +243,7 @@ void CGlock::ItemPostFrame( void )
 	// Do not wait for the full 0.5-second held-fire interval after a
 	// deliberate trigger release. This is HL2's click-to-fire behavior.
 	if( !( m_pPlayer->pev->button & IN_ATTACK ) &&
-		m_flSoonestPrimaryAttack < UTIL_WeaponTimeBase() )
+		pev->fuser1 < UTIL_WeaponTimeBase() )
 	{
 		m_flNextPrimaryAttack = UTIL_WeaponTimeBase() - PISTOL_FASTEST_REFIRE_TIME;
 	}
@@ -278,7 +268,7 @@ void CGlock::Reload( void )
 
 	if( iResult )
 	{
-		m_flAccuracyPenalty = 0.0f;
+		pev->fuser4 = 0.0f;
 		m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10, 15 );
 	}
 }
