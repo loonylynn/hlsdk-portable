@@ -184,7 +184,8 @@ void CMP5::TeleportAttack( void )
 	m_flNextTeleportRevoke = flTime + 0.2f;
 
 	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
-	SendWeaponAnim( MP5_LAUNCH );
+	// This is server-authoritative (not locally predicted), so do not skip the owner.
+	SendWeaponAnim( MP5_LAUNCH, 0 );
 	m_flTimeWeaponIdle = flTime + 0.5f;
 }
 
