@@ -156,7 +156,7 @@ void CTeleportProjectile::Precache( void )
 {
 	PRECACHE_MODEL( "models/grenade.mdl" );
 	g_sTeleportTrailSprite = PRECACHE_MODEL( "sprites/laserbeam.spr" );
-	g_sTeleportPortalGlowSprite = PRECACHE_MODEL( "sprites/flare6.spr" );
+	g_sTeleportPortalGlowSprite = PRECACHE_MODEL( "sprites/Fexplo1.spr" );
 	g_sTeleportPortalLightningSprite = PRECACHE_MODEL( "sprites/lgtning.spr" );
 
 	PRECACHE_SOUND( "weapons/grenade_hit1.wav" );
