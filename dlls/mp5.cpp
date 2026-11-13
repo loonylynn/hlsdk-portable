@@ -38,6 +38,17 @@ enum mp5_e
 LINK_ENTITY_TO_CLASS( weapon_mp5, CMP5 )
 LINK_ENTITY_TO_CLASS( weapon_9mmAR, CMP5 )
 
+#if !CLIENT_DLL
+TYPEDESCRIPTION CMP5::m_SaveData[] =
+{
+	DEFINE_FIELD( CMP5, m_iTeleportProjectileActive, FIELD_INTEGER ),
+	DEFINE_FIELD( CMP5, m_flNextTeleportAttack, FIELD_TIME ),
+	DEFINE_FIELD( CMP5, m_flNextTeleportRevoke, FIELD_TIME ),
+};
+
+IMPLEMENT_SAVERESTORE( CMP5, CBasePlayerWeapon )
+#endif
+
 //=========================================================
 //=========================================================
 int CMP5::SecondaryAmmoIndex( void )
@@ -51,6 +62,9 @@ void CMP5::Spawn()
 	Precache();
 	SET_MODEL( ENT( pev ), "models/w_9mmAR.mdl" );
 	m_iId = WEAPON_MP5;
+	m_iTeleportProjectileActive = FALSE;
+	m_flNextTeleportAttack = 0.0f;
+	m_flNextTeleportRevoke = 0.0f;
 
 	m_iDefaultAmmo = MP5_DEFAULT_GIVE;
 
@@ -126,6 +140,59 @@ BOOL CMP5::Deploy()
 {
 	return DefaultDeploy( "models/v_9mmAR.mdl", "models/p_9mmAR.mdl", MP5_DEPLOY, "mp5" );
 }
+
+void CMP5::ItemPostFrame( void )
+{
+#if !CLIENT_DLL
+	// IN_ALT1 is bound to MOUSE3. Handle its press edge separately so it
+	// never replaces or interferes with the MP5's normal M203 secondary fire.
+	if( m_pPlayer && ( m_pPlayer->m_afButtonPressed & IN_ALT1 ) )
+		TeleportAttack();
+#endif
+
+	CBasePlayerWeapon::ItemPostFrame();
+}
+
+#if !CLIENT_DLL
+void CMP5::TeleportAttack( void )
+{
+	if( !m_pPlayer )
+		return;
+
+	const float flTime = UTIL_WeaponTimeBase();
+
+	// A second middle-click recalls the projectile, matching weapon_teleport's
+	// short revoke window. The three-second recharge remains independent.
+	if( m_iTeleportProjectileActive )
+	{
+		if( flTime < m_flNextTeleportRevoke )
+			return;
+
+		if( !TeleportGrenadeRevokeProjectile( m_pPlayer, WEAPON_MP5 ) )
+			OnTeleportProjectileFinished();
+		return;
+	}
+
+	if( flTime < m_flNextTeleportAttack || m_pPlayer->pev->waterlevel == 3 )
+		return;
+
+	if( !TeleportGrenadeLaunchProjectile( m_pPlayer, WEAPON_MP5 ) )
+		return;
+
+	m_iTeleportProjectileActive = TRUE;
+	m_flNextTeleportAttack = flTime + 3.0f;
+	m_flNextTeleportRevoke = flTime + 0.2f;
+
+	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
+	SendWeaponAnim( MP5_LAUNCH );
+	m_flTimeWeaponIdle = flTime + 0.5f;
+}
+
+void CMP5::OnTeleportProjectileFinished( void )
+{
+	m_iTeleportProjectileActive = FALSE;
+}
+#endif
 
 void CMP5::PrimaryAttack()
 {
