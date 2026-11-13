@@ -99,10 +99,10 @@ extern "C" int DLLEXPORT HUD_GetRenderInterface( int version, void *renderfuncs,
 	}
 
 	xash_render_api_v37_t *api = (xash_render_api_v37_t *)renderfuncs;
-	if( !api->R_DecalSetupVerts )
+	if( !api->RenderGetParm || !api->GL_FindTexture || !api->R_DecalSetupVerts )
 	{
 		if( gEngfuncs.Con_Printf )
-			gEngfuncs.Con_Printf( "[Render API] v37 is missing R_DecalSetupVerts\n" );
+			gEngfuncs.Con_Printf( "[Render API] v37 is missing texture lookup or decal clipping functions\n" );
 		return 0;
 	}
 
