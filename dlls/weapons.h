@@ -573,17 +573,15 @@ public:
 	int AddToPlayer( CBasePlayer *pPlayer );
 
 	void PrimaryAttack( void );
-	void SecondaryAttack( void );
-	int SecondaryAmmoIndex( void );
 	BOOL Deploy( void );
 	void Reload( void );
 	void WeaponIdle( void );
-#if !CLIENT_DLL
 	void ItemPostFrame( void );
+#if !CLIENT_DLL
 	void TeleportAttack( void );
 	void OnTeleportProjectileFinished( void );
 
-	// Server-authoritative tertiary fire state for the middle-mouse teleport frag.
+	// Server-authoritative secondary-fire state for the MP5 teleport frag.
 	int m_iTeleportProjectileActive;
 	float m_flNextTeleportAttack;
 	float m_flNextTeleportRevoke;
