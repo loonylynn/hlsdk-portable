@@ -38,101 +38,8 @@ engine_studio_api_t IEngineStudio;
 
 static cvar_t *cl_blobshadows = NULL;
 static cvar_t *cl_blobshadows_opacity = NULL;
-static cvar_t *cl_blobshadows_smooth = NULL;
 static model_t *cl_blobshadow_sprite = NULL;
 static int cl_blobshadow_texture = 0;
-
-#define BLOB_SHADOW_HISTORY_SIZE 4096
-
-typedef struct blob_shadow_history_s
-{
-	qboolean valid;
-	model_t *model;
-	double time;
-	vec3_t center;
-	vec3_t normal;
-	float alpha;
-} blob_shadow_history_t;
-
-static blob_shadow_history_t g_BlobShadowHistory[BLOB_SHADOW_HISTORY_SIZE];
-
-/*
-====================
-StudioSmoothBlobShadow
-
-Apply a small frame-time-based low-pass filter to each entity's mark.
-Reset on teleports, long gaps, model changes, or substantial floor changes.
-The final center is projected back onto the current hit plane.
-====================
-*/
-static void StudioSmoothBlobShadow( cl_entity_t *entity, double currentTime,
-	float smoothTime, float planeDist, const vec3_t normal, vec3_t center, float *alpha )
-{
-	blob_shadow_history_t *history;
-	float dt, weight;
-	float dx, dy, dz;
-	float normalDot;
-
-	if( !entity || entity->index <= 0 || entity->index >= BLOB_SHADOW_HISTORY_SIZE ||
-		!alpha )
-		return;
-
-	history = &g_BlobShadowHistory[entity->index];
-
-	if( smoothTime <= 0.0f )
-	{
-		history->valid = false;
-		return;
-	}
-
-	dt = (float)( currentTime - history->time );
-	if( !history->valid || history->model != entity->model ||
-		dt <= 0.0f || dt > 0.25f )
-	{
-		history->valid = true;
-		history->model = entity->model;
-		history->time = currentTime;
-		VectorCopy( center, history->center );
-		VectorCopy( normal, history->normal );
-		history->alpha = *alpha;
-		return;
-	}
-
-	dx = center[0] - history->center[0];
-	dy = center[1] - history->center[1];
-	dz = center[2] - history->center[2];
-	normalDot = DotProduct( normal, history->normal );
-
-	// Do not interpolate across teleports or a change to a different floor.
-	if( ( dx * dx + dy * dy + dz * dz ) > ( 32.0f * 32.0f ) ||
-		normalDot < 0.90f )
-	{
-		history->time = currentTime;
-		VectorCopy( center, history->center );
-		VectorCopy( normal, history->normal );
-		history->alpha = *alpha;
-		return;
-	}
-
-	weight = 1.0f - expf( -dt / smoothTime );
-	if( weight < 0.0f ) weight = 0.0f;
-	if( weight > 1.0f ) weight = 1.0f;
-
-	center[0] = history->center[0] + ( center[0] - history->center[0] ) * weight;
-	center[1] = history->center[1] + ( center[1] - history->center[1] ) * weight;
-
-	// Keep the smoothed center on the current BSP plane.
-	if( normal[2] > 0.001f )
-		center[2] = ( planeDist - normal[0] * center[0] -
-			normal[1] * center[1] ) / normal[2] + normal[2];
-
-	*alpha = history->alpha + ( *alpha - history->alpha ) * weight;
-
-	history->time = currentTime;
-	VectorCopy( center, history->center );
-	VectorCopy( normal, history->normal );
-	history->alpha = *alpha;
-}
 
 // Minimal Xash sprite metadata mirrors. We temporarily substitute the frame's
 // texture index so TriAPI can bind our generated alpha-mask texture.
@@ -272,6 +179,43 @@ static qboolean StudioBindBlobShadowTexture( triangleapi_t *tri, int texture )
 
 /*
 ====================
+StudioGetBlobShadowOrigin
+
+Match StudioSetUpTransform's MOVETYPE_STEP interpolation exactly.
+The model renderer moves the studio model between latched.prevorigin and
+entity->origin; blob shadows must trace from that same interpolated origin.
+====================
+*/
+static void StudioGetBlobShadowOrigin( cl_entity_t *entity, double currentTime,
+	int doInterp, vec3_t outOrigin )
+{
+	float f = 0.0f;
+	int i;
+
+	VectorCopy( entity->origin, outOrigin );
+
+	if( entity->curstate.movetype != MOVETYPE_STEP )
+		return;
+
+	// Keep this formula in sync with CStudioModelRenderer::StudioSetUpTransform.
+	if( currentTime < entity->curstate.animtime + 1.0 &&
+		entity->curstate.animtime != entity->latched.prevanimtime )
+	{
+		f = (float)(( currentTime - entity->curstate.animtime ) /
+			( entity->curstate.animtime - entity->latched.prevanimtime ));
+	}
+
+	if( doInterp )
+		f -= 1.0f;
+	else
+		f = 0.0f;
+
+	for( i = 0; i < 3; i++ )
+		outOrigin[i] += ( entity->origin[i] - entity->latched.prevorigin[i] ) * f;
+}
+
+/*
+====================
 StudioDrawBlobShadow
 
 Adapt Quake III's cg_shadows 1 path:
@@ -284,7 +228,7 @@ The radial mark does not need yaw rotation. Point traces are used only
 to discover neighboring BSP faces for clipping.
 ====================
 */
-static void StudioDrawBlobShadow( cl_entity_t *entity )
+static void StudioDrawBlobShadow( cl_entity_t *entity, double currentTime, int doInterp )
 {
 	static const float sampleOffsets[5] = { -24.0f, -15.0f, 0.0f, 15.0f, 24.0f };
 	static const float q3TraceMins[3] = { -15.0f, -15.0f, 0.0f };
@@ -293,16 +237,14 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 
 	pmtrace_t trace, bestTrace;
 	vec3_t traceStart, traceEnd;
-	vec3_t normal, center;
+	vec3_t normal, center, shadowOrigin;
 	vec3_t surfacePoints[25];
 	vec3_t surfaceNormals[25];
 	msurface_t *surfaces[25];
 	xash_decal_v37_t decal;
 	float *verts;
-	float alpha, strength, opacity, smoothTime, planeZ, depth, length;
+	float alpha, strength, opacity, planeZ, depth, length;
 	float gridX, gridY;
-	double currentTime, oldTime;
-	int frameCount;
 	int texture, textureWidth, textureHeight;
 	int surfaceCount = 0;
 	int numVerts;
@@ -367,6 +309,9 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 
 	memset( &bestTrace, 0, sizeof( bestTrace ));
 
+	// Use the same interpolated transform as the visible studio NPC.
+	StudioGetBlobShadowOrigin( entity, currentTime, doInterp, shadowOrigin );
+
 	/*
 	 * Match Quake III CG_PlayerShadow exactly: sweep a 30 x 30 x 2 box
 	 * down 128 units from the entity origin. FWGS exposes custom trace
@@ -377,8 +322,8 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	gEngfuncs.pEventAPI->EV_SetTraceHull( 2 );
 	gEngfuncs.pEventAPI->EV_PushTraceBounds( 2, q3TraceMins, q3TraceMaxs );
 
-	VectorCopy( entity->origin, traceStart );
-	VectorCopy( entity->origin, traceEnd );
+	VectorCopy( shadowOrigin, traceStart );
+	VectorCopy( shadowOrigin, traceEnd );
 	traceEnd[2] -= 128.0f;
 
 	memset( &bestTrace, 0, sizeof( bestTrace ));
@@ -409,9 +354,9 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 			gridX = sampleOffsets[i];
 			gridY = sampleOffsets[j];
 
-			traceStart[0] = entity->origin[0] + gridX;
-			traceStart[1] = entity->origin[1] + gridY;
-			traceStart[2] = entity->origin[2] + 1.0f;
+			traceStart[0] = shadowOrigin[0] + gridX;
+			traceStart[1] = shadowOrigin[1] + gridY;
+			traceStart[2] = shadowOrigin[2] + 1.0f;
 
 			traceEnd[0] = traceStart[0];
 			traceEnd[1] = traceStart[1];
@@ -480,17 +425,13 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	if( strength > 1.0f ) strength = 1.0f;
 	if( strength < 0.0f ) strength = 0.0f;
 
-	opacity = cl_blobshadows_opacity ? cl_blobshadows_opacity->value : 1.25f;
+	opacity = cl_blobshadows_opacity ? cl_blobshadows_opacity->value : 0.60f;
 	if( opacity < 0.0f ) opacity = 0.0f;
 	if( opacity > 2.0f ) opacity = 2.0f;
 	alpha *= strength * opacity;
 	if( alpha > 1.0f ) alpha = 1.0f;
 	if( alpha <= 0.0f )
 		return;
-
-	smoothTime = cl_blobshadows_smooth ? cl_blobshadows_smooth->value : 0.06f;
-	if( smoothTime < 0.0f ) smoothTime = 0.0f;
-	if( smoothTime > 0.25f ) smoothTime = 0.25f;
 
 	VectorCopy( bestTrace.plane.normal, normal );
 	length = sqrtf( DotProduct( normal, normal ));
@@ -503,20 +444,12 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 
 	// Reconstruct the impact point at the entity center from the hit plane.
 	planeZ = ( bestTrace.plane.dist -
-		normal[0] * entity->origin[0] -
-		normal[1] * entity->origin[1] ) / normal[2];
+		normal[0] * shadowOrigin[0] -
+		normal[1] * shadowOrigin[1] ) / normal[2];
 
-	center[0] = entity->origin[0] + normal[0];
-	center[1] = entity->origin[1] + normal[1];
+	center[0] = shadowOrigin[0] + normal[0];
+	center[1] = shadowOrigin[1] + normal[1];
 	center[2] = planeZ + normal[2];
-
-	IEngineStudio.GetTimes( &frameCount, &currentTime, &oldTime );
-	StudioSmoothBlobShadow(
-		entity, currentTime, smoothTime, bestTrace.plane.dist,
-		normal, center, &alpha
-	);
-	if( alpha <= 0.0f )
-		return;
 
 	VectorCopy( center, decal.position );
 
@@ -600,9 +533,7 @@ void CStudioModelRenderer::Init( void )
 	if( !cl_blobshadows )
 		cl_blobshadows = CVAR_CREATE( "cl_blobshadows", "1", FCVAR_ARCHIVE );
 	if( !cl_blobshadows_opacity )
-		cl_blobshadows_opacity = CVAR_CREATE( "cl_blobshadows_opacity", "1.25", FCVAR_ARCHIVE );
-	if( !cl_blobshadows_smooth )
-		cl_blobshadows_smooth = CVAR_CREATE( "cl_blobshadows_smooth", "0.06", FCVAR_ARCHIVE );
+		cl_blobshadows_opacity = CVAR_CREATE( "cl_blobshadows_opacity", "0.60", FCVAR_ARCHIVE );
 
 	m_pChromeSprite			= IEngineStudio.GetChromeSprite();
 
@@ -2165,7 +2096,7 @@ void CStudioModelRenderer::StudioRenderFinal_Software( void )
 	// TriAPI vertices are world-space; draw only after the studio renderer
 	// has restored the view transform and render state.
 	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
-		StudioDrawBlobShadow( m_pCurrentEntity );
+		StudioDrawBlobShadow( m_pCurrentEntity, m_clTime, m_fDoInterp );
 }
 
 /*
@@ -2226,7 +2157,7 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 	// TriAPI vertices are world-space; draw only after the studio renderer
 	// has restored the view transform and render state.
 	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
-		StudioDrawBlobShadow( m_pCurrentEntity );
+		StudioDrawBlobShadow( m_pCurrentEntity, m_clTime, m_fDoInterp );
 }
 
 /*
