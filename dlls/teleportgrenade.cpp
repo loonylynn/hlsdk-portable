@@ -289,7 +289,7 @@ void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin, BOOL bExi
 			WRITE_COORD( vecPortalOrigin.x );
 			WRITE_COORD( vecPortalOrigin.y );
 			WRITE_COORD( vecPortalOrigin.z );
-			WRITE_SHORT( iPortalSprite );
+			WRITE_SHORT( g_sTeleportPortalExitSprite );
 			WRITE_BYTE( 10 );
 			WRITE_BYTE( 230 );
 		MESSAGE_END();
