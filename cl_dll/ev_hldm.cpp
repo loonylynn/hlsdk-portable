@@ -491,7 +491,11 @@ static void EV_FireGlock_Impl( event_args_t *args )
 		EV_MuzzleFlash();
 		gEngfuncs.pEventAPI->EV_WeaponAnimation( empty ? GLOCK_SHOOT_EMPTY : GLOCK_SHOOT, 0 );
 
-		V_PunchAxis( 0, -2.0 );
+		// HL2's pistol resets accumulated view punch on every shot,
+		// then applies a small randomized kick instead of stacking recoil.
+		V_PunchAxis( 0, -gEngfuncs.pfnRandomFloat( 0.25f, 0.5f ) );
+		V_PunchAxis( 1, gEngfuncs.pfnRandomFloat( -0.6f, 0.6f ) );
+		V_PunchAxis( 2, 0.0f );
 	}
 
 	EV_GetDefaultShellInfo( args, origin, velocity, ShellVelocity, ShellOrigin, forward, right, up, 20, -12, 4 );
