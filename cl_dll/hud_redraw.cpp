@@ -232,7 +232,7 @@ int CHud::DrawHudString( int xpos, int ypos, int iMaxX, const char *szIt, int r,
 	if( hud_textmode->value == 2 )
 	{
 		gEngfuncs.pfnDrawSetTextColor( r / 255.0, g / 255.0, b / 255.0 );
-		return gEngfuncs.pfnDrawConsoleString( xpos, ypos, (char*) szIt );
+		return gEngfuncs.pfnDrawConsoleString( HUD_AdjustX( xpos ), HUD_AdjustY( ypos ), (char*) szIt );
 	}
 
 	// xash3d: reset unicode state
@@ -286,7 +286,7 @@ int DrawUtfString( int xpos, int ypos, int iMaxX, const char *szIt, int r, int g
 					return xpos;
 			}
 			int c = (unsigned int)(unsigned char)*szIt;
-			xpos += gEngfuncs.pfnVGUI2DrawCharacterAdditive( xpos, ypos, c, r, g, b, 0 );
+			xpos += gEngfuncs.pfnVGUI2DrawCharacterAdditive( HUD_AdjustX( xpos ), HUD_AdjustY( ypos ), c, r, g, b, 0 );
 		}
 		return xpos;
 	}
@@ -419,7 +419,7 @@ int CHud::GetNumWidth( int iNumber, int iFlags )
 void CHud::DrawDarkRectangle( int x, int y, int wide, int tall )
 {
 	//gEngfuncs.pTriAPI->RenderMode( kRenderTransTexture );
-	gEngfuncs.pfnFillRGBABlend( x, y, wide, tall, 0, 0, 0, 255 * 0.6 );
+	FillRGBABlend( x, y, wide, tall, 0, 0, 0, 255 * 0.6 );
 	FillRGBA( x + 1, y, wide - 1, 1, 255, 140, 0, 255 );
 	FillRGBA( x, y, 1, tall - 1, 255, 140, 0, 255 );
 	FillRGBA( x + wide - 1, y + 1, 1, tall - 1, 255, 140, 0, 255 );
