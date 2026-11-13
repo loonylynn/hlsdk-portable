@@ -65,7 +65,6 @@ extern int gmsgShake;
 
 static short g_sTeleportTrailSprite = 0;
 
-static short g_sTeleportPortalEnterSprite = 0;
 static short g_sTeleportPortalExitSprite = 0;
 static short g_sTeleportPortalLightningSprite = 0;
 
@@ -174,8 +173,7 @@ void CTeleportProjectile::Precache( void )
 {
 	PRECACHE_MODEL( "models/grenade.mdl" );
 	g_sTeleportTrailSprite = PRECACHE_MODEL( "sprites/laserbeam.spr" );
-	g_sTeleportPortalEnterSprite = PRECACHE_MODEL( "sprites/enter1.spr" );
-	g_sTeleportPortalExitSprite = PRECACHE_MODEL( "sprites/exit1.spr" );
+	g_sTeleportPortalExitSprite = PRECACHE_MODEL( "sprites/zerogxplode.spr" );
 	g_sTeleportPortalLightningSprite = PRECACHE_MODEL( "sprites/lgtning.spr" );
 
 	PRECACHE_SOUND( "weapons/grenade_hit1.wav" );
@@ -280,11 +278,11 @@ void CTeleportProjectile::FinishWeaponState( void )
 
 void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin, BOOL bExit )
 {
-	// Use the stock blue entrance/exit portal sprite for each endpoint.
+	// Keep the departure as an energy ring/arc effect without a core sprite.
+	// The destination uses the stock zero-gravity explosion sprite.
 	const Vector vecPortalOrigin = vecOrigin + Vector( 0, 0, 8 );
-	const short iPortalSprite = bExit ? g_sTeleportPortalExitSprite : g_sTeleportPortalEnterSprite;
 
-	if( iPortalSprite > 0 )
+	if( bExit && g_sTeleportPortalExitSprite > 0 )
 	{
 		MESSAGE_BEGIN( MSG_PVS, SVC_TEMPENTITY, vecPortalOrigin );
 			WRITE_BYTE( TE_SPRITE );
