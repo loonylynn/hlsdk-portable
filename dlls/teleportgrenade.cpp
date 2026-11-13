@@ -44,7 +44,7 @@
 #define TELEPORT_GRENADE_PLAYER_TRAVEL_MIN_TIME 0.18f
 #define TELEPORT_GRENADE_PLAYER_TRAVEL_MAX_TIME 2.5f
 #define TELEPORT_GRENADE_TRAIL_LIFE 24
-#define TELEPORT_GRENADE_TRAIL_WIDTH 48
+#define TELEPORT_GRENADE_TRAIL_WIDTH 24
 
 enum teleport_grenade_e
 {
@@ -77,28 +77,6 @@ static void SendTeleportBeamFollow( int iEntity, const Vector &vecOrigin, int iL
 		WRITE_BYTE( g );
 		WRITE_BYTE( b );
 		WRITE_BYTE( iBrightness );
-	MESSAGE_END();
-}
-
-static void SendTeleportSpriteTrail( const Vector &vecStart, const Vector &vecEnd )
-{
-	if( g_sTeleportTrailSprite <= 0 || ( vecEnd - vecStart ).Length() < 1.0f )
-		return;
-
-	MESSAGE_BEGIN( MSG_PVS, SVC_TEMPENTITY, vecEnd );
-		WRITE_BYTE( TE_SPRITETRAIL );
-		WRITE_COORD( vecStart.x );
-		WRITE_COORD( vecStart.y );
-		WRITE_COORD( vecStart.z );
-		WRITE_COORD( vecEnd.x );
-		WRITE_COORD( vecEnd.y );
-		WRITE_COORD( vecEnd.z );
-		WRITE_SHORT( g_sTeleportTrailSprite );
-		WRITE_BYTE( 4 );
-		WRITE_BYTE( 16 );
-		WRITE_BYTE( 4 );
-		WRITE_BYTE( 2 );
-		WRITE_BYTE( 3 );
 	MESSAGE_END();
 }
 
@@ -192,7 +170,7 @@ void CTeleportProjectile::Spawn( void )
 
 	// Additive beam ribbon plus small fading glow sprites along the flight path.
 	SendTeleportBeamFollow( entindex(), pev->origin, TELEPORT_GRENADE_TRAIL_LIFE,
-		TELEPORT_GRENADE_TRAIL_WIDTH, 90, 205, 255, 235 );
+		TELEPORT_GRENADE_TRAIL_WIDTH, 255, 140, 32, 235 );
 }
 
 int CTeleportProjectile::TakeDamage( entvars_t *pevInflictor, entvars_t *pevAttacker, float flDamage, int bitsDamageType )
@@ -291,7 +269,6 @@ void CTeleportProjectile::RecordPathPoint( void )
 		vecLastPoint = m_vecPath[m_iPathPointCount - 1];
 	}
 
-	SendTeleportSpriteTrail( vecLastPoint, pev->origin );
 	m_vecPath[m_iPathPointCount++] = pev->origin;
 }
 
