@@ -260,7 +260,7 @@ void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin, BOOL bExi
 		if( pPortalSprite )
 		{
 			// Keep the first frame static, then fade its native blue palette.
-			pPortalSprite->SetScale( 1.0f );
+			pPortalSprite->SetScale( 2.0f );
 			pPortalSprite->SetTransparency( kRenderGlow, 255, 255, 255, 230, 0 );
 			pPortalSprite->Expand( 0.0f, 400.0f ); // Fade out in about 0.575 seconds.
 		}
@@ -291,8 +291,8 @@ void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin, BOOL bExi
 				WRITE_BYTE( 3 );
 				WRITE_BYTE( 3 );
 				WRITE_BYTE( 45 );
-				WRITE_BYTE( 55 );
-				WRITE_BYTE( 145 );
+				WRITE_BYTE( 170 );
+				WRITE_BYTE( 75 );
 				WRITE_BYTE( 255 );
 				WRITE_BYTE( 225 );
 				WRITE_BYTE( 30 );
