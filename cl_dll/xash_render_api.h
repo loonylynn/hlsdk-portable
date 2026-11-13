@@ -10,14 +10,13 @@
 #include <stdint.h>
 #include <stddef.h>
 
-struct decal_s;
 struct msurface_s;
 
 typedef void (*xash_render_api_function_t)( void );
 typedef intptr_t (*xash_render_get_parm_fn)( int parm, int arg );
 typedef int (*xash_render_find_texture_fn)( const char *name );
 typedef float *( *xash_render_decal_setup_verts_fn )(
-	struct decal_s *pDecal, struct msurface_s *surf, int texture, int *outCount );
+	void *pDecal, struct msurface_s *surf, int texture, int *outCount );
 
 typedef struct xash_render_api_v37_s
 {
