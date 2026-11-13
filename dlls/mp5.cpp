@@ -41,15 +41,6 @@ enum mp5_e
 LINK_ENTITY_TO_CLASS( weapon_mp5, CMP5 )
 LINK_ENTITY_TO_CLASS( weapon_9mmAR, CMP5 )
 
-#if !CLIENT_DLL
-TYPEDESCRIPTION CMP5::m_SaveData[] =
-{
-	DEFINE_FIELD( CMP5, m_flNextTeleportAttack, FIELD_TIME ),
-};
-
-IMPLEMENT_SAVERESTORE( CMP5, CBasePlayerWeapon )
-#endif
-
 //=========================================================
 //=========================================================
 void CMP5::Spawn()
@@ -58,9 +49,7 @@ void CMP5::Spawn()
 	Precache();
 	SET_MODEL( ENT( pev ), "models/w_9mmAR.mdl" );
 	m_iId = WEAPON_MP5;
-#if !CLIENT_DLL
-	m_flNextTeleportAttack = 0.0f;
-#endif
+m_flNextSecondaryAttack = 0.0f;
 
 	m_iDefaultAmmo = MP5_DEFAULT_GIVE;
 
@@ -133,57 +122,31 @@ BOOL CMP5::Deploy()
 	return DefaultDeploy( "models/v_9mmAR.mdl", "models/p_9mmAR.mdl", MP5_DEPLOY, "mp5" );
 }
 
-void CMP5::ItemPostFrame( void )
-{
-#if !CLIENT_DLL
-	// Replace the MP5's M203 secondary attack with the teleport frag.
-	// Use the press edge so holding right-click cannot immediately revoke it.
-	if( m_pPlayer && ( m_pPlayer->m_afButtonPressed & IN_ATTACK2 ) )
-		TeleportAttack();
-#endif
-
-	// The grenade is server-authoritative. Suppress IN_ATTACK2 in the base
-	// weapon handler on both sides so it cannot invoke the old M203 behavior
-	// or predict a second, client-side projectile.
-	if( m_pPlayer )
-	{
-		const int iAttack2 = m_pPlayer->pev->button & IN_ATTACK2;
-		m_pPlayer->pev->button &= ~IN_ATTACK2;
-		CBasePlayerWeapon::ItemPostFrame();
-		m_pPlayer->pev->button |= iAttack2;
-	}
-	else
-	{
-		CBasePlayerWeapon::ItemPostFrame();
-	}
-}
-
-#if !CLIENT_DLL
-void CMP5::TeleportAttack( void )
+void CMP5::SecondaryAttack( void )
 {
 	if( !m_pPlayer )
 		return;
 
 	const float flTime = UTIL_WeaponTimeBase();
 
-	// Teleport ammunition is unlimited. Existing projectiles do not
-	// block another launch; only the recharge timer limits firing.
-	if( flTime < m_flNextTeleportAttack )
-		return;
-
+#if !CLIENT_DLL
+	// Teleport ammunition is unlimited. The normal weapon secondary-attack
+	// path controls the recharge; existing projectiles never block a launch.
 	if( !TeleportGrenadeLaunchProjectile( m_pPlayer, WEAPON_MP5 ) )
+	{
+		m_flNextSecondaryAttack = flTime + 0.2f;
 		return;
-	m_flNextTeleportAttack = flTime + MP5_TELEPORT_RECHARGE;
+	}
 
 	EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON, "weapons/tp_launcher.wav", 1.0f, ATTN_NORM );
-
 	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
-	// This is server-authoritative (not locally predicted), so do not skip the owner.
-	SendWeaponAnim( MP5_LAUNCH, 0 );
+#endif
+
+	// Use the stock GoldSrc secondary-attack timer and input handling.
+	m_flNextSecondaryAttack = flTime + MP5_TELEPORT_RECHARGE;
+	SendWeaponAnim( MP5_LAUNCH, UseDecrement() );
 	m_flTimeWeaponIdle = flTime + 0.5f;
 }
-
-#endif
 
 void CMP5::PrimaryAttack()
 {
