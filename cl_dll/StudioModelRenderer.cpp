@@ -115,7 +115,8 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	// the receiving surface for this entity's shadow.
 	gEngfuncs.pEventAPI->EV_SetUpPlayerPrediction( false, true );
 	gEngfuncs.pEventAPI->EV_PushPMStates();
-	gEngfuncs.pEventAPI->EV_SetTraceHull( 0 );
+	// Hull 2 is the point hull; hull 0 would offset the hit by the player hull height.
+	gEngfuncs.pEventAPI->EV_SetTraceHull( 2 );
 	gEngfuncs.pEventAPI->EV_PlayerTrace( traceStart, traceEnd, PM_WORLD_ONLY, -1, &trace );
 	gEngfuncs.pEventAPI->EV_PopPMStates();
 
