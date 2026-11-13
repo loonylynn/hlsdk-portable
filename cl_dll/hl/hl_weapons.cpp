@@ -775,6 +775,7 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 		pCurrent->m_flNextSecondaryAttack = pfrom->m_flNextSecondaryAttack;
 		pCurrent->m_flTimeWeaponIdle = pfrom->m_flTimeWeaponIdle;
 		pCurrent->pev->fuser1 = pfrom->fuser1;
+		pCurrent->pev->fuser4 = pfrom->fuser4;
 		pCurrent->m_flStartThrow = pfrom->fuser2;
 		pCurrent->m_flReleaseThrow = pfrom->fuser3;
 		pCurrent->m_chargeReady = pfrom->iuser1;
@@ -944,6 +945,7 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 		pto->m_flNextSecondaryAttack = pCurrent->m_flNextSecondaryAttack;
 		pto->m_flTimeWeaponIdle = pCurrent->m_flTimeWeaponIdle;
 		pto->fuser1 = pCurrent->pev->fuser1;
+		pto->fuser4 = pCurrent->pev->fuser4;
 		pto->fuser2 = pCurrent->m_flStartThrow;
 		pto->fuser3 = pCurrent->m_flReleaseThrow;
 		pto->iuser1 = pCurrent->m_chargeReady;
