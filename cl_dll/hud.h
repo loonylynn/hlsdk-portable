@@ -22,7 +22,7 @@
 #pragma once
 #if !defined(HUD_H)
 #define HUD_H
-#define RGB_YELLOWISH 0x004F1A23 //79,26,35
+#define RGB_YELLOWISH 0x00EC094D //236,9,77
 #define RGB_REDISH 0x00FF1010 //255,160,0
 #define RGB_GREENISH 0x0000A000 //0,160,0
 
