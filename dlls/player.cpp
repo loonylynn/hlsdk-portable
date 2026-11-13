@@ -1797,7 +1797,7 @@ CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget )
 
 void CBasePlayer::ClearUseableHighlight( void )
 {
-	CBaseEntity *pLastObject = m_hLastUseableItem.Get();
+	CBaseEntity *pLastObject = CBaseEntity::Instance( m_hLastUseableItem.Get() );
 	if( pLastObject )
 	{
 		const char *pszClassname = STRING( pLastObject->pev->classname );
