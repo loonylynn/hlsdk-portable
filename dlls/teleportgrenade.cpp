@@ -708,7 +708,11 @@ static CTeleportProjectile *FindTeleportProjectile( CBasePlayer *pPlayer, int iW
 
 	while( ( pEntity = UTIL_FindEntityByClassname( pEntity, "teleport_projectile" ) ) != NULL )
 	{
-		if( pEntity->pev->owner == pPlayer->edict() && pEntity->pev->iuser1 == iWeaponId )
+		// Ignore inert projectiles left briefly during the player's travel
+		// animation; only a projectile still in flight can be recalled.
+		if( pEntity->pev->owner == pPlayer->edict()
+			&& pEntity->pev->iuser1 == iWeaponId
+			&& pEntity->pev->solid != SOLID_NOT )
 			return (CTeleportProjectile *)pEntity;
 	}
 
