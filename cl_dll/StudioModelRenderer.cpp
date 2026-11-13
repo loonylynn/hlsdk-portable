@@ -179,43 +179,6 @@ static qboolean StudioBindBlobShadowTexture( triangleapi_t *tri, int texture )
 
 /*
 ====================
-StudioGetBlobShadowOrigin
-
-Match StudioSetUpTransform's MOVETYPE_STEP interpolation exactly.
-The model renderer moves the studio model between latched.prevorigin and
-entity->origin; blob shadows must trace from that same interpolated origin.
-====================
-*/
-static void StudioGetBlobShadowOrigin( cl_entity_t *entity, double currentTime,
-	int doInterp, vec3_t outOrigin )
-{
-	float f = 0.0f;
-	int i;
-
-	VectorCopy( entity->origin, outOrigin );
-
-	if( entity->curstate.movetype != MOVETYPE_STEP )
-		return;
-
-	// Keep this formula in sync with CStudioModelRenderer::StudioSetUpTransform.
-	if( currentTime < entity->curstate.animtime + 1.0 &&
-		entity->curstate.animtime != entity->latched.prevanimtime )
-	{
-		f = (float)(( currentTime - entity->curstate.animtime ) /
-			( entity->curstate.animtime - entity->latched.prevanimtime ));
-	}
-
-	if( doInterp )
-		f -= 1.0f;
-	else
-		f = 0.0f;
-
-	for( i = 0; i < 3; i++ )
-		outOrigin[i] += ( entity->origin[i] - entity->latched.prevorigin[i] ) * f;
-}
-
-/*
-====================
 StudioDrawBlobShadow
 
 Adapt Quake III's cg_shadows 1 path:
@@ -228,7 +191,7 @@ The radial mark does not need yaw rotation. Point traces are used only
 to discover neighboring BSP faces for clipping.
 ====================
 */
-static void StudioDrawBlobShadow( cl_entity_t *entity, double currentTime, int doInterp )
+static void StudioDrawBlobShadow( cl_entity_t *entity, const float modelTransform[3][4] )
 {
 	static const float sampleOffsets[5] = { -24.0f, -15.0f, 0.0f, 15.0f, 24.0f };
 	static const float q3TraceMins[3] = { -15.0f, -15.0f, 0.0f };
@@ -309,8 +272,17 @@ static void StudioDrawBlobShadow( cl_entity_t *entity, double currentTime, int d
 
 	memset( &bestTrace, 0, sizeof( bestTrace ));
 
-	// Use the same interpolated transform as the visible studio NPC.
-	StudioGetBlobShadowOrigin( entity, currentTime, doInterp, shadowOrigin );
+	// Use the exact world-space origin produced by StudioSetUpTransform().
+	if( modelTransform )
+	{
+		shadowOrigin[0] = modelTransform[0][3];
+		shadowOrigin[1] = modelTransform[1][3];
+		shadowOrigin[2] = modelTransform[2][3];
+	}
+	else
+	{
+		VectorCopy( entity->origin, shadowOrigin );
+	}
 
 	/*
 	 * Match Quake III CG_PlayerShadow exactly: sweep a 30 x 30 x 2 box
@@ -336,8 +308,27 @@ static void StudioDrawBlobShadow( cl_entity_t *entity, double currentTime, int d
 		bestTrace.allsolid || bestTrace.inwater ||
 		bestTrace.plane.normal[2] < 0.5f )
 	{
-		gEngfuncs.pEventAPI->EV_PopPMStates();
-		return;
+		// If the renderer transform cannot be traced (e.g. interpolation
+		// extrapolated beyond the current floor), retry from the network origin.
+		VectorCopy( entity->origin, shadowOrigin );
+		VectorCopy( shadowOrigin, traceStart );
+		VectorCopy( shadowOrigin, traceEnd );
+		traceEnd[2] -= 128.0f;
+
+		gEngfuncs.pEventAPI->EV_PushTraceBounds( 2, q3TraceMins, q3TraceMaxs );
+		memset( &bestTrace, 0, sizeof( bestTrace ));
+		gEngfuncs.pEventAPI->EV_PlayerTrace(
+			traceStart, traceEnd, PM_WORLD_ONLY, -1, &bestTrace
+		);
+		gEngfuncs.pEventAPI->EV_PopTraceBounds();
+
+		if( bestTrace.fraction >= 1.0f || bestTrace.startsolid ||
+			bestTrace.allsolid || bestTrace.inwater ||
+			bestTrace.plane.normal[2] < 0.5f )
+		{
+			gEngfuncs.pEventAPI->EV_PopPMStates();
+			return;
+		}
 	}
 
 	/*
@@ -2096,7 +2087,7 @@ void CStudioModelRenderer::StudioRenderFinal_Software( void )
 	// TriAPI vertices are world-space; draw only after the studio renderer
 	// has restored the view transform and render state.
 	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
-		StudioDrawBlobShadow( m_pCurrentEntity, m_clTime, m_fDoInterp );
+		StudioDrawBlobShadow( m_pCurrentEntity, (*m_protationmatrix) );
 }
 
 /*
@@ -2157,7 +2148,7 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 	// TriAPI vertices are world-space; draw only after the studio renderer
 	// has restored the view transform and render state.
 	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
-		StudioDrawBlobShadow( m_pCurrentEntity, m_clTime, m_fDoInterp );
+		StudioDrawBlobShadow( m_pCurrentEntity, (*m_protationmatrix) );
 }
 
 /*
