@@ -1851,7 +1851,6 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 			IEngineStudio.GL_StudioDrawShadow();
 		}
 
-		StudioDrawBlobShadow( m_pCurrentEntity );
 	}
 
 	if( m_pCvarDrawEntities->value == 4 )
@@ -1867,6 +1866,11 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 	}
 
 	IEngineStudio.RestoreRenderer();
+
+	// TriAPI vertices are world-space; draw only after the studio renderer
+	// has restored the view transform and render state.
+	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
+		StudioDrawBlobShadow( m_pCurrentEntity );
 }
 
 /*
