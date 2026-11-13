@@ -51,6 +51,7 @@ inline struct cvar_s *CVAR_CREATE( const char *cv, const char *val, const int fl
 #define SPR_GetList ( *gEngfuncs.pfnSPR_GetList )
 
 // HUD-only overscan helpers. They move draw coordinates inward from screen edges.
+void HUD_UpdateOverscan( void );
 int HUD_AdjustX( int x );
 int HUD_AdjustY( int y );
 int HUD_AdjustScissorWidth( int x, int width );
