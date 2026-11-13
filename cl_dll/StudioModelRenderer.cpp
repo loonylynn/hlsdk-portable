@@ -56,6 +56,8 @@ point/player trace hulls here, so the 3 x 3 grid approximates Q3's box trace.
 static void StudioDrawBlobShadow( cl_entity_t *entity )
 {
 	static const float sampleOffsets[5] = { -24.0f, -15.0f, 0.0f, 15.0f, 24.0f };
+	static const float q3TraceMins[3] = { -15.0f, -15.0f, 0.0f };
+	static const float q3TraceMaxs[3] = {  15.0f,  15.0f, 2.0f };
 	static const char shadowTextureName[] = "#sprites/glow01(frame:00).spr";
 	static qboolean warnedTexture = false;
 
@@ -71,7 +73,6 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	float gridX, gridY;
 	int texture, textureWidth, textureHeight;
 	int surfaceCount = 0;
-	int bestFractionValid = 0;
 	int numVerts;
 	int i, j, k, n;
 	triangleapi_t *tri = gEngfuncs.pTriAPI;
@@ -97,6 +98,8 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 		!gEngfuncs.pEventAPI->EV_SetTraceHull ||
 		!gEngfuncs.pEventAPI->EV_PlayerTrace ||
 		!gEngfuncs.pEventAPI->EV_TraceSurface ||
+		!gEngfuncs.pEventAPI->EV_PushTraceBounds ||
+		!gEngfuncs.pEventAPI->EV_PopTraceBounds ||
 		!gEngfuncs.pEventAPI->EV_PopPMStates ||
 		!IEngineStudio.Mod_ForName )
 		return;
@@ -135,12 +138,38 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	memset( &bestTrace, 0, sizeof( bestTrace ));
 
 	/*
-	 * Sample a 48 x 48-unit area around the entity. The inner 3 x 3 samples
-	 * approximate Quake III's 30 x 30 x 2 player box trace; the outer ring
-	 * discovers neighboring BSP faces that the 24-unit impact mark can touch.
+	 * Match Quake III CG_PlayerShadow exactly: sweep a 30 x 30 x 2 box
+	 * down 128 units from the entity origin. FWGS exposes custom trace
+	 * bounds, so this no longer needs a point-trace approximation.
 	 */
 	gEngfuncs.pEventAPI->EV_SetUpPlayerPrediction( false, true );
 	gEngfuncs.pEventAPI->EV_PushPMStates();
+	gEngfuncs.pEventAPI->EV_SetTraceHull( 2 );
+	gEngfuncs.pEventAPI->EV_PushTraceBounds( 2, q3TraceMins, q3TraceMaxs );
+
+	VectorCopy( entity->origin, traceStart );
+	VectorCopy( entity->origin, traceEnd );
+	traceEnd[2] -= 128.0f;
+
+	memset( &bestTrace, 0, sizeof( bestTrace ));
+	gEngfuncs.pEventAPI->EV_PlayerTrace(
+		traceStart, traceEnd, PM_WORLD_ONLY, -1, &bestTrace
+	);
+	gEngfuncs.pEventAPI->EV_PopTraceBounds();
+
+	if( bestTrace.fraction >= 1.0f || bestTrace.startsolid ||
+		bestTrace.allsolid || bestTrace.inwater ||
+		bestTrace.plane.normal[2] < 0.5f )
+	{
+		gEngfuncs.pEventAPI->EV_PopPMStates();
+		return;
+	}
+
+	/*
+	 * Sample the mark footprint with point traces to discover every nearby
+	 * BSP face for clipping. The center/radius samples are not used to
+	 * calculate the Q3 trace fraction; that now comes from the exact box trace.
+	 */
 	gEngfuncs.pEventAPI->EV_SetTraceHull( 2 );
 
 	for( i = 0; i < 5; i++ )
@@ -166,14 +195,6 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 			if( trace.fraction >= 1.0f || trace.startsolid || trace.allsolid ||
 				trace.inwater || trace.plane.normal[2] < 0.5f )
 				continue;
-
-			// Only the inner 30 x 30 area contributes to the Q3-style trace alpha.
-			if( fabsf( gridX ) <= 15.0f && fabsf( gridY ) <= 15.0f &&
-				( !bestFractionValid || trace.fraction < bestTrace.fraction ))
-			{
-				bestTrace = trace;
-				bestFractionValid = 1;
-			}
 
 			// EV_TraceSurface resolves the actual BSP face for this hit physent.
 			if( trace.ent < 0 )
@@ -219,10 +240,10 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 
 	gEngfuncs.pEventAPI->EV_PopPMStates();
 
-	if( !bestFractionValid || surfaceCount == 0 )
+	if( surfaceCount == 0 )
 		return;
 
-	// Q3 cg_shadows 1 uses alpha = 1 - trace.fraction.
+	// Q3 cg_shadows 1 uses alpha = 1 - swept-box trace fraction.
 	alpha = 1.0f - bestTrace.fraction;
 	strength = cl_blobshadows->value;
 	if( strength > 1.0f ) strength = 1.0f;
