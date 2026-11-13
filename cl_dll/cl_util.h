@@ -115,19 +115,23 @@ inline void HUD_FillRGBABlend( int x, int y, int width, int height, int r, int g
 extern cvar_t *hud_textmode;
 extern float g_hud_text_color[3];
 
-// Replace the original amber accent when it is used for HUD or console-font text.
+// Apply the EC094D accent to the original amber and previous wine-red HUD text.
 inline void HUD_ApplyTextColor( int &r, int &g, int &b )
 {
-	if( r == 255 && g == 160 && b == 0 )
-		r = 79, g = 26, b = 35;
+	if( ( r == 255 && g == 160 && b == 0 ) ||
+		( r == 79 && g == 26 && b == 35 ) )
+		r = 236, g = 9, b = 77;
 }
 
 inline void HUD_ApplyTextColor( float &r, float &g, float &b )
 {
-	if( (int)( r * 255.0f + 0.5f ) == 255 &&
-		(int)( g * 255.0f + 0.5f ) == 160 &&
-		(int)( b * 255.0f + 0.5f ) == 0 )
-		r = 79.0f / 255.0f, g = 26.0f / 255.0f, b = 35.0f / 255.0f;
+	const int ir = (int)( r * 255.0f + 0.5f );
+	const int ig = (int)( g * 255.0f + 0.5f );
+	const int ib = (int)( b * 255.0f + 0.5f );
+
+	if( ( ir == 255 && ig == 160 && ib == 0 ) ||
+		( ir == 79 && ig == 26 && ib == 35 ) )
+		r = 236.0f / 255.0f, g = 9.0f / 255.0f, b = 77.0f / 255.0f;
 }
 
 inline void DrawSetTextColor( float r, float g, float b )
