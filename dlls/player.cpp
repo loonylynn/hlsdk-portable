@@ -1791,6 +1791,18 @@ void CUseableGraphic::UpdateBrackets( CBaseEntity *pTarget, CBasePlayer *pPlayer
 		pev->scale *= 0.25f;
 	}
 
+	// User multiplier is applied after the original PS2 sizing and special cases.
+	// Zero disables the marker; values above 4 are capped to avoid oversized sprites.
+	float flBracketScale = CVAR_GET_FLOAT( "sv_useable_bracket_scale" );
+	if( flBracketScale <= 0.0f )
+	{
+		pev->effects |= EF_NODRAW;
+		return;
+	}
+	if( flBracketScale > 4.0f )
+		flBracketScale = 4.0f;
+	pev->scale *= flBracketScale;
+
 	// Xash3D's kRenderGlow does not use Z-buffer tests, but it does a
 	// visibility trace to the sprite origin. Anchor the marker just outside
 	// the target's player-facing surface so the target does not occlude itself.
