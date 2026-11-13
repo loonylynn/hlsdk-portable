@@ -912,6 +912,7 @@ void ClientPrecache( void )
 	PRECACHE_SOUND( "player/pl_pain7.wav" );
 
 	PRECACHE_MODEL( "models/player.mdl" );
+	PRECACHE_MODEL( "sprites/brackets.spr" );
 
 	// hud sounds
 	PRECACHE_SOUND( "common/wpn_hudoff.wav" );
