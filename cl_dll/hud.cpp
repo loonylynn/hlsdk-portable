@@ -399,7 +399,7 @@ void CHud::Init( void )
 	CVAR_CREATE( "hud_classautokill", "1", FCVAR_ARCHIVE | FCVAR_USERINFO );		// controls whether or not to suicide immediately on TF class switch
 	CVAR_CREATE( "hud_takesshots", "0", FCVAR_ARCHIVE );		// controls whether or not to automatically take screenshots at the end of a round
 	hud_textmode = CVAR_CREATE ( "hud_textmode", "0", FCVAR_ARCHIVE );
-	hud_overscan = CVAR_CREATE( "hud_overscan", "0", FCVAR_ARCHIVE );
+	hud_overscan = CVAR_CREATE( "hud_overscan", "0.025", FCVAR_ARCHIVE );
 
 	m_iLogo = 0;
 	m_iFOV = 0;
