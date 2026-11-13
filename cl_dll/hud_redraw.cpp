@@ -227,14 +227,21 @@ const unsigned char colors[8][3] =
 {240, 180,  24}
 };
 
-int CHud::DrawHudString( int xpos, int ypos, int iMaxX, const char *szIt, int r, int g, int b )
+// Draw a HUD string with independent logical and physical start positions.
+// The entire string follows the overscan transform, but glyphs keep their native
+// width and advance so they cannot collide as the safe area gets narrower.
+static int HUD_DrawHudStringAt( int xpos, int drawXpos, int ypos, int iMaxX, const char *szIt, int r, int g, int b )
 {
 	HUD_ApplyTextColor( r, g, b );
+
+	const int logicalStartX = xpos;
+	const int drawYpos = HUD_AdjustY( ypos );
+	const int drawMaxX = HUD_AdjustX( iMaxX );
 
 	if( hud_textmode->value == 2 )
 	{
 		gEngfuncs.pfnDrawSetTextColor( r / 255.0, g / 255.0, b / 255.0 );
-		return gEngfuncs.pfnDrawConsoleString( HUD_AdjustX( xpos ), HUD_AdjustY( ypos ), (char*) szIt );
+		return gEngfuncs.pfnDrawConsoleString( drawXpos, drawYpos, (char*) szIt );
 	}
 
 	// xash3d: reset unicode state
@@ -244,7 +251,8 @@ int CHud::DrawHudString( int xpos, int ypos, int iMaxX, const char *szIt, int r,
 	for( ; *szIt != 0 && *szIt != '\n'; szIt++ )
 	{
 		int w = gHUD.m_scrinfo.charWidths['M'];
-		if( xpos + w  > iMaxX )
+		int glyphX = drawXpos + ( xpos - logicalStartX );
+		if( glyphX + w > drawMaxX )
 			return xpos;
 		if( ( *szIt == '^' ) && ( *( szIt + 1 ) >= '0') && ( *( szIt + 1 ) <= '9') )
 		{
@@ -258,10 +266,15 @@ int CHud::DrawHudString( int xpos, int ypos, int iMaxX, const char *szIt, int r,
 		}
 		int c = (unsigned int)(unsigned char)*szIt;
 
-		xpos += TextMessageDrawChar( xpos, ypos, c, r, g, b );
+		xpos += TextMessageDrawCharAt( glyphX, drawYpos, c, r, g, b );
 	}
 
 	return xpos;
+}
+
+int CHud::DrawHudString( int xpos, int ypos, int iMaxX, const char *szIt, int r, int g, int b )
+{
+	return HUD_DrawHudStringAt( xpos, HUD_AdjustX( xpos ), ypos, iMaxX, szIt, r, g, b );
 }
 
 int DrawUtfString( int xpos, int ypos, int iMaxX, const char *szIt, int r, int g, int b )
@@ -270,14 +283,20 @@ int DrawUtfString( int xpos, int ypos, int iMaxX, const char *szIt, int r, int g
 
 	if (IsXashFWGS())
 	{
+		const int logicalStartX = xpos;
+		const int drawStartX = HUD_AdjustX( xpos );
+		const int drawYpos = HUD_AdjustY( ypos );
+		const int drawMaxX = HUD_AdjustX( iMaxX );
+
 		// xash3d: reset unicode state
 		gEngfuncs.pfnVGUI2DrawCharacterAdditive( 0, 0, 0, 0, 0, 0, 0 );
 
-		// draw the string until we hit the null character or a newline character
+		// Keep native glyph spacing and move the complete text run to the safe area.
 		for( ; *szIt != 0 && *szIt != '\n'; szIt++ )
 		{
 			int w = gHUD.m_scrinfo.charWidths['M'];
-			if( xpos + w  > iMaxX )
+			int glyphX = drawStartX + ( xpos - logicalStartX );
+			if( glyphX + w > drawMaxX )
 				return xpos;
 			if( ( *szIt == '^' ) && ( *( szIt + 1 ) >= '0') && ( *( szIt + 1 ) <= '9') )
 			{
@@ -290,7 +309,7 @@ int DrawUtfString( int xpos, int ypos, int iMaxX, const char *szIt, int r, int g
 					return xpos;
 			}
 			int c = (unsigned int)(unsigned char)*szIt;
-			xpos += gEngfuncs.pfnVGUI2DrawCharacterAdditive( HUD_AdjustX( xpos ), HUD_AdjustY( ypos ), c, r, g, b, 0 );
+			xpos += gEngfuncs.pfnVGUI2DrawCharacterAdditive( glyphX, drawYpos, c, r, g, b, 0 );
 		}
 		return xpos;
 	}
@@ -320,12 +339,24 @@ int CHud::DrawHudNumberString( int xpos, int ypos, int iMinX, int iNumber, int r
 // draws a string from right to left (right-aligned)
 int CHud::DrawHudStringReverse( int xpos, int ypos, int iMinX, const char *szString, int r, int g, int b )
 {
-	// find the end of the string
+	const int originalRightX = xpos;
+	int stringWidth = 0;
+
+	// Keep the string's native width and align its right edge to the safe-area anchor.
 	for( const char *szIt = szString; *szIt != 0; szIt++ )
-		xpos -= gHUD.m_scrinfo.charWidths[(unsigned char)*szIt];
+		stringWidth += gHUD.m_scrinfo.charWidths[(unsigned char)*szIt];
+
+	xpos -= stringWidth;
 	if( xpos < iMinX )
+	{
 		xpos = iMinX;
-	DrawHudString( xpos, ypos, gHUD.m_scrinfo.iWidth, szString, r, g, b );
+		HUD_DrawHudStringAt( xpos, HUD_AdjustX( xpos ), ypos, gHUD.m_scrinfo.iWidth, szString, r, g, b );
+	}
+	else
+	{
+		HUD_DrawHudStringAt( xpos, HUD_AdjustX( originalRightX ) - stringWidth,
+			ypos, gHUD.m_scrinfo.iWidth, szString, r, g, b );
+	}
 	return xpos;
 }
 
