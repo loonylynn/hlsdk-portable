@@ -36,6 +36,7 @@
 engine_studio_api_t IEngineStudio;
 
 static cvar_t *cl_blobshadows = NULL;
+static int cl_blobshadow_sprite = 0;
 
 static float StudioMaxAbs( float a, float b )
 {
@@ -56,15 +57,15 @@ studio-geometry shadow routine.
 */
 static void StudioDrawBlobShadow( cl_entity_t *entity )
 {
-	const int segments = 24;
 	pmtrace_t trace;
 	vec3_t traceStart, traceEnd;
-	vec3_t normal, right, forward, center, edge;
+	vec3_t normal, right, forward, center;
+	vec3_t p1, p2, p3, p4;
 	float mins[3], maxs[3];
 	float height, fade, strength;
-	float radiusX, radiusY, radiusScale;
-	float dot, length, angle;
-	int i;
+	float radiusX, radiusY;
+	float dot, length;
+	model_t *shadowSprite;
 	triangleapi_t *tri = gEngfuncs.pTriAPI;
 
 	if( !cl_blobshadows || cl_blobshadows->value <= 0.0f )
@@ -85,7 +86,21 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 		!gEngfuncs.pEventAPI->EV_PushPMStates ||
 		!gEngfuncs.pEventAPI->EV_SetTraceHull ||
 		!gEngfuncs.pEventAPI->EV_PlayerTrace ||
-		!gEngfuncs.pEventAPI->EV_PopPMStates )
+		!gEngfuncs.pEventAPI->EV_PopPMStates ||
+		!gEngfuncs.pEventAPI->EV_FindModelIndex ||
+		!IEngineStudio.GetModelByIndex )
+		return;
+
+	// glow01 is a stock Half-Life radial sprite. Bind it explicitly so the
+	// blob does not inherit whichever studio texture was last active.
+	if( !cl_blobshadow_sprite )
+		cl_blobshadow_sprite = gEngfuncs.pEventAPI->EV_FindModelIndex( "sprites/glow01.spr" );
+
+	if( cl_blobshadow_sprite <= 0 )
+		return;
+
+	shadowSprite = IEngineStudio.GetModelByIndex( cl_blobshadow_sprite );
+	if( !shadowSprite || !tri->SpriteTexture( shadowSprite, 0 ))
 		return;
 
 	VectorCopy( entity->curstate.mins, mins );
@@ -109,13 +124,12 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	traceEnd[1] = entity->origin[1];
 	traceEnd[2] = entity->origin[2] - 512.0f;
 
-	memset( &trace, 0, sizeof( trace ) );
+	memset( &trace, 0, sizeof( trace ));
 
 	// Only the BSP world is tested, so another actor cannot become
 	// the receiving surface for this entity's shadow.
 	gEngfuncs.pEventAPI->EV_SetUpPlayerPrediction( false, true );
 	gEngfuncs.pEventAPI->EV_PushPMStates();
-	// Hull 2 is the point hull; hull 0 would offset the hit by the player hull height.
 	gEngfuncs.pEventAPI->EV_SetTraceHull( 2 );
 	gEngfuncs.pEventAPI->EV_PlayerTrace( traceStart, traceEnd, PM_STUDIO_BOX | PM_WORLD_ONLY, -1, &trace );
 	gEngfuncs.pEventAPI->EV_PopPMStates();
@@ -136,8 +150,7 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	if( normal[2] < 0.5f )
 		return;
 
-	// GoldSrc monster origins are normally at their feet. Using the entity
-	// origin also avoids rejecting shadows when model bounds extend below it.
+	// GoldSrc monster origins are normally at their feet.
 	height = entity->origin[2] - trace.endpos[2];
 	if( height < -8.0f )
 		height = 0.0f;
@@ -160,10 +173,6 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 
 	if( radiusX > 40.0f ) radiusX = 40.0f;
 	if( radiusY > 40.0f ) radiusY = 40.0f;
-
-	radiusScale = 1.0f + ( height / 128.0f ) * 0.35f;
-	radiusX *= radiusScale;
-	radiusY *= radiusScale;
 
 	// Build a stable tangent basis for the receiving plane.
 	right[0] = 1.0f;
@@ -191,28 +200,47 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	center[1] = trace.endpos[1] + normal[1] * 0.5f;
 	center[2] = trace.endpos[2] + normal[2] * 0.5f;
 
+	// Counter-clockwise quad when viewed from above the receiving plane.
+	VectorCopy( center, p1 );
+	VectorCopy( center, p2 );
+	VectorCopy( center, p3 );
+	VectorCopy( center, p4 );
+
+	p1[0] -= right[0] * radiusX + forward[0] * radiusY;
+	p1[1] -= right[1] * radiusX + forward[1] * radiusY;
+	p1[2] -= right[2] * radiusX + forward[2] * radiusY;
+
+	p2[0] += right[0] * radiusX - forward[0] * radiusY;
+	p2[1] += right[1] * radiusX - forward[1] * radiusY;
+	p2[2] += right[2] * radiusX - forward[2] * radiusY;
+
+	p3[0] += right[0] * radiusX + forward[0] * radiusY;
+	p3[1] += right[1] * radiusX + forward[1] * radiusY;
+	p3[2] += right[2] * radiusX + forward[2] * radiusY;
+
+	p4[0] -= right[0] * radiusX - forward[0] * radiusY;
+	p4[1] -= right[1] * radiusX - forward[1] * radiusY;
+	p4[2] -= right[2] * radiusX - forward[2] * radiusY;
+
+	tri->CullFace( TRI_NONE );
 	tri->RenderMode( kRenderTransAlpha );
-	tri->Begin( TRI_TRIANGLE_FAN );
+	tri->SpriteTexture( shadowSprite, 0 );
+	tri->Begin( TRI_QUADS );
 
-	// A black center fading smoothly to a fully transparent edge.
-	tri->Color4f( 0.0f, 0.0f, 0.0f, 0.38f * fade * strength );
-	tri->Vertex3fv( center );
-
-	for( i = 0; i <= segments; i++ )
-	{
-		angle = ( 6.28318530718f * (float)i ) / (float)segments;
-
-		edge[0] = center[0] + right[0] * cosf( angle ) * radiusX + forward[0] * sinf( angle ) * radiusY;
-		edge[1] = center[1] + right[1] * cosf( angle ) * radiusX + forward[1] * sinf( angle ) * radiusY;
-		edge[2] = center[2] + right[2] * cosf( angle ) * radiusX + forward[2] * sinf( angle ) * radiusY;
-
-		tri->Color4f( 0.0f, 0.0f, 0.0f, 0.0f );
-		tri->Vertex3fv( edge );
-	}
+	tri->Color4f( 0.0f, 0.0f, 0.0f, 0.45f * fade * strength );
+	tri->TexCoord2f( 0.0f, 0.0f );
+	tri->Vertex3fv( p1 );
+	tri->TexCoord2f( 1.0f, 0.0f );
+	tri->Vertex3fv( p2 );
+	tri->TexCoord2f( 1.0f, 1.0f );
+	tri->Vertex3fv( p3 );
+	tri->TexCoord2f( 0.0f, 1.0f );
+	tri->Vertex3fv( p4 );
 
 	tri->End();
 	tri->Color4f( 1.0f, 1.0f, 1.0f, 1.0f );
 	tri->RenderMode( kRenderNormal );
+	tri->CullFace( TRI_FRONT );
 }
 
 /////////////////////
