@@ -579,12 +579,9 @@ public:
 	void ItemPostFrame( void );
 #if !CLIENT_DLL
 	void TeleportAttack( void );
-	void OnTeleportProjectileFinished( void );
 
-	// Server-authoritative secondary-fire state for the MP5 teleport frag.
-	int m_iTeleportProjectileActive;
+	// Server-authoritative recharge timer; teleport ammunition is unlimited.
 	float m_flNextTeleportAttack;
-	float m_flNextTeleportRevoke;
 #endif
 	float m_flNextAnimTime;
 	int m_iShell;
