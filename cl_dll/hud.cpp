@@ -107,8 +107,11 @@ void HUD_UpdateOverscan( void )
 
 int HUD_AdjustX( int x )
 {
+	if( !g_hudOverscanEnabled )
+		return x;
+
 	int width = gHUD.m_scrinfo.iWidth;
-	if( !g_hudOverscanEnabled || width <= 0 || x < 0 || x > width )
+	if( width <= 0 || x < 0 || x > width )
 		return x;
 
 	return (int)( (float)width * 0.5f + ( (float)x - (float)width * 0.5f ) * g_hudOverscanScale + 0.5f );
@@ -116,8 +119,11 @@ int HUD_AdjustX( int x )
 
 int HUD_AdjustY( int y )
 {
+	if( !g_hudOverscanEnabled )
+		return y;
+
 	int height = gHUD.m_scrinfo.iHeight;
-	if( !g_hudOverscanEnabled || height <= 0 || y < 0 || y > height )
+	if( height <= 0 || y < 0 || y > height )
 		return y;
 
 	return (int)( (float)height * 0.5f + ( (float)y - (float)height * 0.5f ) * g_hudOverscanScale + 0.5f );
@@ -125,11 +131,17 @@ int HUD_AdjustY( int y )
 
 int HUD_AdjustWidth( int x, int width )
 {
+	if( !g_hudOverscanEnabled )
+		return width;
+
 	return HUD_AdjustX( x + width ) - HUD_AdjustX( x );
 }
 
 int HUD_AdjustHeight( int y, int height )
 {
+	if( !g_hudOverscanEnabled )
+		return height;
+
 	return HUD_AdjustY( y + height ) - HUD_AdjustY( y );
 }
 
