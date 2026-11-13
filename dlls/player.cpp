@@ -1907,7 +1907,7 @@ void CBasePlayer::HighlightUseable( CBaseEntity *pObject )
 	if( (CBaseEntity *)m_hLastUseableItem == pObject && m_hUseableHighlight.Get() )
 	{
 		edict_t *pentGraphic = m_hUseableHighlight.Get();
-	CUseableGraphic *pGraphic = pentGraphic ? (CUseableGraphic *)CBaseEntity::Instance( pentGraphic ) : NULL;
+		CUseableGraphic *pGraphic = pentGraphic ? (CUseableGraphic *)CBaseEntity::Instance( pentGraphic ) : NULL;
 		if( pGraphic )
 			pGraphic->UpdateBrackets( pObject, this );
 		return;
