@@ -28,6 +28,7 @@
 #include "monsters.h"
 #include "weapons.h"
 #include "player.h"
+#include "effects.h"
 #include <math.h>
 
 #define TELEPORT_GRENADE_VELOCITY       1000.0f
@@ -65,7 +66,6 @@ extern int gmsgShake;
 
 static short g_sTeleportTrailSprite = 0;
 
-static short g_sTeleportPortalExitSprite = 0;
 static short g_sTeleportPortalLightningSprite = 0;
 
 static void SendTeleportBeamFollow( int iEntity, const Vector &vecOrigin, int iLife, int iWidth, int r, int g, int b, int iBrightness )
@@ -145,7 +145,7 @@ void CTeleportProjectile::Precache( void )
 {
 	PRECACHE_MODEL( "models/grenade.mdl" );
 	g_sTeleportTrailSprite = PRECACHE_MODEL( "sprites/laserbeam.spr" );
-	g_sTeleportPortalExitSprite = PRECACHE_MODEL( "sprites/zerogxplode.spr" );
+	PRECACHE_MODEL( "sprites/blueflare2.spr" );
 	g_sTeleportPortalLightningSprite = PRECACHE_MODEL( "sprites/lgtning.spr" );
 
 	PRECACHE_SOUND( "weapons/grenade_hit1.wav" );
@@ -254,17 +254,16 @@ void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin, BOOL bExi
 	// The destination uses the stock zero-gravity explosion sprite.
 	const Vector vecPortalOrigin = vecOrigin + Vector( 0, 0, 8 );
 
-	if( bExit && g_sTeleportPortalExitSprite > 0 )
+	if( bExit )
 	{
-		MESSAGE_BEGIN( MSG_PVS, SVC_TEMPENTITY, vecPortalOrigin );
-			WRITE_BYTE( TE_SPRITE );
-			WRITE_COORD( vecPortalOrigin.x );
-			WRITE_COORD( vecPortalOrigin.y );
-			WRITE_COORD( vecPortalOrigin.z );
-			WRITE_SHORT( g_sTeleportPortalExitSprite );
-			WRITE_BYTE( 10 );
-			WRITE_BYTE( 230 );
-		MESSAGE_END();
+		CSprite *pPortalSprite = CSprite::SpriteCreate( "sprites/blueflare2.spr", vecPortalOrigin, FALSE );
+		if( pPortalSprite )
+		{
+			// Keep the first frame static, then fade its native blue palette.
+			pPortalSprite->SetScale( 1.0f );
+			pPortalSprite->SetTransparency( kRenderGlow, 255, 255, 255, 230, 0 );
+			pPortalSprite->Expand( 0.0f, 400.0f ); // Fade out in about 0.575 seconds.
+		}
 	}
 
 	// Keep the expanding energy rings, now blue to match enter1/exit1.
