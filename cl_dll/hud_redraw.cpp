@@ -229,6 +229,8 @@ const unsigned char colors[8][3] =
 
 int CHud::DrawHudString( int xpos, int ypos, int iMaxX, const char *szIt, int r, int g, int b )
 {
+	HUD_ApplyTextColor( r, g, b );
+
 	if( hud_textmode->value == 2 )
 	{
 		gEngfuncs.pfnDrawSetTextColor( r / 255.0, g / 255.0, b / 255.0 );
@@ -264,6 +266,8 @@ int CHud::DrawHudString( int xpos, int ypos, int iMaxX, const char *szIt, int r,
 
 int DrawUtfString( int xpos, int ypos, int iMaxX, const char *szIt, int r, int g, int b )
 {
+	HUD_ApplyTextColor( r, g, b );
+
 	if (IsXashFWGS())
 	{
 		// xash3d: reset unicode state
