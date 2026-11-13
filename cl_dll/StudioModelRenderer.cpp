@@ -61,7 +61,7 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	vec3_t traceStart, traceEnd;
 	vec3_t normal, right, forward, center, edge;
 	float mins[3], maxs[3];
-	float bottomZ, height, fade, strength;
+	float height, fade, strength;
 	float radiusX, radiusY, radiusScale;
 	float dot, length, angle;
 	int i;
@@ -99,15 +99,15 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 		VectorCopy( entity->model->maxs, maxs );
 	}
 
-	bottomZ = entity->origin[2] + mins[2];
-
+	// Trace well above and below the entity origin. Model-space bounds are
+	// not reliable foot offsets for every studio model.
 	traceStart[0] = entity->origin[0];
 	traceStart[1] = entity->origin[1];
-	traceStart[2] = entity->origin[2] + maxs[2] + 8.0f;
+	traceStart[2] = entity->origin[2] + 256.0f;
 
 	traceEnd[0] = entity->origin[0];
 	traceEnd[1] = entity->origin[1];
-	traceEnd[2] = bottomZ - 128.0f;
+	traceEnd[2] = entity->origin[2] - 512.0f;
 
 	memset( &trace, 0, sizeof( trace ) );
 
@@ -117,7 +117,7 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	gEngfuncs.pEventAPI->EV_PushPMStates();
 	// Hull 2 is the point hull; hull 0 would offset the hit by the player hull height.
 	gEngfuncs.pEventAPI->EV_SetTraceHull( 2 );
-	gEngfuncs.pEventAPI->EV_PlayerTrace( traceStart, traceEnd, PM_WORLD_ONLY, -1, &trace );
+	gEngfuncs.pEventAPI->EV_PlayerTrace( traceStart, traceEnd, PM_STUDIO_BOX | PM_WORLD_ONLY, -1, &trace );
 	gEngfuncs.pEventAPI->EV_PopPMStates();
 
 	if( trace.fraction >= 1.0f || trace.startsolid || trace.allsolid || trace.inwater )
@@ -136,11 +136,13 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	if( normal[2] < 0.5f )
 		return;
 
-	height = bottomZ - trace.endpos[2];
-	if( height < -8.0f || height > 128.0f )
-		return;
-	if( height < 0.0f )
+	// GoldSrc monster origins are normally at their feet. Using the entity
+	// origin also avoids rejecting shadows when model bounds extend below it.
+	height = entity->origin[2] - trace.endpos[2];
+	if( height < -8.0f )
 		height = 0.0f;
+	if( height > 128.0f )
+		return;
 
 	fade = 1.0f - ( height / 128.0f );
 	strength = cl_blobshadows->value;
@@ -193,7 +195,7 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	tri->Begin( TRI_TRIANGLE_FAN );
 
 	// A black center fading smoothly to a fully transparent edge.
-	tri->Color4f( 0.0f, 0.0f, 0.0f, 0.28f * fade * strength );
+	tri->Color4f( 0.0f, 0.0f, 0.0f, 0.38f * fade * strength );
 	tri->Vertex3fv( center );
 
 	for( i = 0; i <= segments; i++ )
@@ -1788,7 +1790,6 @@ void CStudioModelRenderer::StudioRenderFinal_Software( void )
 			IEngineStudio.StudioDrawPoints();
 		}
 
-		StudioDrawBlobShadow( m_pCurrentEntity );
 	}
 
 	if( m_pCvarDrawEntities->value == 4 )
@@ -1804,6 +1805,11 @@ void CStudioModelRenderer::StudioRenderFinal_Software( void )
 	}
 
 	IEngineStudio.RestoreRenderer();
+
+	// TriAPI vertices are world-space; draw only after the studio renderer
+	// has restored the view transform and render state.
+	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
+		StudioDrawBlobShadow( m_pCurrentEntity );
 }
 
 /*
