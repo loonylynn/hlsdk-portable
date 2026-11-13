@@ -60,6 +60,8 @@ enum teleport_grenade_e
 
 #if !CLIENT_DLL
 
+extern int gmsgShake;
+
 static short g_sTeleportTrailSprite = 0;
 
 static short g_sTeleportPortalGlowSprite = 0;
@@ -108,6 +110,20 @@ static void SendTeleportBeamFollow( int iEntity, const Vector &vecOrigin, int iL
 		WRITE_BYTE( g );
 		WRITE_BYTE( b );
 		WRITE_BYTE( iBrightness );
+	MESSAGE_END();
+}
+
+static void SendTeleportArrivalShake( CBasePlayer *pPlayer )
+{
+	if( !pPlayer )
+		return;
+
+	// Match the stock ScreenShake user-message format, but send it directly
+	// to this player so the arrival shake also works while airborne.
+	MESSAGE_BEGIN( MSG_ONE, gmsgShake, NULL, pPlayer->edict() );
+		WRITE_SHORT( 4 * ( 1 << 12 ) );       // amplitude: 4.0
+		WRITE_SHORT( (int)( 0.25f * ( 1 << 12 ) ) ); // duration: 0.25 seconds
+		WRITE_SHORT( 18 * ( 1 << 8 ) );      // frequency: 18
 	MESSAGE_END();
 }
 
@@ -391,7 +407,7 @@ void CTeleportProjectile::CompletePlayerTravel( CBasePlayer *pPlayer )
 
 	SendTeleportEffect( pPlayer->pev->origin );
 	EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "items/suitchargeok1.wav", 1.0f, ATTN_NORM );
-	UTIL_ScreenShake( pPlayer->pev->origin, 15.0f, 150.0f, 1.0f, 384.0f );
+	SendTeleportArrivalShake( pPlayer );
 
 	SetThink( &CTeleportProjectile::DelayedRemoveThink );
 	pev->nextthink = gpGlobals->time + 0.1f;
@@ -623,7 +639,7 @@ void CTeleportProjectile::TeleportPerformTeleport( void )
 
 	SendTeleportEffect( vecDestination );
 	EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "items/suitchargeok1.wav", 1.0f, ATTN_NORM );
-	UTIL_ScreenShake( vecDestination, 15.0f, 150.0f, 1.0f, 384.0f );
+	SendTeleportArrivalShake( pPlayer );
 
 	MakeProjectileInert();
 	SetThink( &CTeleportProjectile::DelayedRemoveThink );
