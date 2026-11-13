@@ -1730,7 +1730,7 @@ void CUseableGraphic::Spawn( void )
 	// Match the PS2's glow mode. In Xash3D this also disables Z-buffer
 	// checks, so the sprite is not cut up by the target's brush surfaces.
 	pev->rendermode = kRenderGlow;
-	pev->rendercolor = Vector( 255, 160, 0 );
+	pev->rendercolor = Vector( 79, 26, 35 );
 	pev->renderamt = 255;
 	pev->effects = 0;
 	pev->scale = 1.0f;
