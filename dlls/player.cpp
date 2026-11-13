@@ -67,6 +67,20 @@ extern CGraph WorldGraph;
 #define	FLASH_DRAIN_TIME	 1.2f //100 units/3 minutes
 #define	FLASH_CHARGE_TIME	 0.2f // 100 units/20 seconds  (seconds per unit)
 
+// PS2-style usable-object marker. The sprite model is intentionally not assigned
+// yet; the entity and target-selection logic can be tested before the art is ready.
+class CUseableGraphic : public CBaseEntity
+{
+public:
+	void Spawn( void );
+	virtual int ObjectCaps( void )
+	{
+		return ( CBaseEntity::ObjectCaps() & ~FCAP_ACROSS_TRANSITION ) | FCAP_DONT_SAVE;
+	}
+	static CUseableGraphic *Create( CBaseEntity *pTarget );
+};
+LINK_ENTITY_TO_CLASS( useable_graphic, CUseableGraphic );
+
 // Global Savedata for player
 TYPEDESCRIPTION	CBasePlayer::m_playerSaveData[] =
 {
@@ -1702,7 +1716,171 @@ void CBasePlayer::PlayerUse( void )
 	{
 		if( m_afButtonPressed & IN_USE )
 			EMIT_SOUND( ENT( pev ), CHAN_ITEM, "common/wpn_denyselect.wav", 0.4, ATTN_NORM );
+
+}
+
+// Create an invisible marker entity now; its PS2 sprite will be assigned once a
+// compatible PC .spr version of bracket_02 is available.
+void CUseableGraphic::Spawn( void )
+{
+	pev->movetype = MOVETYPE_NONE;
+	pev->solid = SOLID_NOT;
+	pev->rendermode = kRenderGlow;
+	pev->rendercolor = Vector( 255, 160, 0 );
+	pev->renderamt = 255;
+	pev->effects = 0;
+	pev->scale = 1.0f;
+}
+
+CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget )
+{
+	if( !pTarget )
+		return NULL;
+
+	CUseableGraphic *pGraphic = GetClassPtr( (CUseableGraphic *)NULL );
+	if( !pGraphic )
+		return NULL;
+
+	pGraphic->Spawn();
+	pGraphic->pev->classname = MAKE_STRING( "useable_graphic" );
+
+	Vector vecOrigin = pTarget->pev->origin;
+	BOOL fBModel = pTarget->IsBSPModel();
+
+	if( !fBModel )
+	{
+		const char *pszModel = STRING( pTarget->pev->model );
+		if( pszModel && pszModel[0] == '*' )
+			fBModel = TRUE;
 	}
+
+	if( fBModel )
+		vecOrigin = VecBModelOrigin( pTarget->pev );
+
+	float flScaleZ = fabs( ( pTarget->pev->absmax.z - pTarget->pev->absmin.z ) * 0.5f );
+	float flScaleX = fabs( ( pTarget->pev->absmax.x - pTarget->pev->absmin.x ) * 0.5f );
+	float flScaleY = fabs( ( pTarget->pev->absmax.y - pTarget->pev->absmin.y ) * 0.5f );
+
+	pGraphic->pev->scale = Q_max( flScaleZ, Q_max( flScaleX, flScaleY ) );
+	if( pGraphic->pev->scale > 32.0f )
+		pGraphic->pev->scale = 32.0f;
+
+	// Keep the same placement corrections used by the PS2 port.
+	const char *pszClassname = STRING( pTarget->pev->classname );
+	if( pszClassname && !strcmp( pszClassname, "item_eyescanner" ) )
+	{
+		UTIL_MakeVectors( pTarget->pev->angles );
+		vecOrigin = vecOrigin + gpGlobals->v_right * -2.3f;
+		vecOrigin.z += 45.0f;
+		pGraphic->pev->scale *= 0.5f;
+	}
+	else if( pszClassname &&
+		( !strcmp( pszClassname, "item_healthcharger" ) ||
+		  !strcmp( pszClassname, "item_recharge" ) ) )
+	{
+		vecOrigin.z += 15.0f;
+	}
+	else if( pszClassname && !strcmp( pszClassname, "func_tankcontrols" ) )
+	{
+		pGraphic->pev->scale *= 0.25f;
+	}
+
+	pGraphic->pev->origin = vecOrigin;
+	UTIL_SetOrigin( pGraphic->pev, vecOrigin );
+	return pGraphic;
+}
+
+void CBasePlayer::ClearUseableHighlight( void )
+{
+	if( m_hUseableHighlight.Get() )
+		UTIL_Remove( m_hUseableHighlight );
+
+	m_hUseableHighlight = NULL;
+	m_hLastUseableItem = NULL;
+}
+
+void CBasePlayer::HighlightUseable( CBaseEntity *pObject )
+{
+	if( !pObject )
+	{
+		ClearUseableHighlight();
+		return;
+	}
+
+	if( (CBaseEntity *)m_hLastUseableItem == pObject && m_hUseableHighlight.Get() )
+		return;
+
+	ClearUseableHighlight();
+	m_hUseableHighlight = CUseableGraphic::Create( pObject );
+	if( m_hUseableHighlight.Get() )
+		m_hLastUseableItem = pObject;
+}
+
+// Find the nearest usable object in the player's forward view cone.
+// This mirrors the PS2 scan, including its 0.2 second update interval.
+void CBasePlayer::UpdateUseableHighlight( void )
+{
+	if( g_pGameRules->IsMultiplayer() )
+	{
+		// Server-side marker entities are visible to every PC client. Until the
+		// client-specific PS2 renderfx behavior is ported, keep this single-player.
+		ClearUseableHighlight();
+		return;
+	}
+
+	if( gpGlobals->time < m_flNextUseableCheck )
+		return;
+
+	m_flNextUseableCheck = gpGlobals->time + 0.2f;
+	UTIL_MakeVectors( pev->v_angle );
+
+	CBaseEntity *pObject = NULL;
+	CBaseEntity *pClosest = NULL;
+	Vector vecLOS;
+	float flMaxDot = VIEW_FIELD_NARROW;
+	float flDot;
+
+	while( ( pObject = UTIL_FindEntityInSphere( pObject, pev->origin, PLAYER_SEARCH_RADIUS ) ) != NULL )
+	{
+		if( !( pObject->ObjectCaps() & ( FCAP_IMPULSE_USE | FCAP_CONTINUOUS_USE | FCAP_ONOFF_USE ) ) )
+			continue;
+
+		if( pObject->IsPlayer() || pObject->MyMonsterPointer() )
+			continue;
+
+		const char *pszClassname = STRING( pObject->pev->classname );
+		if( ( pszClassname && !strcmp( pszClassname, "func_pushable" ) ) ||
+			( pObject->pev->spawnflags & 0x200 ) )
+			continue;
+
+		Vector vecOrigin = pObject->pev->origin;
+		BOOL fBModel = pObject->IsBSPModel();
+
+		if( !fBModel )
+		{
+			const char *pszModel = STRING( pObject->pev->model );
+			if( pszModel && pszModel[0] == '*' )
+				fBModel = TRUE;
+		}
+
+		if( fBModel )
+			vecOrigin = VecBModelOrigin( pObject->pev );
+
+		vecLOS = vecOrigin - ( pev->origin + pev->view_ofs );
+		vecLOS = UTIL_ClampVectorToBox( vecLOS, pObject->pev->size * 0.5f );
+		flDot = DotProduct( vecLOS, gpGlobals->v_forward );
+
+		if( flDot > flMaxDot )
+		{
+			pClosest = pObject;
+			flMaxDot = flDot;
+		}
+	}
+
+	if( pClosest )
+		HighlightUseable( pClosest );
+	else
+		ClearUseableHighlight();
 }
 
 void CBasePlayer::Jump()
@@ -1959,7 +2137,10 @@ void CBasePlayer::PreThink( void )
 	g_pGameRules->PlayerThink( this );
 
 	if( g_fGameOver )
+	{
+		ClearUseableHighlight();
 		return;         // intermission or finale
+	}
 
 	UTIL_MakeVectors( pev->v_angle );             // is this still used?
 
@@ -1982,6 +2163,7 @@ void CBasePlayer::PreThink( void )
 	// Observer Button Handling
 	if( IsObserver() )
 	{
+		ClearUseableHighlight();
 		Observer_HandleButtons();
 		Observer_CheckTarget();
 		Observer_CheckProperties();
@@ -1991,6 +2173,7 @@ void CBasePlayer::PreThink( void )
 
 	if( pev->deadflag >= DEAD_DYING )
 	{
+		ClearUseableHighlight();
 		PlayerDeathThink();
 		return;
 	}
@@ -2116,6 +2299,12 @@ void CBasePlayer::PreThink( void )
 	{
 		pev->velocity = g_vecZero;
 	}
+
+	// PS2-style focus marker: do not create shared markers for remote clients.
+	if( !( pev->flags & FL_FAKECLIENT ) )
+		UpdateUseableHighlight();
+	else
+		ClearUseableHighlight();
 }
 /* Time based Damage works as follows: 
 	1) There are several types of timebased damage:
@@ -3014,6 +3203,8 @@ void CBasePlayer::Spawn( void )
 	m_iClientFOV = -1; // make sure fov reset is sent
 
 	m_flNextDecalTime = 0;// let this player decal as soon as he spawns.
+	m_flNextUseableCheck = gpGlobals->time;
+	ClearUseableHighlight();
 
 	m_flgeigerDelay = gpGlobals->time + 2.0f;	// wait a few seconds until user-defined message registrations
 							// are recieved by all clients
