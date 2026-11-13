@@ -50,19 +50,45 @@ inline struct cvar_s *CVAR_CREATE( const char *cv, const char *val, const int fl
 #define SPR_Frames ( *gEngfuncs.pfnSPR_Frames )
 #define SPR_GetList ( *gEngfuncs.pfnSPR_GetList )
 
-// SPR_Draw  draws a the current sprite as solid
-#define SPR_Draw ( *gEngfuncs.pfnSPR_Draw )
-// SPR_DrawHoles  draws the current sprites, with color index255 not drawn (transparent)
-#define SPR_DrawHoles ( *gEngfuncs.pfnSPR_DrawHoles )
-// SPR_DrawAdditive  adds the sprites RGB values to the background  (additive transulency)
-#define SPR_DrawAdditive ( *gEngfuncs.pfnSPR_DrawAdditive )
+// HUD-only overscan helpers. They move draw coordinates inward from screen edges.
+int HUD_AdjustX( int x );
+int HUD_AdjustY( int y );
+int HUD_AdjustScissorWidth( int x, int width );
+int HUD_AdjustScissorHeight( int y, int height );
 
-// SPR_EnableScissor  sets a clipping rect for HUD sprites. (0,0) is the top-left hand corner of the screen.
-#define SPR_EnableScissor ( *gEngfuncs.pfnSPR_EnableScissor )
-// SPR_DisableScissor  disables the clipping rect
+inline void HUD_SPR_Draw( int frame, int x, int y, const wrect_t *prc )
+{
+	gEngfuncs.pfnSPR_Draw( frame, HUD_AdjustX( x ), HUD_AdjustY( y ), prc );
+}
+inline void HUD_SPR_DrawHoles( int frame, int x, int y, const wrect_t *prc )
+{
+	gEngfuncs.pfnSPR_DrawHoles( frame, HUD_AdjustX( x ), HUD_AdjustY( y ), prc );
+}
+inline void HUD_SPR_DrawAdditive( int frame, int x, int y, const wrect_t *prc )
+{
+	gEngfuncs.pfnSPR_DrawAdditive( frame, HUD_AdjustX( x ), HUD_AdjustY( y ), prc );
+}
+inline void HUD_SPR_EnableScissor( int x, int y, int width, int height )
+{
+	gEngfuncs.pfnSPR_EnableScissor( HUD_AdjustX( x ), HUD_AdjustY( y ),
+		HUD_AdjustScissorWidth( x, width ), HUD_AdjustScissorHeight( y, height ) );
+}
+inline void HUD_FillRGBA( int x, int y, int width, int height, int r, int g, int b, int a )
+{
+	gEngfuncs.pfnFillRGBA( HUD_AdjustX( x ), HUD_AdjustY( y ), width, height, r, g, b, a );
+}
+inline void HUD_FillRGBABlend( int x, int y, int width, int height, int r, int g, int b, int a )
+{
+	gEngfuncs.pfnFillRGBABlend( HUD_AdjustX( x ), HUD_AdjustY( y ), width, height, r, g, b, a );
+}
+
+#define SPR_Draw HUD_SPR_Draw
+#define SPR_DrawHoles HUD_SPR_DrawHoles
+#define SPR_DrawAdditive HUD_SPR_DrawAdditive
+#define SPR_EnableScissor HUD_SPR_EnableScissor
 #define SPR_DisableScissor ( *gEngfuncs.pfnSPR_DisableScissor )
-//
-#define FillRGBA ( *gEngfuncs.pfnFillRGBA )
+#define FillRGBA HUD_FillRGBA
+#define FillRGBABlend HUD_FillRGBABlend
 
 // ScreenHeight returns the height of the screen, in pixels
 #define ScreenHeight ( gHUD.m_scrinfo.iHeight )
@@ -105,7 +131,7 @@ inline client_textmessage_t *TextMessageGet( const char *pName )
 
 inline int TextMessageDrawChar( int x, int y, int number, int r, int g, int b ) 
 {
-	return gEngfuncs.pfnDrawCharacter( x, y, number, r, g, b ); 
+	return gEngfuncs.pfnDrawCharacter( HUD_AdjustX( x ), HUD_AdjustY( y ), number, r, g, b ); 
 }
 
 inline int DrawConsoleString( int x, int y, const char *string )
@@ -113,7 +139,7 @@ inline int DrawConsoleString( int x, int y, const char *string )
 	if( hud_textmode->value == 1 )
 		return gHUD.DrawHudString( x, y, 9999, (char*)string, (int)( (float)g_hud_text_color[0] * 255.0f ),
 			(int)( (float)g_hud_text_color[1] * 255.0f ), (int)( (float)g_hud_text_color[2] * 255.0f ) );
-	return gEngfuncs.pfnDrawConsoleString( x, y, (char*) string );
+	return gEngfuncs.pfnDrawConsoleString( HUD_AdjustX( x ), HUD_AdjustY( y ), (char*) string );
 }
 
 inline void GetConsoleStringSize( const char *string, int *width, int *height )
