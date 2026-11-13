@@ -1130,6 +1130,37 @@ PM_WalkMove
 Only used by players.  Moves along the ground when player is a MOVETYPE_WALK.
 ======================
 */
+/*
+==================
+PM_StayOnGround
+
+Keeps the player attached to walkable slopes when Source-style
+ground movement advances over small changes in floor height.
+==================
+*/
+void PM_StayOnGround( void )
+{
+	vec3_t start, end;
+	pmtrace_t trace;
+
+	VectorCopy( pmove->origin, start );
+	VectorCopy( pmove->origin, end );
+	start[2] += 2.0f;
+	end[2] -= pmove->movevars->stepsize;
+
+	trace = pmove->PM_PlayerTrace( pmove->origin, start, PM_NORMAL, -1 );
+	VectorCopy( trace.endpos, start );
+
+	trace = pmove->PM_PlayerTrace( start, end, PM_NORMAL, -1 );
+	if( trace.fraction > 0.0f && trace.fraction < 1.0f &&
+		!trace.startsolid && trace.plane.normal[2] >= 0.7f )
+	{
+		float delta = fabs( pmove->origin[2] - trace.endpos[2] );
+		if( delta > 0.5f )
+			VectorCopy( trace.endpos, pmove->origin );
+	}
+}
+
 void PM_WalkMove( void )
 {
 	//int clip;
@@ -1212,6 +1243,7 @@ void PM_WalkMove( void )
 	if( trace.fraction == 1 )
 	{
 		VectorCopy( trace.endpos, pmove->origin );
+		PM_StayOnGround();
 		return;
 	}
 
@@ -1291,6 +1323,8 @@ usedown:
 		VectorCopy( downvel, pmove->velocity );
 	} else // copy z value from slide move
 		pmove->velocity[2] = downvel[2];
+
+	PM_StayOnGround();
 }
 
 /*
@@ -1329,30 +1363,13 @@ void PM_Friction( void )
 	// apply ground friction
 	if( pmove->onground != -1 )  // On an entity that is the ground
 	{
-		vec3_t start, stop;
-		pmtrace_t trace;
+		// Source uses the ground surface friction directly. GoldSrc's
+		// edge-friction probe adds an extra slowdown near ledges that
+		// Half-Life 2 does not apply.
+		friction = pmove->movevars->friction * pmove->friction;
 
-		start[0] = stop[0] = pmove->origin[0] + vel[0] / speed * 16;
-		start[1] = stop[1] = pmove->origin[1] + vel[1] / speed * 16;
-		start[2] = pmove->origin[2] + pmove->player_mins[pmove->usehull][2];
-		stop[2] = start[2] - 34;
-
-		trace = pmove->PM_PlayerTrace( start, stop, PM_NORMAL, -1 );
-
-		if( trace.fraction == 1.0f )
-			friction = pmove->movevars->friction*pmove->movevars->edgefriction;
-		else
-			friction = pmove->movevars->friction;
-		
-		// Grab friction value.
-		//friction = pmove->movevars->friction;      
-
-		friction *= pmove->friction;  // player friction?
-
-		// Bleed off some speed, but if we have less than the bleed
-		//  threshhold, bleed the theshold amount.
+		// Bleed off some speed, using stopspeed as the low-speed control.
 		control = ( speed < pmove->movevars->stopspeed ) ? pmove->movevars->stopspeed : speed;
-		// Add the amount to t'he drop amount.
 		drop += control * friction * pmove->frametime;
 	}
 
@@ -2506,31 +2523,6 @@ void PM_NoClip( void )
 //  running PM_AirMove, which doesn't crop velocity to maxspeed like the ground / other
 //  movement logic does.
 //-----------------------------------------------------------------------------
-void PM_PreventMegaBunnyJumping( void )
-{
-	// Current player speed
-	float spd;
-	// If we have to crop, apply this cropping fraction to velocity
-	float fraction;
-	// Speed at which bunny jumping is limited
-	float maxscaledspeed;
-
-	maxscaledspeed = BUNNYJUMP_MAX_SPEED_FACTOR * pmove->maxspeed;
-
-	// Don't divide by zero
-	if( maxscaledspeed <= 0.0f )
-		return;
-
-	spd = Length( pmove->velocity );
-
-	if( spd <= maxscaledspeed )
-		return;
-
-	fraction = ( maxscaledspeed / spd ) * 0.65f; //Returns the modifier for the velocity
-	
-	VectorScale( pmove->velocity, fraction, pmove->velocity ); //Crop it down!.
-}
-
 /*
 =============
 PM_Jump
@@ -2539,11 +2531,18 @@ PM_Jump
 void PM_Jump( void )
 {
 	int i;
-	qboolean bunnyjump = false;
-
 	qboolean tfc = false;
-
 	qboolean cansuperjump = false;
+	qboolean didlongjump = false;
+	float ent_gravity;
+	float jump_gravity;
+	float jump_velocity;
+
+	ent_gravity = pmove->gravity ? pmove->gravity : 1.0f;
+	jump_gravity = ent_gravity * pmove->movevars->gravity;
+	if( jump_gravity < 0.0f )
+		jump_gravity = 0.0f;
+	jump_velocity = sqrt( 2.0f * jump_gravity * 21.0f );
 
 	if( pmove->dead )
 	{
@@ -2624,12 +2623,6 @@ void PM_Jump( void )
 	// In the air now.
 	pmove->onground = -1;
 
-	if( pmove->multiplayer )
-		bunnyjump = atoi( pmove->PM_Info_ValueForKey( pmove->physinfo, "bj" ) ) ? true : false;
-
-	if( !bunnyjump )
-		PM_PreventMegaBunnyJumping();
-
 	// Don't play jump sounds while frozen.
 	if( !( pmove->flags & FL_FROZEN ))
 	{
@@ -2656,8 +2649,9 @@ void PM_Jump( void )
 			Length( pmove->velocity ) > 50 )
 		{
 			pmove->punchangle[0] = -5;
+			didlongjump = true;
 
-			for( i = 0; i < 2; i++ )
+			for( i = 0; i < 2; i++
 			{
 				pmove->velocity[i] = pmove->forward[i] * PLAYER_LONGJUMP_SPEED * 1.6f;
 			}
@@ -2666,12 +2660,40 @@ void PM_Jump( void )
 		}
 		else
 		{
-			pmove->velocity[2] = sqrt( 2.0f * 800.0f * 45.0f );
+			pmove->velocity[2] = jump_velocity;
 		}
 	}
 	else
 	{
-		pmove->velocity[2] = sqrt( 2.0f * 800.0f * 45.0f );
+		pmove->velocity[2] = jump_velocity;
+	}
+
+	// HL2 single-player jump boost. It preserves the direction of the
+	// input and caps the bonus so repeated jumps cannot accumulate speed.
+	if( !didlongjump )
+	{
+		vec3_t forward;
+		float boost_percent;
+		float speed_addition;
+		float max_speed;
+		float current_speed;
+
+		boost_percent = ( pmove->flags & FL_DUCKING ) ? 0.1f : 0.5f;
+		speed_addition = fabs( pmove->cmd.forwardmove * boost_percent );
+		max_speed = pmove->maxspeed * ( 1.0f + boost_percent );
+		current_speed = sqrt( pmove->velocity[0] * pmove->velocity[0] +
+			pmove->velocity[1] * pmove->velocity[1] );
+
+		if( speed_addition + current_speed > max_speed )
+			speed_addition -= ( speed_addition + current_speed ) - max_speed;
+
+		if( pmove->cmd.forwardmove < 0.0f )
+			speed_addition *= -1.0f;
+
+		VectorCopy( pmove->forward, forward );
+		forward[2] = 0.0f;
+		VectorNormalize( forward );
+		VectorMA( pmove->velocity, speed_addition, forward, pmove->velocity );
 	}
 
 	// Decay it for simulation
