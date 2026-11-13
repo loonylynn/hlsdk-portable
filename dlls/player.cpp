@@ -1797,6 +1797,17 @@ CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget )
 
 void CBasePlayer::ClearUseableHighlight( void )
 {
+	CBaseEntity *pLastObject = m_hLastUseableItem.Get();
+	if( pLastObject )
+	{
+		const char *pszClassname = STRING( pLastObject->pev->classname );
+		if( !pszClassname || !pszClassname[0] )
+			pszClassname = "<unnamed>";
+
+		ALERT( at_console, "[PS2 usable] Focus lost: %s (entity %d)\n",
+			pszClassname, pLastObject->entindex() );
+	}
+
 	if( m_hUseableHighlight.Get() )
 		UTIL_Remove( m_hUseableHighlight );
 
@@ -1818,7 +1829,15 @@ void CBasePlayer::HighlightUseable( CBaseEntity *pObject )
 	ClearUseableHighlight();
 	m_hUseableHighlight = CUseableGraphic::Create( pObject );
 	if( m_hUseableHighlight.Get() )
+	{
+		const char *pszClassname = STRING( pObject->pev->classname );
+		if( !pszClassname || !pszClassname[0] )
+			pszClassname = "<unnamed>";
+
 		m_hLastUseableItem = pObject;
+		ALERT( at_console, "[PS2 usable] Focus acquired: %s (entity %d)\n",
+			pszClassname, pObject->entindex() );
+	}
 }
 
 // Find the nearest usable object in the player's forward view cone.
