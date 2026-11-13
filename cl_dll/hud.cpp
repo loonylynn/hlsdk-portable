@@ -88,35 +88,39 @@ static CHLVoiceStatusHelper g_VoiceStatusHelper;
 cvar_t *hud_textmode;
 float g_hud_text_color[3];
 
-// HUD-only overscan compensation. Values are a fraction of each screen dimension.
+// HUD-only overscan compensation. Cache the transform once per HUD redraw.
 static cvar_t *hud_overscan = NULL;
+static float g_hudOverscanScale = 1.0f;
+static bool g_hudOverscanEnabled = false;
 
-static float HUD_GetOverscanFraction( void )
+void HUD_UpdateOverscan( void )
 {
 	float value = hud_overscan ? hud_overscan->value : 0.0f;
-	if( value < 0.0f ) value = 0.0f;
-	if( value > 0.10f ) value = 0.10f;
-	return value;
+	if( value < 0.0f )
+		value = 0.0f;
+	else if( value > 0.10f )
+		value = 0.10f;
+
+	g_hudOverscanEnabled = ( value > 0.0f );
+	g_hudOverscanScale = g_hudOverscanEnabled ? ( 1.0f - 2.0f * value ) : 1.0f;
 }
 
 int HUD_AdjustX( int x )
 {
 	int width = gHUD.m_scrinfo.iWidth;
-	if( width <= 0 || x < 0 || x > width )
+	if( !g_hudOverscanEnabled || width <= 0 || x < 0 || x > width )
 		return x;
 
-	float scale = 1.0f - 2.0f * HUD_GetOverscanFraction();
-	return (int)( (float)width * 0.5f + ( (float)x - (float)width * 0.5f ) * scale + 0.5f );
+	return (int)( (float)width * 0.5f + ( (float)x - (float)width * 0.5f ) * g_hudOverscanScale + 0.5f );
 }
 
 int HUD_AdjustY( int y )
 {
 	int height = gHUD.m_scrinfo.iHeight;
-	if( height <= 0 || y < 0 || y > height )
+	if( !g_hudOverscanEnabled || height <= 0 || y < 0 || y > height )
 		return y;
 
-	float scale = 1.0f - 2.0f * HUD_GetOverscanFraction();
-	return (int)( (float)height * 0.5f + ( (float)y - (float)height * 0.5f ) * scale + 0.5f );
+	return (int)( (float)height * 0.5f + ( (float)y - (float)height * 0.5f ) * g_hudOverscanScale + 0.5f );
 }
 
 int HUD_AdjustWidth( int x, int width )
