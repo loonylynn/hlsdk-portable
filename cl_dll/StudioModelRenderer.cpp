@@ -42,7 +42,6 @@ static int g_BlobShadowStudioEntity = -1;
 static cvar_t *cl_blobshadows = NULL;
 static cvar_t *cl_blobshadows_opacity = NULL;
 static model_t *cl_blobshadow_sprite = NULL;
-static int cl_blobshadow_texture = 0;
 
 // Minimal Xash sprite metadata mirrors. We temporarily substitute the frame's
 // texture index so TriAPI can bind our generated alpha-mask texture.
@@ -94,15 +93,11 @@ static int StudioGetBlobShadowTexture( void )
 		!gXashRenderAPI->GL_CreateTexture )
 		return 0;
 
-	if( cl_blobshadow_texture > 0 )
-		return cl_blobshadow_texture;
-
+	// Texture indices belong to the active renderer resource table and can
+	// change when a map tears down/reloads resources. Always resolve by name.
 	texture = gXashRenderAPI->GL_FindTexture( textureName );
 	if( texture > 0 )
-	{
-		cl_blobshadow_texture = texture;
 		return texture;
-	}
 
 	if( !pixelsBuilt )
 	{
@@ -137,9 +132,6 @@ static int StudioGetBlobShadowTexture( void )
 	texture = gXashRenderAPI->GL_CreateTexture(
 		textureName, 64, 64, pixels, ( 1 << 11 ) | ( 1 << 12 ) | ( 1 << 16 )
 	);
-
-	if( texture > 0 )
-		cl_blobshadow_texture = texture;
 
 	return texture;
 }
@@ -245,10 +237,12 @@ static void StudioDrawBlobShadow( cl_entity_t *entity, const vec3_t modelOrigin 
 		!IEngineStudio.Mod_ForName )
 		return;
 
-	if( !cl_blobshadow_sprite )
-		cl_blobshadow_sprite = IEngineStudio.Mod_ForName( "sprites/glow01.spr", false );
+	// Mod_ForName resolves the current model-cache entry. Do not retain a
+	// model_t pointer across level changes, when the previous cache can be freed.
+	cl_blobshadow_sprite = IEngineStudio.Mod_ForName( "sprites/glow01.spr", false );
 
-	if( !cl_blobshadow_sprite || !cl_blobshadow_sprite->cache.data || !tri->SpriteTexture )
+	if( !cl_blobshadow_sprite || cl_blobshadow_sprite->type != mod_sprite ||
+		!cl_blobshadow_sprite->cache.data || !tri->SpriteTexture )
 		return;
 
 	// Build a real alpha-mask texture; the stock glow sprite has a black
