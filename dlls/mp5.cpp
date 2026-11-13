@@ -98,6 +98,7 @@ void CMP5::Precache( void )
 	PRECACHE_SOUND( "weapons/hks3.wav" );// H to the K
 
 	PRECACHE_SOUND( "weapons/357_cock1.wav" );
+	PRECACHE_SOUND( "weapons/tp_launcher.wav" );
 
 	m_usMP5 = PRECACHE_EVENT( 1, "events/mp5.sc" );
 	m_usMP52 = PRECACHE_EVENT( 1, "events/mp52.sc" );
@@ -197,6 +198,8 @@ void CMP5::TeleportAttack( void )
 	m_iTeleportProjectileActive = TRUE;
 	m_flNextTeleportAttack = flTime + MP5_TELEPORT_RECHARGE;
 	m_flNextTeleportRevoke = flTime + MP5_TELEPORT_REVOKE_TIME;
+
+	EMIT_SOUND( ENT( m_pPlayer->pev ), CHAN_WEAPON, "weapons/tp_launcher.wav", 1.0f, ATTN_NORM );
 
 	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
 	// This is server-authoritative (not locally predicted), so do not skip the owner.
