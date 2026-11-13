@@ -45,12 +45,12 @@ StudioDrawBlobShadow
 
 Adapt Quake III's cg_shadows 1 path:
 - trace down 128 units from the entity's feet;
-- approximate its 30 x 30 x 2 box trace with five point traces;
-- use 1 - trace.fraction for the mark opacity;
-- orient a 24-unit impact mark to the entity yaw and floor plane.
+- approximate the 30 x 30 x 2 box trace with a 3 x 3 point grid;
+- use 1 - trace.fraction for mark opacity;
+- clip the 48-unit radial mark against nearby BSP faces via Xash RenderAPI.
 
-GoldSrc exposes only fixed point/player hulls through the client trace API,
-so the five point samples approximate Quake III's small box trace.
+The radial mark does not need yaw rotation. GoldSrc exposes only fixed
+point/player trace hulls here, so the 3 x 3 grid approximates Q3's box trace.
 ====================
 */
 static void StudioDrawBlobShadow( cl_entity_t *entity )
