@@ -92,7 +92,7 @@ extern "C" int DLLEXPORT HUD_GetRenderInterface( int version, void *renderfuncs,
 	if( gEngfuncs.Con_Printf )
 	{
 		gEngfuncs.Con_Printf(
-			"[Render API probe] Engine requested interface version: %d\\n",
+			"[Render API probe] Engine requested interface version: %d\n",
 			version
 		);
 	}
