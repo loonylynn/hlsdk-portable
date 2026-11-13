@@ -70,7 +70,6 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	float alpha, strength, radius;
 	float dot, length, yaw, c, s, bestFraction;
 	int i;
-	model_t *shadowSprite;
 	triangleapi_t *tri = gEngfuncs.pTriAPI;
 
 	if( !cl_blobshadows || cl_blobshadows->value <= 0.0f )
@@ -195,7 +194,7 @@ static void StudioDrawBlobShadow( cl_entity_t *entity )
 	cross[1] = normal[2] * right[0] - normal[0] * right[2];
 	cross[2] = normal[0] * right[1] - normal[1] * right[0];
 
-	yaw = entity->angles[1] * (float)( M_PI / 180.0 );
+	yaw = entity->angles[1] * ( M_PI_F / 180.0f );
 	c = cosf( yaw );
 	s = sinf( yaw );
 
