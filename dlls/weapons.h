@@ -575,18 +575,18 @@ public:
 	BOOL Deploy( void );
 	void Reload( void );
 	void WeaponIdle( void );
-	void ItemPostFrame( void );
 #if !CLIENT_DLL
+	void ItemPostFrame( void );
 	void TeleportAttack( void );
 	void OnTeleportProjectileFinished( void );
-#endif
-	float m_flNextAnimTime;
-	int m_iShell;
 
 	// Server-authoritative tertiary fire state for the middle-mouse teleport frag.
 	int m_iTeleportProjectileActive;
 	float m_flNextTeleportAttack;
 	float m_flNextTeleportRevoke;
+#endif
+	float m_flNextAnimTime;
+	int m_iShell;
 
 	virtual BOOL UseDecrement( void )
 	{ 
