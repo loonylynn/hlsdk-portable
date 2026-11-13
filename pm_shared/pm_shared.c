@@ -2515,7 +2515,6 @@ void PM_NoClip( void )
 }
 
 // Only allow bunny jumping up to 1.7x server / player maxspeed setting
-#define BUNNYJUMP_MAX_SPEED_FACTOR 1.7f
 
 //-----------------------------------------------------------------------------
 // Purpose: Corrects bunny jumping ( where player initiates a bunny jump before other
@@ -2670,7 +2669,7 @@ void PM_Jump( void )
 
 	// HL2 single-player jump boost. It preserves the direction of the
 	// input and caps the bonus so repeated jumps cannot accumulate speed.
-	if( !didlongjump )
+	if( !pmove->multiplayer && !didlongjump )
 	{
 		vec3_t forward;
 		float boost_percent;
