@@ -1870,8 +1870,8 @@ void CBasePlayer::HighlightUseable( CBaseEntity *pObject )
 		m_hLastUseableItem = pObject;
 }
 
-// Find the nearest usable object in the player's forward view cone.
-// This mirrors the PS2 scan, including its 0.2 second update interval.
+// Follow the PS2's 0.2-second forward-cone usable scan.
+// The extra visibility trace is a PC/Xash improvement to reject targets behind walls.
 void CBasePlayer::UpdateUseableHighlight( void )
 {
 	if( g_pGameRules->IsMultiplayer() )
