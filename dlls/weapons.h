@@ -576,13 +576,7 @@ public:
 	BOOL Deploy( void );
 	void Reload( void );
 	void WeaponIdle( void );
-	void ItemPostFrame( void );
-#if !CLIENT_DLL
-	void TeleportAttack( void );
-
-	// Server-authoritative recharge timer; teleport ammunition is unlimited.
-	float m_flNextTeleportAttack;
-#endif
+	void SecondaryAttack( void );
 	float m_flNextAnimTime;
 	int m_iShell;
 
