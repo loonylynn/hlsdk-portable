@@ -1752,18 +1752,6 @@ void CUseableGraphic::UpdateBrackets( CBaseEntity *pTarget, CBasePlayer *pPlayer
 	if( fBModel )
 		vecOrigin = VecBModelOrigin( pTarget->pev );
 
-	float flScaleZ = fabs( ( pTarget->pev->absmax.z - pTarget->pev->absmin.z ) * 0.5f );
-	float flScaleX = fabs( ( pTarget->pev->absmax.x - pTarget->pev->absmin.x ) * 0.5f );
-	float flScaleY = fabs( ( pTarget->pev->absmax.y - pTarget->pev->absmin.y ) * 0.5f );
-
-	float flObjectRadius = flScaleZ;
-	if( flObjectRadius < flScaleX )
-		flObjectRadius = flScaleX;
-	if( flObjectRadius < flScaleY )
-		flObjectRadius = flScaleY;
-	if( flObjectRadius > 32.0f )
-		flObjectRadius = 32.0f;
-
 	// Retain the positioning adjustments from the PS2 implementation.
 	const char *pszClassname = STRING( pTarget->pev->classname );
 	if( pszClassname && !strcmp( pszClassname, "item_eyescanner" ) )
@@ -1771,7 +1759,6 @@ void CUseableGraphic::UpdateBrackets( CBaseEntity *pTarget, CBasePlayer *pPlayer
 		UTIL_MakeVectors( pTarget->pev->angles );
 		vecOrigin = vecOrigin + gpGlobals->v_right * -2.3f;
 		vecOrigin.z += 45.0f;
-		flObjectRadius *= 0.5f;
 	}
 	else if( pszClassname &&
 		( !strcmp( pszClassname, "item_healthcharger" ) ||
@@ -1779,24 +1766,41 @@ void CUseableGraphic::UpdateBrackets( CBaseEntity *pTarget, CBasePlayer *pPlayer
 	{
 		vecOrigin.z += 15.0f;
 	}
-	else if( pszClassname && !strcmp( pszClassname, "func_tankcontrols" ) )
+
+	// Place the marker on the player-facing side of the object instead of
+	// inside its origin. This keeps the sprite from being buried in brush models.
+	Vector vecEye = pPlayer->pev->origin + pPlayer->pev->view_ofs;
+	Vector vecToTarget = vecOrigin - vecEye;
+	float flDistance = vecToTarget.Length();
+
+	if( flDistance > 0.01f )
 	{
-		flObjectRadius *= 0.25f;
+		Vector vecDirection = vecToTarget / flDistance;
+		TraceResult tr;
+		UTIL_TraceLine( vecEye, vecOrigin, dont_ignore_monsters, pPlayer->edict(), &tr );
+
+		// If world geometry or another entity blocks the view, hide the marker.
+		if( tr.fStartSolid || ( tr.flFraction < 1.0f && tr.pHit != pTarget->edict() ) )
+		{
+			pev->effects |= EF_NODRAW;
+			return;
+		}
+
+		// If the trace hits the usable entity, use its visible front surface.
+		// For non-solid usable entities, keep the marker just in front of its origin.
+		if( tr.pHit == pTarget->edict() )
+			vecOrigin = tr.vecEndPos - vecDirection * 3.0f;
+		else
+			vecOrigin -= vecDirection * 3.0f;
 	}
 
+	pev->effects &= ~EF_NODRAW;
 	pev->origin = vecOrigin;
 	UTIL_SetOrigin( pev, vecOrigin );
 
-	// Size the single 32x32 bracket sprite to the target's bounds.
-	float flRadius = flObjectRadius + 4.0f;
-	if( flRadius < 10.0f )
-		flRadius = 10.0f;
-	if( flRadius > 36.0f )
-		flRadius = 36.0f;
-
-	pev->scale = flRadius / 16.0f;
+	// Keep one consistent world-space size for every usable object.
+	pev->scale = 1.0f;
 }
-
 CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget, CBasePlayer *pPlayer )
 {
 	if( !pTarget || !pPlayer )
@@ -1897,12 +1901,21 @@ void CBasePlayer::UpdateUseableHighlight( void )
 		if( fBModel )
 			vecOrigin = VecBModelOrigin( pObject->pev );
 
-		vecLOS = vecOrigin - ( pev->origin + pev->view_ofs );
+		Vector vecEye = pev->origin + pev->view_ofs;
+		vecLOS = vecOrigin - vecEye;
 		vecLOS = UTIL_ClampVectorToBox( vecLOS, pObject->pev->size * 0.5f );
 		flDot = DotProduct( vecLOS, gpGlobals->v_forward );
 
 		if( flDot > flMaxDot )
 		{
+			// Do not select usable objects hidden behind world brushes or
+			// another solid entity.
+			TraceResult tr;
+			UTIL_TraceLine( vecEye, vecEye + vecLOS, dont_ignore_monsters, edict(), &tr );
+
+			if( tr.fStartSolid || ( tr.flFraction < 1.0f && tr.pHit != pObject->edict() ) )
+				continue;
+
 			pClosest = pObject;
 			flMaxDot = flDot;
 		}
