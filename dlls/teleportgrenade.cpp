@@ -68,34 +68,6 @@ static short g_sTeleportTrailSprite = 0;
 static short g_sTeleportPortalExitSprite = 0;
 static short g_sTeleportPortalLightningSprite = 0;
 
-static void SendTeleportPortalRing( const Vector &vecOrigin, int iRadius, int iLife, int iWidth, int iNoise, int r, int g, int b, int iBrightness )
-{
-	if( g_sTeleportTrailSprite <= 0 )
-		return;
-
-	MESSAGE_BEGIN( MSG_PVS, SVC_TEMPENTITY, vecOrigin );
-		WRITE_BYTE( TE_BEAMTORUS );
-		WRITE_COORD( vecOrigin.x );
-		WRITE_COORD( vecOrigin.y );
-		WRITE_COORD( vecOrigin.z );
-		WRITE_COORD( vecOrigin.x );
-		WRITE_COORD( vecOrigin.y );
-		WRITE_COORD( vecOrigin.z + iRadius );
-		WRITE_SHORT( g_sTeleportTrailSprite );
-		WRITE_BYTE( 0 );
-		WRITE_BYTE( 20 );
-		WRITE_BYTE( iLife );
-		WRITE_BYTE( iWidth );
-		WRITE_BYTE( iNoise );
-		WRITE_BYTE( r );
-		WRITE_BYTE( g );
-		WRITE_BYTE( b );
-		WRITE_BYTE( iBrightness );
-		WRITE_BYTE( 24 );
-	MESSAGE_END();
-}
-
-
 static void SendTeleportBeamFollow( int iEntity, const Vector &vecOrigin, int iLife, int iWidth, int r, int g, int b, int iBrightness )
 {
 	if( g_sTeleportTrailSprite <= 0 )
@@ -296,8 +268,6 @@ void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin, BOOL bExi
 	}
 
 	// Keep the expanding energy rings, now blue to match enter1/exit1.
-	SendTeleportPortalRing( vecPortalOrigin, 22, 6, 7, 20, 95, 185, 255, 235 );
-	SendTeleportPortalRing( vecPortalOrigin, 38, 9, 4, 8, 40, 105, 235, 190 );
 
 	if( g_sTeleportPortalLightningSprite > 0 )
 	{
@@ -322,9 +292,9 @@ void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin, BOOL bExi
 				WRITE_BYTE( 3 );
 				WRITE_BYTE( 3 );
 				WRITE_BYTE( 45 );
-				WRITE_BYTE( 105 );
-				WRITE_BYTE( 255 );
+				WRITE_BYTE( 55 );
 				WRITE_BYTE( 145 );
+				WRITE_BYTE( 255 );
 				WRITE_BYTE( 225 );
 				WRITE_BYTE( 30 );
 			MESSAGE_END();
