@@ -55,11 +55,6 @@ IMPLEMENT_SAVERESTORE( CMP5, CBasePlayerWeapon )
 
 //=========================================================
 //=========================================================
-int CMP5::SecondaryAmmoIndex( void )
-{
-	return m_iSecondaryAmmoType;
-}
-
 void CMP5::Spawn()
 {
 	pev->classname = MAKE_STRING( "weapon_9mmAR" ); // hack to allow for old names
@@ -92,8 +87,6 @@ void CMP5::Precache( void )
 
 	m_iShell = PRECACHE_MODEL( "models/shell.mdl" );// brass shellTE_MODEL
 
-	PRECACHE_MODEL( "models/grenade.mdl" );	// grenade
-
 	PRECACHE_MODEL( "models/w_9mmARclip.mdl" );
 	PRECACHE_SOUND( "items/9mmclip1.wav" );
 
@@ -103,9 +96,6 @@ void CMP5::Precache( void )
 	PRECACHE_SOUND( "weapons/hks1.wav" );// H to the K
 	PRECACHE_SOUND( "weapons/hks2.wav" );// H to the K
 	PRECACHE_SOUND( "weapons/hks3.wav" );// H to the K
-
-	PRECACHE_SOUND( "weapons/glauncher.wav" );
-	PRECACHE_SOUND( "weapons/glauncher2.wav" );
 
 	PRECACHE_SOUND( "weapons/357_cock1.wav" );
 
@@ -118,8 +108,8 @@ int CMP5::GetItemInfo( ItemInfo *p )
 	p->pszName = STRING( pev->classname );
 	p->pszAmmo1 = "9mm";
 	p->iMaxAmmo1 = _9MM_MAX_CARRY;
-	p->pszAmmo2 = "ARgrenades";
-	p->iMaxAmmo2 = M203_GRENADE_MAX_CARRY;
+	p->pszAmmo2 = NULL;
+	p->iMaxAmmo2 = -1;
 	p->iMaxClip = MP5_MAX_CLIP;
 	p->iSlot = 2;
 	p->iPosition = 0;
@@ -147,17 +137,32 @@ BOOL CMP5::Deploy()
 	return DefaultDeploy( "models/v_9mmAR.mdl", "models/p_9mmAR.mdl", MP5_DEPLOY, "mp5" );
 }
 
-#if !CLIENT_DLL
 void CMP5::ItemPostFrame( void )
 {
-	// IN_ALT1 is bound to MOUSE3. Handle its press edge separately so it
-	// never replaces or interferes with the MP5's normal M203 secondary fire.
-	if( m_pPlayer && ( m_pPlayer->m_afButtonPressed & IN_ALT1 ) )
+#if !CLIENT_DLL
+	// Replace the MP5's M203 secondary attack with the teleport frag.
+	// Use the press edge so holding right-click cannot immediately revoke it.
+	if( m_pPlayer && ( m_pPlayer->m_afButtonPressed & IN_ATTACK2 ) )
 		TeleportAttack();
+#endif
 
-	CBasePlayerWeapon::ItemPostFrame();
+	// The grenade is server-authoritative. Suppress IN_ATTACK2 in the base
+	// weapon handler on both sides so it cannot invoke the old M203 behavior
+	// or predict a second, client-side projectile.
+	if( m_pPlayer )
+	{
+		const int iAttack2 = m_pPlayer->pev->button & IN_ATTACK2;
+		m_pPlayer->pev->button &= ~IN_ATTACK2;
+		CBasePlayerWeapon::ItemPostFrame();
+		m_pPlayer->pev->button |= iAttack2;
+	}
+	else
+	{
+		CBasePlayerWeapon::ItemPostFrame();
+	}
 }
 
+#if !CLIENT_DLL
 void CMP5::TeleportAttack( void )
 {
 	if( !m_pPlayer )
@@ -165,7 +170,7 @@ void CMP5::TeleportAttack( void )
 
 	const float flTime = UTIL_WeaponTimeBase();
 
-	// A second middle-click recalls the projectile, matching weapon_teleport's
+	// A second right-click recalls the projectile, matching weapon_teleport's
 	// short revoke window. The three-second recharge remains independent.
 	if( m_iTeleportProjectileActive )
 	{
@@ -262,57 +267,6 @@ void CMP5::PrimaryAttack()
 		m_flNextPrimaryAttack = UTIL_WeaponTimeBase() + 0.1f;
 
 	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + UTIL_SharedRandomFloat( m_pPlayer->random_seed, 10, 15 );
-}
-
-void CMP5::SecondaryAttack( void )
-{
-	// don't fire underwater
-	if( m_pPlayer->pev->waterlevel == 3 )
-	{
-		PlayEmptySound( );
-		m_flNextPrimaryAttack = 0.15f;
-		return;
-	}
-
-	if( m_pPlayer->m_rgAmmo[m_iSecondaryAmmoType] == 0 )
-	{
-		PlayEmptySound();
-		return;
-	}
-
-	m_pPlayer->m_iWeaponVolume = NORMAL_GUN_VOLUME;
-	m_pPlayer->m_iWeaponFlash = BRIGHT_GUN_FLASH;
-
-	m_pPlayer->m_iExtraSoundTypes = bits_SOUND_DANGER;
-	m_pPlayer->m_flStopExtraSoundTime = UTIL_WeaponTimeBase() + 0.2f;
-
-	m_pPlayer->m_rgAmmo[m_iSecondaryAmmoType]--;
-
-	// player "shoot" animation
-	m_pPlayer->SetAnimation( PLAYER_ATTACK1 );
-
- 	UTIL_MakeVectors( m_pPlayer->pev->v_angle + m_pPlayer->pev->punchangle );
-
-	// we don't add in player velocity anymore.
-	CGrenade::ShootContact( m_pPlayer->pev,
-					m_pPlayer->pev->origin + m_pPlayer->pev->view_ofs + gpGlobals->v_forward * 16.0f,
-					gpGlobals->v_forward * 800.0f );
-
-	int flags;
-#if CLIENT_WEAPONS
-	flags = FEV_NOTHOST;
-#else
-	flags = 0;
-#endif
-	PLAYBACK_EVENT( flags, m_pPlayer->edict(), m_usMP52 );
-
-	m_flNextPrimaryAttack = GetNextAttackDelay( 1.0f );
-	m_flNextSecondaryAttack = UTIL_WeaponTimeBase() + 1.0f;
-	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 5.0f;// idle pretty soon after shooting.
-
-	if( !m_pPlayer->m_rgAmmo[m_iSecondaryAmmoType] )
-		// HEV suit - indicate out of ammo condition
-		m_pPlayer->SetSuitUpdate( "!HEV_AMO0", FALSE, 0 );
 }
 
 void CMP5::Reload( void )
