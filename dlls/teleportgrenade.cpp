@@ -35,6 +35,7 @@
 #define TELEPORT_GRENADE_RECHARGE        3.0f
 #define TELEPORT_GRENADE_REVOKE_TIME     0.2f
 #define TELEPORT_GRENADE_FLOOR_NORMAL    0.87f
+#define TELEPORT_GRENADE_WALL_NORMAL_Z  0.30f
 #define TELEPORT_GRENADE_GROUND_TRACE_DOWN 512.0f
 #define TELEPORT_GRENADE_GROUND_CLEARANCE 1.0f
 #define TELEPORT_GRENADE_MAX_PATH_POINTS 512
@@ -677,8 +678,15 @@ void CTeleportProjectile::ProjectileTouch( CBaseEntity *pOther )
 	if( tr.fStartSolid || tr.flFraction == 1.0f )
 		return;
 
-	// The original projectile teleports on every collision except the two
-	// ignored entities above; walls are not bounce surfaces.
+	// MOVETYPE_BOUNCE has already resolved the collision using the trace
+	// plane. Let native GoldSrc physics handle near-vertical BSP wall impacts.
+	// Players, monsters and other non-BSP entities still trigger teleportation.
+	if( pOther->pev->solid == SOLID_BSP &&
+		fabsf( tr.vecPlaneNormal.z ) < TELEPORT_GRENADE_WALL_NORMAL_Z )
+	{
+		return;
+	}
+
 	TeleportPerformTeleport();
 }
 
