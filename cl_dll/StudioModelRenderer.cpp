@@ -36,6 +36,9 @@
 // Global engine <-> studio model rendering code interface
 engine_studio_api_t IEngineStudio;
 
+static vec3_t g_BlobShadowStudioOrigin = { 0.0f, 0.0f, 0.0f };
+static int g_BlobShadowStudioEntity = -1;
+
 static cvar_t *cl_blobshadows = NULL;
 static cvar_t *cl_blobshadows_opacity = NULL;
 static model_t *cl_blobshadow_sprite = NULL;
@@ -191,7 +194,7 @@ The radial mark does not need yaw rotation. Point traces are used only
 to discover neighboring BSP faces for clipping.
 ====================
 */
-static void StudioDrawBlobShadow( cl_entity_t *entity, const float modelTransform[3][4] )
+static void StudioDrawBlobShadow( cl_entity_t *entity, const vec3_t modelOrigin )
 {
 	static const float sampleOffsets[5] = { -24.0f, -15.0f, 0.0f, 15.0f, 24.0f };
 	static const float q3TraceMins[3] = { -15.0f, -15.0f, 0.0f };
@@ -272,17 +275,11 @@ static void StudioDrawBlobShadow( cl_entity_t *entity, const float modelTransfor
 
 	memset( &bestTrace, 0, sizeof( bestTrace ));
 
-	// Use the exact world-space origin produced by StudioSetUpTransform().
-	if( modelTransform )
-	{
-		shadowOrigin[0] = modelTransform[0][3];
-		shadowOrigin[1] = modelTransform[1][3];
-		shadowOrigin[2] = modelTransform[2][3];
-	}
+	// Use the exact world-space origin saved by StudioSetUpTransform().
+	if( modelOrigin )
+		VectorCopy( modelOrigin, shadowOrigin );
 	else
-	{
 		VectorCopy( entity->origin, shadowOrigin );
-	}
 
 	/*
 	 * Match Quake III CG_PlayerShadow exactly: sweep a 30 x 30 x 2 box
@@ -986,6 +983,10 @@ void CStudioModelRenderer::StudioSetUpTransform( int trivial_accept )
 
 	//Con_DPrintf( "%.0f %0.f %0.f\n", modelpos[0], modelpos[1], modelpos[2] );
 	//Con_DPrintf( "%.0f %0.f %0.f\n", angles[0], angles[1], angles[2] );
+
+	// Preserve the exact rendered origin for the later blob-shadow pass.
+	VectorCopy( modelpos, g_BlobShadowStudioOrigin );
+	g_BlobShadowStudioEntity = m_pCurrentEntity->index;
 
 	angles[PITCH] = -angles[PITCH];
 	AngleMatrix( angles, ( *m_protationmatrix ) );
@@ -2087,7 +2088,11 @@ void CStudioModelRenderer::StudioRenderFinal_Software( void )
 	// TriAPI vertices are world-space; draw only after the studio renderer
 	// has restored the view transform and render state.
 	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
-		StudioDrawBlobShadow( m_pCurrentEntity, (*m_protationmatrix) );
+		StudioDrawBlobShadow(
+			m_pCurrentEntity,
+			g_BlobShadowStudioEntity == m_pCurrentEntity->index ?
+				g_BlobShadowStudioOrigin : m_pCurrentEntity->origin
+		);
 }
 
 /*
@@ -2148,7 +2153,11 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 	// TriAPI vertices are world-space; draw only after the studio renderer
 	// has restored the view transform and render state.
 	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
-		StudioDrawBlobShadow( m_pCurrentEntity, (*m_protationmatrix) );
+		StudioDrawBlobShadow(
+			m_pCurrentEntity,
+			g_BlobShadowStudioEntity == m_pCurrentEntity->index ?
+				g_BlobShadowStudioOrigin : m_pCurrentEntity->origin
+		);
 }
 
 /*
