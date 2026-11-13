@@ -1716,7 +1716,7 @@ void CBasePlayer::PlayerUse( void )
 	{
 		if( m_afButtonPressed & IN_USE )
 			EMIT_SOUND( ENT( pev ), CHAN_ITEM, "common/wpn_denyselect.wav", 0.4, ATTN_NORM );
-
+	}
 }
 
 // Create an invisible marker entity now; its PS2 sprite will be assigned once a
@@ -1761,7 +1761,11 @@ CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget )
 	float flScaleX = fabs( ( pTarget->pev->absmax.x - pTarget->pev->absmin.x ) * 0.5f );
 	float flScaleY = fabs( ( pTarget->pev->absmax.y - pTarget->pev->absmin.y ) * 0.5f );
 
-	pGraphic->pev->scale = Q_max( flScaleZ, Q_max( flScaleX, flScaleY ) );
+	pGraphic->pev->scale = flScaleZ;
+	if( pGraphic->pev->scale < flScaleX )
+		pGraphic->pev->scale = flScaleX;
+	if( pGraphic->pev->scale < flScaleY )
+		pGraphic->pev->scale = flScaleY;
 	if( pGraphic->pev->scale > 32.0f )
 		pGraphic->pev->scale = 32.0f;
 
