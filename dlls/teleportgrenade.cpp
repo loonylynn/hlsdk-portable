@@ -65,7 +65,8 @@ extern int gmsgShake;
 
 static short g_sTeleportTrailSprite = 0;
 
-static short g_sTeleportPortalGlowSprite = 0;
+static short g_sTeleportPortalEnterSprite = 0;
+static short g_sTeleportPortalExitSprite = 0;
 static short g_sTeleportPortalLightningSprite = 0;
 
 static void SendTeleportPortalRing( const Vector &vecOrigin, int iRadius, int iLife, int iWidth, int iNoise, int r, int g, int b, int iBrightness )
@@ -156,7 +157,7 @@ protected:
 	void CompletePlayerTravel( CBasePlayer *pPlayer );
 	void MakeProjectileInert( void );
 	void FinishWeaponState( void );
-	void SendTeleportEffect( const Vector &vecOrigin );
+	void SendTeleportEffect( const Vector &vecOrigin, BOOL bExit );
 
 	Vector m_vecPath[ TELEPORT_GRENADE_MAX_PATH_POINTS ];
 	int m_iPathPointCount;
@@ -173,7 +174,8 @@ void CTeleportProjectile::Precache( void )
 {
 	PRECACHE_MODEL( "models/grenade.mdl" );
 	g_sTeleportTrailSprite = PRECACHE_MODEL( "sprites/laserbeam.spr" );
-	g_sTeleportPortalGlowSprite = PRECACHE_MODEL( "sprites/Fexplo1.spr" );
+	g_sTeleportPortalEnterSprite = PRECACHE_MODEL( "sprites/enter1.spr" );
+	g_sTeleportPortalExitSprite = PRECACHE_MODEL( "sprites/exit1.spr" );
 	g_sTeleportPortalLightningSprite = PRECACHE_MODEL( "sprites/lgtning.spr" );
 
 	PRECACHE_SOUND( "weapons/grenade_hit1.wav" );
@@ -276,27 +278,28 @@ void CTeleportProjectile::FinishWeaponState( void )
 	}
 }
 
-void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin )
+void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin, BOOL bExit )
 {
-	// A compact Xen-style rift flash: animated green core, expanding energy
-	// rings and short electrical tendrils, inspired by the Vortigaunt arrival.
+	// Use the stock blue entrance/exit portal sprite for each endpoint.
 	const Vector vecPortalOrigin = vecOrigin + Vector( 0, 0, 8 );
+	const short iPortalSprite = bExit ? g_sTeleportPortalExitSprite : g_sTeleportPortalEnterSprite;
 
-	if( g_sTeleportPortalGlowSprite > 0 )
+	if( iPortalSprite > 0 )
 	{
 		MESSAGE_BEGIN( MSG_PVS, SVC_TEMPENTITY, vecPortalOrigin );
 			WRITE_BYTE( TE_SPRITE );
 			WRITE_COORD( vecPortalOrigin.x );
 			WRITE_COORD( vecPortalOrigin.y );
 			WRITE_COORD( vecPortalOrigin.z );
-			WRITE_SHORT( g_sTeleportPortalGlowSprite );
+			WRITE_SHORT( iPortalSprite );
 			WRITE_BYTE( 10 );
 			WRITE_BYTE( 230 );
 		MESSAGE_END();
 	}
 
-	SendTeleportPortalRing( vecPortalOrigin, 22, 6, 7, 20, 115, 255, 135, 235 );
-	SendTeleportPortalRing( vecPortalOrigin, 38, 9, 4, 8, 45, 190, 90, 190 );
+	// Keep the expanding energy rings, now blue to match enter1/exit1.
+	SendTeleportPortalRing( vecPortalOrigin, 22, 6, 7, 20, 95, 185, 255, 235 );
+	SendTeleportPortalRing( vecPortalOrigin, 38, 9, 4, 8, 40, 105, 235, 190 );
 
 	if( g_sTeleportPortalLightningSprite > 0 )
 	{
@@ -336,9 +339,9 @@ void CTeleportProjectile::SendTeleportEffect( const Vector &vecOrigin )
 		WRITE_COORD( vecPortalOrigin.y );
 		WRITE_COORD( vecPortalOrigin.z );
 		WRITE_BYTE( 8 );
-		WRITE_BYTE( 70 );
+		WRITE_BYTE( 55 );
+		WRITE_BYTE( 125 );
 		WRITE_BYTE( 255 );
-		WRITE_BYTE( 105 );
 		WRITE_BYTE( 5 );
 		WRITE_BYTE( 16 );
 	MESSAGE_END();
@@ -406,7 +409,7 @@ void CTeleportProjectile::CompletePlayerTravel( CBasePlayer *pPlayer )
 	if( !m_iTravelWasFrozen )
 		pPlayer->pev->flags &= ~FL_FROZEN;
 
-	SendTeleportEffect( pPlayer->pev->origin );
+	SendTeleportEffect( pPlayer->pev->origin, TRUE );
 	EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "items/suitchargeok1.wav", 1.0f, ATTN_NORM );
 	SendTeleportArrivalShake( pPlayer );
 
@@ -626,7 +629,7 @@ void CTeleportProjectile::TeleportPerformTeleport( void )
 	const Vector vecOldOrigin = pPlayer->pev->origin;
 
 	FinishWeaponState();
-	SendTeleportEffect( vecOldOrigin );
+	SendTeleportEffect( vecOldOrigin, FALSE );
 
 	if( BeginPlayerTravel( pPlayer, vecDestination ) )
 		return;
@@ -638,7 +641,7 @@ void CTeleportProjectile::TeleportPerformTeleport( void )
 	pPlayer->pev->groundentity = NULL;
 	pPlayer->pev->effects |= EF_NOINTERP;
 
-	SendTeleportEffect( vecDestination );
+	SendTeleportEffect( vecDestination, TRUE );
 	EMIT_SOUND( ENT( pPlayer->pev ), CHAN_ITEM, "items/suitchargeok1.wav", 1.0f, ATTN_NORM );
 	SendTeleportArrivalShake( pPlayer );
 
@@ -650,7 +653,7 @@ void CTeleportProjectile::TeleportPerformTeleport( void )
 void CTeleportProjectile::TeleportPerformReset( void )
 {
 	FinishWeaponState();
-	SendTeleportEffect( pev->origin );
+	SendTeleportEffect( pev->origin, FALSE );
 	EMIT_SOUND( ENT( pev ), CHAN_ITEM, "buttons/blip1.wav", 0.8f, ATTN_NORM );
 	UTIL_Remove( this );
 }
