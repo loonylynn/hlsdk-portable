@@ -15,6 +15,8 @@ struct msurface_s;
 typedef void (*xash_render_api_function_t)( void );
 typedef intptr_t (*xash_render_get_parm_fn)( int parm, int arg );
 typedef int (*xash_render_find_texture_fn)( const char *name );
+typedef int (*xash_render_create_texture_fn)(
+	const char *name, int width, int height, const void *buffer, int flags );
 typedef float *( *xash_render_decal_setup_verts_fn )(
 	void *pDecal, struct msurface_s *surf, int texture, int *outCount );
 
@@ -29,8 +31,14 @@ typedef struct xash_render_api_v37_s
 	// Slot 13.
 	xash_render_find_texture_fn GL_FindTexture;
 
-	// Slots 14-21.
-	xash_render_api_function_t reserved_14_to_21[8];
+	// Slots 14-16.
+	xash_render_api_function_t reserved_14_to_16[3];
+
+	// Slot 17.
+	xash_render_create_texture_fn GL_CreateTexture;
+
+	// Slots 18-21.
+	xash_render_api_function_t reserved_18_to_21[4];
 
 	// Slot 22.
 	xash_render_decal_setup_verts_fn R_DecalSetupVerts;
@@ -60,6 +68,8 @@ static_assert( sizeof( xash_render_api_function_t ) == sizeof( void * ),
 	"Xash render API bridge requires pointer-sized function pointers" );
 static_assert( offsetof( xash_render_api_v37_t, GL_FindTexture ) == 12 * sizeof( void * ),
 	"Unexpected Xash render API v37 GL_FindTexture slot" );
+static_assert( offsetof( xash_render_api_v37_t, GL_CreateTexture ) == 16 * sizeof( void * ),
+	"Unexpected Xash render API v37 GL_CreateTexture slot" );
 static_assert( offsetof( xash_render_api_v37_t, R_DecalSetupVerts ) == 21 * sizeof( void * ),
 	"Unexpected Xash render API v37 R_DecalSetupVerts slot" );
 static_assert( sizeof( xash_decal_v37_t ) == ( sizeof( void * ) == 4 ? 60 : 88 ),
