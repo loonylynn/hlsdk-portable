@@ -2215,7 +2215,7 @@ void CBasePlayer::UpdateMovementSpeed( void )
 	if( bHasSuit )
 		pev->iuser4 |= HL2_PM_HAS_SUIT;
 	else
-		pev->iuser4 &= ~( HL2_PM_HAS_SUIT | HL2_PM_SPRINTING | HL2_PM_WALKING );
+		pev->iuser4 &= ~( HL2_PM_HAS_SUIT | HL2_PM_SPRINTING );
 
 	if( pev->fuser4 < 0.0f )
 		pev->fuser4 = 0.0f;
@@ -3316,7 +3316,7 @@ void CBasePlayer::Spawn( void )
 	m_fApplyingTimedDamage = FALSE;
 	m_afPhysicsFlags = 0;
 	m_fLongJump = FALSE;// no longjump module. 
-		pev->iuser4 &= ~( HL2_PM_HAS_SUIT | HL2_PM_SPRINTING );
+		pev->iuser4 &= ~( HL2_PM_HAS_SUIT | HL2_PM_SPRINTING | HL2_PM_WALKING );
 	pev->fuser1 = 0.0f; // time remaining before auxiliary power may recharge
 	pev->fuser4 = 100.0f; // auxiliary suit power, separate from armor battery
 	pev->vuser3 = Vector( 150.0f, 190.0f, 320.0f );
