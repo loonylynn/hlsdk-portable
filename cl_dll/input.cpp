@@ -386,7 +386,8 @@ int DLLEXPORT HUD_Key_Event( int down, int keynum, const char *pszCurrentBinding
 	if( HUD_AuxPowerEditorIsActive() )
 	{
 		HUD_AuxPowerEditorKeyEvent( down, keynum );
-		return 0;
+		// Allow key-up events through so buttons held before entering the editor can release.
+		return down ? 0 : 1;
 	}
 
 	if (gViewPort)
