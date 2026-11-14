@@ -101,7 +101,7 @@ cvar_t	*v_centerspeed;
 cvar_t	*cl_waterdist;
 cvar_t	*cl_chasedist;
 
-// Source HL2 viewmodel effect multipliers (1.0 preserves Source defaults).
+// Portal 2 viewmodel effect multipliers. Keep the cl_hl2 names for cfg compatibility.
 static cvar_t *cl_hl2_viewmodel_bob;
 static cvar_t *cl_hl2_viewmodel_lag;
 
@@ -178,16 +178,17 @@ void V_InterpolateAngles( float *start, float *end, float *output, float frac )
 /*
 =============================================================================
 
-HL2 VIEWMODEL BOB AND LAG BACKPORT
+PORTAL 2 VIEWMODEL BOB AND LAG BACKPORT
 
-Backported from Source SDK 2013:
-  CBaseHLCombatWeapon::CalcViewmodelBob
-  CBaseHLCombatWeapon::AddViewmodelBob
+Backported from Portal 2's:
+  CBasePortalCombatWeapon::CalcViewmodelBob
+  CBasePortalCombatWeapon::AddViewmodelBob
   CBaseViewModel::CalcViewModelLag
 
-The Source equations and default constants are retained. GoldSrc supplies
-predicted velocity and time through ref_params_s instead of CBasePlayer and
-gpGlobals. The camera's existing GoldSrc bob remains separate.
+The Portal 2 bob cycle, full 3D speed scaling, local-axis rotations, and
+portal-compatible directional viewmodel lag are retained. GoldSrc supplies
+predicted velocity and time through ref_params_s. GoldSrc has no gravity-
+relative player-up vector, so the vertical bob translation remains world-Z.
 
 =============================================================================
 */
@@ -860,7 +861,7 @@ void V_CalcNormalRefdef( struct ref_params_s *pparams )
 		}
 	}
 
-	// Source applies weapon-specific bob first, then BaseViewModel lag,
+	// Portal 2 applies weapon bob first, then directional BaseViewModel lag,
 	// after the player view and GoldSrc stair/train smoothing are finalized.
 	V_ApplyPortal2ViewModelBobAndLag( pparams, view );
 
@@ -1755,8 +1756,8 @@ void V_Init( void )
 	cl_waterdist = gEngfuncs.pfnRegisterVariable( "cl_waterdist","4", 0 );
 	cl_chasedist = gEngfuncs.pfnRegisterVariable( "cl_chasedist","112", 0 );
 
-	// Independent Source HL2 viewmodel effect controls.
-	// 1.0 = original Source behavior; 0.0 = disabled.
+	// Portal 2 viewmodel effect controls (legacy cvar names retained).
+	// 1.0 = Portal 2 defaults; 0.0 = disabled.
 	cl_hl2_viewmodel_bob = gEngfuncs.pfnRegisterVariable( "cl_hl2_viewmodel_bob", "1.0", FCVAR_ARCHIVE );
 	cl_hl2_viewmodel_lag = gEngfuncs.pfnRegisterVariable( "cl_hl2_viewmodel_lag", "1.0", FCVAR_ARCHIVE );
 }
