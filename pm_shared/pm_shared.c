@@ -2923,15 +2923,6 @@ void PM_DropPunchAngle( vec3_t punchangle )
 ==============
 PM_UpdateHL2MovementSpeed
 
-Selects the HL2 walk/run/sprint speed and advances the auxiliary suit
-power reserve in shared client/server movement state. The fields used here
-are existing GoldSrc playermove user fields, not new network structures.
-==============
-*/
-/*
-==============
-PM_UpdateHL2MovementSpeed
-
 Source equivalent: CHL2_Player::HandleSpeedChanges.
 This stage selects walk/run/sprint and updates the predicted sprint state.
 Suit-power device accounting happens later in PM_ReduceTimers, matching
@@ -2968,6 +2959,7 @@ static void PM_UpdateHL2MovementSpeed( void )
 		flPower = 0.0f;
 	else if( flPower > 100.0f )
 		flPower = 100.0f;
+	pmove->fuser4 = flPower;
 
 	// Source CanSprint: require a living player, an equipped suit, and
 	// disallow starting sprint while ducked or fully submerged.
@@ -3145,7 +3137,7 @@ static void PM_UpdateHL2SuitPower( void )
 	if( !bDeviceActive && pmove->fuser4 < 100.0f &&
 		pmove->time >= pmove->fuser1 + 0.5f )
 	{
-		PM_SuitPowerCharge( 12.5f * flFrameTime );
+		PM_SuitPowerCharge( flRechargeRate * flFrameTime );
 	}
 	else if( bDeviceActive )
 	{
