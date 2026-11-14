@@ -23,6 +23,7 @@
 #include <math.h>
 
 #include "hud.h"
+#include "const.h"
 #include "cl_util.h"
 #include "cl_entity.h"
 #include "parsemsg.h"
@@ -675,7 +676,11 @@ static void DrawAuxPowerMeter( float flPower )
 				( g_rcAuxHudFill.right - g_rcAuxHudFill.left ) ) / 2;
 			int iFillOffsetY = ( ( g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top ) -
 				( g_rcAuxHudFill.bottom - g_rcAuxHudFill.top ) ) / 2;
-			SPR_DrawAdditive( 0, frameX + iFillOffsetX, frameY + iFillOffsetY + 1, &rcFill );
+			// Switch the reserve fill to additive blending only while the player is sprinting.
+			if( g_iHL2AuxFlagsPost & HL2_PM_SPRINTING )
+				SPR_DrawAdditive( 0, frameX + iFillOffsetX, frameY + iFillOffsetY + 1, &rcFill );
+			else
+				SPR_Draw( 0, frameX + iFillOffsetX, frameY + iFillOffsetY + 1, &rcFill );
 		}
 
 		// Draw the frame last so its outline stays crisp over the fill.
