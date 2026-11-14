@@ -76,8 +76,11 @@ playermove_t *pmove = NULL;
 #define PLAYER_FATAL_FALL_SPEED		1024// approx 60 feet
 #define PLAYER_MAX_SAFE_FALL_SPEED	580// approx 20 feet
 #define DAMAGE_FOR_FALL_SPEED		(float) 100 / ( PLAYER_FATAL_FALL_SPEED - PLAYER_MAX_SAFE_FALL_SPEED )// damage per unit per second.
-#define PLAYER_MIN_BOUNCE_SPEED		200
-#define PLAYER_FALL_PUNCH_THRESHHOLD	(float)350 // won't punch player's screen/make scrape noise unless player falling at least this fast.
+// HL2 (600 gravity) landing-feedback thresholds from Source shareddefs.h.
+// GoldSrc's separate 580-unit fall-damage threshold is intentionally retained.
+#define PLAYER_MIN_BOUNCE_SPEED		173
+#define PLAYER_FALL_PUNCH_THRESHHOLD	303.0f
+#define PLAYER_HL2_LANDING_SAFE_SPEED	526.5f
 
 // Source SDK 2013 CGameMovement::DecayPunchAngle spring parameters.
 #define PUNCH_DAMPING			9.0f
@@ -2806,7 +2809,14 @@ void PM_CheckFalling( void )
 			//}
 			fvol = 1.0f;
 		}
-		else if( pmove->flFallVelocity > PLAYER_MAX_SAFE_FALL_SPEED / 2 )
+		else if( pmove->flFallVelocity > PLAYER_HL2_LANDING_SAFE_SPEED )
+		{
+			// HL2's rough-landing feedback reaches full volume at its 20-foot
+			// safe speed (526.5 units/sec at 600 gravity). Keep actual GoldSrc
+			// fall damage and the fall-pain voice threshold at 580 units/sec.
+			fvol = 1.0f;
+		}
+		else if( pmove->flFallVelocity > PLAYER_HL2_LANDING_SAFE_SPEED / 2.0f )
 		{
 			qboolean tfc = false;
 			tfc = atoi( pmove->PM_Info_ValueForKey( pmove->physinfo, "tfc" ) ) == 1 ? true : false;
@@ -2816,7 +2826,7 @@ void PM_CheckFalling( void )
 				pmove->PM_PlaySound( CHAN_VOICE, "player/pl_fallpain3.wav", 1, ATTN_NORM, 0, PITCH_NORM );
 			}
 
-			fvol = 0.85;
+			fvol = 0.85f;
 		}
 		else if( pmove->flFallVelocity < PLAYER_MIN_BOUNCE_SPEED )
 		{
