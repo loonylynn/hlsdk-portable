@@ -254,8 +254,6 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 	float flSpeed;
 	float pitch;
 	vec3_t originalAngles;
-	vec3_t originalOrigin;
-	vec3_t originalViewAngles;
 	vec3_t forward, right, up;
 	vec3_t difference, negativeDifference;
 
@@ -271,6 +269,13 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 
 	// Source CBaseHLCombatWeapon::CalcViewmodelBob.
 	// Keep its time-scaled cycle and 320-unit horizontal speed cap unchanged.
+	// Reset the phase if GoldSrc's level/demo clock moves backwards.
+	if( pparams->time < lastbobtime )
+	{
+		bobtime = 0.0;
+		lastbobtime = pparams->time;
+		verticalBob = lateralBob = 0.0f;
+	}
 	if( pparams->frametime != 0.0f )
 	{
 		speed = sqrt( pparams->simvel[0] * pparams->simvel[0] +
@@ -347,8 +352,6 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 
 	// Source's pitch-dependent positional correction uses the original eye angles,
 	// not the already bobbed viewmodel angles.
-	VectorCopy( view->origin, originalOrigin );
-	VectorCopy( view->angles, originalViewAngles );
 	AngleVectors( originalAngles, forward, right, up );
 	pitch = originalAngles[PITCH];
 	if( pitch > 180.0f )
@@ -362,8 +365,6 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 	VectorMA( view->origin, -pitch * 0.03f, right, view->origin );
 	VectorMA( view->origin, -pitch * 0.02f, up, view->origin );
 
-	(void)originalOrigin;
-	(void)originalViewAngles;
 }
 
 
