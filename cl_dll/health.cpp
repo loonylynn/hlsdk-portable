@@ -414,8 +414,12 @@ static void AuxPower_StartEditor( void )
 	g_bAuxPowerShiftDown = 0;
 	g_bAuxPowerEditorActive = 1;
 
+	// Release any movement/attack buttons that were held before entering edit mode.
+	if( gEngfuncs.pfnClientCmd )
+		gEngfuncs.pfnClientCmd( "-forward\n-back\n-moveleft\n-moveright\n-jump\n-duck\n-speed\n-walk\n-attack\n-attack2\n" );
+
 	gEngfuncs.Con_Printf( "\n[AUX. POWER HUD] Editor enabled.\n" );
-	gEngfuncs.Con_Printf( "LMB: drag element | arrows: nudge | [ / ]: grid size\n" );
+	gEngfuncs.Con_Printf( "LMB: drag element | arrows: nudge | [ / ]: grid size | S: snap toggle\n" );
 	gEngfuncs.Con_Printf( "Enter: commit | Escape: cancel | R: report | hud_auxpower_report: print values\n" );
 }
 
