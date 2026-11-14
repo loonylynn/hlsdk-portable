@@ -796,12 +796,11 @@ int CHudHealth::Draw( float flTime )
 		UnpackRGB( r, g, b, RGB_YELLOWISH );
 		FillRGBA( x, y + gHUD.m_iHudNumbersYOffset, iWidth, iHeight, r, g, b, a );
 
-		// Prefer the replicated player state for the HUD. The predicted
-		// playermove copy can be stale on engines that do not seed custom
-		// user fields consistently before client prediction runs.
-		cl_entity_t *pLocalPlayer = gEngfuncs.GetLocalPlayer();
-		float flAuxPower = pLocalPlayer ?
-			pLocalPlayer->curstate.fuser4 : g_flHL2AuxPower;
+		// client_data_t carries the server-authoritative local-player
+		// movement fields. Prefer its last received reserve value; use
+		// client prediction only before the first clientdata update.
+		float flAuxPower = ( g_flHL2AuxPowerClientData >= 0.0f ) ?
+			g_flHL2AuxPowerClientData : g_flHL2AuxPower;
 		DrawAuxPowerMeter( flAuxPower );
 	}
 
