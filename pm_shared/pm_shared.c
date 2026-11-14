@@ -1172,14 +1172,101 @@ void PM_StayOnGround( void )
 		!trace.startsolid && trace.plane.normal[2] >= 0.7f )
 	{
 		float delta = fabs( pmove->origin[2] - trace.endpos[2] );
-		if( delta > 0.5f )
+
+		// GoldSrc coordinates are normally networked in 1/8-unit steps.
+		// Use half that resolution, matching Source's half-COORD_RESOLUTION
+		// threshold in StayOnGround().
+		if( delta > 0.0625f )
 			VectorCopy( trace.endpos, pmove->origin );
+	}
+}
+
+/*
+==================
+PM_StepMove
+
+Source-style two-path step solver, using GoldSrc's PM_FlyMove and trace API.
+==================
+*/
+static void PM_StepMove( void )
+{
+	vec3_t original, originalvel;
+	vec3_t down, downvel;
+	vec3_t dest, up;
+	float downdist, updist;
+	float stepDist;
+	pmtrace_t trace;
+
+	// Source's DIST_EPSILON is 1/32 world unit. The extra margin keeps
+	// exact step-height traces from ending on a precision boundary.
+	stepDist = pmove->movevars->stepsize + 0.03125f;
+
+	// Save the starting point and velocity.
+	VectorCopy( pmove->origin, original );
+	VectorCopy( pmove->velocity, originalvel );
+
+	// First attempt: slide forward without stepping.
+	PM_FlyMove();
+
+	// Save the non-stepped result.
+	VectorCopy( pmove->origin, down );
+	VectorCopy( pmove->velocity, downvel );
+
+	// Restore the starting point and velocity.
+	VectorCopy( original, pmove->origin );
+	VectorCopy( originalvel, pmove->velocity );
+
+	// Move up by the step height plus Source's distance epsilon.
+	VectorCopy( pmove->origin, dest );
+	dest[2] += stepDist;
+
+	trace = pmove->PM_PlayerTrace( pmove->origin, dest, PM_NORMAL, -1 );
+	if( !trace.startsolid && !trace.allsolid )
+		VectorCopy( trace.endpos, pmove->origin );
+
+	// Slide forward from the raised position.
+	PM_FlyMove();
+
+	// Attempt to settle back down onto the step or ground.
+	VectorCopy( pmove->origin, dest );
+	dest[2] -= stepDist;
+
+	trace = pmove->PM_PlayerTrace( pmove->origin, dest, PM_NORMAL, -1 );
+
+	// If the raised path did not land on a walkable surface, use the
+	// original non-stepped slide result.
+	if( trace.plane.normal[2] < 0.7f )
+	{
+		VectorCopy( down, pmove->origin );
+		VectorCopy( downvel, pmove->velocity );
+		return;
+	}
+
+	if( !trace.startsolid && !trace.allsolid )
+		VectorCopy( trace.endpos, pmove->origin );
+
+	VectorCopy( pmove->origin, up );
+
+	// Keep whichever path made the most horizontal progress.
+	downdist = ( down[0] - original[0] ) * ( down[0] - original[0] )
+			+ ( down[1] - original[1] ) * ( down[1] - original[1] );
+	updist = ( up[0] - original[0] ) * ( up[0] - original[0] )
+			+ ( up[1] - original[1] ) * ( up[1] - original[1] );
+
+	if( downdist > updist )
+	{
+		VectorCopy( down, pmove->origin );
+		VectorCopy( downvel, pmove->velocity );
+	}
+	else
+	{
+		// Preserve the vertical component produced by the non-stepped slide.
+		pmove->velocity[2] = downvel[2];
 	}
 }
 
 void PM_WalkMove( void )
 {
-	//int clip;
 	int oldonground;
 	int i;
 
@@ -1189,11 +1276,7 @@ void PM_WalkMove( void )
 	vec3_t wishdir;
 	float wishspeed;
 
-	vec3_t dest; //, start;
-	vec3_t original, originalvel;
-	vec3_t down, downvel;
-	float downdist, updist;
-
+	vec3_t dest;
 	pmtrace_t trace;
 
 	// Copy movement amounts
@@ -1205,7 +1288,7 @@ void PM_WalkMove( void )
 	pmove->right[2] = 0;
 
 	VectorNormalize( pmove->forward );  // Normalize remainder of vectors.
-	VectorNormalize( pmove->right );    // 
+	VectorNormalize( pmove->right );    //
 
 	for( i = 0; i < 2; i++ )       // Determine x and y parts of velocity
 		wishvel[i] = pmove->forward[i] * fmove + pmove->right[i] * smove;
@@ -1240,116 +1323,34 @@ void PM_WalkMove( void )
 		return;
 	}
 
-	// If we are not moving, do nothing
-	//if( !pmove->velocity[0] && !pmove->velocity[1] && !pmove->velocity[2] )
-	//	return;
-
 	oldonground = pmove->onground;
 
-	// first try just moving to the destination
+	// First try moving directly to the next position.
 	dest[0] = pmove->origin[0] + pmove->velocity[0] * pmove->frametime;
 	dest[1] = pmove->origin[1] + pmove->velocity[1] * pmove->frametime;
 	dest[2] = pmove->origin[2];
 
-	// first try moving directly to the next spot
-	//VectorCopy( dest, start );
 	trace = pmove->PM_PlayerTrace( pmove->origin, dest, PM_NORMAL, -1 );
-	// If we made it all the way, then copy trace end
-	//  as new player position.
-	if( trace.fraction == 1 )
+
+	if( trace.fraction == 1.0f )
 	{
 		VectorCopy( trace.endpos, pmove->origin );
 		PM_StayOnGround();
 		return;
 	}
 
-	// Don't walk up stairs if not on ground.
-	if( oldonground == -1 && pmove->waterlevel  == 0 )
+	// Don't walk up stairs while airborne.
+	if( oldonground == -1 && pmove->waterlevel == 0 )
 		return;
 
-	if( pmove->waterjumptime )	// If we are jumping out of water, don't do anything more.
+	// If jumping out of water, don't perform step movement.
+	if( pmove->waterjumptime )
 		return;
 
-	// Try sliding forward both on ground and up 16 pixels
-	//  take the move that goes farthest
-	VectorCopy( pmove->origin, original );	// Save out original pos &
-	VectorCopy( pmove->velocity, originalvel ); // velocity.
-
-	// Slide move
-	//clip = PM_FlyMove();
-	PM_FlyMove();
-
-	// Copy the results out
-	VectorCopy( pmove->origin, down );
-	VectorCopy( pmove->velocity, downvel );
-
-	// Reset original values.
-	VectorCopy( original, pmove->origin );
-
-	VectorCopy( originalvel, pmove->velocity );
-
-	// Start out up one stair height
-	VectorCopy( pmove->origin, dest );
-	dest[2] += pmove->movevars->stepsize;
-
-	trace = pmove->PM_PlayerTrace( pmove->origin, dest, PM_NORMAL, -1 );
-	// If we started okay and made it part of the way at least,
-	//  copy the results to the movement start position and then
-	//  run another move try.
-	if( !trace.startsolid && !trace.allsolid )
-	{
-		VectorCopy( trace.endpos, pmove->origin );
-	}
-
-	// slide move the rest of the way.
-	//clip = PM_FlyMove();
-	PM_FlyMove();
-
-	// Now try going back down from the end point
-	//  press down the stepheight
-	VectorCopy( pmove->origin, dest );
-	dest[2] -= pmove->movevars->stepsize;
-
-	trace = pmove->PM_PlayerTrace( pmove->origin, dest, PM_NORMAL, -1 );
-
-	// If we are not on the ground any more then
-	//  use the original movement attempt
-	if( trace.plane.normal[2] < 0.7f )
-		goto usedown;
-
-	// If the trace ended up in empty space, copy the end
-	//  over to the origin.
-	if( !trace.startsolid && !trace.allsolid )
-	{
-		VectorCopy( trace.endpos, pmove->origin );
-	}
-	// Copy this origion to up.
-	VectorCopy( pmove->origin, pmove->up );
-
-	// decide which one went farther
-	downdist = ( down[0] - original[0] ) * ( down[0] - original[0] )
-			+ ( down[1] - original[1] ) * ( down[1] - original[1] );
-	updist = ( pmove->up[0] - original[0] ) * ( pmove->up[0] - original[0] )
-			+ ( pmove->up[1]   - original[1] ) * ( pmove->up[1] - original[1] );
-
-	if( downdist > updist )
-	{
-usedown:
-		VectorCopy( down, pmove->origin );
-		VectorCopy( downvel, pmove->velocity );
-	} else // copy z value from slide move
-		pmove->velocity[2] = downvel[2];
-
+	PM_StepMove();
 	PM_StayOnGround();
 }
 
-/*
-==================
-PM_Friction
-
-Handles both ground friction and water friction
-==================
-*/
 void PM_Friction( void )
 {
 	float *vel;
