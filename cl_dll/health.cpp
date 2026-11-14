@@ -221,7 +221,8 @@ void CHudHealth::GetPainColor( int &r, int &g, int &b )
 #endif
 }
 
-// AUX. POWER HUD layout/editor state. Coordinates are stored in a 640x480 reference space.
+// AUX. POWER HUD layout/editor state. Coordinates are offsets from the health
+// HUD anchor in the same virtual coordinate space used by the health sprites.
 static int g_bAuxPowerEditorActive = 0;
 static int g_iAuxPowerPreviewX = 0;
 static int g_iAuxPowerPreviewY = 0;
@@ -274,51 +275,79 @@ static int AuxPower_GetLabelWidth( void )
 	return gHUD.DrawHudStringLen( (char*)"AUX. POWER" );
 }
 
-static void AuxPower_GetDefaultPosition( int *x, int *y )
+static void AuxPower_GetDefaultScreenPosition( int *x, int *y )
 {
 	int healthY = ScreenHeight - gHUD.m_iFontHeight - gHUD.m_iFontHeight / 2;
 	int frameWidth = g_rcAuxHudFrame.right - g_rcAuxHudFrame.left;
 	int frameHeight = g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top;
 	int labelWidth = AuxPower_GetLabelWidth();
-	int oldFrameOffsetX = ( ( labelWidth > frameWidth ) ? labelWidth : frameWidth ) - frameWidth;
+	int frameOffsetX = ( ( labelWidth > frameWidth ) ? labelWidth : frameWidth ) - frameWidth;
 	int crossSprite = gHUD.GetSpriteIndex( "cross" );
 	int crossWidth = gHUD.GetSpriteRect( crossSprite ).right -
 		gHUD.GetSpriteRect( crossSprite ).left;
 
-	oldFrameOffsetX /= 2;
-	*x = AuxPower_ScreenToRefX( crossWidth / 2 + oldFrameOffsetX );
-	*y = AuxPower_ScreenToRefY( healthY - frameHeight );
+	// Use the health HUD's own virtual coordinates. The meter then shares
+	// the same renderer scaling and aspect handling as the cross and numbers.
+	frameOffsetX /= 2;
+	*x = crossWidth / 2 + frameOffsetX;
+	*y = healthY - frameHeight;
 }
 
 static void AuxPower_MigrateSavedPosition( void )
 {
-	int x, y;
-	int labelWidth, frameWidth, frameOffsetX, frameOffsetY;
+	int version = (int)CVAR_GET_FLOAT( "hud_auxpower_layout_version" );
+	int x = (int)CVAR_GET_FLOAT( "hud_auxpower_x" );
+	int y = (int)CVAR_GET_FLOAT( "hud_auxpower_y" );
 
-	if( CVAR_GET_FLOAT( "hud_auxpower_layout_version" ) >= 1.0f )
+	if( version >= 2 )
 		return;
 
-	x = (int)CVAR_GET_FLOAT( "hud_auxpower_x" );
-	y = (int)CVAR_GET_FLOAT( "hud_auxpower_y" );
-	if( x >= 0 && y >= 0 )
+	// Version 0 stored the label's origin. Convert it to the frame's
+	// top-left in the old 640x480 reference coordinate system first.
+	if( version < 1 )
 	{
-		labelWidth = AuxPower_GetLabelWidth();
-		frameWidth = g_rcAuxHudFrame.right - g_rcAuxHudFrame.left;
-		frameOffsetX = ( ( labelWidth > frameWidth ) ? labelWidth : frameWidth ) - frameWidth;
-		frameOffsetX /= 2;
-		frameOffsetY = gHUD.m_iFontHeight + 3;
-
-		x += AuxPower_ScreenToRefX( frameOffsetX );
-		y += AuxPower_ScreenToRefY( frameOffsetY );
-		if( gEngfuncs.Cvar_SetValue )
+		if( x >= 0 && y >= 0 )
 		{
-			gEngfuncs.Cvar_SetValue( "hud_auxpower_x", (float)x );
-			gEngfuncs.Cvar_SetValue( "hud_auxpower_y", (float)y );
+			int labelWidth = AuxPower_GetLabelWidth();
+			int frameWidth = g_rcAuxHudFrame.right - g_rcAuxHudFrame.left;
+			int frameOffsetX = ( ( labelWidth > frameWidth ) ? labelWidth : frameWidth ) - frameWidth;
+			int frameOffsetY = gHUD.m_iFontHeight + 3;
+
+			frameOffsetX /= 2;
+			x += AuxPower_ScreenToRefX( frameOffsetX );
+			y += AuxPower_ScreenToRefY( frameOffsetY );
+			if( gEngfuncs.Cvar_SetValue )
+			{
+				gEngfuncs.Cvar_SetValue( "hud_auxpower_x", (float)x );
+				gEngfuncs.Cvar_SetValue( "hud_auxpower_y", (float)y );
+			}
 		}
+		version = 1;
 	}
 
-	if( gEngfuncs.Cvar_SetValue )
-		gEngfuncs.Cvar_SetValue( "hud_auxpower_layout_version", 1.0f );
+	// Version 1 stored an absolute 640x480 position. Rebase it as an
+	// offset from the health HUD's default frame position, in HUD-space
+	// units. This prevents independent X/Y resolution scaling.
+	if( version < 2 )
+	{
+		if( x >= 0 && y >= 0 && ScreenWidth > 0 && ScreenHeight > 0 )
+		{
+			int anchorX, anchorY;
+			int oldScreenX = AuxPower_RefToScreenX( x );
+			int oldScreenY = AuxPower_RefToScreenY( y );
+
+			AuxPower_GetDefaultScreenPosition( &anchorX, &anchorY );
+			x = oldScreenX - anchorX;
+			y = oldScreenY - anchorY;
+			if( gEngfuncs.Cvar_SetValue )
+			{
+				gEngfuncs.Cvar_SetValue( "hud_auxpower_x", (float)x );
+				gEngfuncs.Cvar_SetValue( "hud_auxpower_y", (float)y );
+			}
+		}
+		if( gEngfuncs.Cvar_SetValue )
+			gEngfuncs.Cvar_SetValue( "hud_auxpower_layout_version", 2.0f );
+	}
 }
 
 static void AuxPower_GetPosition( int *x, int *y )
@@ -332,26 +361,28 @@ static void AuxPower_GetPosition( int *x, int *y )
 		return;
 	}
 
+	// Saved coordinates are now offsets from the health HUD anchor.
 	*x = (int)CVAR_GET_FLOAT( "hud_auxpower_x" );
 	*y = (int)CVAR_GET_FLOAT( "hud_auxpower_y" );
-	if( *x < 0 || *y < 0 )
-		AuxPower_GetDefaultPosition( x, y );
+	if( *x < 0 ) *x = 0;
+	if( *y < 0 ) *y = 0;
 }
 
-static void AuxPower_GetLayout( int refX, int refY, int *left, int *top,
+static void AuxPower_GetLayout( int offsetX, int offsetY, int *left, int *top,
 	int *width, int *height, int *labelX, int *labelY, int *frameX, int *frameY )
 {
 	int frameWidth = g_rcAuxHudFrame.right - g_rcAuxHudFrame.left;
 	int frameHeight = g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top;
-	int x = AuxPower_RefToScreenX( refX );
-	int y = AuxPower_RefToScreenY( refY );
+	int anchorX, anchorY;
 
-	*left = x;
-	*top = y;
-	*labelX = x;
-	*labelY = y;
-	*frameX = x;
-	*frameY = y;
+	AuxPower_GetDefaultScreenPosition( &anchorX, &anchorY );
+
+	*left = anchorX + offsetX;
+	*top = anchorY + offsetY;
+	*labelX = *left;
+	*labelY = *top;
+	*frameX = *left;
+	*frameY = *top;
 	*width = frameWidth;
 	*height = frameHeight;
 }
@@ -359,19 +390,25 @@ static void AuxPower_GetLayout( int refX, int refY, int *left, int *top,
 static void AuxPower_ClampPosition( int *x, int *y )
 {
 	int left, top, width, height, labelX, labelY, frameX, frameY;
-	int maxX, maxY;
+	int anchorX, anchorY;
+	int minX, minY, maxX, maxY;
 
+	AuxPower_GetDefaultScreenPosition( &anchorX, &anchorY );
 	AuxPower_GetLayout( *x, *y, &left, &top, &width, &height,
 		&labelX, &labelY, &frameX, &frameY );
 	(void)left; (void)top; (void)labelX; (void)labelY; (void)frameX; (void)frameY;
 
-	maxX = 640 - AuxPower_ScreenToRefX( width );
-	maxY = 480 - AuxPower_ScreenToRefY( height );
-	if( maxX < 0 ) maxX = 0;
-	if( maxY < 0 ) maxY = 0;
+	// Clamp the frame in the current HUD coordinate space, not a separate
+	// 640x480 plane. The engine applies the same scale to every HUD element.
+	minX = -anchorX;
+	minY = -anchorY;
+	maxX = ScreenWidth - anchorX - width;
+	maxY = ScreenHeight - anchorY - height;
+	if( maxX < minX ) maxX = minX;
+	if( maxY < minY ) maxY = minY;
 
-	if( *x < 0 ) *x = 0;
-	if( *y < 0 ) *y = 0;
+	if( *x < minX ) *x = minX;
+	if( *y < minY ) *y = minY;
 	if( *x > maxX ) *x = maxX;
 	if( *y > maxY ) *y = maxY;
 }
@@ -429,7 +466,7 @@ static void AuxPower_PrintReport( void )
 		g_iHL2AuxWeaponsFrom, g_iHL2AuxWeaponsPost, (unsigned int)gHUD.m_iWeaponBits );
 	gEngfuncs.Con_Printf( "PM power rates: drain %.2f | recharge %.2f | sprint minimum %.2f\n",
 		g_flHL2AuxDrainRate, g_flHL2AuxRechargeRate, g_flHL2AuxStartMinimum );
-	gEngfuncs.Con_Printf( "// anchor: top-left of the battery frame; reference space: 640x480\n" );
+	gEngfuncs.Con_Printf( "// anchor: health HUD cross/number; X/Y are HUD-space offsets\n" );
 	gEngfuncs.Con_Printf( "// battery bounds: %d x %d screen pixels; scale: 1.0\n",
 		width, height );
 	if( g_bAuxPowerEditorActive )
@@ -532,12 +569,9 @@ static void AuxPower_ReportCommand( void )
 static void AuxPower_DrawGrid( void )
 {
 	int grid = AuxPower_GetGrid();
-	int stepX = AuxPower_RefToScreenX( grid );
-	int stepY = AuxPower_RefToScreenY( grid );
+	int stepX = grid;
+	int stepY = grid;
 	int x, y;
-
-	if( stepX < 1 ) stepX = 1;
-	if( stepY < 1 ) stepY = 1;
 
 	for( x = 0; x < ScreenWidth; x += stepX )
 		FillRGBA( x, 0, 1, ScreenHeight, 220, 220, 220, 28 );
@@ -669,8 +703,12 @@ extern "C" void DLLEXPORT HUD_AuxPowerEditorMouseMove( float deltaX, float delta
 
 	if( g_bAuxPowerDragging )
 	{
-		int x = AuxPower_ScreenToRefX( g_iAuxPowerCursorX - g_iAuxPowerDragOffsetX );
-		int y = AuxPower_ScreenToRefY( g_iAuxPowerCursorY - g_iAuxPowerDragOffsetY );
+		int anchorX, anchorY;
+		int x, y;
+
+		AuxPower_GetDefaultScreenPosition( &anchorX, &anchorY );
+		x = g_iAuxPowerCursorX - g_iAuxPowerDragOffsetX - anchorX;
+		y = g_iAuxPowerCursorY - g_iAuxPowerDragOffsetY - anchorY;
 		AuxPower_SetPreviewPosition( x, y );
 	}
 }
