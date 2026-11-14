@@ -147,6 +147,7 @@ set (SVDLL_SOURCES
 	world.cpp
 	xen.cpp
 	zombie.cpp
+	npc_physics.cpp
 	../game_shared/voice_gamemgr.cpp
 	../pm_shared/pm_debug.c
 	../pm_shared/pm_math.c
@@ -170,6 +171,44 @@ endif()
 
 include_directories (. wpn_shared ../common ../engine ../pm_shared ../game_shared ../public)
 
+# Jolt is the rigid-body solver for the Xash NPC shadow-physics bridge.
+# Build it as PIC static code because the SDK server is a shared game DLL.
+include(FetchContent)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+set(JPH_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(OVERRIDE_CXX_FLAGS OFF CACHE BOOL "" FORCE)
+set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF CACHE BOOL "" FORCE)
+set(CPP_EXCEPTIONS_ENABLED OFF CACHE BOOL "" FORCE)
+set(CPP_RTTI_ENABLED OFF CACHE BOOL "" FORCE)
+set(USE_SSE4_1 OFF CACHE BOOL "" FORCE)
+set(USE_SSE4_2 OFF CACHE BOOL "" FORCE)
+set(USE_AVX OFF CACHE BOOL "" FORCE)
+set(USE_AVX2 OFF CACHE BOOL "" FORCE)
+set(USE_AVX512 OFF CACHE BOOL "" FORCE)
+set(USE_LZCNT OFF CACHE BOOL "" FORCE)
+set(USE_TZCNT OFF CACHE BOOL "" FORCE)
+set(USE_F16C OFF CACHE BOOL "" FORCE)
+set(USE_FMADD OFF CACHE BOOL "" FORCE)
+set(DEBUG_RENDERER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
+set(PROFILER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
+set(JPH_USE_DX12 OFF CACHE BOOL "" FORCE)
+set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
+set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
+set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+	JoltPhysics
+	GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+	GIT_TAG v5.6.0
+	GIT_SHALLOW TRUE
+	SOURCE_SUBDIR Build
+)
+FetchContent_MakeAvailable(JoltPhysics)
+
 if(MSVC)
 	set(SVDLL_SOURCES
 		${SVDLL_SOURCES}
@@ -177,9 +216,14 @@ if(MSVC)
 endif()
 
 add_library (${SVDLL_LIBRARY} SHARED ${SVDLL_SOURCES})
-target_link_libraries(${SVDLL_LIBRARY} vcs_info)
+target_link_libraries(${SVDLL_LIBRARY} vcs_info Jolt)
 
-set_target_properties (${SVDLL_LIBRARY} PROPERTIES POSITION_INDEPENDENT_CODE 1)
+set_target_properties (${SVDLL_LIBRARY} PROPERTIES
+	POSITION_INDEPENDENT_CODE 1
+	CXX_STANDARD 17
+	CXX_STANDARD_REQUIRED ON
+	CXX_EXTENSIONS OFF
+)
 
 if(APPLE AND NOT "${SERVER_LIBRARY_NAME_OSX}" STREQUAL "")
 	# on Apple platforms we always use gamedll_osx liblist/gameinfo key, if it's set
