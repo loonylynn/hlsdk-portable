@@ -1042,9 +1042,16 @@ runfuncs is 1 if this is the first time we've predicted this command.  If so, so
 be ignored
 =====================
 */
+extern float g_flHL2AuxPowerPostRun;
+
 void _DLLEXPORT HUD_PostRunCmd( struct local_state_s *from, struct local_state_s *to, struct usercmd_s *cmd, int runfuncs, double time, unsigned int random_seed )
 {
 	g_runfuncs = runfuncs;
+
+	// local_state_t is the real prediction result; its client sub-structure
+	// carries the custom movement fields copied through Xash3D's PM pipeline.
+	if( to )
+		g_flHL2AuxPowerPostRun = to->client.fuser4;
 
 #if CLIENT_WEAPONS
 	if( cl_lw && cl_lw->value )
