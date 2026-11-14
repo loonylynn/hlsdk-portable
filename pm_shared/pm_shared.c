@@ -2407,6 +2407,7 @@ void PM_Duck( void )
 			duckFraction = PM_SplineFraction( downTime, 1.0f );
 			downFraction = PM_SplineFractionInverse( duckFraction );
 			pmove->flDuckTime = -( downFraction * TIME_TO_UNDUCK * 1000.0f );
+			pmove->bInDuck = false;
 		}
 		else if( ( pmove->flags & FL_DUCKING ) && !pmove->bInDuck &&
 			pmove->flDuckTime >= 0.0f )
