@@ -680,7 +680,6 @@
 #define HL2_PM_SPRINTING		(1 << 1) // Source m_bNewSprinting
 #define HL2_PM_DEVICE_SPRINT	(1 << 3) // Source m_bitsActiveDevices sprint bit
 #define HL2_PM_WALKING		(1 << 2)
-#define HL2_PM_IN_DUCK_JUMP		(1 << 6) // Source m_bInDuckJump
 
 // Break Model Defines
 #define BREAK_TYPEMASK		0x4F
