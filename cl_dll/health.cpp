@@ -261,8 +261,9 @@ static int AuxPower_GetLabelWidth( void )
 static void AuxPower_GetDefaultPosition( int *x, int *y )
 {
 	int healthY = ScreenHeight - gHUD.m_iFontHeight - gHUD.m_iFontHeight / 2;
-	int crossWidth = gHUD.GetSpriteRect( gHUD.m_HUD_cross ).right -
-		gHUD.GetSpriteRect( gHUD.m_HUD_cross ).left;
+	int crossSprite = gHUD.GetSpriteIndex( "cross" );
+	int crossWidth = gHUD.GetSpriteRect( crossSprite ).right -
+		gHUD.GetSpriteRect( crossSprite ).left;
 
 	*x = AuxPower_ScreenToRefX( crossWidth / 2 );
 	*y = AuxPower_ScreenToRefY( healthY - 17 );
