@@ -2124,21 +2124,13 @@ static qboolean PM_CanUnDuck( void )
 
 	PM_GetUnDuckOrigin( newOrigin );
 
-	// GoldSrc keeps the player's origin at a different height for its
-	// standing and crouched hulls. First verify that the crouched hull can
-	// make the small origin adjustment, then test the standing hull at the
-	// final position. Sweeping the standing hull from the crouched origin
-	// would begin 18 units inside the floor in GoldSrc's hull convention.
+	// Match GoldSrc's original un-duck clearance test: verify the adjusted
+	// origin with the crouched hull first, then test the standing hull at
+	// that same position. A sweep beginning at the floor-touching crouched
+	// origin can report startsolid even when standing is perfectly valid.
 	pmove->usehull = 1;
-	trace = pmove->PM_PlayerTrace( pmove->origin, newOrigin, PM_NORMAL, -1 );
-	if( trace.startsolid || trace.fraction != 1.0f )
-	{
-		pmove->usehull = oldHull;
-		return false;
-	}
-
 	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
-	if( trace.startsolid )
+	if( trace.startsolid || trace.allsolid )
 	{
 		pmove->usehull = oldHull;
 		return false;
@@ -2322,9 +2314,9 @@ changing the engine/DLL interface.
 */
 static void PM_StartUnDuck( void )
 {
-	// Keep bInDuck reserved for the downward transition. Other shared
-	// movement code uses it to distinguish a fully crouched player.
-	pmove->bInDuck = false;
+	// Keep the transition active until its timer reaches zero. The sprint
+	// logic below treats a negative timer as still fully crouched.
+	pmove->bInDuck = true;
 	pmove->flDuckTime = -( TIME_TO_UNDUCK * 1000.0f );
 	PM_UpdateUnDuck();
 }
@@ -2428,8 +2420,10 @@ void PM_Duck( void )
 			return;
 		}
 
-		if( pmove->flDuckTime < 0.0f &&
-			( pmove->bInDuck || ( pmove->flags & FL_DUCKING ) ) )
+		// bInDuck remains set for the entire stand-up transition, so
+		// update on the frame the timer reaches zero instead of restarting it.
+		if( pmove->bInDuck && pmove->flDuckTime <= 0.0f &&
+			( pmove->flags & FL_DUCKING || !( pmove->cmd.buttons & IN_DUCK ) ) )
 			PM_UpdateUnDuck();
 	}
 }
@@ -3271,7 +3265,10 @@ static void PM_UpdateHL2MovementSpeed( void )
 	bWasSprinting = ( pmove->iuser4 & HL2_PM_SPRINTING ) != 0;
 	bSprinting = bWasSprinting;
 	bWasWalking = ( pmove->iuser4 & HL2_PM_WALKING ) != 0;
-	bFullyDucked = ( pmove->flags & FL_DUCKING ) && !pmove->bInDuck;
+	// A negative duck timer is the stand-up transition. Keep sprint
+	// disabled until the standing hull is restored.
+	bFullyDucked = ( pmove->flags & FL_DUCKING ) &&
+		( !pmove->bInDuck || pmove->flDuckTime < 0.0f );
 
 	flPower = pmove->fuser4;
 	if( flPower < 0.0f )
