@@ -18,6 +18,7 @@ typedef void (*xash_physics_callback_fn)( void );
 
 struct xash_physics_interface_s
 {
+	int version;
 	xash_sv_create_entity_fn SV_CreateEntity;
 	xash_sv_physics_entity_fn SV_PhysicsEntity;
 	xash_physics_callback_fn SV_LoadEntities;
