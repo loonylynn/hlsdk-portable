@@ -1828,6 +1828,10 @@ void PM_CatagorizePosition( void )
 {
 	vec3_t point;
 	pmtrace_t tr;
+	float zvel;
+	float groundVelocityZ;
+	qboolean bMovingUp;
+	qboolean bMovingUpRapidly;
 
 // if the player hull point one unit down is solid, the player
 // is on ground
@@ -1841,16 +1845,32 @@ void PM_CatagorizePosition( void )
 	// water on each call, and the converse case will correct itself if called twice.
 	PM_CheckWater();
 
-	point[0] = pmove->origin[0];
-	point[1] = pmove->origin[1];
-	point[2] = pmove->origin[2] - 2;
+	// Source CGameMovement::CategorizePosition uses a 140-unit upward-speed
+	// threshold, measured relative to the current support when one is present.
+	// The engine fills physent_velocity on both client prediction and server PMove.
+	zvel = pmove->velocity[2];
+	bMovingUp = ( zvel > 0.0f );
+	bMovingUpRapidly = ( zvel > 140.0f );
 
-	if( pmove->velocity[2] > 180 )   // Shooting up really fast.  Definitely not on ground.
+	if( bMovingUpRapidly && pmove->onground >= 0 &&
+		pmove->onground < pmove->numphysent )
+	{
+		groundVelocityZ = pmove->physent_velocity[pmove->onground][2];
+		bMovingUpRapidly = ( zvel - groundVelocityZ ) > 140.0f;
+	}
+
+	// Source also drops ground contact while moving upward on a ladder,
+	// even when the vertical component is below the rapid-jump threshold.
+	if( bMovingUpRapidly || ( bMovingUp && g_onladder ) )
 	{
 		pmove->onground = -1;
 	}
 	else
 	{
+		point[0] = pmove->origin[0];
+		point[1] = pmove->origin[1];
+		point[2] = pmove->origin[2] - 2;
+
 		// Try and move down.
 		tr = pmove->PM_PlayerTrace( pmove->origin, point, PM_NORMAL, -1 );
 		// If we hit a steep plane, we are not on ground
