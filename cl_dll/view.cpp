@@ -216,6 +216,47 @@ static void V_RotateVectorAroundAxis( const vec3_t input, const vec3_t axis, flo
 	output[2] = input[2] * cosine + cross[2] * sine + axis[2] * axisDot * ( 1.0f - cosine );
 }
 
+// Source's three-argument VectorAngles(forward, pseudoup, angles) is not
+// available in GoldSrc. This is the same Source mathlib conversion, adapted
+// to GoldSrc's float-array vectors so the Portal 2 local-axis rotation keeps
+// its resulting roll instead of discarding it.
+static void V_VectorAnglesWithUp( const vec3_t forward, const vec3_t pseudoup, vec3_t angles )
+{
+	vec3_t left;
+	float leftLength;
+	float xyDist;
+	float upZ;
+
+	left[0] = pseudoup[1] * forward[2] - pseudoup[2] * forward[1];
+	left[1] = pseudoup[2] * forward[0] - pseudoup[0] * forward[2];
+	left[2] = pseudoup[0] * forward[1] - pseudoup[1] * forward[0];
+
+	leftLength = VectorNormalize( left );
+	if( leftLength <= 0.000001f )
+	{
+		// Degenerate forward/up pair: fall back to the engine's ordinary
+		// forward-only conversion rather than generating NaN angles.
+		VectorAngles( forward, angles );
+		return;
+	}
+
+	xyDist = sqrt( forward[0] * forward[0] + forward[1] * forward[1] );
+	if( xyDist > 0.001f )
+	{
+		angles[1] = atan2( forward[1], forward[0] ) * ( 180.0f / M_PI_F );
+		angles[0] = atan2( -forward[2], xyDist ) * ( 180.0f / M_PI_F );
+
+		upZ = ( left[1] * forward[0] ) - ( left[0] * forward[1] );
+		angles[2] = atan2( left[2], upZ ) * ( 180.0f / M_PI_F );
+	}
+	else
+	{
+		angles[1] = atan2( -left[0], left[1] ) * ( 180.0f / M_PI_F );
+		angles[0] = atan2( -forward[2], xyDist ) * ( 180.0f / M_PI_F );
+		angles[2] = 0.0f;
+	}
+}
+
 static void V_ApplyPortal2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entity_t *view )
 {
 	static double bobtime;
@@ -339,7 +380,7 @@ static void V_ApplyPortal2ViewModelBobAndLag( struct ref_params_s *pparams, cl_e
 
 	V_RotateVectorAroundAxis( forward, up, yawAngle, rotated );
 	VectorCopy( rotated, forward );
-	VectorAngles( forward, up, view->angles );
+	V_VectorAnglesWithUp( forward, up, view->angles );
 
 	// Portal disables Source's pitch-dependent positional lag correction because
 	// portal transitions can create abrupt pitch changes. Keep directional lag.
