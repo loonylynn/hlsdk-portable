@@ -24,6 +24,7 @@
 
 #include "hud.h"
 #include "cl_util.h"
+#include "cl_entity.h"
 #include "parsemsg.h"
 #include <string.h>
 
@@ -177,6 +178,53 @@ void CHudHealth::GetPainColor( int &r, int &g, int &b )
 #endif
 }
 
+// Draw the shared HL2-style auxiliary-power reserve above the health readout.
+static void DrawAuxPowerMeter( int x, int y, float flPower, int alpha )
+{
+	int r, g, b;
+	int i;
+
+	if( flPower < 0.0f )
+		flPower = 0.0f;
+	else if( flPower > 100.0f )
+		flPower = 100.0f;
+
+	if( flPower <= 20.0f )
+		UnpackRGB( r, g, b, RGB_REDISH );
+	else
+		UnpackRGB( r, g, b, RGB_YELLOWISH );
+
+	// Keep the label compact and place the segmented meter directly above health.
+	gHUD.DrawHudString( x, y - gHUD.m_iFontHeight, x + XRES( 20 ), "AUX", r, g, b );
+
+	const int barX = x + XRES( 22 );
+	const int barY = y - YRES( 5 );
+	const int segmentWidth = XRES( 4 );
+	const int segmentGap = XRES( 1 );
+	const int segmentHeight = YRES( 4 );
+
+	for( i = 0; i < 10; ++i )
+	{
+		const int segmentX = barX + i * ( segmentWidth + segmentGap );
+		float segmentPower = flPower - (float)( i * 10 );
+		int fillWidth = 0;
+
+		if( segmentPower < 0.0f )
+			segmentPower = 0.0f;
+		else if( segmentPower > 10.0f )
+			segmentPower = 10.0f;
+
+		if( segmentPower > 0.0f )
+			fillWidth = (int)( (float)segmentWidth * ( segmentPower / 10.0f ) + 0.5f );
+
+		// Empty cells stay visible so depletion is readable at a glance.
+		FillRGBA( segmentX, barY, segmentWidth, segmentHeight, 12, 12, 16, alpha / 2 );
+
+		if( fillWidth > 0 )
+			FillRGBA( segmentX, barY, fillWidth, segmentHeight, r, g, b, alpha );
+	}
+}
+
 int CHudHealth::Draw( float flTime )
 {
 	int r, g, b;
@@ -234,6 +282,11 @@ int CHudHealth::Draw( float flTime )
 		int iWidth = HealthWidth / 10;
 		UnpackRGB( r, g, b, RGB_YELLOWISH );
 		FillRGBA( x, y + gHUD.m_iHudNumbersYOffset, iWidth, iHeight, r, g, b, a );
+
+		// The local player state carries the same predicted aux-power value used by PM.
+		cl_entity_t *pLocalPlayer = gEngfuncs.GetLocalPlayer();
+		if( pLocalPlayer )
+			DrawAuxPowerMeter( CrossWidth / 2, y, pLocalPlayer->curstate.fuser4, a );
 	}
 
 	DrawDamage( flTime );
