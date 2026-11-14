@@ -53,6 +53,14 @@ extern void respawn( entvars_t *pev, BOOL fCopyCorpse );
 extern Vector VecBModelOrigin( entvars_t *pevBModel );
 extern edict_t *EntSelectSpawnPoint( CBaseEntity *pPlayer );
 
+extern cvar_t hl2_walkspeed;
+extern cvar_t hl2_normspeed;
+extern cvar_t hl2_sprintspeed;
+extern cvar_t hl2_suitpower_drain;
+extern cvar_t hl2_suitpower_recharge;
+extern cvar_t hl2_suitpower_start_minimum;
+extern cvar_t hl2_suitpower_recharge_delay;
+
 // the world node graph
 extern CGraph WorldGraph;
 
@@ -99,6 +107,9 @@ TYPEDESCRIPTION	CBasePlayer::m_playerSaveData[] =
 
 	DEFINE_FIELD( CBasePlayer, m_flTimeStepSound, FIELD_TIME ),
 	DEFINE_FIELD( CBasePlayer, m_flTimeWeaponIdle, FIELD_TIME ),
+	DEFINE_FIELD( CBasePlayer, m_flSuitPower, FIELD_FLOAT ),
+	DEFINE_FIELD( CBasePlayer, m_flSuitPowerRechargeTime, FIELD_TIME ),
+	DEFINE_FIELD( CBasePlayer, m_bIsSprinting, FIELD_BOOLEAN ),
 	DEFINE_FIELD( CBasePlayer, m_flSwimTime, FIELD_TIME ),
 	DEFINE_FIELD( CBasePlayer, m_flDuckTime, FIELD_TIME ),
 	DEFINE_FIELD( CBasePlayer, m_flWallJumpTime, FIELD_TIME ),
@@ -2197,6 +2208,85 @@ void CBasePlayer::UpdateStatusBar()
 #define CLIMB_SHAKE_FREQUENCY		22	// how many frames in between screen shakes when climbing
 #define	MAX_CLIMB_SPEED			200	// fastest vertical climbing speed possible
 #define	CLIMB_SPEED_DEC			15	// climbing deceleration rate
+void CBasePlayer::UpdateMovementSpeed( void )
+{
+	const BOOL bHasSuit = ( pev->weapons & ( 1 << WEAPON_SUIT ) ) != 0;
+	const BOOL bDucking = ( ( pev->flags & FL_DUCKING ) != 0 ) ||
+		( ( m_afPhysicsFlags & PFLAG_DUCKING ) != 0 );
+	const BOOL bCanSprint = bHasSuit && IsAlive() && !bDucking &&
+		pev->waterlevel != 3 && !( pev->flags & FL_ONTRAIN ) &&
+		!( m_afPhysicsFlags & PFLAG_ONTRAIN ) && !IsObserver();
+	const BOOL bWasSprinting = m_bIsSprinting;
+	const BOOL bWantsSprint = bCanSprint && ( pev->button & IN_SPEED );
+	const float flFrameTime = Q_max( 0.0f, gpGlobals->frametime );
+	const float flDrainRate = Q_max( 0.0f, hl2_suitpower_drain.value );
+
+	// Match HL2's start threshold, but let an active sprint continue until
+	// the reserve is actually depleted.
+	if( !bWantsSprint || m_flSuitPower <= 0.01f )
+	{
+		m_bIsSprinting = FALSE;
+	}
+	else if( !m_bIsSprinting && m_flSuitPower >= Q_max( 0.0f, hl2_suitpower_start_minimum.value ) )
+	{
+		m_bIsSprinting = TRUE;
+	}
+
+	// HL2 only drains sprint power while the player is moving horizontally.
+	if( m_bIsSprinting )
+	{
+		const float flHorizontalSpeedSqr = pev->velocity.x * pev->velocity.x +
+			pev->velocity.y * pev->velocity.y;
+
+		if( flHorizontalSpeedSqr > 0.01f )
+		{
+			m_flSuitPower -= flDrainRate * flFrameTime;
+			if( m_flSuitPower <= 0.01f )
+			{
+				m_flSuitPower = 0.0f;
+				m_bIsSprinting = FALSE;
+			}
+		}
+
+		// While a suit device is active, recharge is suspended.
+		m_flSuitPowerRechargeTime = gpGlobals->time +
+			Q_max( 0.0f, hl2_suitpower_recharge_delay.value );
+	}
+
+	// HL2 charges a small anti-tap penalty when sprint is switched off.
+	if( bWasSprinting && !m_bIsSprinting )
+	{
+		if( m_flSuitPower > 0.0f )
+		{
+			m_flSuitPower -= flDrainRate * 0.1f;
+			if( m_flSuitPower < 0.0f )
+				m_flSuitPower = 0.0f;
+		}
+		m_flSuitPowerRechargeTime = gpGlobals->time +
+			Q_max( 0.0f, hl2_suitpower_recharge_delay.value );
+	}
+
+	// Separate reserve: never consume pev->armorvalue (the HL1 battery HUD).
+	if( bHasSuit && !m_bIsSprinting && m_flSuitPower < 100.0f &&
+		gpGlobals->time >= m_flSuitPowerRechargeTime )
+	{
+		m_flSuitPower += Q_max( 0.0f, hl2_suitpower_recharge.value ) * flFrameTime;
+		if( m_flSuitPower > 100.0f )
+			m_flSuitPower = 100.0f;
+	}
+
+	// HL2 players without the suit walk by default. With the suit, normal
+	// speed is the default and +walk selects the slower movement state.
+	const BOOL bWantWalking = !bHasSuit ||
+		( ( pev->button & IN_WALK ) && !m_bIsSprinting && !bDucking );
+	const float flMovementSpeed = m_bIsSprinting ? hl2_sprintspeed.value :
+		( bWantWalking ? hl2_walkspeed.value : hl2_normspeed.value );
+
+	// GoldSrc copies maxspeed to clientdata/playermove, keeping both sides
+	// on the same speed cap without changing the engine's usercmd protocol.
+	pev->maxspeed = Q_max( 0.0f, flMovementSpeed );
+}
+
 #define	CLIMB_PUNCH_X			-7  // how far to 'punch' client X axis when climbing
 #define CLIMB_PUNCH_Z			7	// how far to 'punch' client Z axis when climbing
 
@@ -2216,6 +2306,8 @@ void CBasePlayer::PreThink( void )
 		ClearUseableHighlight();
 		return;         // intermission or finale
 	}
+
+	UpdateMovementSpeed();
 
 	UTIL_MakeVectors( pev->v_angle );             // is this still used?
 
@@ -3268,6 +3360,9 @@ void CBasePlayer::Spawn( void )
 	m_fApplyingTimedDamage = FALSE;
 	m_afPhysicsFlags = 0;
 	m_fLongJump = FALSE;// no longjump module. 
+	m_flSuitPower = 100.0f;
+	m_flSuitPowerRechargeTime = gpGlobals->time;
+	m_bIsSprinting = FALSE;
 
 	g_engfuncs.pfnSetPhysicsKeyValue( edict(), "slj", "0" );
 	g_engfuncs.pfnSetPhysicsKeyValue( edict(), "hl", "1" );
