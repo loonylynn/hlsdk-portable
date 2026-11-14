@@ -1,7 +1,7 @@
 diff --git a/valve/delta.lst b/valve/delta.lst
 --- a/valve/delta.lst
 +++ b/valve/delta.lst
-@@ -60,7 +60,15 @@ clientdata_t none
+@@ -60,8 +60,16 @@ clientdata_t none
  	DEFINE_DELTA( vuser4[1], DT_SIGNED | DT_FLOAT, 10, 1.0 ),
  	DEFINE_DELTA( vuser4[2], DT_SIGNED | DT_FLOAT, 10, 1.0 ),
  	
