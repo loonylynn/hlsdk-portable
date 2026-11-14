@@ -898,6 +898,32 @@ static void PM_SourceClipVelocity( vec3_t in, vec3_t normal, vec3_t out, float o
 	}
 }
 
+/*
+==================
+PM_SourceRoughLandingEffects
+
+Source TryPlayerMove calls PlayerRoughLandingEffects when a collision
+removes a sufficiently large amount of lateral speed. The current
+GoldSrc movement state already carries the last categorized surface
+type, step cooldown, fall velocity, and punch angle.
+==================
+*/
+static void PM_SourceRoughLandingEffects( float fvol )
+{
+	if( fvol > 0.0f )
+	{
+		// Play the current surface's step sound and suppress an immediate
+		// ordinary footstep, as Source's PlayerRoughLandingEffects does.
+		pmove->flTimeStepSound = 400;
+		PM_PlayStepSound( PM_MapTextureTypeStepType( pmove->chtexturetype ), fvol );
+
+		// Apply the same temporary roll punch used by Source's rough landing.
+		pmove->punchangle[2] = pmove->flFallVelocity * 0.013f;
+		if( pmove->punchangle[0] > 8.0f )
+			pmove->punchangle[0] = 8.0f;
+	}
+}
+
 void PM_AddCorrectGravity( void )
 {
 	float ent_gravity;
@@ -957,6 +983,8 @@ int PM_FlyMove( void )
 	pmtrace_t trace;
 	vec3_t end;
 	float time_left, allFraction;
+	float lateralStoppingAmount;
+	float fSlamVol;
 	int blocked;
 
 	numbumps = 4;           // Bump up to four times
@@ -1139,8 +1167,24 @@ int PM_FlyMove( void )
 	if( allFraction == 0 )
 	{
 		VectorCopy( vec3_origin, pmove->velocity );
-		//Con_DPrintf( "Don't stick\n" );
+		//Con_DPrintf( "Don't stick\\n" );
 	}
+
+	// Source TryPlayerMove detects unusually hard lateral stops separately
+	// from vertical landing checks and emits rough-landing feedback.
+	lateralStoppingAmount =
+		sqrt( primal_velocity[0] * primal_velocity[0] +
+			primal_velocity[1] * primal_velocity[1] ) -
+		sqrt( pmove->velocity[0] * pmove->velocity[0] +
+			pmove->velocity[1] * pmove->velocity[1] );
+
+	fSlamVol = 0.0f;
+	if( lateralStoppingAmount > PLAYER_MAX_SAFE_FALL_SPEED * 2.0f )
+		fSlamVol = 1.0f;
+	else if( lateralStoppingAmount > PLAYER_MAX_SAFE_FALL_SPEED )
+		fSlamVol = 0.85f;
+
+	PM_SourceRoughLandingEffects( fSlamVol );
 
 	return blocked;
 }
