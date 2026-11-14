@@ -616,9 +616,9 @@ void PM_UpdateStepSound( void )
 	float fvol;
 	vec3_t knee;
 	vec3_t feet;
-	//vec3_t center;
 	float height;
 	float speed;
+	float groundSpeed;
 	float velrun;
 	float velwalk;
 	float flduck;
@@ -631,115 +631,116 @@ void PM_UpdateStepSound( void )
 	if( pmove->flags & FL_FROZEN )
 		return;
 
-	PM_CatagorizeTextureType();
-
+	// Source CBasePlayer::UpdateStepSound uses total speed to classify
+	// walking/running, but requires horizontal motion while on the ground.
 	speed = Length( pmove->velocity );
+	groundSpeed = sqrt( pmove->velocity[0] * pmove->velocity[0] +
+		pmove->velocity[1] * pmove->velocity[1] );
 
-	// determine if we are on a ladder
-	fLadder = ( pmove->movetype == MOVETYPE_FLY );// IsOnLadder();
+	// Determine if we are on a ladder.
+	fLadder = ( pmove->movetype == MOVETYPE_FLY );
 
-	// UNDONE: need defined numbers for run, walk, crouch, crouch run velocities!!!!	
-	if( ( pmove->flags & FL_DUCKING) || fLadder )
+	// Source CBasePlayer::GetStepSoundVelocities.
+	if( ( pmove->flags & FL_DUCKING ) || fLadder )
 	{
-		velwalk = 60;		// These constants should be based on cl_movespeedkey * cl_forwardspeed somehow
-		velrun = 80;		// UNDONE: Move walking to server
-		flduck = 100;
+		velwalk = 60.0f;
+		velrun = 80.0f;
+		flduck = 100.0f;
 	}
 	else
 	{
-		velwalk = 120;
-		velrun = 210;
-		flduck = 0;
+		velwalk = 90.0f;
+		velrun = 220.0f;
+		flduck = 0.0f;
 	}
 
-	// If we're on a ladder or on the ground, and we're moving fast enough,
-	//  play step sound.  Also, if pmove->flTimeStepSound is zero, get the new
-	//  sound right away - we just started moving in new level.
-	if( ( fLadder || ( pmove->onground != -1 ) ) && ( Length( pmove->velocity ) > 0.0f ) && ( speed >= velwalk || !pmove->flTimeStepSound ) )
+	// Match Source's movement gate: no footsteps below the walk threshold,
+	// and no ground footsteps from purely vertical movement.
+	if( !( fLadder || ( pmove->onground != -1 && groundSpeed > 0.0001f ) ) ||
+		speed < velwalk )
 	{
-		fWalking = speed < velrun;		
-
-		//VectorCopy( pmove->origin, center );
-		VectorCopy( pmove->origin, knee );
-		VectorCopy( pmove->origin, feet );
-
-		height = pmove->player_maxs[pmove->usehull][2] - pmove->player_mins[pmove->usehull][2];
-
-		knee[2] = pmove->origin[2] - 0.3f * height;
-		feet[2] = pmove->origin[2] - 0.5f * height;
-
-		// find out what we're stepping in or on...
-		if( fLadder )
-		{
-			step = STEP_LADDER;
-			fvol = 0.35f;
-			pmove->flTimeStepSound = 350;
-		}
-		else if( pmove->PM_PointContents( knee, NULL ) == CONTENTS_WATER )
-		{
-			step = STEP_WADE;
-			fvol = 0.65f;
-			pmove->flTimeStepSound = 600;
-		}
-		else if( pmove->PM_PointContents( feet, NULL ) == CONTENTS_WATER )
-		{
-			step = STEP_SLOSH;
-			fvol = fWalking ? 0.2f : 0.5f;
-			pmove->flTimeStepSound = fWalking ? 400 : 300;		
-		}
-		else
-		{
-			// find texture under player, if different from current texture, 
-			// get material type
-			step = PM_MapTextureTypeStepType( pmove->chtexturetype );
-
-			switch( pmove->chtexturetype )
-			{
-			default:
-			case CHAR_TEX_CONCRETE:						
-				fvol = fWalking ? 0.2f : 0.5f;
-				pmove->flTimeStepSound = fWalking ? 400 : 300;
-				break;
-			case CHAR_TEX_METAL:	
-				fvol = fWalking ? 0.2f : 0.5f;
-				pmove->flTimeStepSound = fWalking ? 400 : 300;
-				break;
-			case CHAR_TEX_DIRT:	
-				fvol = fWalking ? 0.25f : 0.55f;
-				pmove->flTimeStepSound = fWalking ? 400 : 300;
-				break;
-			case CHAR_TEX_VENT:	
-				fvol = fWalking ? 0.4f : 0.7f;
-				pmove->flTimeStepSound = fWalking ? 400 : 300;
-				break;
-			case CHAR_TEX_GRATE:
-				fvol = fWalking ? 0.2f : 0.5f;
-				pmove->flTimeStepSound = fWalking ? 400 : 300;
-				break;
-			case CHAR_TEX_TILE:	
-				fvol = fWalking ? 0.2f : 0.5f;
-				pmove->flTimeStepSound = fWalking ? 400 : 300;
-				break;
-			case CHAR_TEX_SLOSH:
-				fvol = fWalking ? 0.2f : 0.5f;
-				pmove->flTimeStepSound = fWalking ? 400 : 300;
-				break;
-			}
-		}
-
-		pmove->flTimeStepSound += flduck; // slower step time if ducking
-
-		// play the sound
-		// 35% volume if ducking
-		if( pmove->flags & FL_DUCKING )
-		{
-			fvol *= 0.35f;
-		}
-
-		PM_PlayStepSound( step, fvol );
+		return;
 	}
-}
 
+	// Only trace the surface when a step is actually due.
+	PM_CatagorizeTextureType();
+
+	fWalking = speed < velrun;
+
+	VectorCopy( pmove->origin, knee );
+	VectorCopy( pmove->origin, feet );
+
+	height = pmove->player_maxs[pmove->usehull][2] - pmove->player_mins[pmove->usehull][2];
+
+	knee[2] = pmove->origin[2] - 0.3f * height;
+	feet[2] = pmove->origin[2] - 0.5f * height;
+
+	// Keep GoldSrc's original material lookup and water sampling.
+	if( fLadder )
+	{
+		step = STEP_LADDER;
+		fvol = 0.5f;
+		pmove->flTimeStepSound = 350;
+	}
+	else if( pmove->PM_PointContents( knee, NULL ) == CONTENTS_WATER )
+	{
+		step = STEP_WADE;
+		fvol = 0.65f;
+		pmove->flTimeStepSound = 600;
+	}
+	else if( pmove->PM_PointContents( feet, NULL ) == CONTENTS_WATER )
+	{
+		step = STEP_SLOSH;
+		fvol = fWalking ? 0.2f : 0.5f;
+		pmove->flTimeStepSound = fWalking ? 400 : 300;
+	}
+	else
+	{
+		step = PM_MapTextureTypeStepType( pmove->chtexturetype );
+
+		switch( pmove->chtexturetype )
+		{
+		default:
+		case CHAR_TEX_CONCRETE:
+			fvol = fWalking ? 0.2f : 0.5f;
+			pmove->flTimeStepSound = fWalking ? 400 : 300;
+			break;
+		case CHAR_TEX_METAL:
+			fvol = fWalking ? 0.2f : 0.5f;
+			pmove->flTimeStepSound = fWalking ? 400 : 300;
+			break;
+		case CHAR_TEX_DIRT:
+			fvol = fWalking ? 0.25f : 0.55f;
+			pmove->flTimeStepSound = fWalking ? 400 : 300;
+			break;
+		case CHAR_TEX_VENT:
+			fvol = fWalking ? 0.4f : 0.7f;
+			pmove->flTimeStepSound = fWalking ? 400 : 300;
+			break;
+		case CHAR_TEX_GRATE:
+			fvol = fWalking ? 0.2f : 0.5f;
+			pmove->flTimeStepSound = fWalking ? 400 : 300;
+			break;
+		case CHAR_TEX_TILE:
+			fvol = fWalking ? 0.2f : 0.5f;
+			pmove->flTimeStepSound = fWalking ? 400 : 300;
+			break;
+		case CHAR_TEX_SLOSH:
+			fvol = fWalking ? 0.2f : 0.5f;
+			pmove->flTimeStepSound = fWalking ? 400 : 300;
+			break;
+		}
+	}
+
+	// Source adds 100 ms for crouching or ladder movement.
+	pmove->flTimeStepSound += flduck;
+
+	// Source keeps 65% of the step volume while ducking.
+	if( pmove->flags & FL_DUCKING )
+		fvol *= 0.65f;
+
+	PM_PlayStepSound( step, fvol );
+}
 /*
 ================
 PM_AddToTouched
