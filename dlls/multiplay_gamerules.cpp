@@ -515,7 +515,7 @@ void CHalfLifeMultiplay::PlayerSpawn( CBasePlayer *pPlayer )
 	iOldAutoWepSwitch = pPlayer->m_iAutoWepSwitch;
 
 	pPlayer->m_iAutoWepSwitch = 1;
-	pPlayer->pev->weapons |= ( 1 << WEAPON_SUIT );
+	pPlayer->pev->weapons = (int)( (unsigned int)pPlayer->pev->weapons | WEAPON_SUIT_MASK );
 
 	addDefault = TRUE;
 
