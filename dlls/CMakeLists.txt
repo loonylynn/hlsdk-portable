@@ -208,6 +208,7 @@ FetchContent_Declare(
 	SOURCE_SUBDIR Build
 )
 FetchContent_MakeAvailable(JoltPhysics)
+set_property(TARGET Jolt PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 if(MSVC)
 	set(SVDLL_SOURCES
