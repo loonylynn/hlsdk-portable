@@ -2479,30 +2479,6 @@ void PM_Duck( void )
 		// UNDUCK (or attempt to...).
 		else
 		{
-			// Source starts or reverses the ordinary unduck timer on the
-			// button-release edge. Preserve the exact 400 ms / 200 ms mapping.
-			if( buttonsReleased & IN_DUCK )
-			{
-				if( bInDuck && !bDuckJump )
-				{
-					pmove->flDuckTime = 1000;
-				}
-				else if( pmove->bInDuck && !bInDuck )
-				{
-					float unduckMilliseconds = TIME_TO_UNDUCK * 1000.0f;
-					float duckMilliseconds = TIME_TO_DUCK * 1000.0f;
-					float elapsedMilliseconds =
-						1000.0f - (float)pmove->flDuckTime;
-					float fractionDucked =
-						elapsedMilliseconds / duckMilliseconds;
-					float remainingUnduckMilliseconds =
-						fractionDucked * unduckMilliseconds;
-
-					pmove->flDuckTime = (int)( 1000.0f -
-						unduckMilliseconds + remainingUnduckMilliseconds );
-				}
-			}
-
 			if( pmove->iuser4 & HL2_PM_IN_DUCK_JUMP )
 			{
 				if( !( pmove->cmd.buttons & IN_DUCK ) )
@@ -2531,6 +2507,30 @@ void PM_Duck( void )
 			// is still being interpolated by UpdateDuckJumpEyeOffset().
 			if( bDuckJumpTime )
 				return;
+
+			// Source starts or reverses the ordinary unduck timer on the
+			// button-release edge. Preserve the exact 400 ms / 200 ms mapping.
+			if( buttonsReleased & IN_DUCK )
+			{
+				if( bInDuck && !bDuckJump )
+				{
+					pmove->flDuckTime = 1000;
+				}
+				else if( pmove->bInDuck && !bInDuck )
+				{
+					float unduckMilliseconds = TIME_TO_UNDUCK * 1000.0f;
+					float duckMilliseconds = TIME_TO_DUCK * 1000.0f;
+					float elapsedMilliseconds =
+						1000.0f - (float)pmove->flDuckTime;
+					float fractionDucked =
+						elapsedMilliseconds / duckMilliseconds;
+					float remainingUnduckMilliseconds =
+						fractionDucked * unduckMilliseconds;
+
+					pmove->flDuckTime = (int)( 1000.0f -
+						unduckMilliseconds + remainingUnduckMilliseconds );
+				}
+			}
 
 			if( PM_CanUnDuck() )
 			{
