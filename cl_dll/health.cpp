@@ -231,8 +231,8 @@ static void DrawAuxPowerMeter( int x, int y, float flPower )
 		rcFill.left += iOffset;
 
 		SPR_Set( g_hAuxHudSprite, 255, 255, 255 );
-		SPR_DrawAdditive( 0, frameX + XRES( 4 ) + iOffset,
-			frameY + YRES( 4 ), &rcFill );
+		SPR_DrawAdditive( 0, frameX + 4 + iOffset,
+			frameY + 4, &rcFill );
 	}
 
 	// Draw the battery border over the fill to keep the outline crisp.
