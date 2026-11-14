@@ -24,6 +24,15 @@ static cvar_t build_branch = { "sv_game_build_branch", g_VCSInfo_Branch };
 // Global multiplier for the PS2-style usable-object bracket sprite.
 cvar_t sv_useable_bracket_scale = { "sv_useable_bracket_scale", "0.5", FCVAR_SERVER };
 
+// HL2 movement and auxiliary suit-power defaults.
+cvar_t hl2_walkspeed = { "hl2_walkspeed", "150", FCVAR_SERVER };
+cvar_t hl2_normspeed = { "hl2_normspeed", "190", FCVAR_SERVER };
+cvar_t hl2_sprintspeed = { "hl2_sprintspeed", "320", FCVAR_SERVER };
+cvar_t hl2_suitpower_drain = { "hl2_suitpower_drain", "12.5", FCVAR_SERVER };
+cvar_t hl2_suitpower_recharge = { "hl2_suitpower_recharge", "12.5", FCVAR_SERVER };
+cvar_t hl2_suitpower_start_minimum = { "hl2_suitpower_start_minimum", "10", FCVAR_SERVER };
+cvar_t hl2_suitpower_recharge_delay = { "hl2_suitpower_recharge_delay", "0.5", FCVAR_SERVER };
+
 cvar_t displaysoundlist = {"displaysoundlist","0"};
 
 // multiplayer server rules
@@ -506,6 +515,13 @@ void GameDLLInit( void )
 
 	CVAR_REGISTER( &displaysoundlist );
 	CVAR_REGISTER( &sv_useable_bracket_scale );
+	CVAR_REGISTER( &hl2_walkspeed );
+	CVAR_REGISTER( &hl2_normspeed );
+	CVAR_REGISTER( &hl2_sprintspeed );
+	CVAR_REGISTER( &hl2_suitpower_drain );
+	CVAR_REGISTER( &hl2_suitpower_recharge );
+	CVAR_REGISTER( &hl2_suitpower_start_minimum );
+	CVAR_REGISTER( &hl2_suitpower_recharge_delay );
 	CVAR_REGISTER( &allow_spectators );
 
 	CVAR_REGISTER( &teamplay );
