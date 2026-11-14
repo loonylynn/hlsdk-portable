@@ -21,6 +21,7 @@
 #include	"decals.h"
 #include	"gamerules.h"
 #include	"game.h"
+#include "xash_physint.h"
 
 bool g_fIsXash3D = false;
 
@@ -130,7 +131,8 @@ int GetEntityAPI2( DLL_FUNCTIONS *pFunctionTable, int *interfaceVersion )
 int Server_GetPhysicsInterface( int version, server_physics_api_t *api, physics_interface_t *interface )
 {
 	g_fIsXash3D = true;
-	return FALSE; // do not tell engine to init physics interface, as we're not using it
+	(void)api;
+	return NPCPhysics_GetInterface( version, interface );
 }
 #if !XASH_WIN32
 }
