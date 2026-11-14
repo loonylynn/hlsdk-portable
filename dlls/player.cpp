@@ -2221,6 +2221,11 @@ void CBasePlayer::UpdateMovementSpeed( void )
 	const float flFrameTime = Q_max( 0.0f, gpGlobals->frametime );
 	const float flDrainRate = Q_max( 0.0f, hl2_suitpower_drain.value );
 
+	if( m_flSuitPower < 0.0f )
+		m_flSuitPower = 0.0f;
+	else if( m_flSuitPower > 100.0f )
+		m_flSuitPower = 100.0f;
+
 	// Match HL2's start threshold, but let an active sprint continue until
 	// the reserve is actually depleted.
 	if( !bWantsSprint || m_flSuitPower <= 0.01f )
@@ -2254,7 +2259,7 @@ void CBasePlayer::UpdateMovementSpeed( void )
 	}
 
 	// HL2 charges a small anti-tap penalty when sprint is switched off.
-	if( bWasSprinting && !m_bIsSprinting )
+	if( bHasSuit && bWasSprinting && !m_bIsSprinting )
 	{
 		if( m_flSuitPower > 0.0f )
 		{
@@ -2284,7 +2289,7 @@ void CBasePlayer::UpdateMovementSpeed( void )
 
 	// GoldSrc copies maxspeed to clientdata/playermove, keeping both sides
 	// on the same speed cap without changing the engine's usercmd protocol.
-	pev->maxspeed = Q_max( 0.0f, flMovementSpeed );
+	pev->maxspeed = Q_max( 1.0f, flMovementSpeed );
 }
 
 #define	CLIMB_PUNCH_X			-7  // how far to 'punch' client X axis when climbing
