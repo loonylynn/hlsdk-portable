@@ -675,6 +675,10 @@
 #define IN_SPEED			IN_RUN
 #define IN_WALK			IN_CANCEL
 
+// HL2 movement state carried in the player's existing iuser4 field.
+#define HL2_PM_HAS_SUIT		(1 << 0)
+#define HL2_PM_SPRINTING	(1 << 1)
+
 // Break Model Defines
 #define BREAK_TYPEMASK		0x4F
 #define BREAK_GLASS			0x01
