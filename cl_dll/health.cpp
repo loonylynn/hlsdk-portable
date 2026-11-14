@@ -675,7 +675,7 @@ static void DrawAuxPowerMeter( float flPower )
 				( g_rcAuxHudFill.right - g_rcAuxHudFill.left ) ) / 2;
 			int iFillOffsetY = ( ( g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top ) -
 				( g_rcAuxHudFill.bottom - g_rcAuxHudFill.top ) ) / 2;
-			SPR_DrawAdditive( 0, frameX + iFillOffsetX, frameY + iFillOffsetY, &rcFill );
+			SPR_DrawAdditive( 0, frameX + iFillOffsetX, frameY + iFillOffsetY + 1, &rcFill );
 		}
 
 		// Draw the frame last so its outline stays crisp over the fill.
