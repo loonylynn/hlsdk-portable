@@ -768,7 +768,21 @@ void PlayerPreThink( edict_t *pEntity )
 	CBasePlayer *pPlayer = (CBasePlayer *)GET_PRIVATE( pEntity );
 
 	if( pPlayer )
+	{
 		pPlayer->PreThink();
+
+		// One-shot trace for the suit flag before the server movement pass.
+		static BOOL s_bAuxPreThinkReported = FALSE;
+		if( !s_bAuxPreThinkReported &&
+			( ( (unsigned int)pPlayer->pev->weapons & WEAPON_SUIT_MASK ) != 0 ) )
+		{
+			ALERT( at_console, "[AUX SERVER] PreThink: weapons=0x%08x iuser4=0x%08x power=%.2f\n",
+				(unsigned int)pPlayer->pev->weapons,
+				(unsigned int)pPlayer->pev->iuser4,
+				(double)pPlayer->pev->fuser4 );
+			s_bAuxPreThinkReported = TRUE;
+		}
+	}
 }
 
 /*
@@ -785,7 +799,21 @@ void PlayerPostThink( edict_t *pEntity )
 	CBasePlayer *pPlayer = (CBasePlayer *)GET_PRIVATE( pEntity );
 
 	if( pPlayer )
+	{
 		pPlayer->PostThink();
+
+		// One-shot trace after SV_FinishPMove has written prediction state back.
+		static BOOL s_bAuxPostThinkReported = FALSE;
+		if( !s_bAuxPostThinkReported &&
+			( ( (unsigned int)pPlayer->pev->weapons & WEAPON_SUIT_MASK ) != 0 ) )
+		{
+			ALERT( at_console, "[AUX SERVER] PostThink: weapons=0x%08x iuser4=0x%08x power=%.2f\n",
+				(unsigned int)pPlayer->pev->weapons,
+				(unsigned int)pPlayer->pev->iuser4,
+				(double)pPlayer->pev->fuser4 );
+			s_bAuxPostThinkReported = TRUE;
+		}
+	}
 }
 
 void ParmsNewLevel( void )
@@ -1775,6 +1803,18 @@ void UpdateClientData( const struct edict_s *ent, int sendweapons, struct client
 	cd->vuser4.x		= pev->vuser4.x;
 	cd->vuser4.y		= pev->vuser4.y;
 	cd->vuser4.z		= pev->vuser4.z;
+
+	// One-shot trace of the exact clientdata fields sent to the local client.
+	static BOOL s_bAuxClientDataReported = FALSE;
+	if( !s_bAuxClientDataReported &&
+		( ( (unsigned int)cd->weapons & WEAPON_SUIT_MASK ) != 0 ) )
+	{
+		ALERT( at_console, "[AUX SERVER] ClientData: weapons=0x%08x iuser4=0x%08x power=%.2f\n",
+			(unsigned int)cd->weapons,
+			(unsigned int)cd->iuser4,
+			(double)cd->fuser4 );
+		s_bAuxClientDataReported = TRUE;
+	}
 #if CLIENT_WEAPONS
 	if( sendweapons )
 	{
