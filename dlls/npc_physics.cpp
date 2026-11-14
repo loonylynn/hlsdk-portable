@@ -3,7 +3,7 @@
  *
  * GoldSrc remains authoritative for monster AI, navigation, animation and
  * ordinary world movement. Jolt supplies dynamic contact resolution between
- * living step monsters and existing toss/bounce entities. The resulting NPC
+ * living step/fly/toss monsters and existing toss/bounce/pushstep props. The resulting NPC
  * displacement is clipped through the engine's own monster hull trace before
  * it is written back to the edict.
  *
@@ -179,7 +179,13 @@ namespace
 		if( ( v.flags & FL_MONSTER ) == 0 || ( v.flags & ( FL_CLIENT | FL_KILLME | FL_DORMANT ) ) != 0 )
 			return false;
 
-		if( ( v.movetype != MOVETYPE_STEP && v.movetype != MOVETYPE_FLY && v.movetype != MOVETYPE_FLYMISSILE ) ||
+		// Match Source's shadow-hull eligibility for movable NPCs. GoldSrc
+		// also uses MOVETYPE_TOSS for living creatures such as leeches when
+		// they are outside their normal movement state.
+		if( ( v.movetype != MOVETYPE_STEP &&
+			v.movetype != MOVETYPE_FLY &&
+			v.movetype != MOVETYPE_FLYMISSILE &&
+			v.movetype != MOVETYPE_TOSS ) ||
 			v.solid == SOLID_NOT || v.solid == SOLID_TRIGGER )
 			return false;
 
