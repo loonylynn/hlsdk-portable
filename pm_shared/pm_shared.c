@@ -2944,7 +2944,8 @@ static void PM_UpdateHL2MovementSpeed( void )
 	int bWasSprinting;
 	int bSprinting;
 	int bCanSprint;
-	int bJustPressedSpeed;
+	int bSpeedButtonChanged;
+	int bWantsSprint;
 	int bWantsWalking;
 	int bStoppedSprinting;
 
@@ -2979,17 +2980,21 @@ static void PM_UpdateHL2MovementSpeed( void )
 		!( pmove->flags & ( FL_DUCKING | FL_ONTRAIN | FL_FROZEN ) ) &&
 		!( pmove->cmd.buttons & IN_DUCK );
 
-	bJustPressedSpeed = ( ( pmove->cmd.buttons & IN_SPEED ) != 0 ) &&
-		( ( pmove->oldbuttons & IN_SPEED ) == 0 );
+	bSpeedButtonChanged = ( ( pmove->cmd.buttons ^ pmove->oldbuttons ) & IN_SPEED ) != 0;
+	bWantsSprint = bCanSprint && ( pmove->cmd.buttons & IN_SPEED );
 
-	if( !bCanSprint || !( pmove->cmd.buttons & IN_SPEED ) || flPower <= 0.01f )
+	// Source changes sprint state on the speed-button edge. This prevents
+	// holding the key from automatically restarting sprint after depletion.
+	if( ( bSprinting != bWantsSprint ) && bSpeedButtonChanged )
 	{
+		if( bWantsSprint && flPower >= flStartMinimum )
+			bSprinting = 1;
+		else
+			bSprinting = 0;
+	}
+
+	if( flPower <= 0.01f )
 		bSprinting = 0;
-	}
-	else if( !bSprinting && bJustPressedSpeed && flPower >= flStartMinimum )
-	{
-		bSprinting = 1;
-	}
 
 	flHorizontalSpeedSqr = pmove->velocity[0] * pmove->velocity[0] +
 		pmove->velocity[1] * pmove->velocity[1];
