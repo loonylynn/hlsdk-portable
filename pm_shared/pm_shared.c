@@ -2089,21 +2089,17 @@ fixed, as Source does when changing between the two hulls.
 */
 static void PM_GetUnDuckOrigin( vec3_t newOrigin )
 {
-	float heightDiff;
 	int i;
 
 	VectorCopy( pmove->origin, newOrigin );
 
+	// GoldSrc uses centered player hulls. On ground, restore the standing
+	// origin by reversing the exact mins offset used when ducking. In air,
+	// retain GoldSrc's original origin convention and only change the hull.
 	if( pmove->onground != -1 )
 	{
 		for( i = 0; i < 3; i++ )
 			newOrigin[i] += pmove->player_mins[1][i] - pmove->player_mins[0][i];
-	}
-	else
-	{
-		heightDiff = ( pmove->player_maxs[0][2] - pmove->player_mins[0][2] ) -
-			( pmove->player_maxs[1][2] - pmove->player_mins[1][2] );
-		newOrigin[2] -= heightDiff;
 	}
 }
 
@@ -2124,13 +2120,13 @@ static qboolean PM_CanUnDuck( void )
 
 	PM_GetUnDuckOrigin( newOrigin );
 
-	// Match GoldSrc's original un-duck clearance test: verify the adjusted
-	// origin with the crouched hull first, then test the standing hull at
-	// that same position. A sweep beginning at the floor-touching crouched
-	// origin can report startsolid even when standing is perfectly valid.
+	// Keep the original GoldSrc two-point clearance check. The duck hull
+	// must be clear at the adjusted origin, then the standing hull must be
+	// clear at that same point. Do not treat allsolid as a separate failure:
+	// the original PM_UnDuck path only tests startsolid here.
 	pmove->usehull = 1;
 	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
-	if( trace.startsolid || trace.allsolid )
+	if( trace.startsolid )
 	{
 		pmove->usehull = oldHull;
 		return false;
@@ -2140,7 +2136,7 @@ static qboolean PM_CanUnDuck( void )
 	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
 	pmove->usehull = oldHull;
 
-	return ( !trace.startsolid && !trace.allsolid );
+	return !trace.startsolid;
 }
 
 /*
@@ -2197,7 +2193,6 @@ static void PM_FinishDuck( void )
 {
 	int wasDucked = ( pmove->flags & FL_DUCKING ) != 0;
 	int i;
-	float heightDiff;
 
 	pmove->usehull = 1;
 	pmove->flags |= FL_DUCKING;
@@ -2207,19 +2202,15 @@ static void PM_FinishDuck( void )
 
 	if( !wasDucked )
 	{
+		// Preserve GoldSrc's origin convention: only shift the centered
+		// hull while grounded. The airborne path historically changes hull
+		// without the Source engine's bottom-origin displacement.
 		if( pmove->onground != -1 )
 		{
 			for( i = 0; i < 3; i++ )
 				pmove->origin[i] -= ( pmove->player_mins[1][i] - pmove->player_mins[0][i] );
 
-			// See if we are stuck?
 			PM_FixPlayerCrouchStuck( STUCK_MOVEUP );
-		}
-		else
-		{
-			heightDiff = ( pmove->player_maxs[0][2] - pmove->player_mins[0][2] ) -
-				( pmove->player_maxs[1][2] - pmove->player_mins[1][2] );
-			pmove->origin[2] += heightDiff;
 		}
 
 		PM_CatagorizePosition();
@@ -2238,13 +2229,18 @@ continuous when the hull is finally changed.
 static void PM_SetDuckView( float duckFraction )
 {
 	float fMore = VEC_DUCK_HULL_MIN - VEC_HULL_MIN;
+	float standingView;
 
 	duckFraction = max( 0.0f, min( duckFraction, 1.0f ) );
 
 	if( pmove->flags & FL_DUCKING )
 	{
+		// While grounded the origin is still at the crouched-hull offset,
+		// so the eye rises to VEC_VIEW + fMore before the origin is restored.
+		// In air GoldSrc does not shift origin when changing hulls.
+		standingView = ( pmove->onground != -1 ) ? ( VEC_VIEW + fMore ) : VEC_VIEW;
 		pmove->view_ofs[2] = VEC_DUCK_VIEW * duckFraction +
-			( VEC_VIEW + fMore ) * ( 1.0f - duckFraction );
+			standingView * ( 1.0f - duckFraction );
 	}
 	else
 	{
@@ -2314,9 +2310,9 @@ changing the engine/DLL interface.
 */
 static void PM_StartUnDuck( void )
 {
-	// Keep the transition active until its timer reaches zero. The sprint
-	// logic below treats a negative timer as still fully crouched.
-	pmove->bInDuck = true;
+	// Keep bInDuck reserved for the downward transition. The negative
+	// timer identifies stand-up without changing playermove_t or its ABI.
+	pmove->bInDuck = false;
 	pmove->flDuckTime = -( TIME_TO_UNDUCK * 1000.0f );
 	PM_UpdateUnDuck();
 }
@@ -2364,8 +2360,7 @@ void PM_Duck( void )
 	{
 		// If crouch is pressed again during an unduck, reverse the timer
 		// at the current eased fraction instead of snapping the view.
-		if( ( nButtonPressed & IN_DUCK ) && pmove->flDuckTime < 0.0f &&
-			( pmove->bInDuck || ( pmove->flags & FL_DUCKING ) ) )
+		if( ( nButtonPressed & IN_DUCK ) && pmove->flDuckTime < 0.0f )
 		{
 			time = -pmove->flDuckTime / ( TIME_TO_UNDUCK * 1000.0f );
 			time = max( 0.0f, min( time, 1.0f ) );
@@ -2420,10 +2415,10 @@ void PM_Duck( void )
 			return;
 		}
 
-		// bInDuck remains set for the entire stand-up transition, so
-		// update on the frame the timer reaches zero instead of restarting it.
-		if( pmove->bInDuck && pmove->flDuckTime <= 0.0f &&
-			( pmove->flags & FL_DUCKING || !( pmove->cmd.buttons & IN_DUCK ) ) )
+		// A negative timer is an active stand-up transition. PM_ReduceTimers
+		// keeps it slightly negative on the completion frame so it cannot be
+		// mistaken for a fresh request to start standing up again.
+		if( pmove->flDuckTime < 0.0f )
 			PM_UpdateUnDuck();
 	}
 }
@@ -3609,9 +3604,11 @@ void PM_ReduceTimers( void )
 	else if( pmove->flDuckTime < 0 )
 	{
 		// Negative flDuckTime is the remaining stand-up transition time.
+		// Keep a tiny negative sentinel when it expires so PM_Duck still
+		// recognizes and completes that transition on this movement frame.
 		pmove->flDuckTime += pmove->cmd.msec;
-		if( pmove->flDuckTime > 0 )
-			pmove->flDuckTime = 0;
+		if( pmove->flDuckTime >= 0 )
+			pmove->flDuckTime = -0.001f;
 	}
 	if( pmove->flSwimTime > 0 )
 	{
