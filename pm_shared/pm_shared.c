@@ -2042,6 +2042,12 @@ static void PM_GetUnDuckOrigin( vec3_t newOrigin )
 		for( i = 0; i < 3; i++ )
 			newOrigin[i] += pmove->player_mins[1][i] - pmove->player_mins[0][i];
 	}
+	else if( pmove->iuser4 & HL2_PM_DUCK_AIR_OFFSET )
+	{
+		// Reverse the eye-height compensation applied when the crouched hull
+		// was committed in mid-air. GoldSrc's view offsets differ by 16 units.
+		newOrigin[2] -= ( VEC_VIEW - VEC_DUCK_VIEW );
+	}
 }
 
 /*
@@ -2126,8 +2132,9 @@ static void PM_FinishDuck( void )
 	pmove->flDuckTime = 0;
 	pmove->view_ofs[2] = VEC_DUCK_VIEW;
 
-	// GoldSrc's centered hull needs an origin adjustment while grounded.
-	// Do not apply Source's bottom-origin airborne displacement.
+	// GoldSrc uses a centered hull, so translate Source's origin handling
+	// into offsets that preserve the camera's world position at the instant
+	// the collision hull changes.
 	if( !wasDucked )
 	{
 		if( pmove->onground != -1 )
@@ -2135,12 +2142,18 @@ static void PM_FinishDuck( void )
 			for( i = 0; i < 3; i++ )
 				pmove->origin[i] -= ( pmove->player_mins[1][i] - pmove->player_mins[0][i] );
 
+			pmove->iuser4 &= ~HL2_PM_DUCK_AIR_OFFSET;
 			pmove->iuser4 |= HL2_PM_DUCK_ORIGIN_SHIFTED;
 			PM_FixPlayerCrouchStuck( STUCK_MOVEUP );
 		}
 		else
 		{
+			// Source commits the smaller hull immediately in air. GoldSrc's
+			// local eye offset drops by 16 units, so raise the centered origin
+			// by the same amount to prevent a camera pop.
+			pmove->origin[2] += ( VEC_VIEW - VEC_DUCK_VIEW );
 			pmove->iuser4 &= ~HL2_PM_DUCK_ORIGIN_SHIFTED;
+			pmove->iuser4 |= HL2_PM_DUCK_AIR_OFFSET;
 		}
 
 		PM_CatagorizePosition();
@@ -2167,7 +2180,7 @@ static void PM_FinishUnDuck( void )
 	pmove->view_ofs[2] = VEC_VIEW;
 
 	VectorCopy( newOrigin, pmove->origin );
-	pmove->iuser4 &= ~HL2_PM_DUCK_ORIGIN_SHIFTED;
+	pmove->iuser4 &= ~( HL2_PM_DUCK_ORIGIN_SHIFTED | HL2_PM_DUCK_AIR_OFFSET );
 	PM_CatagorizePosition();
 }
 
@@ -2236,7 +2249,13 @@ void PM_Duck( void )
 	// now rests on the floor with the corresponding centered-hull offset.
 	// Keep that fact through an unduck even if the player leaves the ground.
 	if( bInDuck && pmove->onground != -1 )
+	{
+		// An airborne duck uses a different origin compensation. Once it
+		// lands, retain the current origin but record that unducking must now
+		// restore the grounded centered-hull offset.
+		pmove->iuser4 &= ~HL2_PM_DUCK_AIR_OFFSET;
 		pmove->iuser4 |= HL2_PM_DUCK_ORIGIN_SHIFTED;
+	}
 
 	// Preserve GoldSrc's immediate handling for dead and observer states.
 	if( pmove->dead || pmove->iuser3 )
