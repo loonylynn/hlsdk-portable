@@ -185,10 +185,12 @@ namespace
 
 		// GoldSrc QAngle order: pitch, yaw, roll. This is the same
 		// AngleQuaternion convention used by the studio model pipeline.
+		// Match the GoldSrc studio AngleQuaternion implementation:
+		// angle[0] = pitch, angle[1] = yaw, angle[2] = roll.
 		Quat result(
-			sr * sp * cy - cr * cp * sy,
-			-sr * cp * cy - cr * sp * sy,
-			cr * sp * cy - sr * cp * sy,
+			sr * cp * cy - cr * sp * sy,
+			cr * sp * cy + sr * cp * sy,
+			cr * cp * sy - sr * sp * cy,
 			cr * cp * cy + sr * sp * sy
 		);
 		result = result.Normalized();
