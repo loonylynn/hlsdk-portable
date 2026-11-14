@@ -702,7 +702,7 @@ void CBasePlayer::attemptCureBleeding( void )
 
 	// Treat both alternative cure announcements as one event. This prevents
 	// a nearby second health treatment from immediately playing the other line.
-	if( ( pev->weapons & ( 1 << WEAPON_SUIT ) ) && !g_pGameRules->IsMultiplayer() )
+	if( ( pev->weapons & WEAPON_SUIT_MASK ) && !g_pGameRules->IsMultiplayer() )
 	{
 		const char *cureSentences[] = { "!HEV_HEAL6", "!HEV_HEAL7" };
 		for( int iSentence = 0; iSentence < 2; ++iSentence )
@@ -953,7 +953,7 @@ void CBasePlayer::RemoveAllItems( BOOL removeSuit )
 	if( removeSuit )
 		pev->weapons = 0;
 	else
-		pev->weapons &= ~WEAPON_ALLWEAPONS;
+		pev->weapons = (int)( (unsigned int)pev->weapons & WEAPON_SUIT_MASK );
 
 	// Turn off flashlight
 	if (removeSuit)
@@ -2209,7 +2209,7 @@ void CBasePlayer::UpdateMovementSpeed( void )
 	// WEAPON_SUIT is bit 31; use an unsigned shift so the mask is
 	// well-defined instead of left-shifting a signed int into its sign bit.
 	const BOOL bHasSuit = ( ( ( unsigned int )pev->weapons &
-		( 1u << WEAPON_SUIT ) ) != 0 );
+		WEAPON_SUIT_MASK ) != 0 );
 	float flMaxSpeed;
 
 	// iuser4, fuser1/fuser2/fuser4 and vuser3/vuser4 are already transferred
@@ -2721,7 +2721,7 @@ void CBasePlayer::CheckSuitUpdate()
 	int isearch = m_iSuitPlayNext;
 
 	// Ignore suit updates if no suit
-	if( !( pev->weapons & ( 1 << WEAPON_SUIT ) ) )
+	if( !( pev->weapons & WEAPON_SUIT_MASK ) )
 		return;
 
 	// if in range of radiation source, ping geiger counter
@@ -2782,7 +2782,7 @@ void CBasePlayer::SetSuitUpdate( const char *name, int fgroup, int iNoRepeatTime
 	int iempty = -1;
 
 	// Ignore suit updates if no suit
-	if( !( pev->weapons & ( 1 << WEAPON_SUIT ) ) )
+	if( !( pev->weapons & WEAPON_SUIT_MASK ) )
 		return;
 
 	if( g_pGameRules->IsMultiplayer() )
@@ -3837,7 +3837,7 @@ void CBasePlayer::FlashlightTurnOn( void )
 		return;
 	}
 
-	if( (pev->weapons & ( 1 << WEAPON_SUIT ) ) )
+	if( (pev->weapons & WEAPON_SUIT_MASK ) )
 	{
 		EMIT_SOUND_DYN( ENT( pev ), CHAN_WEAPON, SOUND_FLASHLIGHT_ON, 1.0, ATTN_NORM, 0, PITCH_NORM );
 		SetBits( pev->effects, EF_DIMLIGHT );
