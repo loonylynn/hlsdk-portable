@@ -116,6 +116,7 @@ set (CLDLL_SOURCES
 	statusbar.cpp
 	studio_util.cpp
 	StudioModelRenderer.cpp
+	ragdoll.cpp
 	text_message.cpp
 	train.cpp
 	tri.cpp
