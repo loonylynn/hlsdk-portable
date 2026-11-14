@@ -2940,10 +2940,12 @@ static void PM_UpdateHL2MovementSpeed( void )
 	int bHasSuit;
 	int bWasSprinting;
 	int bSprinting;
+	int bWasWalking;
 	int bCanSprint;
 	int bSpeedButtonChanged;
 	int bWantsSprint;
 	int bWantsWalking;
+	int bFullyDucked;
 
 	flWalkSpeed = ( pmove->vuser3[0] > 1.0f ) ? pmove->vuser3[0] : 150.0f;
 	flNormalSpeed = ( pmove->vuser3[1] > 1.0f ) ? pmove->vuser3[1] : 190.0f;
@@ -2953,6 +2955,8 @@ static void PM_UpdateHL2MovementSpeed( void )
 	bHasSuit = ( pmove->iuser4 & HL2_PM_HAS_SUIT ) != 0;
 	bWasSprinting = ( pmove->iuser4 & HL2_PM_SPRINTING ) != 0;
 	bSprinting = bWasSprinting;
+	bWasWalking = ( pmove->iuser4 & HL2_PM_WALKING ) != 0;
+	bFullyDucked = ( pmove->flags & FL_DUCKING ) && !pmove->bInDuck;
 
 	flPower = pmove->fuser4;
 	if( flPower < 0.0f )
@@ -2961,11 +2965,11 @@ static void PM_UpdateHL2MovementSpeed( void )
 		flPower = 100.0f;
 	pmove->fuser4 = flPower;
 
-	// Source CanSprint: require a living player, an equipped suit, and
-	// disallow starting sprint while ducked or fully submerged.
-	bCanSprint = !pmove->dead && ( pmove->waterlevel != 3 ) &&
-		!( pmove->flags & FL_DUCKING ) &&
-		!( pmove->cmd.buttons & IN_DUCK );
+	// Port of CHL2_Player::CanSprint: sprint must not be walking or fully
+	// ducked, and water level must be below fully submerged. The base HL1
+	// game has no suit_no_sprint global state or m_bSprintEnabled override.
+	bCanSprint = !bWasWalking && !bFullyDucked &&
+		( pmove->waterlevel != 3 );
 
 	bSpeedButtonChanged = ( ( pmove->cmd.buttons ^ pmove->oldbuttons ) & IN_SPEED ) != 0;
 	bWantsSprint = bHasSuit && bCanSprint && ( pmove->cmd.buttons & IN_SPEED );
@@ -2980,8 +2984,8 @@ static void PM_UpdateHL2MovementSpeed( void )
 			bSprinting = 0;
 	}
 
-	if( flPower < 0.01f )
-		bSprinting = 0;
+	// Do not stop sprint just because reserve reached exactly zero.
+	// Source's active device shuts down when the next drain would go below zero.
 
 	// HL2 forces walking when the player has no suit.
 	if( bHasSuit )
@@ -3005,6 +3009,11 @@ static void PM_UpdateHL2MovementSpeed( void )
 	else
 		pmove->iuser4 &= ~HL2_PM_SPRINTING;
 
+	if( bWantsWalking )
+		pmove->iuser4 |= HL2_PM_WALKING;
+	else
+		pmove->iuser4 &= ~HL2_PM_WALKING;
+
 	if( bSprinting )
 		flSelectedSpeed = flSprintSpeed;
 	else if( bWantsWalking )
@@ -3027,7 +3036,7 @@ static int PM_SuitPowerDrain( float flPower )
 {
 	pmove->fuser4 -= flPower;
 
-	if( pmove->fuser4 < 0.01f )
+	if( pmove->fuser4 < 0.0f )
 	{
 		pmove->fuser4 = 0.0f;
 		return 0;
@@ -3143,19 +3152,27 @@ static void PM_UpdateHL2SuitPower( void )
 	{
 		flPowerLoad = pmove->fuser2;
 
-		// Source does not spend sprint power while the player is stationary.
-		flHorizontalSpeedSqr = pmove->velocity[0] * pmove->velocity[0] +
-			pmove->velocity[1] * pmove->velocity[1];
-
-		if( flHorizontalSpeedSqr <= 0.0001f )
+		// Source does not drain sprint power when both horizontal velocity
+		// components are exactly zero.
+		if( pmove->velocity[0] == 0.0f && pmove->velocity[1] == 0.0f )
 		{
-			if( flPowerLoad <= flDrainRate + 0.0001f )
+			if( flPowerLoad <= flDrainRate )
 				flPowerLoad = 0.0f;
 			else
 				flPowerLoad -= flDrainRate;
 		}
 
-		PM_SuitPowerDrain( flPowerLoad * flFrameTime );
+		// If the active device cannot pay this frame's load, Source calls
+		// StopSprinting immediately. Removing the device applies its 10%
+		// shutoff penalty and starts the 0.5-second recharge delay.
+		if( !PM_SuitPowerDrain( flPowerLoad * flFrameTime ) )
+		{
+			if( pmove->iuser4 & HL2_PM_SPRINTING )
+			{
+				pmove->iuser4 &= ~HL2_PM_SPRINTING;
+				PM_SuitPowerRemoveSprintDevice( flDrainRate );
+			}
+		}
 	}
 }
 
