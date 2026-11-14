@@ -82,6 +82,9 @@ playermove_t *pmove = NULL;
 // Source SDK 2013 CGameMovement::DecayPunchAngle spring parameters.
 #define PUNCH_DAMPING			9.0f
 #define PUNCH_SPRING_CONSTANT	65.0f
+// vuser1 uses the stock 10-bit clientdata delta; scale its values to retain
+// sub-degree-per-second precision while carrying the spring velocity.
+#define PUNCH_VELOCITY_SCALE	4.0f
 
 #define PLAYER_LONGJUMP_SPEED		350 // how fast we longjump
 
@@ -2922,29 +2925,37 @@ void PM_DropPunchAngle( vec3_t punchangle )
 {
 	float damping;
 	float springForceMagnitude;
+	vec3_t punchVelocity;
+
+	// Decode the persistent spring velocity from vuser1. Its 4x storage scale
+	// avoids losing the fractional velocity to the stock 10-bit delta encoding.
+	VectorScale( pmove->vuser1, 1.0f / PUNCH_VELOCITY_SCALE, punchVelocity );
 
 	// Source CGameMovement::DecayPunchAngle.
 	// vuser1 stores the spring velocity, equivalent to
 	// CBasePlayer::m_Local.m_vecPunchAngleVel, and is carried through PMove.
 	if( DotProduct( punchangle, punchangle ) > 0.001f ||
-		DotProduct( pmove->vuser1, pmove->vuser1 ) > 0.001f )
+		DotProduct( punchVelocity, punchVelocity ) > 0.001f )
 	{
-		VectorMA( punchangle, pmove->frametime, pmove->vuser1, punchangle );
+		VectorMA( punchangle, pmove->frametime, punchVelocity, punchangle );
 
 		damping = 1.0f - ( PUNCH_DAMPING * pmove->frametime );
 		if( damping < 0.0f )
 			damping = 0.0f;
-		VectorScale( pmove->vuser1, damping, pmove->vuser1 );
+		VectorScale( punchVelocity, damping, punchVelocity );
 
 		// Torsional spring. Source clamps this per-frame impulse to [0, 2].
 		springForceMagnitude = PUNCH_SPRING_CONSTANT * pmove->frametime;
 		springForceMagnitude = max( 0.0f, min( springForceMagnitude, 2.0f ) );
-		VectorMA( pmove->vuser1, -springForceMagnitude, punchangle, pmove->vuser1 );
+		VectorMA( punchVelocity, -springForceMagnitude, punchangle, punchVelocity );
 
 		// Source's per-axis limits prevent view-angle wraparound.
 		punchangle[0] = max( -89.0f, min( punchangle[0], 89.0f ) );
 		punchangle[1] = max( -179.0f, min( punchangle[1], 179.0f ) );
 		punchangle[2] = max( -89.0f, min( punchangle[2], 89.0f ) );
+
+		// Re-encode the state for the next predicted/server movement frame.
+		VectorScale( punchVelocity, PUNCH_VELOCITY_SCALE, pmove->vuser1 );
 	}
 	else
 	{
