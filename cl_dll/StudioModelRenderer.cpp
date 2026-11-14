@@ -1421,7 +1421,7 @@ void CStudioModelRenderer::StudioSetupBones( void )
 	}
 	// A live Jolt ragdoll provides absolute world-space transforms for each
 	// studio bone. If no matching pose has arrived yet, retain GoldSrc animation.
-	if( m_pCurrentEntity->curstate.iuser4 > 0 )
+	if( IEngineStudio.IsHardware() && m_pCurrentEntity->curstate.iuser4 > 0 )
 	{
 		float ragdollTransform[3][4];
 		const int entityIndex = m_pCurrentEntity->curstate.number;
