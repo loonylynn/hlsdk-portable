@@ -266,9 +266,10 @@ namespace
 		);
 		settings.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
 		settings.mMassPropertiesOverride.mMass = mass;
-		settings.mAllowedDOFs = kind == NPC_PHYSICS_MONSTER
-			? ( EAllowedDOFs::TranslationX | EAllowedDOFs::TranslationY | EAllowedDOFs::TranslationZ )
-			: EAllowedDOFs::All;
+		// GoldSrc continues to own entity angles and angular motion. Keep the
+		// shadow bodies translation-only so Jolt's contact response cannot rotate
+		// a proxy independently of the engine's collision bounds.
+		settings.mAllowedDOFs = EAllowedDOFs::TranslationX | EAllowedDOFs::TranslationY | EAllowedDOFs::TranslationZ;
 		settings.mGravityFactor = 0.0f; // GoldSrc continues to own gravity and world movement.
 		settings.mAllowSleeping = false;
 		settings.mFriction = kind == NPC_PHYSICS_MONSTER ? 0.8f : 0.6f;
@@ -322,16 +323,6 @@ namespace
 	static Vec3 NPCPhysics_EntityVelocity( const entvars_t *pev )
 	{
 		return Vec3( pev->velocity[0], pev->velocity[1], pev->velocity[2] );
-	}
-
-	static Vec3 NPCPhysics_EntityAngularVelocity( const entvars_t *pev )
-	{
-		const float radiansPerDegree = JPH_PI / 180.0f;
-		return Vec3(
-			pev->avelocity[0] * radiansPerDegree,
-			pev->avelocity[1] * radiansPerDegree,
-			pev->avelocity[2] * radiansPerDegree
-		);
 	}
 
 	static int NPCPhysics_PhysicsEntity( edict_t *ent )
@@ -425,7 +416,6 @@ namespace
 			EActivation::Activate
 		);
 		bodyInterface.SetLinearVelocity( record.bodyID, NPCPhysics_EntityVelocity( pev ) );
-		bodyInterface.SetAngularVelocity( record.bodyID, NPCPhysics_EntityAngularVelocity( pev ) );
 	}
 
 	static void NPCPhysics_ClipMonsterToWorld( NPCPhysicsBody &record, BodyInterface &bodyInterface )
@@ -526,15 +516,10 @@ namespace
 			return;
 
 		const Vec3 linear = bodyInterface.GetLinearVelocity( record.bodyID );
-		const Vec3 angular = bodyInterface.GetAngularVelocity( record.bodyID );
-		const float degreesPerRadian = 180.0f / JPH_PI;
 
 		ent->v.velocity[0] = linear.GetX();
 		ent->v.velocity[1] = linear.GetY();
 		ent->v.velocity[2] = linear.GetZ();
-		ent->v.avelocity[0] = angular.GetX() * degreesPerRadian;
-		ent->v.avelocity[1] = angular.GetY() * degreesPerRadian;
-		ent->v.avelocity[2] = angular.GetZ() * degreesPerRadian;
 	}
 
 	static void NPCPhysics_EndFrame( void )
