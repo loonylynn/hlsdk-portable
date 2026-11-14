@@ -364,8 +364,10 @@ static void AuxPower_GetPosition( int *x, int *y )
 	// Saved coordinates are now offsets from the health HUD anchor.
 	*x = (int)CVAR_GET_FLOAT( "hud_auxpower_x" );
 	*y = (int)CVAR_GET_FLOAT( "hud_auxpower_y" );
-	if( *x < 0 ) *x = 0;
-	if( *y < 0 ) *y = 0;
+	// -1 is the unset/default sentinel; other negative values are valid
+	// offsets that move the meter left or upward from the health anchor.
+	if( *x == -1 ) *x = 0;
+	if( *y == -1 ) *y = 0;
 }
 
 static void AuxPower_GetLayout( int offsetX, int offsetY, int *left, int *top,
@@ -450,8 +452,10 @@ static void AuxPower_PrintReport( void )
 
 	gEngfuncs.Con_Printf( "\n[AUX. POWER HUD] %s\n",
 		g_bAuxPowerEditorActive ? "PREVIEW (not committed)" : "CURRENT LAYOUT" );
-	gEngfuncs.Con_Printf( "hud_auxpower_x %d\n", x );
-	gEngfuncs.Con_Printf( "hud_auxpower_y %d\n", y );
+	gEngfuncs.Con_Printf( "hud_auxpower_x %d  // offset from health HUD anchor\n", x );
+	gEngfuncs.Con_Printf( "hud_auxpower_y %d  // offset from health HUD anchor\n", y );
+	gEngfuncs.Con_Printf( "HUD-space %dx%d | battery origin %d,%d\n",
+		ScreenWidth, ScreenHeight, left, top );
 	gEngfuncs.Con_Printf( "hud_auxpower_grid %d\n", grid );
 	gEngfuncs.Con_Printf( "hud_auxpower_snap %d\n",
 		( CVAR_GET_FLOAT( "hud_auxpower_snap" ) != 0.0f ) ? 1 : 0 );
