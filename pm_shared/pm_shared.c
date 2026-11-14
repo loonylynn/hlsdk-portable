@@ -2319,6 +2319,10 @@ void PM_Duck( void )
 
 					if( duckSeconds > TIME_TO_UNDUCK || bInAir )
 					{
+						// The integer PMove timer can cross the 200 ms boundary
+						// between commands. Apply the exact standing endpoint before
+						// the hull/origin handoff to avoid a last-frame view step.
+						PM_SetDuckedEyeOffset( 0.0f );
 						PM_FinishUnDuck();
 					}
 					else
