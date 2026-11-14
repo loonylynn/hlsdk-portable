@@ -607,6 +607,7 @@ int NPCPhysics_GetInterface( int version, void *callbacks )
 	if( !physics )
 		return FALSE;
 	memset( physics, 0, sizeof( *physics ) );
+	physics->version = version;
 	physics->SV_PhysicsEntity = NPCPhysics_PhysicsEntity;
 	physics->SV_EndFrame = NPCPhysics_EndFrame;
 
