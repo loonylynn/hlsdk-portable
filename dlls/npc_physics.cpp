@@ -88,6 +88,7 @@ namespace
 		int boneCount;
 		float nextPoseTime;
 		::Vector entityOriginOffset;
+		::Vector networkOrigin;
 		std::vector<RagdollBone> bones;
 		std::vector<Ref<TwoBodyConstraint> > constraints;
 		Ref<GroupFilterTable> groupFilter;
@@ -331,6 +332,7 @@ namespace
 		ragdoll.boneCount = header->numbones;
 		ragdoll.nextPoseTime = 0.0f;
 		ragdoll.entityOriginOffset = ent->v.origin;
+		ragdoll.networkOrigin = ent->v.origin;
 
 		std::vector<::Vector> bonePositions( ragdoll.boneCount );
 		std::vector<::Vector> boneAngles( ragdoll.boneCount );
@@ -531,7 +533,39 @@ namespace
 
 			TraceResult trace;
 			g_engfuncs.pfnTraceLine( start, end, 1, ragdoll.entity, &trace );
-			if( trace.flFraction >= 1.0f || trace.fAllSolid )
+
+			// A body may begin the frame already embedded in the BSP. The
+			// normal swept-center trace then reports allsolid and cannot
+			// recover it. Try a short vertical sweep around its new position;
+			// accept only an upward-facing world surface (normally the floor).
+			if( trace.fAllSolid )
+			{
+				const float recoveryDistance = 32.0f;
+				const float recoveryStart[3] = {
+					end[0], end[1], end[2] + recoveryDistance
+				};
+				const float recoveryEnd[3] = {
+					end[0], end[1], end[2] - recoveryDistance
+				};
+				TraceResult recoveryTrace;
+				g_engfuncs.pfnTraceLine(
+					recoveryStart,
+					recoveryEnd,
+					1,
+					ragdoll.entity,
+					&recoveryTrace
+				);
+
+				if( recoveryTrace.flFraction >= 1.0f ||
+					recoveryTrace.fStartSolid ||
+					recoveryTrace.fAllSolid ||
+					recoveryTrace.vecPlaneNormal[2] < 0.5f )
+					continue;
+
+				trace = recoveryTrace;
+			}
+
+			if( trace.flFraction >= 1.0f )
 				continue;
 
 			Vec3 normal(
@@ -584,7 +618,10 @@ namespace
 				ragdoll.boneCount - start
 			);
 
-			MESSAGE_BEGIN( MSG_PVS, g_msgRagdollPose, ragdoll.entity->v.origin );
+			// Keep the PVS anchor at the death location. The rendered entity
+			// follows the ragdoll root and can move below the BSP while the
+			// transitional trace collision recovers it.
+			MESSAGE_BEGIN( MSG_PVS, g_msgRagdollPose, ragdoll.networkOrigin );
 				WRITE_SHORT( entityIndex );
 				WRITE_SHORT( ragdoll.networkID );
 				WRITE_BYTE( ragdoll.boneCount );
