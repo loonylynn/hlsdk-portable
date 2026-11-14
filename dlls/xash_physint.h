@@ -46,4 +46,5 @@ struct xash_physics_interface_s
 };
 
 int NPCPhysics_GetInterface( int version, void *callbacks );
+void NPCPhysics_ResetMap( void );
 void NPCPhysics_Shutdown( void );
