@@ -1050,6 +1050,8 @@ extern float g_flHL2AuxStartMinimum;
 extern int g_iHL2AuxFlagsFrom;
 extern int g_iHL2AuxFlagsPost;
 extern int g_iHL2AuxButtons;
+extern unsigned int g_iHL2AuxWeaponsFrom;
+extern unsigned int g_iHL2AuxWeaponsPost;
 
 void _DLLEXPORT HUD_PostRunCmd( struct local_state_s *from, struct local_state_s *to, struct usercmd_s *cmd, int runfuncs, double time, unsigned int random_seed )
 {
@@ -1061,10 +1063,12 @@ void _DLLEXPORT HUD_PostRunCmd( struct local_state_s *from, struct local_state_s
 	{
 		g_flHL2AuxPowerFrom = from->client.fuser4;
 		g_iHL2AuxFlagsFrom = from->client.iuser4;
+		g_iHL2AuxWeaponsFrom = (unsigned int)from->client.weapons;
 	}
 	if( to )
 	{
 		g_flHL2AuxPowerPostRun = to->client.fuser4;
+		g_iHL2AuxWeaponsPost = (unsigned int)to->client.weapons;
 		g_flHL2AuxDrainRate = to->client.vuser4[0];
 		g_flHL2AuxRechargeRate = to->client.vuser4[1];
 		g_flHL2AuxStartMinimum = to->client.vuser4[2];
