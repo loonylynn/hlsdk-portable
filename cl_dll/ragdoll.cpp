@@ -122,6 +122,14 @@ int Ragdoll_GetBoneTransform( int entityIndex, int ragdollID, int boneIndex, flo
 		boneIndex >= entry.boneCount || !entry.bones[boneIndex].valid )
 		return 0;
 
+	// Do not mix a partial first network chunk with GoldSrc local animation
+	// matrices. Wait until the first complete skeletal snapshot has arrived.
+	for( int i = 0; i < entry.boneCount; ++i )
+	{
+		if( !entry.bones[i].valid )
+			return 0;
+	}
+
 	const ragdoll_bone_pose_t &bone = entry.bones[boneIndex];
 	const float x = bone.rotation[0];
 	const float y = bone.rotation[1];
