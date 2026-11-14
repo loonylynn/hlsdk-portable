@@ -631,6 +631,11 @@ void PM_UpdateStepSound( void )
 	if( pmove->flags & FL_FROZEN )
 		return;
 
+	// Keep the GoldSrc texture trace here: PM_CheckFalling also calls this
+	// function before playing its separate landing sound, and relies on the
+	// refreshed texture type even when no regular step is emitted.
+	PM_CatagorizeTextureType();
+
 	// Source CBasePlayer::UpdateStepSound uses total speed to classify
 	// walking/running, but requires horizontal motion while on the ground.
 	speed = Length( pmove->velocity );
@@ -661,9 +666,6 @@ void PM_UpdateStepSound( void )
 	{
 		return;
 	}
-
-	// Only trace the surface when a step is actually due.
-	PM_CatagorizeTextureType();
 
 	fWalking = speed < velrun;
 
