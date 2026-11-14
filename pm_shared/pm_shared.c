@@ -3123,7 +3123,7 @@ void PM_NoClip( void )
 	float newSpeed;
 
 	factor = 5.0f;
-	maxspeed = pmove->maxspeed * factor;
+	maxspeed = pmove->movevars->maxspeed * factor;
 
 	// Source's IN_SPEED modifier halves noclip input speed.
 	if( pmove->cmd.buttons & IN_SPEED )
