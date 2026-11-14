@@ -195,9 +195,9 @@ static void DrawAuxPowerMeter( int x, int y, float flPower, int alpha )
 		UnpackRGB( r, g, b, RGB_YELLOWISH );
 
 	// Keep the label compact and place the segmented meter directly above health.
-	gHUD.DrawHudString( x, y - gHUD.m_iFontHeight, x + XRES( 20 ), "AUX", r, g, b );
+	gHUD.DrawHudString( x, y - gHUD.m_iFontHeight, x + XRES( 58 ), "AUX. POWER", r, g, b );
 
-	const int barX = x + XRES( 22 );
+	const int barX = x + XRES( 60 );
 	const int barY = y - YRES( 5 );
 	const int segmentWidth = XRES( 4 );
 	const int segmentGap = XRES( 1 );
