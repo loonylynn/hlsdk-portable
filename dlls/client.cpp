@@ -1769,8 +1769,12 @@ void UpdateClientData( const struct edict_s *ent, int sendweapons, struct client
 	cd->iuser4		= pev->iuser4;
 	cd->fuser1		= pev->fuser1;
 	cd->fuser4		= pev->fuser4;
-	cd->vuser3		= pev->vuser3;
-	cd->vuser4		= pev->vuser4;
+	cd->vuser3.x		= pev->vuser3.x;
+	cd->vuser3.y		= pev->vuser3.y;
+	cd->vuser3.z		= pev->vuser3.z;
+	cd->vuser4.x		= pev->vuser4.x;
+	cd->vuser4.y		= pev->vuser4.y;
+	cd->vuser4.z		= pev->vuser4.z;
 #if CLIENT_WEAPONS
 	if( sendweapons )
 	{
