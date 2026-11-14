@@ -72,7 +72,6 @@ cvar_t	*cl_upspeed;
 cvar_t	*cl_forwardspeed;
 cvar_t	*cl_backspeed;
 cvar_t	*cl_sidespeed;
-cvar_t	*cl_movespeedkey;
 cvar_t	*cl_yawspeed;
 cvar_t	*cl_pitchspeed;
 cvar_t	*cl_anglespeedkey;
@@ -112,6 +111,7 @@ kbutton_t	in_moveleft;
 kbutton_t	in_moveright;
 kbutton_t	in_strafe;
 kbutton_t	in_speed;
+kbutton_t	in_walk;
 kbutton_t	in_use;
 kbutton_t	in_jump;
 kbutton_t	in_attack;
@@ -537,6 +537,16 @@ void IN_SpeedUp( void )
 	KeyUp( &in_speed );
 }
 
+void IN_WalkDown( void )
+{
+	KeyDown( &in_walk );
+}
+
+void IN_WalkUp( void )
+{
+	KeyUp( &in_walk );
+}
+
 void IN_StrafeDown( void )
 {
 	KeyDown( &in_strafe );
@@ -824,14 +834,8 @@ void DLLEXPORT CL_CreateMove( float frametime, struct usercmd_s *cmd, int active
 			cmd->forwardmove -= cl_backspeed->value * CL_KeyState( &in_back );
 		}
 
-		// adjust for speed key
-		if( in_speed.state & 1 )
-		{
-			cmd->forwardmove *= cl_movespeedkey->value;
-			cmd->sidemove *= cl_movespeedkey->value;
-			cmd->upmove *= cl_movespeedkey->value;
-		}
-
+		// +speed and +walk are movement-state buttons. The server selects the
+		// corresponding HL2 speed; do not apply GoldSrc's 0.3 slow-move scale.
 		// clip to maxspeed
 		spd = gEngfuncs.GetClientMaxspeed();
 		if( spd != 0.0f )
@@ -917,6 +921,12 @@ Set bResetState to 1 to clear old state info
 int CL_ButtonBits( int bResetState )
 {
 	int bits = 0;
+
+	if( in_speed.state & 3 )
+		bits |= IN_SPEED;
+
+	if( in_walk.state & 3 )
+		bits |= IN_WALK;
 
 	if( in_attack.state & 3 )
 	{
@@ -1018,6 +1028,8 @@ int CL_ButtonBits( int bResetState )
 		in_reload.state &= ~2;
 		in_alt1.state &= ~2;
 		in_score.state &= ~2;
+		in_speed.state &= ~2;
+		in_walk.state &= ~2;
 	}
 
 	return bits;
@@ -1080,6 +1092,8 @@ void InitInput( void )
 	gEngfuncs.pfnAddCommand( "-moveright", IN_MoverightUp );
 	gEngfuncs.pfnAddCommand( "+speed", IN_SpeedDown );
 	gEngfuncs.pfnAddCommand( "-speed", IN_SpeedUp );
+	gEngfuncs.pfnAddCommand( "+walk", IN_WalkDown );
+	gEngfuncs.pfnAddCommand( "-walk", IN_WalkUp );
 	gEngfuncs.pfnAddCommand( "+attack", IN_AttackDown );
 	gEngfuncs.pfnAddCommand( "-attack", IN_AttackUp );
 	gEngfuncs.pfnAddCommand( "+attack2", IN_Attack2Down );
@@ -1119,7 +1133,6 @@ void InitInput( void )
 	cl_forwardspeed		= gEngfuncs.pfnRegisterVariable( "cl_forwardspeed", "400", FCVAR_ARCHIVE );
 	cl_backspeed		= gEngfuncs.pfnRegisterVariable( "cl_backspeed", "400", FCVAR_ARCHIVE );
 	cl_sidespeed		= gEngfuncs.pfnRegisterVariable( "cl_sidespeed", "400", 0 );
-	cl_movespeedkey		= gEngfuncs.pfnRegisterVariable( "cl_movespeedkey", "0.3", 0 );
 	cl_pitchup		= gEngfuncs.pfnRegisterVariable( "cl_pitchup", "89", 0 );
 	cl_pitchdown		= gEngfuncs.pfnRegisterVariable( "cl_pitchdown", "89", 0 );
 
