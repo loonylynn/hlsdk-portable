@@ -98,9 +98,6 @@ cvar_t	*scr_ofsz;
 cvar_t	*v_centermove;
 cvar_t	*v_centerspeed;
 
-cvar_t	*cl_bobcycle;
-cvar_t	*cl_bob;
-cvar_t	*cl_bobup;
 cvar_t	*cl_waterdist;
 cvar_t	*cl_chasedist;
 
@@ -177,48 +174,6 @@ void V_InterpolateAngles( float *start, float *end, float *output, float frac )
 	V_NormalizeAngles( output );
 } */
 
-// Quakeworld bob code, this fixes jitters in the mutliplayer since the clock (pparams->time) isn't quite linear
-float V_CalcBob( struct ref_params_s *pparams )
-{
-	static double bobtime;
-	static float bob;
-	float cycle;
-	static float lasttime;
-	vec3_t	vel;
-
-	if( pparams->onground == -1 ||
-		 pparams->time == lasttime )
-	{
-		// just use old value
-		return bob;	
-	}
-
-	lasttime = pparams->time;
-
-	bobtime += pparams->frametime;
-	cycle = bobtime - (int)( bobtime / cl_bobcycle->value ) * cl_bobcycle->value;
-	cycle /= cl_bobcycle->value;
-
-	if( cycle < cl_bobup->value )
-	{
-		cycle = M_PI_F * cycle / cl_bobup->value;
-	}
-	else
-	{
-		cycle = M_PI_F + M_PI_F * ( cycle - cl_bobup->value )/( 1.0f - cl_bobup->value );
-	}
-
-	// bob is proportional to simulated velocity in the xy plane
-	// (don't count Z, or jumping messes it up)
-	VectorCopy( pparams->simvel, vel );
-	vel[2] = 0;
-
-	bob = sqrt( vel[0] * vel[0] + vel[1] * vel[1] ) * cl_bob->value;
-	bob = bob * 0.3f + bob * 0.7f * sin(cycle);
-	bob = Q_min( bob, 4.0f );
-	bob = Q_max( bob, -7.0f );
-	return bob;
-}
 
 /*
 =============================================================================
@@ -588,7 +543,7 @@ void V_CalcNormalRefdef( struct ref_params_s *pparams )
 	cl_entity_t *ent, *view;
 	int i;
 	vec3_t angles;
-	float bob, waterOffset;
+	float waterOffset;
 	static viewinterp_t ViewInterp;
 
 	static float oldz = 0;
@@ -610,13 +565,9 @@ void V_CalcNormalRefdef( struct ref_params_s *pparams )
 	// view is the weapon model (only visible from inside body)
 	view = gEngfuncs.GetViewModel();
 
-	// transform the view offset by the model's matrix to get the offset from
-	// model origin for the view
-	bob = V_CalcBob( pparams );
-
-	// refresh position
+	// Source HL2 does not add a separate walking-bob offset to the player camera.
+	// Weapon bob and lag are applied independently to the viewmodel below.
 	VectorCopy( pparams->simorg, pparams->vieworg );
-	pparams->vieworg[2] += bob ;
 	VectorAdd( pparams->vieworg, pparams->viewheight, pparams->vieworg );
 
 	if( pparams->health <= 0 )
@@ -1421,8 +1372,6 @@ void V_GetInEyePos( int target, float *origin, float *angles )
 	else if( ent->curstate.usehull == 1 )
 		origin[2] += 12.0f; // VEC_DUCK_VIEW;
 	else
-		// exacty eye position can't be caluculated since it depends on
-		// client values like cl_bobcycle, this offset matches the default values
 		origin[2] += 28.0f; // DEFAULT_VIEWHEIGHT
 }
 
@@ -1779,9 +1728,6 @@ void V_Init( void )
 	v_centermove = gEngfuncs.pfnRegisterVariable( "v_centermove", "0.15", 0 );
 	v_centerspeed = gEngfuncs.pfnRegisterVariable( "v_centerspeed","500", 0 );
 
-	cl_bobcycle = gEngfuncs.pfnRegisterVariable( "cl_bobcycle","0.8", 0 );// best default for my experimental gun wag (sjb)
-	cl_bob = gEngfuncs.pfnRegisterVariable( "cl_bob","0.01", FCVAR_ARCHIVE );// best default for my experimental gun wag (sjb)
-	cl_bobup = gEngfuncs.pfnRegisterVariable( "cl_bobup","0.5", 0 );
 	cl_waterdist = gEngfuncs.pfnRegisterVariable( "cl_waterdist","4", 0 );
 	cl_chasedist = gEngfuncs.pfnRegisterVariable( "cl_chasedist","112", 0 );
 
