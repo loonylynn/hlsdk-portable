@@ -48,6 +48,7 @@ playermove_t *pmove = NULL;
 
 // Ducking time
 #define TIME_TO_DUCK		0.4f
+#define TIME_TO_UNDUCK		0.2f
 #define VEC_DUCK_HULL_MIN	-18
 #define VEC_DUCK_HULL_MAX	18
 #define VEC_DUCK_VIEW		12
@@ -92,6 +93,8 @@ playermove_t *pmove = NULL;
 #define PLAYER_LONGJUMP_SPEED		350 // how fast we longjump
 
 #define PLAYER_DUCKING_MULTIPLIER	0.333f
+#define HL2_JUMP_TIME_MS			510.0f
+#define HL2_DUCK_JUMP_TIME_MS		1000.0f
 
 // double to float warning
 #if _MSC_VER
@@ -2018,10 +2021,80 @@ float PM_SplineFraction( float value, float scale )
 	value = scale * value;
 	valueSquared = value * value;
 
-	// Nice little ease-in, ease-out spline-like curve
+	// Source SimpleSpline: eased transition with zero velocity at each end.
 	return 3 * valueSquared - 2 * valueSquared * value;
 }
 
+/*
+==================
+PM_GetUnDuckOrigin
+
+GoldSrc uses a centered player hull. When grounded, restore the standing
+origin by reversing the offset applied when the crouched hull was committed.
+==================
+*/
+static void PM_GetUnDuckOrigin( vec3_t newOrigin )
+{
+	int i;
+
+	VectorCopy( pmove->origin, newOrigin );
+
+	if( pmove->iuser4 & HL2_PM_DUCK_ORIGIN_SHIFTED )
+	{
+		for( i = 0; i < 3; i++ )
+			newOrigin[i] += pmove->player_mins[1][i] - pmove->player_mins[0][i];
+	}
+	else if( pmove->iuser4 & HL2_PM_DUCK_AIR_OFFSET )
+	{
+		// Reverse the eye-height compensation applied when the crouched hull
+		// was committed in mid-air. GoldSrc's view offsets differ by 16 units.
+		newOrigin[2] -= ( VEC_VIEW - VEC_DUCK_VIEW );
+	}
+}
+
+/*
+==================
+PM_CanUnDuck
+
+Direct GoldSrc equivalent of Source CanUnduck, adapted to GoldSrc's
+centered hull and existing PM_PlayerTrace interface.
+==================
+*/
+static qboolean PM_CanUnDuck( void )
+{
+	pmtrace_t trace;
+	vec3_t newOrigin;
+	int oldHull = pmove->usehull;
+
+	// If the standing hull is already active (the player released duck
+	// before the duck transition completed), there is no hull expansion.
+	if( !( pmove->flags & FL_DUCKING ) )
+		return true;
+
+	PM_GetUnDuckOrigin( newOrigin );
+
+	// GoldSrc uses centered hulls, unlike Source's bottom-origin player.
+	// Test the current crouched hull at the adjusted position, then test
+	// the standing hull at that same endpoint. Sweeping a standing hull
+	// from the crouched origin incorrectly starts it below the floor.
+	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
+	if( trace.startsolid )
+		return false;
+
+	pmove->usehull = 0;
+	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
+	pmove->usehull = oldHull;
+
+	return !trace.startsolid;
+}
+
+/*
+==================
+PM_FixPlayerCrouchStuck
+
+Try to move the player out of a crouch-transition collision.
+==================
+*/
 void PM_FixPlayerCrouchStuck( int direction )
 {
 	int hitent;
@@ -2044,140 +2117,475 @@ void PM_FixPlayerCrouchStuck( int direction )
 	VectorCopy( test, pmove->origin ); // Failed
 }
 
-void PM_UnDuck( void )
+/*
+==================
+PM_FinishDuck
+
+Source FinishDuck translated to the GoldSrc hull-origin convention.
+==================
+*/
+static void PM_FinishDuck( void )
 {
+	int wasDucked = ( pmove->flags & FL_DUCKING ) != 0;
 	int i;
-	pmtrace_t trace;
+
+	pmove->usehull = 1;
+	pmove->flags |= FL_DUCKING;
+	pmove->bInDuck = false;
+	pmove->flDuckTime = 0;
+	pmove->view_ofs[2] = VEC_DUCK_VIEW;
+
+	// GoldSrc uses a centered hull, so translate Source's origin handling
+	// into offsets that preserve the camera's world position at the instant
+	// the collision hull changes.
+	if( !wasDucked )
+	{
+		if( pmove->onground != -1 )
+		{
+			for( i = 0; i < 3; i++ )
+				pmove->origin[i] -= ( pmove->player_mins[1][i] - pmove->player_mins[0][i] );
+
+			pmove->iuser4 &= ~HL2_PM_DUCK_AIR_OFFSET;
+			pmove->iuser4 |= HL2_PM_DUCK_ORIGIN_SHIFTED;
+		}
+		else
+		{
+			// Source commits the smaller hull immediately in air. GoldSrc's
+			// local eye offset drops by 16 units, so raise the centered origin
+			// by the same amount to prevent a camera pop.
+			pmove->origin[2] += ( VEC_VIEW - VEC_DUCK_VIEW );
+			pmove->iuser4 &= ~HL2_PM_DUCK_ORIGIN_SHIFTED;
+			pmove->iuser4 |= HL2_PM_DUCK_AIR_OFFSET;
+		}
+
+		PM_FixPlayerCrouchStuck( STUCK_MOVEUP );
+		PM_CatagorizePosition();
+	}
+}
+
+/*
+==================
+PM_FinishUnDuck
+
+Source FinishUnDuck translated to the GoldSrc hull-origin convention.
+==================
+*/
+static void PM_FinishUnDuck( void )
+{
 	vec3_t newOrigin;
 
-	VectorCopy( pmove->origin, newOrigin );
+	PM_GetUnDuckOrigin( newOrigin );
 
-	if( pmove->onground != -1 )
+	pmove->usehull = 0;
+	pmove->flags &= ~FL_DUCKING;
+	pmove->bInDuck = false;
+	pmove->flDuckTime = 0;
+	pmove->view_ofs[2] = VEC_VIEW;
+
+	VectorCopy( newOrigin, pmove->origin );
+	pmove->iuser4 &= ~( HL2_PM_DUCK_ORIGIN_SHIFTED |
+		HL2_PM_DUCK_AIR_OFFSET | HL2_PM_IN_DUCK_JUMP );
+	PM_CatagorizePosition();
+}
+
+/*
+==================
+PM_SetDuckedEyeOffset
+
+Source SetDuckedEyeOffset translated for GoldSrc's centered hull.
+The fully-ducked grounded origin is already 18 units lower, so the local
+view offset rises by that amount during the unduck transition.
+==================
+*/
+static void PM_SetDuckedEyeOffset( float duckFraction )
+{
+	float fMore = VEC_DUCK_HULL_MIN - VEC_HULL_MIN;
+	float standingView;
+
+	duckFraction = max( 0.0f, min( duckFraction, 1.0f ) );
+
+	if( pmove->flags & FL_DUCKING )
 	{
-		for( i = 0; i < 3; i++ )
+		standingView = ( pmove->iuser4 & HL2_PM_DUCK_ORIGIN_SHIFTED ) ?
+			( VEC_VIEW + fMore ) : VEC_VIEW;
+		pmove->view_ofs[2] = ( VEC_DUCK_VIEW * duckFraction ) +
+			( standingView * ( 1.0f - duckFraction ) );
+	}
+	else
+	{
+		pmove->view_ofs[2] = ( ( VEC_DUCK_VIEW - fMore ) * duckFraction ) +
+			( VEC_VIEW * ( 1.0f - duckFraction ) );
+	}
+}
+
+/*
+==================
+Source duck-jump helpers and shared PM_Duck state machine.
+
+State mapping:
+	FL_DUCKING -> Source m_bDucked
+	bInDuck    -> Source m_bDucking
+	flDuckTime -> Source m_flDucktime
+	iuser4 bit -> Source m_bInDuckJump
+	vuser2[0]  -> Source m_flDuckJumpTime
+	vuser2[1]  -> Source m_flJumpTime
+==================
+*/
+/*
+==================
+PM_StartUnDuckJump
+
+Source StartUnDuckJump, translated to GoldSrc's centered hull and view
+heights. Source's 36-unit eye transition is 16 units in this HL1 PMove.
+==================
+*/
+static void PM_StartUnDuckJump( void )
+{
+	pmove->usehull = 1;
+	pmove->flags |= FL_DUCKING;
+	pmove->bInDuck = false;
+	pmove->flDuckTime = 0;
+	pmove->view_ofs[2] = VEC_DUCK_VIEW;
+
+	pmove->origin[2] += ( VEC_VIEW - VEC_DUCK_VIEW );
+	pmove->iuser4 &= ~HL2_PM_DUCK_ORIGIN_SHIFTED;
+	pmove->iuser4 |= HL2_PM_DUCK_AIR_OFFSET;
+
+	PM_FixPlayerCrouchStuck( STUCK_MOVEUP );
+	PM_CatagorizePosition();
+}
+
+/*
+==================
+PM_CanUnDuckJump
+
+Source CanUnDuckJump. Trace down using the crouched hull to find the
+landing point, then test the standing hull at that point.
+==================
+*/
+static qboolean PM_CanUnDuckJump( pmtrace_t *outTrace )
+{
+	pmtrace_t trace;
+	pmtrace_t traceUp;
+	vec3_t end;
+	float standingHeight;
+	float duckHeight;
+	float heightDelta;
+	int oldHull = pmove->usehull;
+
+	standingHeight = pmove->player_maxs[0][2] - pmove->player_mins[0][2];
+	duckHeight = pmove->player_maxs[1][2] - pmove->player_mins[1][2];
+	heightDelta = standingHeight - duckHeight;
+
+	if( heightDelta <= 0.0f )
+		return false;
+
+	pmove->usehull = 1;
+	VectorCopy( pmove->origin, end );
+	end[2] -= heightDelta;
+	trace = pmove->PM_PlayerTrace( pmove->origin, end, PM_NORMAL, -1 );
+
+	if( trace.fraction < 1.0f )
+	{
+		VectorCopy( pmove->origin, end );
+		end[2] -= heightDelta * trace.fraction;
+
+		pmove->usehull = 0;
+		traceUp = pmove->PM_PlayerTrace( end, end, PM_NORMAL, -1 );
+		pmove->usehull = oldHull;
+
+		if( !traceUp.startsolid )
 		{
-			newOrigin[i] += ( pmove->player_mins[1][i] - pmove->player_mins[0][i] );
+			*outTrace = trace;
+			return true;
 		}
 	}
 
-	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
+	pmove->usehull = oldHull;
+	return false;
+}
 
-	if( !trace.startsolid )
+/*
+==================
+PM_FinishUnDuckJump
+
+Source FinishUnDuckJump translated to HL1's eye-height delta. A partial
+trace advances both the origin and eye offset by matching proportions.
+==================
+*/
+static void PM_FinishUnDuckJump( const pmtrace_t *trace )
+{
+	float viewDelta = VEC_VIEW - VEC_DUCK_VIEW;
+	float originDelta = viewDelta * trace->fraction;
+	float remainingViewDelta = viewDelta - originDelta;
+
+	pmove->usehull = 0;
+	pmove->flags &= ~FL_DUCKING;
+	pmove->bInDuck = false;
+	pmove->flDuckTime = 0;
+	pmove->iuser4 &= ~( HL2_PM_DUCK_ORIGIN_SHIFTED |
+		HL2_PM_DUCK_AIR_OFFSET | HL2_PM_IN_DUCK_JUMP );
+
+	pmove->vuser2[0] = 0.0f;
+	pmove->vuser2[1] = 0.0f;
+	pmove->view_ofs[2] = VEC_VIEW - remainingViewDelta;
+	pmove->origin[2] -= originDelta;
+
+	PM_CatagorizePosition();
+}
+
+/*
+==================
+PM_SetDuckJumpEyeOffset
+
+Source UpdateDuckJumpEyeOffset interpolates the view after a duck-jump
+handoff. The origin has already been moved by FinishUnDuckJump.
+==================
+*/
+static void PM_SetDuckJumpEyeOffset( float duckFraction )
+{
+	duckFraction = max( 0.0f, min( duckFraction, 1.0f ) );
+	pmove->view_ofs[2] = ( VEC_DUCK_VIEW * duckFraction ) +
+		( VEC_VIEW * ( 1.0f - duckFraction ) );
+}
+
+/*
+==================
+PM_UpdateDuckJumpEyeOffset
+
+Source CGameMovement::UpdateDuckJumpEyeOffset.
+==================
+*/
+static void PM_UpdateDuckJumpEyeOffset( void )
+{
+	float duckMilliseconds;
+	float duckSeconds;
+	float duckFraction;
+
+	if( pmove->vuser2[0] == 0.0f )
+		return;
+
+	duckMilliseconds = max( 0.0f,
+		HL2_DUCK_JUMP_TIME_MS - pmove->vuser2[0] );
+	duckSeconds = duckMilliseconds * 0.001f;
+
+	if( duckSeconds > TIME_TO_UNDUCK )
 	{
-		pmove->usehull = 0;
-
-		// Oh, no, changing hulls stuck us into something, try unsticking downward first.
-		trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
-		if( trace.startsolid )
-		{
-			// See if we are stuck?  If so, stay ducked with the duck hull until we have a clear spot
-			//Con_Printf( "unstick got stuck\n" );
-			pmove->usehull = 1;
-			return;
-		}
-
-		pmove->flags &= ~FL_DUCKING;
-		pmove->bInDuck  = false;
-		pmove->view_ofs[2] = VEC_VIEW;
-		pmove->flDuckTime = 0;
-
-		VectorCopy( newOrigin, pmove->origin );
-
-		// Recatagorize position since ducking can change origin
-		PM_CatagorizePosition();
+		pmove->vuser2[0] = 0.0f;
+		PM_SetDuckJumpEyeOffset( 0.0f );
+	}
+	else
+	{
+		duckFraction = PM_SplineFraction(
+			1.0f - ( duckSeconds / TIME_TO_UNDUCK ), 1.0f );
+		PM_SetDuckJumpEyeOffset( duckFraction );
 	}
 }
 
 void PM_Duck( void )
 {
-	int i;
-	float time;
+	int buttonsChanged = ( pmove->oldbuttons ^ pmove->cmd.buttons );
+	int buttonsPressed = buttonsChanged & pmove->cmd.buttons;
+	int buttonsReleased = buttonsChanged & pmove->oldbuttons;
+	int bInAir = ( pmove->onground == -1 );
+	int bInDuck = ( pmove->flags & FL_DUCKING ) != 0;
+	int bDuckJump = ( pmove->vuser2[1] > 0.0f );
+	int bDuckJumpTime = ( pmove->vuser2[0] > 0.0f );
+	float duckMilliseconds;
+	float duckSeconds;
 	float duckFraction;
-
-	int buttonsChanged = ( pmove->oldbuttons ^ pmove->cmd.buttons );	// These buttons have changed this frame
-	int nButtonPressed = buttonsChanged & pmove->cmd.buttons;		// The changed ones still down are "pressed"
-
-	//int duckchange = buttonsChanged & IN_DUCK ? 1 : 0;
-	//int duckpressed = nButtonPressed & IN_DUCK ? 1 : 0;
+	pmtrace_t trace;
 
 	if( pmove->cmd.buttons & IN_DUCK )
-	{
 		pmove->oldbuttons |= IN_DUCK;
-	}
 	else
-	{
 		pmove->oldbuttons &= ~IN_DUCK;
+
+	// A crouched player who lands now uses the grounded centered-hull
+	// correction when standing up, matching Source's ground-relative path.
+	if( bInDuck && pmove->onground != -1 )
+	{
+		pmove->iuser4 &= ~HL2_PM_DUCK_AIR_OFFSET;
+		pmove->iuser4 |= HL2_PM_DUCK_ORIGIN_SHIFTED;
 	}
 
-	// Prevent ducking if the iuser3 variable is set
-	if( pmove->iuser3 || pmove->dead )
+	// Preserve the existing GoldSrc handling for dead and observer states.
+	if( pmove->dead || pmove->iuser3 )
 	{
-		// Try to unduck
-		if( pmove->flags & FL_DUCKING )
-		{
-			PM_UnDuck();
-		}
+		if( bInDuck && PM_CanUnDuck() )
+			PM_FinishUnDuck();
 		return;
 	}
 
-	if( pmove->flags & FL_DUCKING )
+	// Source HandleDuckingSpeedCrop only crops movement while fully ducked
+	// and grounded. It does not slow airborne movement.
+	if( bInDuck && pmove->onground != -1 )
 	{
 		pmove->cmd.forwardmove *= PLAYER_DUCKING_MULTIPLIER;
 		pmove->cmd.sidemove *= PLAYER_DUCKING_MULTIPLIER;
 		pmove->cmd.upmove *= PLAYER_DUCKING_MULTIPLIER;
 	}
 
-	if( ( pmove->cmd.buttons & IN_DUCK ) || ( pmove->bInDuck ) || ( pmove->flags & FL_DUCKING ) )
+	// Source CGameMovement::Duck: the jump timer itself keeps the duck
+	// machinery active during an automatic single-player duck-jump.
+	if( ( pmove->cmd.buttons & IN_DUCK ) || pmove->bInDuck ||
+		bInDuck || bDuckJump )
 	{
-		if( pmove->cmd.buttons & IN_DUCK )
+		// DUCK (or duck-jump).
+		if( ( pmove->cmd.buttons & IN_DUCK ) || bDuckJump )
 		{
-			if( (nButtonPressed & IN_DUCK ) && !( pmove->flags & FL_DUCKING ) )
+			// Start the ordinary duck transition only when no jump-related
+			// duck or eye transition is already active.
+			if( ( buttonsPressed & IN_DUCK ) && !bInDuck &&
+				!bDuckJump && !bDuckJumpTime )
 			{
-				// Use 1 second so super long jump will work
 				pmove->flDuckTime = 1000;
 				pmove->bInDuck = true;
 			}
 
-			time = max( 0.0f, ( 1.0f - (float)pmove->flDuckTime / 1000.0f ) );
-
-			if( pmove->bInDuck )
+			if( pmove->bInDuck && !bDuckJump && !bDuckJumpTime )
 			{
-				// Finish ducking immediately if duck time is over or not on ground
-				if( ( (float)pmove->flDuckTime / 1000.0f <= ( 1.0f - TIME_TO_DUCK ) ) || ( pmove->onground == -1 ) )
+				duckMilliseconds = max( 0.0f,
+					1000.0f - (float)pmove->flDuckTime );
+				duckSeconds = duckMilliseconds * 0.001f;
+
+				if( duckSeconds > TIME_TO_DUCK || bInDuck || bInAir )
 				{
-					pmove->usehull = 1;
-					pmove->view_ofs[2] = VEC_DUCK_VIEW;
-					pmove->flags |= FL_DUCKING;
-					pmove->bInDuck = false;
+					PM_FinishDuck();
+				}
+				else
+				{
+					duckFraction = PM_SplineFraction(
+						duckSeconds, 1.0f / TIME_TO_DUCK );
+					PM_SetDuckedEyeOffset( duckFraction );
+				}
+			}
 
-					// HACKHACK - Fudge for collision bug - no time to fix this properly
-					if( pmove->onground != -1 )
+			// Source's automatic single-player duck-jump. A successful jump
+			// enters the crouched hull even if the duck key was not pressed.
+			if( bDuckJump )
+			{
+				if( !bInDuck )
+				{
+					PM_StartUnDuckJump();
+				}
+				else if( !( pmove->cmd.buttons & IN_DUCK ) )
+				{
+					if( PM_CanUnDuckJump( &trace ) )
 					{
-						for( i = 0; i < 3; i++ )
-						{
-							pmove->origin[i] -= ( pmove->player_mins[1][i] - pmove->player_mins[0][i] );
-						}
-						// See if we are stuck?
-						PM_FixPlayerCrouchStuck( STUCK_MOVEUP );
+						PM_FinishUnDuckJump( &trace );
+						pmove->vuser2[0] =
+							( TIME_TO_UNDUCK * 1000.0f *
+							( 1.0f - trace.fraction ) ) +
+							( HL2_DUCK_JUMP_TIME_MS -
+							TIME_TO_UNDUCK * 1000.0f );
+					}
+				}
+			}
+		}
+		// UNDUCK (or attempt to...).
+		else
+		{
+			if( pmove->iuser4 & HL2_PM_IN_DUCK_JUMP )
+			{
+				if( !( pmove->cmd.buttons & IN_DUCK ) )
+				{
+					if( PM_CanUnDuckJump( &trace ) )
+					{
+						PM_FinishUnDuckJump( &trace );
 
-						// Recatagorize position since ducking can change origin
-						PM_CatagorizePosition();
+						if( trace.fraction < 1.0f )
+						{
+							pmove->vuser2[0] =
+								( TIME_TO_UNDUCK * 1000.0f *
+								( 1.0f - trace.fraction ) ) +
+								( HL2_DUCK_JUMP_TIME_MS -
+								TIME_TO_UNDUCK * 1000.0f );
+						}
 					}
 				}
 				else
 				{
-					float fMore = VEC_DUCK_HULL_MIN - VEC_HULL_MIN;
+					pmove->iuser4 &= ~HL2_PM_IN_DUCK_JUMP;
+				}
+			}
 
-					// Calc parametric time
-					duckFraction = PM_SplineFraction( time, ( 1.0f / TIME_TO_DUCK ) );
-					pmove->view_ofs[2] = ( ( VEC_DUCK_VIEW - fMore ) * duckFraction ) + ( VEC_VIEW * ( 1 - duckFraction ) );
+			// Do not run ordinary unduck while the duck-jump eye transition
+			// is still being interpolated by UpdateDuckJumpEyeOffset().
+			if( bDuckJumpTime )
+				return;
+
+			// Source starts or reverses the ordinary unduck timer on the
+			// button-release edge. Preserve the exact 400 ms / 200 ms mapping.
+			if( buttonsReleased & IN_DUCK )
+			{
+				if( bInDuck && !bDuckJump )
+				{
+					pmove->flDuckTime = 1000;
+				}
+				else if( pmove->bInDuck && !bInDuck )
+				{
+					float unduckMilliseconds = TIME_TO_UNDUCK * 1000.0f;
+					float duckMilliseconds = TIME_TO_DUCK * 1000.0f;
+					float elapsedMilliseconds =
+						1000.0f - (float)pmove->flDuckTime;
+					float fractionDucked =
+						elapsedMilliseconds / duckMilliseconds;
+					float remainingUnduckMilliseconds =
+						fractionDucked * unduckMilliseconds;
+
+					pmove->flDuckTime = (int)( 1000.0f -
+						unduckMilliseconds + remainingUnduckMilliseconds );
+				}
+			}
+
+			if( PM_CanUnDuck() )
+			{
+				// FinishUnDuckJump may have cleared FL_DUCKING earlier in
+				// this same call, so inspect the live state like Source does.
+				if( pmove->bInDuck || ( pmove->flags & FL_DUCKING ) )
+				{
+					duckMilliseconds = max( 0.0f,
+						1000.0f - (float)pmove->flDuckTime );
+					duckSeconds = duckMilliseconds * 0.001f;
+
+					if( duckSeconds > TIME_TO_UNDUCK ||
+						( bInAir && !bDuckJump ) )
+					{
+						PM_SetDuckedEyeOffset( 0.0f );
+						PM_FinishUnDuck();
+					}
+					else
+					{
+						duckFraction = PM_SplineFraction(
+							1.0f - ( duckSeconds / TIME_TO_UNDUCK ), 1.0f );
+						PM_SetDuckedEyeOffset( duckFraction );
+						pmove->bInDuck = true;
+					}
+				}
+			}
+			else
+			{
+				// Source resets blocked unducks to the fully ducked state.
+				if( pmove->flDuckTime != 1000 )
+				{
+					PM_SetDuckedEyeOffset( 1.0f );
+					pmove->flDuckTime = 1000;
+					pmove->bInDuck = false;
+					pmove->flags |= FL_DUCKING;
+					pmove->usehull = 1;
 				}
 			}
 		}
-		else
+	}
+	else if( !pmove->dead && !pmove->iuser3 )
+	{
+		// Source's safety check: repair a stale ducked eye offset once no
+		// duck-jump eye interpolation is active.
+		if( pmove->vuser2[0] == 0.0f &&
+			fabs( pmove->view_ofs[2] - VEC_VIEW ) > 0.1f )
 		{
-			// Try to unduck
-			PM_UnDuck();
+			PM_SetDuckedEyeOffset( 0.0f );
 		}
 	}
 }
@@ -2632,6 +3040,14 @@ void PM_Jump( void )
 	if( pmove->oldbuttons & IN_JUMP )
 		return;		// don't pogo stick
 
+	// Source CheckJumpButton prevents jumping during an active duck transition
+	// and while a duck-jump eye-position recovery is still running.
+	if( pmove->bInDuck && ( pmove->flags & FL_DUCKING ) )
+		return;
+
+	if( pmove->vuser2[0] > 0.0f )
+		return;
+
 	// In the air now.
 	pmove->onground = -1;
 
@@ -2710,6 +3126,14 @@ void PM_Jump( void )
 
 	// Decay it for simulation
 	PM_FixupGravityVelocity();
+
+	// Source CheckJumpButton: single-player jumps initiate a 510 ms
+	// duck-jump window. Duck() consumes this state on the following frame.
+	if( !pmove->multiplayer )
+	{
+		pmove->vuser2[1] = HL2_JUMP_TIME_MS;
+		pmove->iuser4 |= HL2_PM_IN_DUCK_JUMP;
+	}
 
 	// Flag that we jumped.
 	pmove->oldbuttons |= IN_JUMP;	// don't jump again until released
@@ -3020,7 +3444,8 @@ static void PM_UpdateHL2MovementSpeed( void )
 	bWasSprinting = ( pmove->iuser4 & HL2_PM_SPRINTING ) != 0;
 	bSprinting = bWasSprinting;
 	bWasWalking = ( pmove->iuser4 & HL2_PM_WALKING ) != 0;
-	bFullyDucked = ( pmove->flags & FL_DUCKING ) && !pmove->bInDuck;
+	// The crouched hull remains active until FinishUnDuck clears FL_DUCKING.
+	bFullyDucked = ( pmove->flags & FL_DUCKING ) != 0;
 
 	flPower = pmove->fuser4;
 	if( flPower < 0.0f )
@@ -3358,6 +3783,19 @@ void PM_ReduceTimers( void )
 			pmove->flDuckTime = 0;
 		}
 	}
+	if( pmove->vuser2[0] > 0.0f )
+	{
+		pmove->vuser2[0] -= pmove->cmd.msec;
+		if( pmove->vuser2[0] < 0.0f )
+			pmove->vuser2[0] = 0.0f;
+	}
+	if( pmove->vuser2[1] > 0.0f )
+	{
+		pmove->vuser2[1] -= pmove->cmd.msec;
+		if( pmove->vuser2[1] < 0.0f )
+			pmove->vuser2[1] = 0.0f;
+	}
+
 	if( pmove->flSwimTime > 0 )
 	{
 		pmove->flSwimTime -= pmove->cmd.msec;
@@ -3449,6 +3887,7 @@ void PM_PlayerMove( qboolean server )
 
 	PM_UpdateStepSound();
 
+	PM_UpdateDuckJumpEyeOffset();
 	PM_Duck();
 	
 	// Don't run ladder code if dead or on a train
