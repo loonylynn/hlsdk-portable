@@ -226,6 +226,10 @@ typedef struct playermove_s
 	int		(*PM_TestPlayerPositionEx) (float *pos, pmtrace_t *ptrace, int (*pfnIgnore)( physent_t *pe ));
 	struct pmtrace_s	*(*PM_TraceLineEx)( float *start, float *end, int flags, int usehulll, int (*pfnIgnore)( physent_t *pe ));
 	struct msurface_s	*(*PM_TraceSurface)( int ground, float *vstart, float *vend );
+
+	// Xash3D HL2 movement extension. Parallel to physents[]; contains each
+	// collision entity's velocity. Appended to preserve existing PMove offsets.
+	vec3_t		physent_velocity[MAX_PHYSENTS];
 } playermove_t;
 
 #if __MINGW32__
