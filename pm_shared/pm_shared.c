@@ -2944,7 +2944,7 @@ static void PM_UpdateHL2MovementSpeed( void )
 	int bWasSprinting;
 	int bSprinting;
 	int bCanSprint;
-	int bWantsSprint;
+	int bJustPressedSpeed;
 	int bWantsWalking;
 	int bStoppedSprinting;
 
@@ -2979,14 +2979,16 @@ static void PM_UpdateHL2MovementSpeed( void )
 		!( pmove->flags & ( FL_DUCKING | FL_ONTRAIN | FL_FROZEN ) ) &&
 		!( pmove->cmd.buttons & IN_DUCK );
 
-	bWantsSprint = bCanSprint && ( pmove->cmd.buttons & IN_SPEED );
-	if( !bWantsSprint || flPower <= 0.01f )
+	bJustPressedSpeed = ( ( pmove->cmd.buttons & IN_SPEED ) != 0 ) &&
+		( ( pmove->oldbuttons & IN_SPEED ) == 0 );
+
+	if( !bCanSprint || !( pmove->cmd.buttons & IN_SPEED ) || flPower <= 0.01f )
 	{
-		bSprinting = false;
+		bSprinting = 0;
 	}
-	else if( !bSprinting && flPower >= flStartMinimum )
+	else if( !bSprinting && bJustPressedSpeed && flPower >= flStartMinimum )
 	{
-		bSprinting = true;
+		bSprinting = 1;
 	}
 
 	flHorizontalSpeedSqr = pmove->velocity[0] * pmove->velocity[0] +
@@ -2998,7 +3000,7 @@ static void PM_UpdateHL2MovementSpeed( void )
 		if( flPower <= 0.01f )
 		{
 			flPower = 0.0f;
-			bSprinting = false;
+			bSprinting = 0;
 		}
 	}
 
