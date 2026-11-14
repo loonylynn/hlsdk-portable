@@ -1107,7 +1107,7 @@ int PM_FlyMove( void )
 					VectorCopy( new_velocity, original_velocity );
 				}
 				else												
-					PM_SourceClipVelocity( original_velocity, planes[i], new_velocity, 1.0f + pmove->movevars->bounce * ( 1 - pmove->friction ) );
+					PM_SourceClipVelocity( original_velocity, planes[i], new_velocity, 1.0f + pmove->movevars->bounce * ( 1 - pmove->surfacefriction ) );
 			}
 
 			VectorCopy( new_velocity, pmove->velocity );
@@ -1218,7 +1218,7 @@ void PM_Accelerate( vec3_t wishdir, float wishspeed, float accel )
 		return;
 
 	// Determine amount of accleration.
-	accelspeed = accel * pmove->frametime * wishspeed * pmove->friction;
+	accelspeed = accel * pmove->frametime * wishspeed * pmove->friction * pmove->surfacefriction;
 	
 	// Cap at addspeed
 	if( accelspeed > addspeed )
@@ -1475,7 +1475,7 @@ void PM_Friction( void )
 		// Source uses the ground surface friction directly. GoldSrc's
 		// edge-friction probe adds an extra slowdown near ledges that
 		// Half-Life 2 does not apply.
-		friction = pmove->movevars->friction * pmove->friction;
+		friction = pmove->movevars->friction * pmove->friction * pmove->surfacefriction;
 
 		// Bleed off some speed, using stopspeed as the low-speed control.
 		control = ( speed < pmove->movevars->stopspeed ) ? pmove->movevars->stopspeed : speed;
@@ -1526,7 +1526,7 @@ void PM_AirAccelerate( vec3_t wishdir, float wishspeed, float accel )
 		return;
 	// Determine acceleration speed after acceleration
 
-	accelspeed = accel * wishspeed * pmove->frametime * pmove->friction;
+	accelspeed = accel * wishspeed * pmove->frametime * pmove->friction * pmove->surfacefriction;
 	// Cap it
 	if( accelspeed > addspeed )
 		accelspeed = addspeed;
@@ -1615,7 +1615,7 @@ void PM_WaterMove( void )
 	if( speed > 0.0f )
 	{
 		newspeed = speed - pmove->frametime * speed *
-			pmove->movevars->friction * pmove->friction;
+			pmove->movevars->friction * pmove->friction * pmove->surfacefriction;
 
 		if( newspeed < 0.1f )
 			newspeed = 0.0f;
@@ -1637,7 +1637,7 @@ void PM_WaterMove( void )
 		{
 			VectorNormalize( wishvel );
 			accelspeed = pmove->movevars->accelerate * wishspeed *
-				pmove->frametime * pmove->friction;
+				pmove->frametime * pmove->friction * pmove->surfacefriction;
 			if( accelspeed > addspeed )
 				accelspeed = addspeed;
 
@@ -1843,6 +1843,11 @@ void PM_CatagorizePosition( void )
 	// is less than the 1 pixel 'threshold' we're about to snap to.	Also, we'll call
 	// this several times per frame, so we really need to avoid sticking to the bottom of
 	// water on each call, and the converse case will correct itself if called twice.
+	// Source resets movement-surface friction on every categorization.
+	// Xash/GoldSrc has no Source surface-property coefficient, so grounded
+	// surfaces retain the Source default of 1.0 until a material mapping exists.
+	pmove->surfacefriction = 1.0f;
+
 	PM_CheckWater();
 
 	// Source CGameMovement::CategorizePosition uses a 140-unit upward-speed
@@ -1887,6 +1892,14 @@ void PM_CatagorizePosition( void )
 			// If we could make the move, drop us down that 1 pixel
 			if( pmove->waterlevel < 2 && !tr.startsolid && !tr.allsolid )
 				VectorCopy( tr.endpos, pmove->origin );
+		}
+
+		// Source lowers surface friction to 0.25 when the ground trace fails
+		// while the player is moving upward (excluding noclip and rapid-ascent exits).
+		if( pmove->onground == -1 && bMovingUp &&
+			pmove->movetype != MOVETYPE_NOCLIP )
+		{
+			pmove->surfacefriction = 0.25f;
 		}
 
 		// Standing on an entity other than the world
