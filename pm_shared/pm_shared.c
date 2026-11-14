@@ -79,6 +79,10 @@ playermove_t *pmove = NULL;
 #define PLAYER_MIN_BOUNCE_SPEED		200
 #define PLAYER_FALL_PUNCH_THRESHHOLD	(float)350 // won't punch player's screen/make scrape noise unless player falling at least this fast.
 
+// Source SDK 2013 CGameMovement::DecayPunchAngle spring parameters.
+#define PUNCH_DAMPING			9.0f
+#define PUNCH_SPRING_CONSTANT	65.0f
+
 #define PLAYER_LONGJUMP_SPEED		350 // how fast we longjump
 
 #define PLAYER_DUCKING_MULTIPLIER	0.333f
@@ -2818,12 +2822,14 @@ void PM_CheckFalling( void )
 
 		if( fvol > 0.0f )
 		{
-			// Play landing step right away
-			pmove->flTimeStepSound = 0;
+			// Source PlayerRoughLandingEffects: categorize the impact surface,
+			// then impose the standard 400 ms post-landing step cooldown.
+			// Do not call PM_UpdateStepSound here; that can emit an extra
+			// ordinary footstep immediately before the landing impact sound.
+			PM_CatagorizeTextureType();
+			pmove->flTimeStepSound = 400;
 
-			PM_UpdateStepSound();
-
-			// play step sound for current texture
+			// Play the impact step sound for the current surface.
 			PM_PlayStepSound( PM_MapTextureTypeStepType( pmove->chtexturetype ), fvol );
 
 			// Knock the screen around a little bit, temporary effect
@@ -2914,12 +2920,37 @@ PM_DropPunchAngle
 */
 void PM_DropPunchAngle( vec3_t punchangle )
 {
-	float len;
-	
-	len = VectorNormalize( punchangle );
-	len -= ( 10.0f + len * 0.5f ) * pmove->frametime;
-	len = max( len, 0.0f );
-	VectorScale( punchangle, len, punchangle );
+	float damping;
+	float springForceMagnitude;
+
+	// Source CGameMovement::DecayPunchAngle.
+	// vuser1 stores the spring velocity, equivalent to
+	// CBasePlayer::m_Local.m_vecPunchAngleVel, and is carried through PMove.
+	if( DotProduct( punchangle, punchangle ) > 0.001f ||
+		DotProduct( pmove->vuser1, pmove->vuser1 ) > 0.001f )
+	{
+		VectorMA( punchangle, pmove->frametime, pmove->vuser1, punchangle );
+
+		damping = 1.0f - ( PUNCH_DAMPING * pmove->frametime );
+		if( damping < 0.0f )
+			damping = 0.0f;
+		VectorScale( pmove->vuser1, damping, pmove->vuser1 );
+
+		// Torsional spring. Source clamps this per-frame impulse to [0, 2].
+		springForceMagnitude = PUNCH_SPRING_CONSTANT * pmove->frametime;
+		springForceMagnitude = max( 0.0f, min( springForceMagnitude, 2.0f ) );
+		VectorMA( pmove->vuser1, -springForceMagnitude, punchangle, pmove->vuser1 );
+
+		// Source's per-axis limits prevent view-angle wraparound.
+		punchangle[0] = max( -89.0f, min( punchangle[0], 89.0f ) );
+		punchangle[1] = max( -179.0f, min( punchangle[1], 179.0f ) );
+		punchangle[2] = max( -89.0f, min( punchangle[2], 89.0f ) );
+	}
+	else
+	{
+		VectorClear( punchangle );
+		VectorClear( pmove->vuser1 );
+	}
 }
 
 /*
