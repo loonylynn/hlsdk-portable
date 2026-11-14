@@ -134,8 +134,7 @@ namespace
 		if( !g_engfuncs.pfnCVarGetFloat )
 			return fallback;
 
-		const float value = g_engfuncs.pfnCVarGetFloat( name );
-		return value > 0.0f ? value : fallback;
+		return g_engfuncs.pfnCVarGetFloat( name );
 	}
 
 	static bool NPCPhysics_Enabled()
@@ -358,6 +357,8 @@ namespace
 			return false;
 
 		float totalMass = NPCPhysics_GetCvar( "sv_npc_vphysics_mass", 80.0f );
+		if( totalMass <= 0.0f )
+			totalMass = 80.0f;
 		totalMass = std::max( 10.0f, std::min( totalMass, 300.0f ) );
 
 		ragdoll.groupFilter = new GroupFilterTable( static_cast<uint>( ragdoll.boneCount ) );
@@ -399,7 +400,7 @@ namespace
 			settings.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
 			settings.mMassPropertiesOverride.mMass = std::max( 0.1f, boneMass );
 			settings.mCollisionGroup = CollisionGroup(
-				ragdoll.groupFilter,
+				ragdoll.groupFilter.Get(),
 				static_cast<CollisionGroup::GroupID>( ragdoll.networkID ),
 				static_cast<CollisionGroup::SubGroupID>( i )
 			);
