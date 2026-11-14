@@ -504,6 +504,21 @@ namespace
 		}
 	}
 
+	static void NPCPhysics_CopyMonsterVelocityToGoldSrc( NPCPhysicsBody &record, BodyInterface &bodyInterface )
+	{
+		edict_t *ent = record.entity;
+		if( !NPCPhysics_IsAliveMonster( ent ) )
+			return;
+
+		// Feed the contact-resolved shadow velocity back into GoldSrc. Without
+		// this, the next MOVETYPE_STEP tick would continue using the AI's old
+		// velocity and partially undo the impulse delivered by a physical prop.
+		const Vec3 linear = bodyInterface.GetLinearVelocity( record.bodyID );
+		ent->v.velocity[0] = linear.GetX();
+		ent->v.velocity[1] = linear.GetY();
+		ent->v.velocity[2] = linear.GetZ();
+	}
+
 	static void NPCPhysics_CopyPropVelocityToGoldSrc( NPCPhysicsBody &record, BodyInterface &bodyInterface )
 	{
 		edict_t *ent = record.entity;
@@ -578,7 +593,10 @@ namespace
 		{
 			NPCPhysicsBody &record = g_npcBodies[i];
 			if( record.kind == NPC_PHYSICS_MONSTER )
+			{
 				NPCPhysics_ClipMonsterToWorld( record, bodyInterface );
+				NPCPhysics_CopyMonsterVelocityToGoldSrc( record, bodyInterface );
+			}
 			else
 				NPCPhysics_CopyPropVelocityToGoldSrc( record, bodyInterface );
 		}
