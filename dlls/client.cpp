@@ -771,16 +771,17 @@ void PlayerPreThink( edict_t *pEntity )
 	{
 		pPlayer->PreThink();
 
-		// One-shot trace for the suit flag before the server movement pass.
-		static BOOL s_bAuxPreThinkReported = FALSE;
-		if( !s_bAuxPreThinkReported &&
-			( ( (unsigned int)pPlayer->pev->weapons & WEAPON_SUIT_MASK ) != 0 ) )
+		// Report initial state and changes, including the missing-suit case.
+		static int s_iAuxPreSuitState = -1;
+		const unsigned int uiWeapons = (unsigned int)pPlayer->pev->weapons;
+		const unsigned int uiFlags = (unsigned int)pPlayer->pev->iuser4;
+		const int iSuitState = ( ( uiWeapons & WEAPON_SUIT_MASK ) ? 1 : 0 ) |
+			( ( uiFlags & HL2_PM_HAS_SUIT ) ? 2 : 0 );
+		if( iSuitState != s_iAuxPreSuitState )
 		{
 			ALERT( at_console, "[AUX SERVER] PreThink: weapons=0x%08x iuser4=0x%08x power=%.2f\n",
-				(unsigned int)pPlayer->pev->weapons,
-				(unsigned int)pPlayer->pev->iuser4,
-				(double)pPlayer->pev->fuser4 );
-			s_bAuxPreThinkReported = TRUE;
+				uiWeapons, uiFlags, (double)pPlayer->pev->fuser4 );
+			s_iAuxPreSuitState = iSuitState;
 		}
 	}
 }
@@ -802,16 +803,17 @@ void PlayerPostThink( edict_t *pEntity )
 	{
 		pPlayer->PostThink();
 
-		// One-shot trace after SV_FinishPMove has written prediction state back.
-		static BOOL s_bAuxPostThinkReported = FALSE;
-		if( !s_bAuxPostThinkReported &&
-			( ( (unsigned int)pPlayer->pev->weapons & WEAPON_SUIT_MASK ) != 0 ) )
+		// Report initial state and changes after SV_FinishPMove.
+		static int s_iAuxPostSuitState = -1;
+		const unsigned int uiWeapons = (unsigned int)pPlayer->pev->weapons;
+		const unsigned int uiFlags = (unsigned int)pPlayer->pev->iuser4;
+		const int iSuitState = ( ( uiWeapons & WEAPON_SUIT_MASK ) ? 1 : 0 ) |
+			( ( uiFlags & HL2_PM_HAS_SUIT ) ? 2 : 0 );
+		if( iSuitState != s_iAuxPostSuitState )
 		{
 			ALERT( at_console, "[AUX SERVER] PostThink: weapons=0x%08x iuser4=0x%08x power=%.2f\n",
-				(unsigned int)pPlayer->pev->weapons,
-				(unsigned int)pPlayer->pev->iuser4,
-				(double)pPlayer->pev->fuser4 );
-			s_bAuxPostThinkReported = TRUE;
+				uiWeapons, uiFlags, (double)pPlayer->pev->fuser4 );
+			s_iAuxPostSuitState = iSuitState;
 		}
 	}
 }
@@ -1804,16 +1806,17 @@ void UpdateClientData( const struct edict_s *ent, int sendweapons, struct client
 	cd->vuser4.y		= pev->vuser4.y;
 	cd->vuser4.z		= pev->vuser4.z;
 
-	// One-shot trace of the exact clientdata fields sent to the local client.
-	static BOOL s_bAuxClientDataReported = FALSE;
-	if( !s_bAuxClientDataReported &&
-		( ( (unsigned int)cd->weapons & WEAPON_SUIT_MASK ) != 0 ) )
+	// Report initial state and changes in the exact clientdata being sent.
+	static int s_iAuxClientDataSuitState = -1;
+	const unsigned int uiClientWeapons = (unsigned int)cd->weapons;
+	const unsigned int uiClientFlags = (unsigned int)cd->iuser4;
+	const int iClientSuitState = ( ( uiClientWeapons & WEAPON_SUIT_MASK ) ? 1 : 0 ) |
+		( ( uiClientFlags & HL2_PM_HAS_SUIT ) ? 2 : 0 );
+	if( iClientSuitState != s_iAuxClientDataSuitState )
 	{
 		ALERT( at_console, "[AUX SERVER] ClientData: weapons=0x%08x iuser4=0x%08x power=%.2f\n",
-			(unsigned int)cd->weapons,
-			(unsigned int)cd->iuser4,
-			(double)cd->fuser4 );
-		s_bAuxClientDataReported = TRUE;
+			uiClientWeapons, uiClientFlags, (double)cd->fuser4 );
+		s_iAuxClientDataSuitState = iClientSuitState;
 	}
 #if CLIENT_WEAPONS
 	if( sendweapons )
