@@ -28,6 +28,7 @@
 
 extern "C"
 {
+#include "pm_defs.h"
 #include "pm_shared.h"
 }
 
