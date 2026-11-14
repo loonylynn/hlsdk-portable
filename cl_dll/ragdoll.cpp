@@ -20,6 +20,7 @@ struct ragdoll_entity_pose_t
 {
 	int ragdollID;
 	int boneCount;
+	float lastUpdateTime;
 	bool active;
 	ragdoll_bone_pose_t bones[MAX_RAGDOLL_BONES];
 };
@@ -70,7 +71,10 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 		entry.active = true;
 		entry.ragdollID = ragdollID;
 		entry.boneCount = boneCount;
+		Con_Printf( "[NPC ragdoll] Receiving entity %d, ID %d (%d bones).\\n", entityIndex, ragdollID, boneCount );
 	}
+
+	entry.lastUpdateTime = gEngfuncs.GetClientTime();
 
 	for( int i = 0; i < chunkCount; ++i )
 	{
@@ -111,15 +115,20 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 	return 1;
 }
 
-int Ragdoll_GetBoneTransform( int entityIndex, int ragdollID, int boneIndex, float transform[3][4] )
+int Ragdoll_GetBoneTransform( int entityIndex, int boneIndex, float transform[3][4] )
 {
 	if( !transform || entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES ||
-		ragdollID <= 0 || boneIndex < 0 || boneIndex >= MAX_RAGDOLL_BONES )
+		boneIndex < 0 || boneIndex >= MAX_RAGDOLL_BONES )
 		return 0;
 
 	const ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
-	if( !entry.active || entry.ragdollID != ragdollID ||
+	if( !entry.active || entry.ragdollID <= 0 ||
 		boneIndex >= entry.boneCount || !entry.bones[boneIndex].valid )
+		return 0;
+
+	// Snapshots are sent at 20 Hz. Expire stale mappings so a recycled entity
+	// slot cannot inherit an old ragdoll pose indefinitely.
+	if( gEngfuncs.GetClientTime() - entry.lastUpdateTime > 0.25f )
 		return 0;
 
 	// Do not mix a partial first network chunk with GoldSrc local animation
