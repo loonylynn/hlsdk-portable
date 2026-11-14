@@ -248,6 +248,7 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 	static float lateralBob;
 	static vec3_t lastFacing = { 0.0f, 0.0f, 0.0f };
 	static int lastModelIndex = -1;
+	static model_t *lastViewModel = NULL;
 	static float lastViewTime = -1.0f;
 	static int haveLastFacing = 0;
 
@@ -269,6 +270,7 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 	{
 		haveLastFacing = 0;
 		lastModelIndex = -1;
+		lastViewModel = NULL;
 		return;
 	}
 
@@ -341,10 +343,14 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 	// when its model changes or the client clock moves backwards (map/demo reset).
 	AngleVectors( view->angles, forward, NULL, NULL );
 	if( !haveLastFacing || lastModelIndex != view->curstate.modelindex ||
-		pparams->time < lastViewTime )
+		lastViewModel != view->model || pparams->time < lastViewTime )
 	{
+		// A GoldSrc viewmodel entity is reused between weapons. Rebase against
+		// both its network model index and the actual model resource pointer:
+		// this also covers resource replacement with a reused model index.
 		VectorCopy( forward, lastFacing );
 		lastModelIndex = view->curstate.modelindex;
+		lastViewModel = view->model;
 		lastViewTime = pparams->time;
 		haveLastFacing = 1;
 	}
