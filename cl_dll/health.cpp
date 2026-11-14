@@ -789,7 +789,7 @@ int CHudHealth::Draw( float flTime )
 	ScaleColors( r, g, b, a );
 
 	// Only draw health if we have the suit.
-	if( ( (unsigned int)gHUD.m_iWeaponBits & WEAPON_SUIT_MASK ) != 0 )
+	if( ( (unsigned int)gHUD.m_iWeaponBits & ( 1u << WEAPON_SUIT ) ) != 0 )
 	{
 		HealthWidth = gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).right - gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left;
 		int CrossWidth = gHUD.GetSpriteRect( m_HUD_cross ).right - gHUD.GetSpriteRect( m_HUD_cross ).left;
