@@ -80,9 +80,10 @@ public:
 #define	WEAPON_SNARK			15
 
 #define WEAPON_TELEPORT			16
-#define WEAPON_ALLWEAPONS		(~(1<<WEAPON_SUIT))
-
-#define WEAPON_SUIT				31	// ?????
+#define WEAPON_SUIT				31
+// WEAPON_SUIT occupies bit 31; always construct/test this mask as unsigned.
+#define WEAPON_SUIT_MASK		( 1u << WEAPON_SUIT )
+#define WEAPON_ALLWEAPONS		( ~WEAPON_SUIT_MASK )
 
 #define MAX_NORMAL_BATTERY	100
 
