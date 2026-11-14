@@ -967,7 +967,21 @@ int PM_FlyMove( void )
 		//  copy the end position into the pmove->origin and 
 		//  zero the plane counter.
 		if( trace.fraction > 0 )
-		{	// actually covered some distance
+		{
+			// Source re-tests a completed swept move with a stationary
+			// player hull. This catches precision cases where terrain
+			// tracing reports a clear sweep but leaves the endpoint stuck.
+			if( trace.fraction == 1.0f )
+			{
+				pmtrace_t stuck;
+				stuck = pmove->PM_PlayerTrace( trace.endpos, trace.endpos, PM_NORMAL, -1 );
+				if( stuck.startsolid || stuck.fraction != 1.0f )
+				{
+					VectorCopy( vec3_origin, pmove->velocity );
+					break;
+				}
+			}
+
 			VectorCopy( trace.endpos, pmove->origin );
 			VectorCopy( pmove->velocity, original_velocity );
 			numplanes = 0;
@@ -1022,7 +1036,9 @@ int PM_FlyMove( void )
 		// reflect player velocity
 		// Only give this a try for first impact plane because you can get yourself stuck in an acute corner by jumping in place
 		// and pressing forward and nobody was really using this bounce/reflection feature anyway...
-		if( numplanes == 1 && pmove->movetype == MOVETYPE_WALK && ( ( pmove->onground == -1 ) || ( pmove->friction != 1 )))
+		// Match Source TryPlayerMove: this first-impact response is only
+		// used while airborne, not merely because ground friction differs.
+		if( numplanes == 1 && pmove->movetype == MOVETYPE_WALK && pmove->onground == -1 )
 		{
 			for( i = 0; i < numplanes; i++ )
 			{
@@ -4044,13 +4060,13 @@ void PM_PlayerMove( qboolean server )
 				PM_AirMove();  // Take into account movement when in air.
 			}
 
+			// Remove temporary base velocity before ground categorization,
+			// matching Source WalkMove()/AirMove(). This keeps moving-ground
+			// velocity out of the jump/ground-state test.
+			VectorSubtract( pmove->velocity, pmove->basevelocity, pmove->velocity );
+
 			// Set final flags.
 			PM_CatagorizePosition();
-
-			// Now pull the base velocity back out.
-			// Base velocity is set if you are on a moving object, like
-			//  a conveyor (or maybe another monster?)
-			VectorSubtract( pmove->velocity, pmove->basevelocity, pmove->velocity );
 
 			// Make sure velocity is valid.
 			PM_CheckVelocity();
