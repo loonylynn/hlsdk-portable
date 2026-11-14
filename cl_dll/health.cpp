@@ -261,12 +261,14 @@ static int AuxPower_GetLabelWidth( void )
 static void AuxPower_GetDefaultPosition( int *x, int *y )
 {
 	int healthY = ScreenHeight - gHUD.m_iFontHeight - gHUD.m_iFontHeight / 2;
+	int frameHeight = g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top;
+	int panelHeight = gHUD.m_iFontHeight + 3 + frameHeight;
 	int crossSprite = gHUD.GetSpriteIndex( "cross" );
 	int crossWidth = gHUD.GetSpriteRect( crossSprite ).right -
 		gHUD.GetSpriteRect( crossSprite ).left;
 
 	*x = AuxPower_ScreenToRefX( crossWidth / 2 );
-	*y = AuxPower_ScreenToRefY( healthY - 17 );
+	*y = AuxPower_ScreenToRefY( healthY - panelHeight );
 }
 
 static void AuxPower_GetPosition( int *x, int *y )
@@ -290,17 +292,19 @@ static void AuxPower_GetLayout( int refX, int refY, int *left, int *top,
 	int labelWidth = AuxPower_GetLabelWidth();
 	int frameWidth = g_rcAuxHudFrame.right - g_rcAuxHudFrame.left;
 	int frameHeight = g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top;
+	int panelWidth = ( labelWidth > frameWidth ) ? labelWidth : frameWidth;
+	int panelHeight = gHUD.m_iFontHeight + 3 + frameHeight;
 	int x = AuxPower_RefToScreenX( refX );
 	int y = AuxPower_RefToScreenY( refY );
 
 	*left = x;
 	*top = y;
-	*labelX = x;
-	*labelY = y + frameHeight - gHUD.m_iFontHeight;
-	*frameX = x + labelWidth + 4;
-	*frameY = y;
-	*width = labelWidth + 4 + frameWidth;
-	*height = ( gHUD.m_iFontHeight > frameHeight ) ? gHUD.m_iFontHeight : frameHeight;
+	*labelX = x + ( panelWidth - labelWidth ) / 2;
+	*labelY = y;
+	*frameX = x + ( panelWidth - frameWidth ) / 2;
+	*frameY = y + gHUD.m_iFontHeight + 3;
+	*width = panelWidth;
+	*height = panelHeight;
 }
 
 static void AuxPower_ClampPosition( int *x, int *y )
@@ -363,7 +367,7 @@ static void AuxPower_PrintReport( void )
 	gEngfuncs.Con_Printf( "hud_auxpower_grid %d\n", grid );
 	gEngfuncs.Con_Printf( "hud_auxpower_snap %d\n",
 		( CVAR_GET_FLOAT( "hud_auxpower_snap" ) != 0.0f ) ? 1 : 0 );
-	gEngfuncs.Con_Printf( "// anchor: top-left of AUX. POWER label; reference space: 640x480\n" );
+	gEngfuncs.Con_Printf( "// anchor: top-left of the centered label/battery stack; reference space: 640x480\n" );
 	gEngfuncs.Con_Printf( "// composite bounds: %d x %d screen pixels; battery frame: 63 x 17; scale: 1.0\n",
 		width, height );
 	if( g_bAuxPowerEditorActive )
@@ -526,7 +530,7 @@ static void DrawAuxPowerMeter( float flPower )
 	int r, g, b;
 	int x, y, left, top, width, height;
 	int labelX, labelY, frameX, frameY;
-	int iOffset;
+	int iEmptyWidth;
 	wrect_t rcFill;
 
 	if( flPower < 0.0f )
@@ -539,6 +543,9 @@ static void DrawAuxPowerMeter( float flPower )
 	else
 		UnpackRGB( r, g, b, RGB_YELLOWISH );
 
+	// Match the normal dim HUD treatment used by the battery and flashlight.
+	ScaleColors( r, g, b, MIN_ALPHA );
+
 	AuxPower_GetPosition( &x, &y );
 	AuxPower_GetLayout( x, y, &left, &top, &width, &height,
 		&labelX, &labelY, &frameX, &frameY );
@@ -546,30 +553,32 @@ static void DrawAuxPowerMeter( float flPower )
 	if( g_bAuxPowerEditorActive )
 		AuxPower_DrawGrid();
 
-	gHUD.DrawHudString( labelX, labelY, labelX + AuxPower_GetLabelWidth(), "AUX. POWER", r, g, b );
-
 	if( g_hAuxHudSprite )
 	{
-		// Draw the remaining 53x9 fill first; its right edge stays fixed.
-		iOffset = (int)( (float)( g_rcAuxHudFill.right - g_rcAuxHudFill.left ) *
-			( 1.0f - flPower * 0.01f ) );
-		if( iOffset < 0 )
-			iOffset = 0;
-		else if( iOffset > g_rcAuxHudFill.right - g_rcAuxHudFill.left )
-			iOffset = g_rcAuxHudFill.right - g_rcAuxHudFill.left;
+		// Keep the fill's left edge fixed; the right edge retreats as power drains.
+		iEmptyWidth = (int)( (float)( g_rcAuxHudFill.right - g_rcAuxHudFill.left ) *
+			( 1.0f - flPower * 0.01f ) + 0.5f );
+		if( iEmptyWidth < 0 )
+			iEmptyWidth = 0;
+		else if( iEmptyWidth > g_rcAuxHudFill.right - g_rcAuxHudFill.left )
+			iEmptyWidth = g_rcAuxHudFill.right - g_rcAuxHudFill.left;
 
-		if( iOffset < g_rcAuxHudFill.right - g_rcAuxHudFill.left )
+		rcFill = g_rcAuxHudFill;
+		rcFill.right -= iEmptyWidth;
+		if( rcFill.right > rcFill.left )
 		{
-			rcFill = g_rcAuxHudFill;
-			rcFill.left += iOffset;
-			SPR_Set( g_hAuxHudSprite, 255, 255, 255 );
-			SPR_DrawAdditive( 0, frameX + 4 + iOffset, frameY + 4, &rcFill );
+			SPR_Set( g_hAuxHudSprite, r, g, b );
+			// The artwork's fill sits 4 px right and 3 px down inside the frame.
+			SPR_DrawAdditive( 0, frameX + 4, frameY + 3, &rcFill );
 		}
 
-		// The frame is drawn after the fill so its outline remains crisp.
-		SPR_Set( g_hAuxHudSprite, 255, 255, 255 );
+		// Draw the frame last so its outline stays crisp over the fill.
+		SPR_Set( g_hAuxHudSprite, r, g, b );
 		SPR_DrawAdditive( 0, frameX, frameY, &g_rcAuxHudFrame );
 	}
+
+	gHUD.DrawHudString( labelX, labelY, labelX + AuxPower_GetLabelWidth(),
+		"AUX. POWER", r, g, b );
 
 	if( g_bAuxPowerEditorActive )
 		AuxPower_DrawEditorOverlay( left, top, width, height );
