@@ -3094,31 +3094,105 @@ PM_NoClip
 
 ====================
 */
+/*
+====================
+PM_NoClip
+
+Source SDK 2013 CGameMovement::FullNoClipMove.
+The Source defaults are sv_noclipspeed 5 and sv_noclipaccelerate 5.
+GoldSrc's shared playermove_t does not expose those Source cvars, so use
+their stock defaults while deriving the speed limit and friction from the
+existing replicated GoldSrc movement variables.
+====================
+*/
 void PM_NoClip( void )
 {
 	int i;
 	vec3_t wishvel;
-	float fmove, smove;
-	//float currentspeed, addspeed, accelspeed;
+	vec3_t wishdir;
+	float factor;
+	float maxspeed;
+	float wishspeed;
+	float currentSpeed;
+	float addSpeed;
+	float accelSpeed;
+	float speed;
+	float control;
+	float friction;
+	float drop;
+	float newSpeed;
 
-	// Copy movement amounts
-	fmove = pmove->cmd.forwardmove;
-	smove = pmove->cmd.sidemove;
+	factor = 5.0f;
+	maxspeed = pmove->maxspeed * factor;
 
-	VectorNormalize( pmove->forward ); 
+	// Source's IN_SPEED modifier halves noclip input speed.
+	if( pmove->cmd.buttons & IN_SPEED )
+	{
+		factor /= 2.0f;
+	}
+
+	// Full 3D view-relative movement, including pitch and vertical input.
+	VectorNormalize( pmove->forward );
 	VectorNormalize( pmove->right );
 
-	for( i = 0; i < 3; i++ )       // Determine x and y parts of velocity
+	for( i = 0; i < 3; i++ )
 	{
-		wishvel[i] = pmove->forward[i] * fmove + pmove->right[i] * smove;
+		wishvel[i] = pmove->forward[i] * ( pmove->cmd.forwardmove * factor ) +
+			pmove->right[i] * ( pmove->cmd.sidemove * factor );
 	}
-	wishvel[2] += pmove->cmd.upmove;
+	wishvel[2] += pmove->cmd.upmove * factor;
 
-	VectorMA (pmove->origin, pmove->frametime, wishvel, pmove->origin );
+	VectorCopy( wishvel, wishdir );
+	wishspeed = VectorNormalize( wishdir );
 
-	// Zero out the velocity so that we don't accumulate a huge downward velocity from
-	// gravity, etc.
-	VectorClear( pmove->velocity );
+	// Clamp against sv_maxspeed * sv_noclipspeed.
+	if( wishspeed > maxspeed )
+	{
+		VectorScale( wishvel, maxspeed / wishspeed, wishvel );
+		wishspeed = maxspeed;
+	}
+
+	// Source Accelerate(): noclip acceleration uses surface friction, but
+	// not GoldSrc's separate player/trigger friction multiplier.
+	if( !pmove->dead && !pmove->waterjumptime && wishspeed > 0.0f )
+	{
+		currentSpeed = DotProduct( pmove->velocity, wishdir );
+		addSpeed = wishspeed - currentSpeed;
+
+		if( addSpeed > 0.0f )
+		{
+			accelSpeed = 5.0f * pmove->frametime * wishspeed *
+				pmove->surfacefriction;
+			if( accelSpeed > addSpeed )
+				accelSpeed = addSpeed;
+
+			for( i = 0; i < 3; i++ )
+				pmove->velocity[i] += accelSpeed * wishdir[i];
+		}
+	}
+
+	speed = Length( pmove->velocity );
+	if( speed < 1.0f )
+	{
+		VectorClear( pmove->velocity );
+		return;
+	}
+
+	// Source FullNoClipMove uses a low-speed control floor so that releasing
+	// movement input still produces a predictable, gradual stop.
+	control = ( speed < maxspeed / 4.0f ) ? maxspeed / 4.0f : speed;
+	friction = pmove->movevars->friction * pmove->surfacefriction;
+	drop = control * friction * pmove->frametime;
+
+	newSpeed = speed - drop;
+	if( newSpeed < 0.0f )
+		newSpeed = 0.0f;
+
+	newSpeed /= speed;
+	VectorScale( pmove->velocity, newSpeed, pmove->velocity );
+
+	// Noclip is intentionally uncollided, as in Source.
+	VectorMA( pmove->origin, pmove->frametime, pmove->velocity, pmove->origin );
 }
 
 // Only allow bunny jumping up to 1.7x server / player maxspeed setting
