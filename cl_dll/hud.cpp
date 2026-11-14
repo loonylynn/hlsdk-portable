@@ -25,6 +25,7 @@
 #include "parsemsg.h"
 #include "vgui_int.h"
 #include "vgui_TeamFortressViewport.h"
+#include "ragdoll.h"
 
 #include "demo.h"
 #include "demo_api.h"
@@ -395,6 +396,8 @@ void CHud::Init( void )
 
 	// VGUI Menus
 	HOOK_MESSAGE( VGUIMenu );
+
+	Ragdoll_Init();
 
 	CVAR_CREATE( "hud_classautokill", "1", FCVAR_ARCHIVE | FCVAR_USERINFO );		// controls whether or not to suicide immediately on TF class switch
 	CVAR_CREATE( "hud_takesshots", "0", FCVAR_ARCHIVE );		// controls whether or not to automatically take screenshots at the end of a round
