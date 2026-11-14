@@ -104,6 +104,10 @@ cvar_t	*cl_bobup;
 cvar_t	*cl_waterdist;
 cvar_t	*cl_chasedist;
 
+// Source HL2 viewmodel effect multipliers (1.0 preserves Source defaults).
+static cvar_t *cl_hl2_viewmodel_bob;
+static cvar_t *cl_hl2_viewmodel_lag;
+
 // These cvars are not registered (so users can't cheat), so set the ->value field directly
 // Register these cvars in V_Init() if needed for easy tweaking
 cvar_t	v_iyaw_cycle		= {"v_iyaw_cycle", "2", 0, 2};
@@ -249,6 +253,10 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 
 	float speed;
 	float bobOffset;
+	float bobScale;
+	float lagScale;
+	float viewVerticalBob;
+	float viewLateralBob;
 	float cycle;
 	float flDiff;
 	float flSpeed;
@@ -314,14 +322,20 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 		lateralBob = Q_max( lateralBob, -7.0f );
 	}
 
+	// Scale the finished Source bob output without changing its phase or equations.
+	// A value of 1.0 retains the exact Source SDK 2013 default behavior.
+	bobScale = cl_hl2_viewmodel_bob ? Q_max( 0.0f, cl_hl2_viewmodel_bob->value ) : 1.0f;
+	viewVerticalBob = verticalBob * bobScale;
+	viewLateralBob = lateralBob * bobScale;
+
 	// Source CBaseHLCombatWeapon::AddViewmodelBob.
 	AngleVectors( view->angles, forward, right, NULL );
-	VectorMA( view->origin, verticalBob * 0.1f, forward, view->origin );
-	view->origin[2] += verticalBob * 0.1f;
-	view->angles[ROLL] += verticalBob * 0.5f;
-	view->angles[PITCH] -= verticalBob * 0.4f;
-	view->angles[YAW] -= lateralBob * 0.3f;
-	VectorMA( view->origin, lateralBob * 0.8f, right, view->origin );
+	VectorMA( view->origin, viewVerticalBob * 0.1f, forward, view->origin );
+	view->origin[2] += viewVerticalBob * 0.1f;
+	view->angles[ROLL] += viewVerticalBob * 0.5f;
+	view->angles[PITCH] -= viewVerticalBob * 0.4f;
+	view->angles[YAW] -= viewLateralBob * 0.3f;
+	VectorMA( view->origin, viewLateralBob * 0.8f, right, view->origin );
 
 	// A viewmodel entity is reused for weapon changes. Rebase its lag vector
 	// when its model changes or the client clock moves backwards (map/demo reset).
@@ -346,12 +360,15 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 		VectorMA( lastFacing, flSpeed * pparams->frametime, difference, lastFacing );
 		VectorNormalize( lastFacing );
 		VectorScale( difference, -1.0f, negativeDifference );
-		VectorMA( view->origin, 5.0f, negativeDifference, view->origin );
+		lagScale = cl_hl2_viewmodel_lag ? Q_max( 0.0f, cl_hl2_viewmodel_lag->value ) : 1.0f;
+		VectorMA( view->origin, 5.0f * lagScale, negativeDifference, view->origin );
 		lastViewTime = pparams->time;
 	}
 
 	// Source's pitch-dependent positional correction uses the original eye angles,
-	// not the already bobbed viewmodel angles.
+	// not the already bobbed viewmodel angles. The lag multiplier scales these
+	// positional corrections along with the directional lag offset.
+	lagScale = cl_hl2_viewmodel_lag ? Q_max( 0.0f, cl_hl2_viewmodel_lag->value ) : 1.0f;
 	AngleVectors( originalAngles, forward, right, up );
 	pitch = originalAngles[PITCH];
 	if( pitch > 180.0f )
@@ -361,9 +378,9 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 
 	// This is Source's default sv_viewmodel_lag_do_angles path with
 	// g_fMaxViewModelLag = 1.5. The zero-lag restore branch is inapplicable.
-	VectorMA( view->origin, -pitch * 0.035f, forward, view->origin );
-	VectorMA( view->origin, -pitch * 0.03f, right, view->origin );
-	VectorMA( view->origin, -pitch * 0.02f, up, view->origin );
+	VectorMA( view->origin, -pitch * 0.035f * lagScale, forward, view->origin );
+	VectorMA( view->origin, -pitch * 0.03f * lagScale, right, view->origin );
+	VectorMA( view->origin, -pitch * 0.02f * lagScale, up, view->origin );
 
 }
 
@@ -1761,6 +1778,11 @@ void V_Init( void )
 	cl_bobup = gEngfuncs.pfnRegisterVariable( "cl_bobup","0.5", 0 );
 	cl_waterdist = gEngfuncs.pfnRegisterVariable( "cl_waterdist","4", 0 );
 	cl_chasedist = gEngfuncs.pfnRegisterVariable( "cl_chasedist","112", 0 );
+
+	// Independent Source HL2 viewmodel effect controls.
+	// 1.0 = original Source behavior; 0.0 = disabled.
+	cl_hl2_viewmodel_bob = gEngfuncs.pfnRegisterVariable( "cl_hl2_viewmodel_bob", "1.0", FCVAR_ARCHIVE );
+	cl_hl2_viewmodel_lag = gEngfuncs.pfnRegisterVariable( "cl_hl2_viewmodel_lag", "1.0", FCVAR_ARCHIVE );
 }
 
 //#define TRACE_TEST	1
