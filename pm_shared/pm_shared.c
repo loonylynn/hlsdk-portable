@@ -3130,11 +3130,19 @@ static void PM_UpdateHL2SuitPower( void )
 	float flRechargeRate;
 	float flPowerLoad;
 	float flFrameTime;
+	float flCurrentTime;
 	int bDeviceActive;
 
 	flDrainRate = ( pmove->vuser4[0] >= 0.0f ) ? pmove->vuser4[0] : 12.5f;
 	flRechargeRate = ( pmove->vuser4[1] >= 0.0f ) ? pmove->vuser4[1] : 12.5f;
 	flFrameTime = ( pmove->frametime > 0.0f ) ? pmove->frametime : 0.0f;
+	flCurrentTime = pmove->time * 0.001f;
+
+	// Older builds stored this timestamp in milliseconds. Convert an
+	// out-of-range future timestamp so existing live players/save states
+	// can transition safely to Source's seconds-based clock.
+	if( pmove->fuser1 > flCurrentTime + 1.0f )
+		pmove->fuser1 *= 0.001f;
 
 	if( !( pmove->iuser4 & HL2_PM_HAS_SUIT ) )
 	{
@@ -3155,7 +3163,7 @@ static void PM_UpdateHL2SuitPower( void )
 	// Xash3D supplies pmove->time in milliseconds; convert to
 	// seconds to match Source's gpGlobals->curtime timestamp.
 	if( !bDeviceActive && pmove->fuser4 < 100.0f &&
-		( pmove->time * 0.001f ) >= pmove->fuser1 + 0.5f )
+		flCurrentTime >= pmove->fuser1 + 0.5f )
 	{
 		PM_SuitPowerCharge( flRechargeRate * flFrameTime );
 	}
