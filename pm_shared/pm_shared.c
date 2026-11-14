@@ -3112,7 +3112,7 @@ static void PM_SuitPowerRemoveSprintDevice( float flDrainRate )
 		pmove->fuser2 = 0.0f;
 
 	if( !( pmove->iuser4 & HL2_PM_DEVICE_SPRINT ) )
-		pmove->fuser1 = pmove->time;
+		pmove->fuser1 = pmove->time * 0.001f; // pmove->time is milliseconds; store Source-style seconds.
 }
 
 /*
@@ -3152,8 +3152,10 @@ static void PM_UpdateHL2SuitPower( void )
 
 	// Source waits until every suit device is off, the reserve is below
 	// 100%, and 0.5 seconds have elapsed since the last device shut down.
+	// Xash3D supplies pmove->time in milliseconds; convert to
+	// seconds to match Source's gpGlobals->curtime timestamp.
 	if( !bDeviceActive && pmove->fuser4 < 100.0f &&
-		pmove->time >= pmove->fuser1 + 0.5f )
+		( pmove->time * 0.001f ) >= pmove->fuser1 + 0.5f )
 	{
 		PM_SuitPowerCharge( flRechargeRate * flFrameTime );
 	}
