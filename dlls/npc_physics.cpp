@@ -609,6 +609,17 @@ int NPCPhysics_GetInterface( int version, void *callbacks )
 	return TRUE;
 }
 
+void NPCPhysics_ResetMap( void )
+{
+	if( !g_npcPhysics.initialized )
+		return;
+
+	for( size_t i = 0; i < g_npcBodies.size(); ++i )
+		NPCPhysics_DestroyBody( g_npcBodies[i] );
+	g_npcBodies.clear();
+	g_npcPhysicsFrame = 0;
+}
+
 void NPCPhysics_Shutdown( void )
 {
 	for( size_t i = 0; i < g_npcBodies.size(); ++i )
