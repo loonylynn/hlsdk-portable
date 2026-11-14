@@ -1,0 +1,7 @@
+#pragma once
+
+// Client-side snapshot receiver and studio-bone override for server ragdolls.
+void Ragdoll_Init( void );
+void Ragdoll_ClearAll( void );
+int Ragdoll_MessageHandler( const char *name, int size, void *buffer );
+int Ragdoll_GetBoneTransform( int entityIndex, int ragdollID, int boneIndex, float transform[3][4] );
