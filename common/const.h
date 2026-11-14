@@ -678,6 +678,7 @@
 // HL2 movement state carried in the player's existing iuser4 field.
 #define HL2_PM_HAS_SUIT		(1 << 0)
 #define HL2_PM_SPRINTING	(1 << 1)
+#define HL2_PM_WALKING		(1 << 2)
 
 // Break Model Defines
 #define BREAK_TYPEMASK		0x4F
