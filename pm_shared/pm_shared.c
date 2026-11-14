@@ -2693,10 +2693,11 @@ void PM_LadderMove( physent_t *pLadder )
 	VectorCopy( pmove->origin, floor );
 	floor[2] += pmove->player_mins[pmove->usehull][2] - 1;
 
-	if( pmove->PM_PointContents( floor, NULL ) == CONTENTS_SOLID )
-		onFloor = true;
-	else
-		onFloor = false;
+	// Source considers the player grounded here either when the foot probe
+	// touches solid contents or when movement categorization already found
+	// a ground entity (including non-world platforms).
+	onFloor = ( pmove->PM_PointContents( floor, NULL ) == CONTENTS_SOLID ) ||
+		( pmove->onground != -1 );
 
 	pmove->gravity = 0;
 	PM_TraceModel(pLadder, pmove->origin, ladderCenter, &trace);
@@ -2704,16 +2705,11 @@ void PM_LadderMove( physent_t *pLadder )
 	{
 		float forward = 0, right = 0;
 		vec3_t vpn, v_right;
+		// Source ClimbSpeed() returns MAX_CLIMB_SPEED directly. Ladder
+		// speed is independent of walk/sprint maxspeed and duck scaling.
 		float flSpeed = MAX_CLIMB_SPEED;
 
-		// they shouldn't be able to move faster than their maxspeed
-		if( flSpeed > pmove->maxspeed )
-			flSpeed = pmove->maxspeed;
-
 		AngleVectors( pmove->angles, vpn, v_right, NULL );
-
-		if( pmove->flags & FL_DUCKING )
-			flSpeed *= PLAYER_DUCKING_MULTIPLIER;
 		if( pmove->cmd.buttons & IN_BACK )
 			forward -= flSpeed;
 		if( pmove->cmd.buttons & IN_FORWARD )
