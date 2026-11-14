@@ -388,6 +388,8 @@ static void AuxPower_PrintReport( void )
 	int x, y;
 	int left, top, width, height, labelX, labelY, frameX, frameY;
 	int grid = AuxPower_GetGrid();
+	cl_entity_t *pLocalPlayer = gEngfuncs.GetLocalPlayer();
+	float flNetworkPower = pLocalPlayer ? pLocalPlayer->curstate.fuser4 : -1.0f;
 
 	AuxPower_GetPosition( &x, &y );
 	AuxPower_GetLayout( x, y, &left, &top, &width, &height,
@@ -401,6 +403,8 @@ static void AuxPower_PrintReport( void )
 	gEngfuncs.Con_Printf( "hud_auxpower_grid %d\n", grid );
 	gEngfuncs.Con_Printf( "hud_auxpower_snap %d\n",
 		( CVAR_GET_FLOAT( "hud_auxpower_snap" ) != 0.0f ) ? 1 : 0 );
+	gEngfuncs.Con_Printf( "auxpower predicted %.2f | player-state fuser4 %.2f\n",
+		g_flHL2AuxPower, flNetworkPower );
 	gEngfuncs.Con_Printf( "// anchor: top-left of the battery frame; reference space: 640x480\n" );
 	gEngfuncs.Con_Printf( "// battery bounds: %d x %d screen pixels; scale: 1.0\n",
 		width, height );
@@ -790,11 +794,12 @@ int CHudHealth::Draw( float flTime )
 		UnpackRGB( r, g, b, RGB_YELLOWISH );
 		FillRGBA( x, y + gHUD.m_iHudNumbersYOffset, iWidth, iHeight, r, g, b, a );
 
-		// Use the same reserve field that shared PM updates for sprint drain/recharge.
+		// Prefer the replicated player state for the HUD. The predicted
+		// playermove copy can be stale on engines that do not seed custom
+		// user fields consistently before client prediction runs.
 		cl_entity_t *pLocalPlayer = gEngfuncs.GetLocalPlayer();
-		float flAuxPower = g_flHL2AuxPower;
-		if( flAuxPower < 0.0f && pLocalPlayer )
-			flAuxPower = pLocalPlayer->curstate.fuser4;
+		float flAuxPower = pLocalPlayer ?
+			pLocalPlayer->curstate.fuser4 : g_flHL2AuxPower;
 		DrawAuxPowerMeter( flAuxPower );
 	}
 
