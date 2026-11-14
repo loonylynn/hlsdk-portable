@@ -868,6 +868,36 @@ int PM_ClipVelocity( vec3_t in, vec3_t normal, vec3_t out, float overbounce )
 	return blocked;
 }
 
+/*
+==================
+PM_SourceClipVelocity
+
+Source SDK CGameMovement::ClipVelocity. Keep this separate from the
+legacy GoldSrc toss/bounce helper below: Source's second correction pass
+is required by player TryPlayerMove(), but this port does not change
+non-player movement collision behavior.
+==================
+*/
+static void PM_SourceClipVelocity( vec3_t in, vec3_t normal, vec3_t out, float overbounce )
+{
+	float backoff;
+	float adjust;
+	int i;
+
+	backoff = DotProduct( in, normal ) * overbounce;
+
+	for( i = 0; i < 3; i++ )
+		out[i] = in[i] - normal[i] * backoff;
+
+	// Iterate once to ensure we are no longer moving into the plane.
+	adjust = DotProduct( out, normal );
+	if( adjust < 0.0f )
+	{
+		for( i = 0; i < 3; i++ )
+			out[i] -= normal[i] * adjust;
+	}
+}
+
 void PM_AddCorrectGravity( void )
 {
 	float ent_gravity;
@@ -1045,11 +1075,11 @@ int PM_FlyMove( void )
 				if( planes[i][2] > 0.7f )
 				{
 					// floor or slope
-					PM_ClipVelocity( original_velocity, planes[i], new_velocity, 1 );
+					PM_SourceClipVelocity( original_velocity, planes[i], new_velocity, 1 );
 					VectorCopy( new_velocity, original_velocity );
 				}
 				else												
-					PM_ClipVelocity( original_velocity, planes[i], new_velocity, 1.0f + pmove->movevars->bounce * ( 1 - pmove->friction ) );
+					PM_SourceClipVelocity( original_velocity, planes[i], new_velocity, 1.0f + pmove->movevars->bounce * ( 1 - pmove->friction ) );
 			}
 
 			VectorCopy( new_velocity, pmove->velocity );
@@ -1059,7 +1089,7 @@ int PM_FlyMove( void )
 		{
 			for( i = 0; i < numplanes; i++ )
 			{
-				PM_ClipVelocity( original_velocity, planes[i], pmove->velocity, 1 );
+				PM_SourceClipVelocity( original_velocity, planes[i], pmove->velocity, 1 );
 				for( j = 0; j < numplanes; j++ )
 					if( j != i )
 					{
@@ -1087,6 +1117,8 @@ int PM_FlyMove( void )
 					break;
 				}
 				CrossProduct( planes[0], planes[1], dir );
+				// Source normalizes the crease axis before projecting velocity.
+				VectorNormalize( dir );
 				d = DotProduct( dir, pmove->velocity );
 				VectorScale( dir, d, pmove->velocity );
 			}
