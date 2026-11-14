@@ -263,7 +263,7 @@ namespace
 
 		ragdoll.bones.clear();
 		ragdoll.previousPositions.clear();
-		ragdoll.groupFilter = NULL;
+		ragdoll.groupFilter = Ref<GroupFilterTable>();
 	}
 
 	static void NPCPhysics_DestroyAllRagdolls()
@@ -477,7 +477,7 @@ namespace
 			constraintSettings.mPoint2 = joint;
 
 			Ref<TwoBodyConstraint> constraint = constraintSettings.Create( *parentBody, *childBody );
-			if( constraint == nullptr )
+			if( constraint.Get() == nullptr )
 			{
 				bodyLock.ReleaseLocks();
 				NPCPhysics_DestroyRagdoll( ragdoll );
