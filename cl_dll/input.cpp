@@ -30,6 +30,9 @@ extern "C"
 
 #include "vgui_TeamFortressViewport.h"
 
+extern "C" int HUD_AuxPowerEditorIsActive( void );
+extern "C" void HUD_AuxPowerEditorKeyEvent( int down, int keynum );
+
 extern "C" 
 {
 	struct kbutton_s DLLEXPORT *KB_Find( const char *name );
@@ -379,6 +382,13 @@ Return 1 to allow engine to process the key, otherwise, act on it as needed
 */
 int DLLEXPORT HUD_Key_Event( int down, int keynum, const char *pszCurrentBinding )
 {
+	// Keep gameplay keys out of the game while the AUX HUD editor is active.
+	if( HUD_AuxPowerEditorIsActive() )
+	{
+		HUD_AuxPowerEditorKeyEvent( down, keynum );
+		return 0;
+	}
+
 	if (gViewPort)
 		return gViewPort->KeyInput(down, keynum, pszCurrentBinding);
 	return 1;
