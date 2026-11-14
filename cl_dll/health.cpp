@@ -669,8 +669,13 @@ static void DrawAuxPowerMeter( float flPower )
 		if( rcFill.right > rcFill.left )
 		{
 			SPR_Set( g_hAuxHudSprite, r, g, b );
-			// The artwork's fill sits 4 px right and 3 px down inside the frame.
-			SPR_DrawAdditive( 0, frameX + 4, frameY + 3, &rcFill );
+			// Center the fill inside the frame using the cropped source dimensions.
+			// For the current 63x17 frame and 53x9 fill, this yields a 5x4 inset.
+			int iFillOffsetX = ( ( g_rcAuxHudFrame.right - g_rcAuxHudFrame.left ) -
+				( g_rcAuxHudFill.right - g_rcAuxHudFill.left ) ) / 2;
+			int iFillOffsetY = ( ( g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top ) -
+				( g_rcAuxHudFill.bottom - g_rcAuxHudFill.top ) ) / 2;
+			SPR_DrawAdditive( 0, frameX + iFillOffsetX, frameY + iFillOffsetY, &rcFill );
 		}
 
 		// Draw the frame last so its outline stays crisp over the fill.
