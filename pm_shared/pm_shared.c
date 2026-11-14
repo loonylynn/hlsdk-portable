@@ -2984,6 +2984,11 @@ static void PM_UpdateHL2MovementSpeed( void )
 			bSprinting = 0;
 	}
 
+	// CHL2_Player::PreThink also stops a manual sprint when fully ducked
+	// on the ground. In Source this is separate from CanSprint().
+	if( bSprinting && bFullyDucked && pmove->onground != -1 )
+		bSprinting = 0;
+
 	// Do not stop sprint just because reserve reached exactly zero.
 	// Source's active device shuts down when the next drain would go below zero.
 
@@ -3120,7 +3125,6 @@ static void PM_UpdateHL2SuitPower( void )
 	float flRechargeRate;
 	float flPowerLoad;
 	float flFrameTime;
-	float flHorizontalSpeedSqr;
 	int bDeviceActive;
 
 	flDrainRate = ( pmove->vuser4[0] >= 0.0f ) ? pmove->vuser4[0] : 12.5f;
