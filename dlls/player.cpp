@@ -3067,11 +3067,8 @@ void CBasePlayer::PostThink()
 
 		if( flLandingVelocity >= PLAYER_FALL_PUNCH_THRESHHOLD && IsAlive() )
 		{
-			// PMove applied its Source-style 0.013 roll punch using raw fall
-			// velocity. Correct the server state for a descending support.
-			if( flLandingVelocity < m_flFallVelocity )
-				pev->punchangle.z = flLandingVelocity * 0.013f;
-
+			// Shared PMove already applied Source's support-relative roll punch
+			// on both prediction and server simulation.
 			SetAnimation( PLAYER_WALK );
 		}
 	}
