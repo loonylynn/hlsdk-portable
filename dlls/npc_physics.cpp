@@ -179,7 +179,8 @@ namespace
 		if( ( v.flags & FL_MONSTER ) == 0 || ( v.flags & ( FL_CLIENT | FL_KILLME | FL_DORMANT ) ) != 0 )
 			return false;
 
-		if( v.movetype != MOVETYPE_STEP || v.solid == SOLID_NOT || v.solid == SOLID_TRIGGER )
+		if( ( v.movetype != MOVETYPE_STEP && v.movetype != MOVETYPE_FLY && v.movetype != MOVETYPE_FLYMISSILE ) ||
+			v.solid == SOLID_NOT || v.solid == SOLID_TRIGGER )
 			return false;
 
 		return v.health > 0.0f && v.deadflag == DEAD_NO;
