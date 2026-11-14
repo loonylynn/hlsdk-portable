@@ -36,6 +36,11 @@ DECLARE_MESSAGE( m_Health, Damage )
 #define PAIN_NAME "sprites/%d_pain.spr"
 #define DAMAGE_NAME "sprites/%d_dmg.spr"
 
+// Auxiliary power HUD sheet: frame and fill are cropped from one 80x64 sprite.
+static HSPRITE g_hAuxHudSprite = 0;
+static const wrect_t g_rcAuxHudFrame = { 9, 72, 7, 24 };
+static const wrect_t g_rcAuxHudFill = { 13, 66, 43, 52 };
+
 int giDmgHeight, giDmgWidth;
 
 int giDmgFlags[NUM_DMG_TYPES] =
@@ -91,6 +96,9 @@ int CHudHealth::VidInit( void )
 
 	m_HUD_dmg_bio = gHUD.GetSpriteIndex( "dmg_bio" ) + 1;
 	m_HUD_cross = gHUD.GetSpriteIndex( "cross" );
+
+	// This is a standalone sprite sheet, not an entry in hud.txt.
+	g_hAuxHudSprite = SPR_Load( "sprites/auxhud.spr" );
 
 	giDmgHeight = gHUD.GetSpriteRect( m_HUD_dmg_bio ).right - gHUD.GetSpriteRect( m_HUD_dmg_bio ).left;
 	giDmgWidth = gHUD.GetSpriteRect( m_HUD_dmg_bio ).bottom - gHUD.GetSpriteRect( m_HUD_dmg_bio ).top;
@@ -178,11 +186,14 @@ void CHudHealth::GetPainColor( int &r, int &g, int &b )
 #endif
 }
 
-// Draw the shared HL2-style auxiliary-power reserve above the health readout.
-static void DrawAuxPowerMeter( int x, int y, float flPower, int alpha )
+// Draw the HL2-style auxiliary-power reserve using the custom battery sprite sheet.
+static void DrawAuxPowerMeter( int x, int y, float flPower )
 {
 	int r, g, b;
-	int i;
+	int iOffset;
+	int labelWidth;
+	int frameX, frameY;
+	wrect_t rcFill;
 
 	if( flPower < 0.0f )
 		flPower = 0.0f;
@@ -194,35 +205,39 @@ static void DrawAuxPowerMeter( int x, int y, float flPower, int alpha )
 	else
 		UnpackRGB( r, g, b, RGB_YELLOWISH );
 
-	// Keep the label compact and place the segmented meter directly above health.
-	gHUD.DrawHudString( x, y - gHUD.m_iFontHeight, x + XRES( 58 ), "AUX. POWER", r, g, b );
+	labelWidth = gHUD.DrawHudStringLen( (char*)"AUX. POWER" );
+	gHUD.DrawHudString( x, y - gHUD.m_iFontHeight, x + labelWidth, "AUX. POWER", r, g, b );
 
-	const int barX = x + XRES( 60 );
-	const int barY = y - YRES( 5 );
-	const int segmentWidth = XRES( 4 );
-	const int segmentGap = XRES( 1 );
-	const int segmentHeight = YRES( 4 );
+	if( !g_hAuxHudSprite )
+		return;
 
-	for( i = 0; i < 10; ++i )
+	// Position the 63x17 frame after the label; the sheet's fill sits 4x4
+	// inside the frame (3px measured interior offset plus a 1px inset).
+	frameX = x + labelWidth + 4;
+	frameY = y - ( g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top );
+
+	// Draw the remaining portion of the 53x9 fill first. Like the flashlight
+	// meter, the right edge remains fixed while the left edge moves right.
+	iOffset = (int)( (float)( g_rcAuxHudFill.right - g_rcAuxHudFill.left ) *
+		( 1.0f - flPower * 0.01f ) );
+	if( iOffset < 0 )
+		iOffset = 0;
+	else if( iOffset > g_rcAuxHudFill.right - g_rcAuxHudFill.left )
+		iOffset = g_rcAuxHudFill.right - g_rcAuxHudFill.left;
+
+	if( iOffset < g_rcAuxHudFill.right - g_rcAuxHudFill.left )
 	{
-		const int segmentX = barX + i * ( segmentWidth + segmentGap );
-		float segmentPower = flPower - (float)( i * 10 );
-		int fillWidth = 0;
+		rcFill = g_rcAuxHudFill;
+		rcFill.left += iOffset;
 
-		if( segmentPower < 0.0f )
-			segmentPower = 0.0f;
-		else if( segmentPower > 10.0f )
-			segmentPower = 10.0f;
-
-		if( segmentPower > 0.0f )
-			fillWidth = (int)( (float)segmentWidth * ( segmentPower / 10.0f ) + 0.5f );
-
-		// Empty cells stay visible so depletion is readable at a glance.
-		FillRGBA( segmentX, barY, segmentWidth, segmentHeight, 12, 12, 16, alpha / 2 );
-
-		if( fillWidth > 0 )
-			FillRGBA( segmentX, barY, fillWidth, segmentHeight, r, g, b, alpha );
+		SPR_Set( g_hAuxHudSprite, 255, 255, 255 );
+		SPR_DrawAdditive( 0, frameX + XRES( 4 ) + iOffset,
+			frameY + YRES( 4 ), &rcFill );
 	}
+
+	// Draw the battery border over the fill to keep the outline crisp.
+	SPR_Set( g_hAuxHudSprite, 255, 255, 255 );
+	SPR_DrawAdditive( 0, frameX, frameY, &g_rcAuxHudFrame );
 }
 
 int CHudHealth::Draw( float flTime )
@@ -283,10 +298,10 @@ int CHudHealth::Draw( float flTime )
 		UnpackRGB( r, g, b, RGB_YELLOWISH );
 		FillRGBA( x, y + gHUD.m_iHudNumbersYOffset, iWidth, iHeight, r, g, b, a );
 
-		// The local player's replicated fuser4 field carries the reserve managed by shared PM.
+		// Use the same reserve field that shared PM updates for sprint drain/recharge.
 		cl_entity_t *pLocalPlayer = gEngfuncs.GetLocalPlayer();
 		if( pLocalPlayer )
-			DrawAuxPowerMeter( CrossWidth / 2, y, pLocalPlayer->curstate.fuser4, a );
+			DrawAuxPowerMeter( CrossWidth / 2, y, pLocalPlayer->curstate.fuser4 );
 	}
 
 	DrawDamage( flTime );
