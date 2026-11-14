@@ -191,11 +191,31 @@ gpGlobals. The camera's existing GoldSrc bob remains separate.
 
 =============================================================================
 */
-#define HL2_BOB_CYCLE_MAX	0.45f
-#define HL2_BOB_UP			0.5f
-#define HL2_VIEWMODEL_LAG	1.5f
+#define P2_BOB_CYCLE_MAX	0.45f
+#define P2_BOB_UP			0.5f
+#define P2_VIEWMODEL_LAG	1.5f
 
-static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entity_t *view )
+// Rotate a direction vector around a normalized local axis. This mirrors
+// MatrixBuildRotationAboutAxis used by Portal 2's weapon bob without requiring
+// Source's VMatrix class in the GoldSrc client DLL.
+static void V_RotateVectorAroundAxis( const vec3_t input, const vec3_t axis, float degrees, vec3_t output )
+{
+	float radians = degrees * ( M_PI_F / 180.0f );
+	float cosine = cos( radians );
+	float sine = sin( radians );
+	float axisDot = DotProduct( axis, input );
+	vec3_t cross;
+
+	cross[0] = axis[1] * input[2] - axis[2] * input[1];
+	cross[1] = axis[2] * input[0] - axis[0] * input[2];
+	cross[2] = axis[0] * input[1] - axis[1] * input[0];
+
+	output[0] = input[0] * cosine + cross[0] * sine + axis[0] * axisDot * ( 1.0f - cosine );
+	output[1] = input[1] * cosine + cross[1] * sine + axis[1] * axisDot * ( 1.0f - cosine );
+	output[2] = input[2] * cosine + cross[2] * sine + axis[2] * axisDot * ( 1.0f - cosine );
+}
+
+static void V_ApplyPortal2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entity_t *view )
 {
 	static double bobtime;
 	static float lastbobtime;
@@ -208,6 +228,7 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 	static int haveLastFacing = 0;
 
 	float speed;
+	float maxSpeed;
 	float bobOffset;
 	float bobScale;
 	float lagScale;
@@ -216,9 +237,12 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 	float cycle;
 	float flDiff;
 	float flSpeed;
-	float pitch;
-	vec3_t originalAngles;
+	float rollAngle;
+	float pitchAngle;
+	float yawAngle;
 	vec3_t forward, right, up;
+	vec3_t rotationAxis;
+	vec3_t rotated;
 	vec3_t difference, negativeDifference;
 
 	if( !pparams || !view || !view->model )
@@ -229,12 +253,10 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 		return;
 	}
 
-	// CalcViewModelView passes the unbobbed eye angles to the lag routine.
-	VectorCopy( view->angles, originalAngles );
-
-	// Source CBaseHLCombatWeapon::CalcViewmodelBob.
-	// Keep its time-scaled cycle and 320-unit horizontal speed cap unchanged.
-	// Reset the phase if GoldSrc's level/demo clock moves backwards.
+	// Portal 2 uses the full 3D player velocity and normalizes bob phase against
+	// the active movement max speed, rather than HL2's fixed 320-unit 2D speed.
+	maxSpeed = ( pparams->movevars && pparams->movevars->maxspeed > 0.0f ) ?
+		pparams->movevars->maxspeed : 320.0f;
 	if( pparams->time < lastbobtime )
 	{
 		bobtime = 0.0;
@@ -243,35 +265,34 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 	}
 	if( pparams->frametime != 0.0f )
 	{
-		speed = sqrt( pparams->simvel[0] * pparams->simvel[0] +
-			pparams->simvel[1] * pparams->simvel[1] );
-		speed = Q_max( -320.0f, Q_min( speed, 320.0f ) );
-		bobOffset = speed / 320.0f;
+		speed = Length( pparams->simvel );
+		speed = Q_min( speed, maxSpeed );
+		bobOffset = speed / maxSpeed;
 
 		bobtime += ( pparams->time - lastbobtime ) * bobOffset;
 		lastbobtime = pparams->time;
 
-		// Vertical bob.
-		cycle = bobtime - (int)( bobtime / HL2_BOB_CYCLE_MAX ) * HL2_BOB_CYCLE_MAX;
-		cycle /= HL2_BOB_CYCLE_MAX;
-		if( cycle < HL2_BOB_UP )
-			cycle = M_PI_F * cycle / HL2_BOB_UP;
+		// Portal 2 keeps the Source 0.45-second cycle and half-cycle bob-up.
+		cycle = bobtime - (int)( bobtime / P2_BOB_CYCLE_MAX ) * P2_BOB_CYCLE_MAX;
+		cycle /= P2_BOB_CYCLE_MAX;
+		if( cycle < P2_BOB_UP )
+			cycle = M_PI_F * cycle / P2_BOB_UP;
 		else
-			cycle = M_PI_F + M_PI_F * ( cycle - HL2_BOB_UP ) / ( 1.0f - HL2_BOB_UP );
+			cycle = M_PI_F + M_PI_F * ( cycle - P2_BOB_UP ) / ( 1.0f - P2_BOB_UP );
 
 		verticalBob = speed * 0.005f;
 		verticalBob = verticalBob * 0.3f + verticalBob * 0.7f * sin( cycle );
 		verticalBob = Q_min( verticalBob, 4.0f );
 		verticalBob = Q_max( verticalBob, -7.0f );
 
-		// Lateral bob uses a cycle twice as long as the vertical cycle.
-		cycle = bobtime - (int)( bobtime / HL2_BOB_CYCLE_MAX * 2 ) *
-			HL2_BOB_CYCLE_MAX * 2;
-		cycle /= HL2_BOB_CYCLE_MAX * 2;
-		if( cycle < HL2_BOB_UP )
-			cycle = M_PI_F * cycle / HL2_BOB_UP;
+		// Lateral bob has a cycle twice as long as the vertical cycle.
+		cycle = bobtime - (int)( bobtime / P2_BOB_CYCLE_MAX * 2 ) *
+			P2_BOB_CYCLE_MAX * 2;
+		cycle /= P2_BOB_CYCLE_MAX * 2;
+		if( cycle < P2_BOB_UP )
+			cycle = M_PI_F * cycle / P2_BOB_UP;
 		else
-			cycle = M_PI_F + M_PI_F * ( cycle - HL2_BOB_UP ) / ( 1.0f - HL2_BOB_UP );
+			cycle = M_PI_F + M_PI_F * ( cycle - P2_BOB_UP ) / ( 1.0f - P2_BOB_UP );
 
 		lateralBob = speed * 0.005f;
 		lateralBob = lateralBob * 0.3f + lateralBob * 0.7f * sin( cycle );
@@ -279,30 +300,52 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 		lateralBob = Q_max( lateralBob, -7.0f );
 	}
 
-	// Scale the finished Source bob output without changing its phase or equations.
-	// A value of 1.0 retains the exact Source SDK 2013 default behavior.
+	// Keep the existing tuning cvars for user-config compatibility. 1.0 is
+	// the unscaled Portal 2 bob and lag behavior.
 	bobScale = cl_hl2_viewmodel_bob ? Q_max( 0.0f, cl_hl2_viewmodel_bob->value ) : 1.0f;
 	viewVerticalBob = verticalBob * bobScale;
 	viewLateralBob = lateralBob * bobScale;
 
-	// Source CBaseHLCombatWeapon::AddViewmodelBob.
-	AngleVectors( view->angles, forward, right, NULL );
+	// Portal 2 CBasePortalCombatWeapon::AddViewmodelBob. GoldSrc has no
+	// gravity-relative player-up vector, so vertical translation stays world-Z.
+	AngleVectors( view->angles, forward, right, up );
 	VectorMA( view->origin, viewVerticalBob * 0.1f, forward, view->origin );
 	view->origin[2] += viewVerticalBob * 0.1f;
-	view->angles[ROLL] += viewVerticalBob * 0.5f;
-	view->angles[PITCH] -= viewVerticalBob * 0.4f;
-	view->angles[YAW] -= viewLateralBob * 0.3f;
 	VectorMA( view->origin, viewLateralBob * 0.8f, right, view->origin );
 
-	// A viewmodel entity is reused for weapon changes. Rebase its lag vector
-	// when its model changes or the client clock moves backwards (map/demo reset).
+	// Reproduce Portal 2's ordered local-axis rotations rather than adding
+	// Euler offsets directly to the world pitch, yaw, and roll components.
+	rotationAxis[0] = right[1] * up[2] - right[2] * up[1];
+	rotationAxis[1] = right[2] * up[0] - right[0] * up[2];
+	rotationAxis[2] = right[0] * up[1] - right[1] * up[0];
+	VectorNormalize( rotationAxis );
+
+	rollAngle = viewVerticalBob * 0.5f;
+	pitchAngle = -viewVerticalBob * 0.4f;
+	yawAngle = -viewLateralBob * 0.3f;
+
+	V_RotateVectorAroundAxis( up, rotationAxis, rollAngle, rotated );
+	VectorCopy( rotated, up );
+	V_RotateVectorAroundAxis( forward, rotationAxis, rollAngle, rotated );
+	VectorCopy( rotated, forward );
+	V_RotateVectorAroundAxis( right, rotationAxis, rollAngle, rotated );
+	VectorCopy( rotated, right );
+
+	V_RotateVectorAroundAxis( up, right, pitchAngle, rotated );
+	VectorCopy( rotated, up );
+	V_RotateVectorAroundAxis( forward, right, pitchAngle, rotated );
+	VectorCopy( rotated, forward );
+
+	V_RotateVectorAroundAxis( forward, up, yawAngle, rotated );
+	VectorCopy( rotated, forward );
+	VectorAngles( forward, up, view->angles );
+
+	// Portal disables Source's pitch-dependent positional lag correction because
+	// portal transitions can create abrupt pitch changes. Keep directional lag.
 	AngleVectors( view->angles, forward, NULL, NULL );
 	if( !haveLastFacing || lastModelIndex != view->curstate.modelindex ||
 		lastViewModel != view->model || pparams->time < lastViewTime )
 	{
-		// A GoldSrc viewmodel entity is reused between weapons. Rebase against
-		// both its network model index and the actual model resource pointer:
-		// this also covers resource replacement with a reused model index.
 		VectorCopy( forward, lastFacing );
 		lastModelIndex = view->curstate.modelindex;
 		lastViewModel = view->model;
@@ -311,12 +354,11 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 	}
 	else if( pparams->frametime != 0.0f )
 	{
-		// Source CBaseViewModel::CalcViewModelLag.
 		VectorSubtract( forward, lastFacing, difference );
 		flSpeed = 5.0f;
 		flDiff = Length( difference );
-		if( flDiff > HL2_VIEWMODEL_LAG && HL2_VIEWMODEL_LAG > 0.0f )
-			flSpeed *= flDiff / HL2_VIEWMODEL_LAG;
+		if( flDiff > P2_VIEWMODEL_LAG && P2_VIEWMODEL_LAG > 0.0f )
+			flSpeed *= flDiff / P2_VIEWMODEL_LAG;
 
 		VectorMA( lastFacing, flSpeed * pparams->frametime, difference, lastFacing );
 		VectorNormalize( lastFacing );
@@ -325,24 +367,6 @@ static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entit
 		VectorMA( view->origin, 5.0f * lagScale, negativeDifference, view->origin );
 		lastViewTime = pparams->time;
 	}
-
-	// Source's pitch-dependent positional correction uses the original eye angles,
-	// not the already bobbed viewmodel angles. The lag multiplier scales these
-	// positional corrections along with the directional lag offset.
-	lagScale = cl_hl2_viewmodel_lag ? Q_max( 0.0f, cl_hl2_viewmodel_lag->value ) : 1.0f;
-	AngleVectors( originalAngles, forward, right, up );
-	pitch = originalAngles[PITCH];
-	if( pitch > 180.0f )
-		pitch -= 360.0f;
-	else if( pitch < -180.0f )
-		pitch += 360.0f;
-
-	// This is Source's default sv_viewmodel_lag_do_angles path with
-	// g_fMaxViewModelLag = 1.5. The zero-lag restore branch is inapplicable.
-	VectorMA( view->origin, -pitch * 0.035f * lagScale, forward, view->origin );
-	VectorMA( view->origin, -pitch * 0.03f * lagScale, right, view->origin );
-	VectorMA( view->origin, -pitch * 0.02f * lagScale, up, view->origin );
-
 }
 
 
@@ -838,7 +862,7 @@ void V_CalcNormalRefdef( struct ref_params_s *pparams )
 
 	// Source applies weapon-specific bob first, then BaseViewModel lag,
 	// after the player view and GoldSrc stair/train smoothing are finalized.
-	V_ApplyHL2ViewModelBobAndLag( pparams, view );
+	V_ApplyPortal2ViewModelBobAndLag( pparams, view );
 
 	// Source applies viewmodel shake at 10% after weapon bob and lag.
 	gEngfuncs.V_ApplyShake( view->origin, view->angles, 0.1f );
