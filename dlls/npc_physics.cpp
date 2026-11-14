@@ -93,6 +93,9 @@ namespace
 		NPCPhysicsBodyKind kind;
 		uint32_t seenFrame;
 		float mass;
+		// Velocity immediately before Jolt's collision solve. Only the
+		// velocity change produced by that solve is fed back to GoldSrc.
+		Vec3 velocityBeforeStep;
 	};
 
 	struct NPCPhysicsWorld
@@ -508,19 +511,25 @@ namespace
 		}
 	}
 
-	static void NPCPhysics_CopyMonsterVelocityToGoldSrc( NPCPhysicsBody &record, BodyInterface &bodyInterface )
+	static void NPCPhysics_StoreMonsterPreStepVelocity( NPCPhysicsBody &record, BodyInterface &bodyInterface )
+	{
+		record.velocityBeforeStep = bodyInterface.GetLinearVelocity( record.bodyID );
+	}
+
+	static void NPCPhysics_ApplyMonsterContactVelocityToGoldSrc( NPCPhysicsBody &record, BodyInterface &bodyInterface )
 	{
 		edict_t *ent = record.entity;
 		if( !NPCPhysics_IsAliveMonster( ent ) )
 			return;
 
-		// Feed the contact-resolved shadow velocity back into GoldSrc. Without
-		// this, the next MOVETYPE_STEP tick would continue using the AI's old
-		// velocity and partially undo the impulse delivered by a physical prop.
-		const Vec3 linear = bodyInterface.GetLinearVelocity( record.bodyID );
-		ent->v.velocity[0] = linear.GetX();
-		ent->v.velocity[1] = linear.GetY();
-		ent->v.velocity[2] = linear.GetZ();
+		// The shadow controller is not itself NPC movement. Feeding its full
+		// velocity back makes small controller corrections accumulate as
+		// unintended GoldSrc drift. Transfer only the velocity delta generated
+		// by Jolt's collision solve (including the world-hull clip below).
+		const Vec3 contactDelta = bodyInterface.GetLinearVelocity( record.bodyID ) - record.velocityBeforeStep;
+		ent->v.velocity[0] += contactDelta.GetX();
+		ent->v.velocity[1] += contactDelta.GetY();
+		ent->v.velocity[2] += contactDelta.GetZ();
 	}
 
 	static void NPCPhysics_CopyPropVelocityToGoldSrc( NPCPhysicsBody &record, BodyInterface &bodyInterface )
@@ -575,7 +584,10 @@ namespace
 		{
 			NPCPhysicsBody &record = g_npcBodies[i];
 			if( record.kind == NPC_PHYSICS_MONSTER )
+			{
 				NPCPhysics_ApplyMonsterShadow( record, deltaTime, bodyInterface );
+				NPCPhysics_StoreMonsterPreStepVelocity( record, bodyInterface );
+			}
 			else
 				NPCPhysics_SyncPropToJolt( record, bodyInterface );
 		}
@@ -594,7 +606,7 @@ namespace
 			if( record.kind == NPC_PHYSICS_MONSTER )
 			{
 				NPCPhysics_ClipMonsterToWorld( record, bodyInterface );
-				NPCPhysics_CopyMonsterVelocityToGoldSrc( record, bodyInterface );
+				NPCPhysics_ApplyMonsterContactVelocityToGoldSrc( record, bodyInterface );
 			}
 			else
 				NPCPhysics_CopyPropVelocityToGoldSrc( record, bodyInterface );
