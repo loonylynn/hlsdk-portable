@@ -2037,7 +2037,7 @@ static void PM_GetUnDuckOrigin( vec3_t newOrigin )
 
 	VectorCopy( pmove->origin, newOrigin );
 
-	if( ( pmove->flags & FL_DUCKING ) && pmove->onground != -1 )
+	if( pmove->iuser4 & HL2_PM_DUCK_ORIGIN_SHIFTED )
 	{
 		for( i = 0; i < 3; i++ )
 			newOrigin[i] += pmove->player_mins[1][i] - pmove->player_mins[0][i];
@@ -2128,12 +2128,21 @@ static void PM_FinishDuck( void )
 
 	// GoldSrc's centered hull needs an origin adjustment while grounded.
 	// Do not apply Source's bottom-origin airborne displacement.
-	if( !wasDucked && pmove->onground != -1 )
+	if( !wasDucked )
 	{
-		for( i = 0; i < 3; i++ )
-			pmove->origin[i] -= ( pmove->player_mins[1][i] - pmove->player_mins[0][i] );
+		if( pmove->onground != -1 )
+		{
+			for( i = 0; i < 3; i++ )
+				pmove->origin[i] -= ( pmove->player_mins[1][i] - pmove->player_mins[0][i] );
 
-		PM_FixPlayerCrouchStuck( STUCK_MOVEUP );
+			pmove->iuser4 |= HL2_PM_DUCK_ORIGIN_SHIFTED;
+			PM_FixPlayerCrouchStuck( STUCK_MOVEUP );
+		}
+		else
+		{
+			pmove->iuser4 &= ~HL2_PM_DUCK_ORIGIN_SHIFTED;
+		}
+
 		PM_CatagorizePosition();
 	}
 }
@@ -2158,6 +2167,7 @@ static void PM_FinishUnDuck( void )
 	pmove->view_ofs[2] = VEC_VIEW;
 
 	VectorCopy( newOrigin, pmove->origin );
+	pmove->iuser4 &= ~HL2_PM_DUCK_ORIGIN_SHIFTED;
 	PM_CatagorizePosition();
 }
 
@@ -2179,7 +2189,8 @@ static void PM_SetDuckedEyeOffset( float duckFraction )
 
 	if( pmove->flags & FL_DUCKING )
 	{
-		standingView = ( pmove->onground != -1 ) ? ( VEC_VIEW + fMore ) : VEC_VIEW;
+		standingView = ( pmove->iuser4 & HL2_PM_DUCK_ORIGIN_SHIFTED ) ?
+			( VEC_VIEW + fMore ) : VEC_VIEW;
 		pmove->view_ofs[2] = ( VEC_DUCK_VIEW * duckFraction ) +
 			( standingView * ( 1.0f - duckFraction ) );
 	}
@@ -2220,6 +2231,12 @@ void PM_Duck( void )
 		pmove->oldbuttons |= IN_DUCK;
 	else
 		pmove->oldbuttons &= ~IN_DUCK;
+
+	// If a player ducked in the air and has since landed, the crouched hull
+	// now rests on the floor with the corresponding centered-hull offset.
+	// Keep that fact through an unduck even if the player leaves the ground.
+	if( bInDuck && pmove->onground != -1 )
+		pmove->iuser4 |= HL2_PM_DUCK_ORIGIN_SHIFTED;
 
 	// Preserve GoldSrc's immediate handling for dead and observer states.
 	if( pmove->dead || pmove->iuser3 )
@@ -3167,8 +3184,6 @@ static void PM_UpdateHL2MovementSpeed( void )
 	bWasSprinting = ( pmove->iuser4 & HL2_PM_SPRINTING ) != 0;
 	bSprinting = bWasSprinting;
 	bWasWalking = ( pmove->iuser4 & HL2_PM_WALKING ) != 0;
-	// A negative duck timer is the stand-up transition. Keep sprint
-	// disabled until the standing hull is restored.
 	// The crouched hull remains active until FinishUnDuck clears FL_DUCKING.
 	bFullyDucked = ( pmove->flags & FL_DUCKING ) != 0;
 
