@@ -283,7 +283,7 @@ int CHudHealth::Draw( float flTime )
 		UnpackRGB( r, g, b, RGB_YELLOWISH );
 		FillRGBA( x, y + gHUD.m_iHudNumbersYOffset, iWidth, iHeight, r, g, b, a );
 
-		// The local player state carries the same predicted aux-power value used by PM.
+		// The local player's replicated fuser4 field carries the reserve managed by shared PM.
 		cl_entity_t *pLocalPlayer = gEngfuncs.GetLocalPlayer();
 		if( pLocalPlayer )
 			DrawAuxPowerMeter( CrossWidth / 2, y, pLocalPlayer->curstate.fuser4, a );
