@@ -143,7 +143,7 @@ namespace
 		Factory::sInstance = new Factory();
 		RegisterTypes();
 
-		g_npcPhysics.tempAllocator = new TempAllocatorImpl( 4 * 1024 * 1024 );
+		g_npcPhysics.tempAllocator = new TempAllocatorImpl( 10 * 1024 * 1024 );
 		g_npcPhysics.system.Init(
 			NPC_PHYSICS_MAX_BODIES,
 			0,
