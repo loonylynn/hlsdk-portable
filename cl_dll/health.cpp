@@ -500,7 +500,7 @@ static void AuxPower_DrawEditorOverlay( int x, int y, int width, int height )
 
 	FillRGBA( 8, 8, panelWidth, panelHeight, 0, 0, 0, 190 );
 	gHUD.DrawHudString( 14, 12, ScreenWidth - 8,
-		"AUX POWER HUD EDITOR  |  LMB drag  |  arrows nudge  |  Enter apply  |  Esc cancel",
+		"AUX POWER HUD EDITOR  |  LMB drag  |  arrows nudge  |  S snap  |  Enter apply  |  Esc cancel",
 		255, 255, 255 );
 
 	sprintf( status, "X %d  Y %d  GRID %d  SNAP %s  |  R: report",
@@ -667,6 +667,11 @@ extern "C" void DLLEXPORT HUD_AuxPowerEditorKeyEvent( int down, int keynum )
 	case ']':
 		if( gEngfuncs.Cvar_SetValue )
 			gEngfuncs.Cvar_SetValue( "hud_auxpower_grid", (float)( AuxPower_GetGrid() + 1 ) );
+		return;
+	case 's':
+		if( gEngfuncs.Cvar_SetValue )
+			gEngfuncs.Cvar_SetValue( "hud_auxpower_snap",
+				( CVAR_GET_FLOAT( "hud_auxpower_snap" ) != 0.0f ) ? 0.0f : 1.0f );
 		return;
 	case 'r':
 		AuxPower_PrintReport();
