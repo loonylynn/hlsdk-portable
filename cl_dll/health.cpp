@@ -77,6 +77,7 @@ int CHudHealth::Init( void )
 	CVAR_CREATE( "hud_auxpower_y", "-1", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_auxpower_grid", "8", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_auxpower_snap", "1", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_auxpower_layout_version", "0", FCVAR_ARCHIVE );
 
 	gEngfuncs.pfnAddCommand( "hud_auxpower_edit", AuxPower_EditCommand );
 	gEngfuncs.pfnAddCommand( "hud_auxpower_commit", AuxPower_CommitCommand );
@@ -261,18 +262,54 @@ static int AuxPower_GetLabelWidth( void )
 static void AuxPower_GetDefaultPosition( int *x, int *y )
 {
 	int healthY = ScreenHeight - gHUD.m_iFontHeight - gHUD.m_iFontHeight / 2;
+	int frameWidth = g_rcAuxHudFrame.right - g_rcAuxHudFrame.left;
 	int frameHeight = g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top;
-	int panelHeight = gHUD.m_iFontHeight + 3 + frameHeight;
+	int labelWidth = AuxPower_GetLabelWidth();
+	int oldFrameOffsetX = ( ( labelWidth > frameWidth ) ? labelWidth : frameWidth ) - frameWidth;
 	int crossSprite = gHUD.GetSpriteIndex( "cross" );
 	int crossWidth = gHUD.GetSpriteRect( crossSprite ).right -
 		gHUD.GetSpriteRect( crossSprite ).left;
 
-	*x = AuxPower_ScreenToRefX( crossWidth / 2 );
-	*y = AuxPower_ScreenToRefY( healthY - panelHeight );
+	oldFrameOffsetX /= 2;
+	*x = AuxPower_ScreenToRefX( crossWidth / 2 + oldFrameOffsetX );
+	*y = AuxPower_ScreenToRefY( healthY - frameHeight );
+}
+
+static void AuxPower_MigrateSavedPosition( void )
+{
+	int x, y;
+	int labelWidth, frameWidth, frameOffsetX, frameOffsetY;
+
+	if( CVAR_GET_FLOAT( "hud_auxpower_layout_version" ) >= 1.0f )
+		return;
+
+	x = (int)CVAR_GET_FLOAT( "hud_auxpower_x" );
+	y = (int)CVAR_GET_FLOAT( "hud_auxpower_y" );
+	if( x >= 0 && y >= 0 )
+	{
+		labelWidth = AuxPower_GetLabelWidth();
+		frameWidth = g_rcAuxHudFrame.right - g_rcAuxHudFrame.left;
+		frameOffsetX = ( ( labelWidth > frameWidth ) ? labelWidth : frameWidth ) - frameWidth;
+		frameOffsetX /= 2;
+		frameOffsetY = gHUD.m_iFontHeight + 3;
+
+		x += AuxPower_ScreenToRefX( frameOffsetX );
+		y += AuxPower_ScreenToRefY( frameOffsetY );
+		if( gEngfuncs.Cvar_SetValue )
+		{
+			gEngfuncs.Cvar_SetValue( "hud_auxpower_x", (float)x );
+			gEngfuncs.Cvar_SetValue( "hud_auxpower_y", (float)y );
+		}
+	}
+
+	if( gEngfuncs.Cvar_SetValue )
+		gEngfuncs.Cvar_SetValue( "hud_auxpower_layout_version", 1.0f );
 }
 
 static void AuxPower_GetPosition( int *x, int *y )
 {
+	AuxPower_MigrateSavedPosition();
+
 	if( g_bAuxPowerEditorActive )
 	{
 		*x = g_iAuxPowerPreviewX;
@@ -289,22 +326,19 @@ static void AuxPower_GetPosition( int *x, int *y )
 static void AuxPower_GetLayout( int refX, int refY, int *left, int *top,
 	int *width, int *height, int *labelX, int *labelY, int *frameX, int *frameY )
 {
-	int labelWidth = AuxPower_GetLabelWidth();
 	int frameWidth = g_rcAuxHudFrame.right - g_rcAuxHudFrame.left;
 	int frameHeight = g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top;
-	int panelWidth = ( labelWidth > frameWidth ) ? labelWidth : frameWidth;
-	int panelHeight = gHUD.m_iFontHeight + 3 + frameHeight;
 	int x = AuxPower_RefToScreenX( refX );
 	int y = AuxPower_RefToScreenY( refY );
 
 	*left = x;
 	*top = y;
-	*labelX = x + ( panelWidth - labelWidth ) / 2;
+	*labelX = x;
 	*labelY = y;
-	*frameX = x + ( panelWidth - frameWidth ) / 2;
-	*frameY = y + gHUD.m_iFontHeight + 3;
-	*width = panelWidth;
-	*height = panelHeight;
+	*frameX = x;
+	*frameY = y;
+	*width = frameWidth;
+	*height = frameHeight;
 }
 
 static void AuxPower_ClampPosition( int *x, int *y )
@@ -367,8 +401,8 @@ static void AuxPower_PrintReport( void )
 	gEngfuncs.Con_Printf( "hud_auxpower_grid %d\n", grid );
 	gEngfuncs.Con_Printf( "hud_auxpower_snap %d\n",
 		( CVAR_GET_FLOAT( "hud_auxpower_snap" ) != 0.0f ) ? 1 : 0 );
-	gEngfuncs.Con_Printf( "// anchor: top-left of the centered label/battery stack; reference space: 640x480\n" );
-	gEngfuncs.Con_Printf( "// composite bounds: %d x %d screen pixels; battery frame: 63 x 17; scale: 1.0\n",
+	gEngfuncs.Con_Printf( "// anchor: top-left of the battery frame; reference space: 640x480\n" );
+	gEngfuncs.Con_Printf( "// battery bounds: %d x %d screen pixels; scale: 1.0\n",
 		width, height );
 	if( g_bAuxPowerEditorActive )
 		gEngfuncs.Con_Printf( "// Run hud_auxpower_commit to save, or hud_auxpower_cancel to discard.\n" );
@@ -538,10 +572,8 @@ static void DrawAuxPowerMeter( float flPower )
 	else if( flPower > 100.0f )
 		flPower = 100.0f;
 
-	if( flPower <= 20.0f )
-		UnpackRGB( r, g, b, RGB_REDISH );
-	else
-		UnpackRGB( r, g, b, RGB_YELLOWISH );
+	// Always use the HUD's shared accent, including at low reserve.
+	UnpackRGB( r, g, b, RGB_YELLOWISH );
 
 	// Match the normal dim HUD treatment used by the battery and flashlight.
 	ScaleColors( r, g, b, MIN_ALPHA );
@@ -576,9 +608,6 @@ static void DrawAuxPowerMeter( float flPower )
 		SPR_Set( g_hAuxHudSprite, r, g, b );
 		SPR_DrawAdditive( 0, frameX, frameY, &g_rcAuxHudFrame );
 	}
-
-	gHUD.DrawHudString( labelX, labelY, labelX + AuxPower_GetLabelWidth(),
-		"AUX. POWER", r, g, b );
 
 	if( g_bAuxPowerEditorActive )
 		AuxPower_DrawEditorOverlay( left, top, width, height );
