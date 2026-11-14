@@ -572,8 +572,11 @@ static void DrawAuxPowerMeter( float flPower )
 	else if( flPower > 100.0f )
 		flPower = 100.0f;
 
-	// Always use the HUD's shared accent, including at low reserve.
-	UnpackRGB( r, g, b, RGB_YELLOWISH );
+	// Use the HUD accent normally and the stock HUD red as a low-power warning.
+	if( flPower <= 20.0f )
+		UnpackRGB( r, g, b, RGB_REDISH );
+	else
+		UnpackRGB( r, g, b, RGB_YELLOWISH );
 
 	// Match the normal dim HUD treatment used by the battery and flashlight.
 	ScaleColors( r, g, b, MIN_ALPHA );
