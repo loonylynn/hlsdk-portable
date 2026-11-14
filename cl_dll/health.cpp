@@ -42,6 +42,11 @@ static HSPRITE g_hAuxHudSprite = 0;
 static const wrect_t g_rcAuxHudFrame = { 9, 72, 7, 24 };
 static const wrect_t g_rcAuxHudFill = { 13, 66, 43, 52 };
 
+static void AuxPower_EditCommand( void );
+static void AuxPower_CommitCommand( void );
+static void AuxPower_CancelCommand( void );
+static void AuxPower_ReportCommand( void );
+
 int giDmgHeight, giDmgWidth;
 
 int giDmgFlags[NUM_DMG_TYPES] =
@@ -198,11 +203,6 @@ void CHudHealth::GetPainColor( int &r, int &g, int &b )
 }
 
 // AUX. POWER HUD layout/editor state. Coordinates are stored in a 640x480 reference space.
-static void AuxPower_EditCommand( void );
-static void AuxPower_CommitCommand( void );
-static void AuxPower_CancelCommand( void );
-static void AuxPower_ReportCommand( void );
-
 static int g_bAuxPowerEditorActive = 0;
 static int g_iAuxPowerPreviewX = 0;
 static int g_iAuxPowerPreviewY = 0;
