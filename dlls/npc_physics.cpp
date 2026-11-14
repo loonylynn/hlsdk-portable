@@ -12,9 +12,10 @@
  */
 
 #include "extdll.h"
+#include "util.h"
+#include "cbase.h"
 #include "eiface.h"
 #include "enginecallback.h"
-#include "cbase.h"
 #include "xash_physint.h"
 #include "studio.h"
 
@@ -245,7 +246,7 @@ namespace
 			return;
 
 		for( size_t i = 0; i < ragdoll.constraints.size(); ++i )
-			g_npcPhysics.system.RemoveConstraint( ragdoll.constraints[i].Get() );
+			g_npcPhysics.system.RemoveConstraint( ragdoll.constraints[i].GetPtr() );
 		ragdoll.constraints.clear();
 
 		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
@@ -350,7 +351,7 @@ namespace
 			boneMassWeights[i] = radius * radius * radius;
 		}
 
-		ragdoll.entityOriginOffset -= bonePositions[0];
+		ragdoll.entityOriginOffset = ragdoll.entityOriginOffset - bonePositions[0];
 
 		float totalWeight = 0.0f;
 		for( int i = 0; i < ragdoll.boneCount; ++i )
@@ -402,7 +403,7 @@ namespace
 			settings.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
 			settings.mMassPropertiesOverride.mMass = std::max( 0.1f, boneMass );
 			settings.mCollisionGroup = CollisionGroup(
-				ragdoll.groupFilter.Get(),
+				ragdoll.groupFilter.GetPtr(),
 				static_cast<CollisionGroup::GroupID>( ragdoll.networkID ),
 				static_cast<CollisionGroup::SubGroupID>( i )
 			);
@@ -477,14 +478,14 @@ namespace
 			constraintSettings.mPoint2 = joint;
 
 			Ref<TwoBodyConstraint> constraint = constraintSettings.Create( *parentBody, *childBody );
-			if( constraint.Get() == nullptr )
+			if( constraint.GetPtr() == nullptr )
 			{
 				bodyLock.ReleaseLocks();
 				NPCPhysics_DestroyRagdoll( ragdoll );
 				return false;
 			}
 
-			g_npcPhysics.system.AddConstraint( constraint.Get() );
+			g_npcPhysics.system.AddConstraint( constraint.GetPtr() );
 			ragdoll.constraints.push_back( constraint );
 			bodyLock.ReleaseLocks();
 		}
