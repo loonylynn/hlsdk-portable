@@ -2206,7 +2206,10 @@ void CBasePlayer::UpdateStatusBar()
 #define	CLIMB_SPEED_DEC			15	// climbing deceleration rate
 void CBasePlayer::UpdateMovementSpeed( void )
 {
-	const BOOL bHasSuit = ( pev->weapons & ( 1 << WEAPON_SUIT ) ) != 0;
+	// WEAPON_SUIT is bit 31; use an unsigned shift so the mask is
+	// well-defined instead of left-shifting a signed int into its sign bit.
+	const BOOL bHasSuit = ( ( ( unsigned int )pev->weapons &
+		( 1u << WEAPON_SUIT ) ) != 0 );
 	float flMaxSpeed;
 
 	// iuser4, fuser1/fuser2/fuser4 and vuser3/vuser4 are already transferred
