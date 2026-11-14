@@ -39,6 +39,7 @@
 #include "usercmd.h"
 #include "netadr.h"
 #include "pm_shared.h"
+#include "xash_physint.h"
 
 extern DLL_GLOBAL ULONG		g_ulModelIndexPlayer;
 extern DLL_GLOBAL BOOL		g_fGameOver;
@@ -714,8 +715,9 @@ void ServerDeactivate( void )
 
 	g_serveractive = 0;
 
-	// Peform any shutdown operations here...
-	//
+	// Release per-map Jolt bodies while retaining the initialized solver so
+	// subsequent maps do not re-register the process-wide Jolt allocator.
+	NPCPhysics_ResetMap();
 }
 
 void ServerActivate( edict_t *pEdictList, int edictCount, int clientMax )
