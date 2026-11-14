@@ -53,6 +53,8 @@ float g_flHL2AuxStartMinimum = -1.0f;
 int g_iHL2AuxFlagsFrom = 0;
 int g_iHL2AuxFlagsPost = 0;
 int g_iHL2AuxButtons = 0;
+unsigned int g_iHL2AuxWeaponsFrom = 0;
+unsigned int g_iHL2AuxWeaponsPost = 0;
 
 static void AuxPower_EditCommand( void );
 static void AuxPower_CommitCommand( void );
@@ -416,6 +418,8 @@ static void AuxPower_PrintReport( void )
 		g_flHL2AuxPowerFrom, g_flHL2AuxPowerPostRun, g_flHL2AuxPower, flNetworkPower );
 	gEngfuncs.Con_Printf( "PM flags from 0x%08x -> 0x%08x | buttons 0x%08x\n",
 		g_iHL2AuxFlagsFrom, g_iHL2AuxFlagsPost, g_iHL2AuxButtons );
+	gEngfuncs.Con_Printf( "suit bit 0x80000000: client weapondata from 0x%08x -> 0x%08x | HUD bits 0x%08x\n",
+		g_iHL2AuxWeaponsFrom, g_iHL2AuxWeaponsPost, (unsigned int)gHUD.m_iWeaponBits );
 	gEngfuncs.Con_Printf( "PM power rates: drain %.2f | recharge %.2f | sprint minimum %.2f\n",
 		g_flHL2AuxDrainRate, g_flHL2AuxRechargeRate, g_flHL2AuxStartMinimum );
 	gEngfuncs.Con_Printf( "// anchor: top-left of the battery frame; reference space: 640x480\n" );
