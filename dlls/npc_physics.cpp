@@ -1,35 +1,40 @@
 /*
- * Jolt-backed NPC shadow physics for Xash3D FWGS.
+ * Death-only Jolt ragdolls for GoldSrc monsters.
  *
- * GoldSrc remains authoritative for monster AI, navigation, animation and
- * ordinary world movement. Jolt supplies dynamic contact resolution between
- * living step/fly/toss monsters and existing toss/bounce/pushstep props. The resulting NPC
- * displacement is clipped through the engine's own monster hull trace before
- * it is written back to the edict.
+ * Living NPC movement, AI, animation and collision remain entirely in GoldSrc.
+ * Jolt is entered only from CBaseMonster::Killed(), after the final animated
+ * pose and the ordinary corpse launch velocity have been captured.
  *
- * This is intentionally a first-stage bridge, not a wholesale VPhysics clone:
- * BSP collision, source-style ragdolls, constraints and articulated bodies are
- * not part of this implementation yet.
+ * The first pass uses one spherical rigid body per studio bone and point
+ * constraints at parent/child joints. GoldSrc traces each body against the
+ * world after the Jolt step; this is a transitional world-collision bridge,
+ * not a full BSP shape integration.
  */
 
 #include "extdll.h"
 #include "eiface.h"
 #include "enginecallback.h"
+#include "cbase.h"
 #include "xash_physint.h"
+#include "studio.h"
 
 #include <Jolt/Jolt.h>
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Core/JobSystemSingleThreaded.h>
-#include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
-#include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
+#include <Jolt/Physics/Body/BodyLockMulti.h>
+#include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Collision/GroupFilterTable.h>
+#include <Jolt/Physics/Collision/CollisionGroup.h>
+#include <Jolt/Physics/Constraints/PointConstraint.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 extern enginefuncs_t g_engfuncs;
@@ -39,70 +44,70 @@ namespace
 {
 	using namespace JPH;
 
-	static constexpr ObjectLayer NPC_PHYSICS_LAYER = 0;
-	static constexpr uint32_t NPC_PHYSICS_MAX_BODIES = 1024;
-	static constexpr float NPC_PHYSICS_MAX_FRAME_TIME = 0.05f;
-	static constexpr float NPC_PHYSICS_MIN_EXTENT = 1.0f;
+	static constexpr ObjectLayer RAGDOLL_OBJECT_LAYER = 0;
+	static constexpr uint32_t RAGDOLL_MAX_BODIES = 4096;
+	static constexpr uint32_t RAGDOLL_MAX_BODY_PAIRS = 8192;
+	static constexpr uint32_t RAGDOLL_MAX_CONTACT_CONSTRAINTS = 8192;
+	static constexpr float RAGDOLL_MAX_FRAME_TIME = 0.05f;
+	static constexpr float RAGDOLL_POSE_INTERVAL = 0.05f;
+	static constexpr int RAGDOLL_NETWORK_BONES_PER_CHUNK = 10;
+	static constexpr float RAGDOLL_DEGREES_TO_RADIANS = 0.01745329251994329577f;
 
-	class NPCBroadPhaseLayers final : public BroadPhaseLayerInterface
+	class RagdollBroadPhaseLayers final : public BroadPhaseLayerInterface
 	{
 	public:
-		uint GetNumBroadPhaseLayers() const override
-		{
-			return 1;
-		}
-
-		BroadPhaseLayer GetBroadPhaseLayer( ObjectLayer ) const override
-		{
-			return BroadPhaseLayer( 0 );
-		}
+		uint GetNumBroadPhaseLayers() const override { return 1; }
+		BroadPhaseLayer GetBroadPhaseLayer( ObjectLayer ) const override { return BroadPhaseLayer( 0 ); }
 	};
 
-	class NPCObjectLayerFilter final : public ObjectLayerPairFilter
+	class RagdollObjectLayerFilter final : public ObjectLayerPairFilter
 	{
 	public:
-		bool ShouldCollide( ObjectLayer, ObjectLayer ) const override
-		{
-			return true;
-		}
+		bool ShouldCollide( ObjectLayer, ObjectLayer ) const override { return true; }
 	};
 
-	class NPCBroadPhaseFilter final : public ObjectVsBroadPhaseLayerFilter
+	class RagdollBroadPhaseFilter final : public ObjectVsBroadPhaseLayerFilter
 	{
 	public:
-		bool ShouldCollide( ObjectLayer, BroadPhaseLayer ) const override
-		{
-			return true;
-		}
+		bool ShouldCollide( ObjectLayer, BroadPhaseLayer ) const override { return true; }
 	};
 
-	enum NPCPhysicsBodyKind
+	struct RagdollBone
 	{
-		NPC_PHYSICS_MONSTER,
-		NPC_PHYSICS_PROP
+		BodyID bodyID;
+		int parent;
+		float radius;
+		Vec3 initialPosition;
 	};
 
-	struct NPCPhysicsBody
+	struct NPCPhysicsRagdoll
 	{
 		edict_t *entity;
 		int serialNumber;
-		BodyID bodyID;
-		::Vector mins;
-		::Vector maxs;
-		::Vector center;
-		NPCPhysicsBodyKind kind;
-		uint32_t seenFrame;
-		float mass;
-		// Velocity immediately before Jolt's collision solve. Only the
-		// velocity change produced by that solve is fed back to GoldSrc.
-		Vec3 velocityBeforeStep;
+		int networkID;
+		int boneCount;
+		float nextPoseTime;
+		::Vector entityOriginOffset;
+		std::vector<RagdollBone> bones;
+		std::vector<Ref<TwoBodyConstraint> > constraints;
+		Ref<GroupFilterTable> groupFilter;
+		std::vector<Vec3> previousPositions;
+
+		NPCPhysicsRagdoll()
+			: entity( NULL ),
+			  serialNumber( 0 ),
+			  networkID( 0 ),
+			  boneCount( 0 ),
+			  nextPoseTime( 0.0f )
+		{
+		}
 	};
 
 	struct NPCPhysicsWorld
 	{
-		NPCBroadPhaseLayers broadPhaseLayers;
-		NPCObjectLayerFilter objectLayerFilter;
-		NPCBroadPhaseFilter broadPhaseFilter;
+		RagdollBroadPhaseLayers broadPhaseLayers;
+		RagdollObjectLayerFilter objectLayerFilter;
+		RagdollBroadPhaseFilter broadPhaseFilter;
 		PhysicsSystem system;
 		JobSystemSingleThreaded jobs;
 		TempAllocatorImpl *tempAllocator;
@@ -117,19 +122,20 @@ namespace
 	};
 
 	static NPCPhysicsWorld g_npcPhysics;
-	static std::vector<NPCPhysicsBody> g_npcBodies;
-	static uint32_t g_npcPhysicsFrame = 0;
+	static std::vector<NPCPhysicsRagdoll> g_ragdolls;
+	static int g_nextRagdollID = 1;
+	static int g_msgRagdollPose = 0;
 
 	static cvar_t g_svNpcVPhysics = { "sv_npc_vphysics", "1", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "80", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsPropMass = { "sv_npc_vphysics_prop_mass", "25", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
 	{
 		if( !g_engfuncs.pfnCVarGetFloat )
 			return fallback;
 
-		return g_engfuncs.pfnCVarGetFloat( name );
+		const float value = g_engfuncs.pfnCVarGetFloat( name );
+		return value > 0.0f ? value : fallback;
 	}
 
 	static bool NPCPhysics_Enabled()
@@ -142,9 +148,8 @@ namespace
 		if( g_npcPhysics.initialized )
 			return true;
 
-		// The job system allocates its free-list page table during Init().
-		// Register Jolt's allocator first; the global world constructor must
-		// not allocate through JPH::Allocate before it has been initialized.
+		// Jolt's job system allocates during Init(). Register the allocator
+		// first; doing this in a global constructor caused a startup crash.
 		RegisterDefaultAllocator();
 		g_npcPhysics.jobs.Init( 2048 );
 
@@ -153,445 +158,500 @@ namespace
 
 		g_npcPhysics.tempAllocator = new TempAllocatorImpl( 10 * 1024 * 1024 );
 		g_npcPhysics.system.Init(
-			NPC_PHYSICS_MAX_BODIES,
+			RAGDOLL_MAX_BODIES,
 			0,
-			2048,
-			2048,
+			RAGDOLL_MAX_BODY_PAIRS,
+			RAGDOLL_MAX_CONTACT_CONSTRAINTS,
 			g_npcPhysics.broadPhaseLayers,
 			g_npcPhysics.broadPhaseFilter,
 			g_npcPhysics.objectLayerFilter
 		);
-		g_npcPhysics.system.SetGravity( Vec3::sZero() );
+		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -800.0f ) );
 		g_npcPhysics.initialized = true;
 		return true;
 	}
 
-	static void NPCPhysics_DestroyBody( NPCPhysicsBody &record )
+	static Quat NPCPhysics_AnglesToQuaternion( const ::Vector &angles )
 	{
-		if( !g_npcPhysics.initialized || record.bodyID.IsInvalid() )
-			return;
+		const float halfPitch = angles[0] * RAGDOLL_DEGREES_TO_RADIANS * 0.5f;
+		const float halfYaw = angles[1] * RAGDOLL_DEGREES_TO_RADIANS * 0.5f;
+		const float halfRoll = angles[2] * RAGDOLL_DEGREES_TO_RADIANS * 0.5f;
 
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
-		if( bodyInterface.IsAdded( record.bodyID ) )
-			bodyInterface.RemoveBody( record.bodyID );
-		bodyInterface.DestroyBody( record.bodyID );
-		record.bodyID = BodyID();
+		const float sp = sinf( halfPitch );
+		const float cp = cosf( halfPitch );
+		const float sy = sinf( halfYaw );
+		const float cy = cosf( halfYaw );
+		const float sr = sinf( halfRoll );
+		const float cr = cosf( halfRoll );
+
+		// GoldSrc QAngle order: pitch, yaw, roll. This is the same
+		// AngleQuaternion convention used by the studio model pipeline.
+		Quat result(
+			sr * sp * cy - cr * cp * sy,
+			-sr * cp * cy - cr * sp * sy,
+			cr * sp * cy - sr * cp * sy,
+			cr * cp * cy + sr * sp * sy
+		);
+		result = result.Normalized();
+		return result;
 	}
 
-	static bool NPCPhysics_IsAliveMonster( const edict_t *ent )
+	static bool NPCPhysics_GetStudioHeader( edict_t *ent, studiohdr_t **headerOut )
 	{
-		if( !ent || ent->free )
+		if( !ent || !headerOut || !g_engfuncs.pfnGetModelPtr )
 			return false;
 
-		const entvars_t &v = ent->v;
-		if( ( v.flags & FL_MONSTER ) == 0 || ( v.flags & ( FL_CLIENT | FL_KILLME | FL_DORMANT ) ) != 0 )
+		studiohdr_t *header = reinterpret_cast<studiohdr_t *>( GET_MODEL_PTR( ent ) );
+		if( !header )
 			return false;
 
-		// Match Source's shadow-hull eligibility for movable NPCs. GoldSrc
-		// also uses MOVETYPE_TOSS for living creatures such as leeches when
-		// they are outside their normal movement state.
-		if( ( v.movetype != MOVETYPE_STEP &&
-			v.movetype != MOVETYPE_FLY &&
-			v.movetype != MOVETYPE_FLYMISSILE &&
-			v.movetype != MOVETYPE_TOSS ) ||
-			v.solid == SOLID_NOT || v.solid == SOLID_TRIGGER )
+		if( header->ident != IDSTUDIOHEADER || header->version != STUDIO_VERSION )
 			return false;
 
-		return v.health > 0.0f && v.deadflag == DEAD_NO;
-	}
-
-	static bool NPCPhysics_IsMovableProp( const edict_t *ent )
-	{
-		if( !ent || ent->free )
+		if( header->length < (int)sizeof( studiohdr_t ) ||
+			header->numbones < 1 ||
+			header->numbones > MAXSTUDIOBONES ||
+			header->boneindex < (int)sizeof( studiohdr_t ) )
 			return false;
 
-		const entvars_t &v = ent->v;
-		if( ( v.flags & ( FL_MONSTER | FL_CLIENT | FL_KILLME | FL_DORMANT ) ) != 0 )
+		const size_t length = static_cast<size_t>( header->length );
+		const size_t boneOffset = static_cast<size_t>( header->boneindex );
+		const size_t boneBytes = static_cast<size_t>( header->numbones ) * sizeof( mstudiobone_t );
+		if( boneOffset > length || boneBytes > length - boneOffset )
 			return false;
 
-		if( v.movetype != MOVETYPE_TOSS && v.movetype != MOVETYPE_BOUNCE && v.movetype != MOVETYPE_PUSHSTEP )
+		if( header->numhitboxes < 0 || header->numhitboxes > 1024 )
 			return false;
 
-		if( v.solid != SOLID_BBOX || v.modelindex == 0 )
-			return false;
+		if( header->numhitboxes > 0 )
+		{
+			if( header->hitboxindex < (int)sizeof( studiohdr_t ) )
+				return false;
 
-		// Include GoldSrc func_pushable (MOVETYPE_PUSHSTEP) and ordinary toss /
-		// bounce objects. Exclude tiny debris and point entities so they cannot
-		// flood the body budget or turn every effect sprite into a rigid body.
-		if( v.size[0] < 8.0f || v.size[1] < 8.0f || v.size[2] < 8.0f )
-			return false;
+			const size_t hitboxOffset = static_cast<size_t>( header->hitboxindex );
+			const size_t hitboxBytes = static_cast<size_t>( header->numhitboxes ) * sizeof( mstudiobbox_t );
+			if( hitboxOffset > length || hitboxBytes > length - hitboxOffset )
+				return false;
+		}
 
+		*headerOut = header;
 		return true;
 	}
 
-	static bool NPCPhysics_BoundsChanged( const NPCPhysicsBody &record, const entvars_t *pev )
-	{
-		const float epsilon = 0.5f;
-		for( int i = 0; i < 3; ++i )
-		{
-			if( fabsf( record.mins[i] - pev->mins[i] ) > epsilon ||
-				fabsf( record.maxs[i] - pev->maxs[i] ) > epsilon )
-				return true;
-		}
-		return false;
-	}
-
-	static NPCPhysicsBody *NPCPhysics_FindBody( edict_t *ent )
-	{
-		for( size_t i = 0; i < g_npcBodies.size(); ++i )
-		{
-			if( g_npcBodies[i].entity == ent && g_npcBodies[i].serialNumber == ent->serialnumber )
-				return &g_npcBodies[i];
-		}
-		return NULL;
-	}
-
-	static bool NPCPhysics_CreateBody( edict_t *ent, NPCPhysicsBodyKind kind, uint32_t seenFrame )
-	{
-		if( !g_npcPhysics.initialized || !ent || ent->free )
-			return false;
-
-		const entvars_t *pev = &ent->v;
-		::Vector center = ( pev->mins + pev->maxs ) * 0.5f;
-		::Vector half = ( pev->maxs - pev->mins ) * 0.5f;
-
-		half[0] = std::max( NPC_PHYSICS_MIN_EXTENT, half[0] );
-		half[1] = std::max( NPC_PHYSICS_MIN_EXTENT, half[1] );
-		half[2] = std::max( NPC_PHYSICS_MIN_EXTENT, half[2] );
-
-		const float convexRadius = std::min( 0.5f, std::min( half[0], std::min( half[1], half[2] ) ) * 0.1f );
-		float mass = kind == NPC_PHYSICS_MONSTER
-			? NPCPhysics_GetCvar( "sv_npc_vphysics_mass", 80.0f )
-			: NPCPhysics_GetCvar( "sv_npc_vphysics_prop_mass", 25.0f );
-		mass = std::max( 1.0f, std::min( mass, 500.0f ) );
-
-		const Vec3 position(
-			pev->origin[0] + center[0],
-			pev->origin[1] + center[1],
-			pev->origin[2] + center[2]
-		);
-
-		BodyCreationSettings settings(
-			new BoxShape( Vec3( half[0], half[1], half[2] ), convexRadius ),
-			RVec3( position ),
-			Quat::sIdentity(),
-			EMotionType::Dynamic,
-			NPC_PHYSICS_LAYER
-		);
-		settings.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
-		settings.mMassPropertiesOverride.mMass = mass;
-		// GoldSrc continues to own entity angles and angular motion. Keep the
-		// shadow bodies translation-only so Jolt's contact response cannot rotate
-		// a proxy independently of the engine's collision bounds.
-		settings.mAllowedDOFs = EAllowedDOFs::TranslationX | EAllowedDOFs::TranslationY | EAllowedDOFs::TranslationZ;
-		settings.mGravityFactor = 0.0f; // GoldSrc continues to own gravity and world movement.
-		settings.mAllowSleeping = ( kind == NPC_PHYSICS_PROP );
-		settings.mFriction = kind == NPC_PHYSICS_MONSTER ? 0.8f : 0.6f;
-		settings.mRestitution = 0.0f;
-		settings.mLinearDamping = 0.0f;
-		settings.mAngularDamping = 0.05f;
-		settings.mMaxLinearVelocity = 1200.0f;
-
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
-		BodyID bodyID = bodyInterface.CreateAndAddBody( settings, EActivation::Activate );
-		if( bodyID.IsInvalid() )
-			return false;
-
-		NPCPhysicsBody record;
-		record.entity = ent;
-		record.serialNumber = ent->serialnumber;
-		record.bodyID = bodyID;
-		record.mins = pev->mins;
-		record.maxs = pev->maxs;
-		record.center = center;
-		record.kind = kind;
-		record.seenFrame = seenFrame;
-		record.mass = mass;
-		g_npcBodies.push_back( record );
-		return true;
-	}
-
-	static void NPCPhysics_MarkEntity( edict_t *ent, NPCPhysicsBodyKind kind, uint32_t seenFrame )
-	{
-		NPCPhysicsBody *record = NPCPhysics_FindBody( ent );
-		if( record && NPCPhysics_BoundsChanged( *record, &ent->v ) )
-		{
-			NPCPhysics_DestroyBody( *record );
-			for( size_t i = 0; i < g_npcBodies.size(); ++i )
-			{
-				if( &g_npcBodies[i] == record )
-				{
-					g_npcBodies.erase( g_npcBodies.begin() + i );
-					break;
-				}
-			}
-			record = NULL;
-		}
-
-		if( !record )
-			NPCPhysics_CreateBody( ent, kind, seenFrame );
-		else
-			record->seenFrame = seenFrame;
-	}
-
-	static Vec3 NPCPhysics_EntityVelocity( const entvars_t *pev )
-	{
-		return Vec3( pev->velocity[0], pev->velocity[1], pev->velocity[2] );
-	}
-
-	static int NPCPhysics_PhysicsEntity( edict_t *ent )
-	{
-		if( !NPCPhysics_Enabled() || !NPCPhysics_Initialize() )
-			return 0;
-
-		// Living monsters must never be represented by Jolt shadow bodies.
-		// Their AI, animation, movement and collision remain entirely in GoldSrc.
-		// The old shadow-body experiment caused controller feedback to leak
-		// into entity velocity. The replacement path will create a skeletal
-		// Jolt ragdoll only from the zombie's death transition.
-		//
-		// Do not register movable props here either: until ragdolls exist,
-		// standalone Jolt prop bodies have no useful interaction partner and
-		// would only compete with GoldSrc's authoritative prop simulation.
-		(void)ent;
-		return 0;
-	}
-
-	static void NPCPhysics_ApplyMonsterShadow( NPCPhysicsBody &record, float deltaTime, BodyInterface &bodyInterface )
-	{
-		edict_t *ent = record.entity;
-		if( !NPCPhysics_IsAliveMonster( ent ) )
-			return;
-
-		const entvars_t *pev = &ent->v;
-		const RVec3 physicalPosition = bodyInterface.GetPosition( record.bodyID );
-		const Vec3 currentVelocity = bodyInterface.GetLinearVelocity( record.bodyID );
-
-		const Vec3 targetPosition(
-			pev->origin[0] + record.center[0],
-			pev->origin[1] + record.center[1],
-			pev->origin[2] + record.center[2]
-		);
-
-		Vec3 error(
-			targetPosition.GetX() - float( physicalPosition.GetX() ),
-			targetPosition.GetY() - float( physicalPosition.GetY() ),
-			targetPosition.GetZ() - float( physicalPosition.GetZ() )
-		);
-
-		// Teleports, map transitions and scripted repositioning should rebase
-		// the shadow body rather than producing a huge catch-up impulse.
-		if( error.LengthSq() > 128.0f * 128.0f )
-		{
-			bodyInterface.SetPositionAndRotation(
-				record.bodyID,
-				RVec3( targetPosition ),
-				Quat::sIdentity(),
-				EActivation::Activate
-			);
-			bodyInterface.SetLinearVelocity( record.bodyID, NPCPhysics_EntityVelocity( pev ) );
-			return;
-		}
-
-		// A damped velocity controller is the GoldSrc-side equivalent of an
-		// NPC shadow controller: AI supplies a target, Jolt supplies contact
-		// response. Limit the correction so a heavy prop can still displace it.
-		Vec3 desiredVelocity = NPCPhysics_EntityVelocity( pev ) + error * 8.0f;
-		const float desiredSpeed = desiredVelocity.Length();
-		if( desiredSpeed > 600.0f )
-			desiredVelocity *= 600.0f / desiredSpeed;
-
-		Vec3 impulse = ( desiredVelocity - currentVelocity ) * ( record.mass * 0.30f );
-		const float maxImpulse = record.mass * std::max( 30.0f, deltaTime * 1800.0f );
-		const float impulseLength = impulse.Length();
-		if( impulseLength > maxImpulse && impulseLength > 0.0f )
-			impulse *= maxImpulse / impulseLength;
-
-		bodyInterface.AddImpulse( record.bodyID, impulse );
-	}
-
-	static void NPCPhysics_SyncPropToJolt( NPCPhysicsBody &record, BodyInterface &bodyInterface )
-	{
-		edict_t *ent = record.entity;
-		if( !NPCPhysics_IsMovableProp( ent ) )
-			return;
-
-		const entvars_t *pev = &ent->v;
-		const RVec3 position(
-			pev->origin[0] + record.center[0],
-			pev->origin[1] + record.center[1],
-			pev->origin[2] + record.center[2]
-		);
-
-		// Existing GoldSrc prop movement remains authoritative. Jolt only
-		// resolves the prop's contact with the NPC shadow bodies this frame.
-		bodyInterface.SetPositionAndRotationWhenChanged(
-			record.bodyID,
-			position,
-			Quat::sIdentity(),
-			EActivation::Activate
-		);
-		const Vec3 velocity = NPCPhysics_EntityVelocity( pev );
-		bodyInterface.SetLinearVelocity( record.bodyID, velocity );
-		if( velocity.LengthSq() > 0.01f && !bodyInterface.IsActive( record.bodyID ) )
-			bodyInterface.ActivateBody( record.bodyID );
-	}
-
-	static void NPCPhysics_ClipMonsterToWorld( NPCPhysicsBody &record, BodyInterface &bodyInterface )
-	{
-		edict_t *ent = record.entity;
-		if( !NPCPhysics_IsAliveMonster( ent ) || !g_engfuncs.pfnTraceMonsterHull || !g_engfuncs.pfnSetOrigin )
-			return;
-
-		const RVec3 physicalPosition = bodyInterface.GetPosition( record.bodyID );
-		float start[3] = {
-			ent->v.origin[0],
-			ent->v.origin[1],
-			ent->v.origin[2]
-		};
-		float end[3] = {
-			float( physicalPosition.GetX() ) - record.center[0],
-			float( physicalPosition.GetY() ) - record.center[1],
-			float( physicalPosition.GetZ() ) - record.center[2]
-		};
-
-		const float displacement =
-			( end[0] - start[0] ) * ( end[0] - start[0] ) +
-			( end[1] - start[1] ) * ( end[1] - start[1] ) +
-			( end[2] - start[2] ) * ( end[2] - start[2] );
-
-		if( displacement < 0.01f )
-			return;
-
-		TraceResult trace;
-		memset( &trace, 0, sizeof( trace ) );
-		g_engfuncs.pfnTraceMonsterHull( ent, start, end, 0, ent, &trace );
-
-		float resolved[3];
-		if( trace.fAllSolid || trace.fStartSolid )
-		{
-			resolved[0] = start[0];
-			resolved[1] = start[1];
-			resolved[2] = start[2];
-		}
-		else
-		{
-			resolved[0] = trace.vecEndPos[0];
-			resolved[1] = trace.vecEndPos[1];
-			resolved[2] = trace.vecEndPos[2];
-		}
-
-		g_engfuncs.pfnSetOrigin( ent, resolved );
-
-		// Keep the shadow body on the safe side of the GoldSrc world hull.
-		const RVec3 clippedPosition(
-			resolved[0] + record.center[0],
-			resolved[1] + record.center[1],
-			resolved[2] + record.center[2]
-		);
-		bodyInterface.SetPositionAndRotation(
-			record.bodyID,
-			clippedPosition,
-			Quat::sIdentity(),
-			EActivation::Activate
-		);
-
-		if( trace.flFraction < 1.0f && !trace.fAllSolid && !trace.fStartSolid )
-		{
-			Vec3 velocity = bodyInterface.GetLinearVelocity( record.bodyID );
-			const Vec3 normal(
-				trace.vecPlaneNormal[0],
-				trace.vecPlaneNormal[1],
-				trace.vecPlaneNormal[2]
-			);
-			const float intoSurface = velocity.Dot( normal );
-			if( intoSurface < 0.0f )
-			{
-				velocity -= normal * intoSurface;
-				bodyInterface.SetLinearVelocity( record.bodyID, velocity );
-			}
-		}
-	}
-
-	static void NPCPhysics_StoreMonsterPreStepVelocity( NPCPhysicsBody &record, BodyInterface &bodyInterface )
-	{
-		record.velocityBeforeStep = bodyInterface.GetLinearVelocity( record.bodyID );
-	}
-
-	static void NPCPhysics_ApplyMonsterContactVelocityToGoldSrc( NPCPhysicsBody &record, BodyInterface &bodyInterface )
-	{
-		edict_t *ent = record.entity;
-		if( !NPCPhysics_IsAliveMonster( ent ) )
-			return;
-
-		// The shadow controller is not itself NPC movement. Feeding its full
-		// velocity back makes small controller corrections accumulate as
-		// unintended GoldSrc drift. Transfer only the velocity delta generated
-		// by Jolt's collision solve (including the world-hull clip below).
-		const Vec3 contactDelta = bodyInterface.GetLinearVelocity( record.bodyID ) - record.velocityBeforeStep;
-		ent->v.velocity[0] += contactDelta.GetX();
-		ent->v.velocity[1] += contactDelta.GetY();
-		ent->v.velocity[2] += contactDelta.GetZ();
-	}
-
-	static void NPCPhysics_CopyPropVelocityToGoldSrc( NPCPhysicsBody &record, BodyInterface &bodyInterface )
-	{
-		edict_t *ent = record.entity;
-		if( !NPCPhysics_IsMovableProp( ent ) )
-			return;
-
-		const Vec3 linear = bodyInterface.GetLinearVelocity( record.bodyID );
-
-		ent->v.velocity[0] = linear.GetX();
-		ent->v.velocity[1] = linear.GetY();
-		ent->v.velocity[2] = linear.GetZ();
-	}
-
-	static void NPCPhysics_EndFrame( void )
+	static void NPCPhysics_DestroyRagdoll( NPCPhysicsRagdoll &ragdoll )
 	{
 		if( !g_npcPhysics.initialized )
 			return;
 
-		if( !NPCPhysics_Enabled() )
+		for( size_t i = 0; i < ragdoll.constraints.size(); ++i )
+			g_npcPhysics.system.RemoveConstraint( ragdoll.constraints[i].Get() );
+		ragdoll.constraints.clear();
+
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		for( size_t i = 0; i < ragdoll.bones.size(); ++i )
 		{
-			for( size_t i = 0; i < g_npcBodies.size(); ++i )
-				NPCPhysics_DestroyBody( g_npcBodies[i] );
-			g_npcBodies.clear();
-			return;
+			const BodyID bodyID = ragdoll.bones[i].bodyID;
+			if( bodyID.IsInvalid() )
+				continue;
+
+			if( bodyInterface.IsAdded( bodyID ) )
+				bodyInterface.RemoveBody( bodyID );
+			bodyInterface.DestroyBody( bodyID );
+			ragdoll.bones[i].bodyID = BodyID();
 		}
 
-		const uint32_t frame = g_npcPhysicsFrame + 1;
-		for( size_t i = g_npcBodies.size(); i > 0; --i )
+		ragdoll.bones.clear();
+		ragdoll.previousPositions.clear();
+		ragdoll.groupFilter = NULL;
+	}
+
+	static void NPCPhysics_DestroyAllRagdolls()
+	{
+		for( size_t i = 0; i < g_ragdolls.size(); ++i )
+			NPCPhysics_DestroyRagdoll( g_ragdolls[i] );
+		g_ragdolls.clear();
+	}
+
+	static float NPCPhysics_BoneRadius( const mstudiobbox_t *hitboxes, int hitboxCount, int boneIndex )
+	{
+		float radius = 2.5f;
+
+		for( int i = 0; i < hitboxCount; ++i )
 		{
-			NPCPhysicsBody &record = g_npcBodies[i - 1];
-			if( record.seenFrame != frame || !record.entity || record.entity->free ||
-				record.entity->serialnumber != record.serialNumber )
+			if( hitboxes[i].bone != boneIndex )
+				continue;
+
+			const float x = hitboxes[i].bbmax[0] - hitboxes[i].bbmin[0];
+			const float y = hitboxes[i].bbmax[1] - hitboxes[i].bbmin[1];
+			const float z = hitboxes[i].bbmax[2] - hitboxes[i].bbmin[2];
+			const float candidate = sqrtf( x * x + y * y + z * z ) * 0.25f;
+			radius = std::max( radius, std::min( 9.0f, candidate ) );
+		}
+
+		return std::max( 2.0f, std::min( 9.0f, radius ) );
+	}
+
+	static int NPCPhysics_AllocateRagdollID()
+	{
+		int result = g_nextRagdollID++;
+		if( g_nextRagdollID > 30000 )
+			g_nextRagdollID = 1;
+		if( result <= 0 )
+			result = 1;
+		return result;
+	}
+
+	static bool NPCPhysics_CreateRagdoll( edict_t *ent )
+	{
+		if( !ent || ent->free || !NPCPhysics_Initialize() || g_msgRagdollPose <= 0 )
+			return false;
+
+		studiohdr_t *header = NULL;
+		if( !NPCPhysics_GetStudioHeader( ent, &header ) )
+			return false;
+
+		CBaseEntity *baseEntity = CBaseEntity::Instance( ent );
+		if( !baseEntity )
+			return false;
+
+		CBaseAnimating *animating = static_cast<CBaseAnimating *>( baseEntity );
+		mstudiobone_t *studioBones = reinterpret_cast<mstudiobone_t *>(
+			reinterpret_cast<byte *>( header ) + header->boneindex
+		);
+		mstudiobbox_t *hitboxes = NULL;
+		if( header->numhitboxes > 0 )
+		{
+			hitboxes = reinterpret_cast<mstudiobbox_t *>(
+				reinterpret_cast<byte *>( header ) + header->hitboxindex
+			);
+		}
+
+		NPCPhysicsRagdoll ragdoll;
+		ragdoll.entity = ent;
+		ragdoll.serialNumber = ent->serialnumber;
+		ragdoll.networkID = NPCPhysics_AllocateRagdollID();
+		ragdoll.boneCount = header->numbones;
+		ragdoll.nextPoseTime = 0.0f;
+		ragdoll.entityOriginOffset = ent->v.origin;
+
+		std::vector<::Vector> bonePositions( ragdoll.boneCount );
+		std::vector<::Vector> boneAngles( ragdoll.boneCount );
+		std::vector<float> boneMassWeights( ragdoll.boneCount, 0.0f );
+
+		for( int i = 0; i < ragdoll.boneCount; ++i )
+		{
+			animating->GetBonePosition( i, bonePositions[i], boneAngles[i] );
+
+			if( studioBones[i].parent < -1 || studioBones[i].parent >= ragdoll.boneCount )
+				return false;
+
+			const float radius = NPCPhysics_BoneRadius( hitboxes, header->numhitboxes, i );
+			boneMassWeights[i] = radius * radius * radius;
+		}
+
+		ragdoll.entityOriginOffset -= bonePositions[0];
+
+		float totalWeight = 0.0f;
+		for( int i = 0; i < ragdoll.boneCount; ++i )
+			totalWeight += boneMassWeights[i];
+		if( totalWeight <= 0.0f )
+			return false;
+
+		float totalMass = NPCPhysics_GetCvar( "sv_npc_vphysics_mass", 80.0f );
+		totalMass = std::max( 10.0f, std::min( totalMass, 300.0f ) );
+
+		ragdoll.groupFilter = new GroupFilterTable( static_cast<uint>( ragdoll.boneCount ) );
+		for( int i = 0; i < ragdoll.boneCount; ++i )
+		{
+			const int parent = studioBones[i].parent;
+			if( parent >= 0 && parent != i )
 			{
-				NPCPhysics_DestroyBody( record );
-				g_npcBodies.erase( g_npcBodies.begin() + ( i - 1 ) );
+				ragdoll.groupFilter->DisableCollision(
+					static_cast<CollisionGroup::SubGroupID>( i ),
+					static_cast<CollisionGroup::SubGroupID>( parent )
+				);
 			}
 		}
 
-		g_npcPhysicsFrame = frame;
-		if( g_npcBodies.empty() )
+		ragdoll.bones.resize( ragdoll.boneCount );
+		ragdoll.previousPositions.resize( ragdoll.boneCount );
+
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		for( int i = 0; i < ragdoll.boneCount; ++i )
+		{
+			const float radius = NPCPhysics_BoneRadius( hitboxes, header->numhitboxes, i );
+			const float boneMass = totalMass * boneMassWeights[i] / totalWeight;
+
+			const Vec3 position(
+				bonePositions[i][0],
+				bonePositions[i][1],
+				bonePositions[i][2]
+			);
+			const Quat rotation = NPCPhysics_AnglesToQuaternion( boneAngles[i] );
+
+			BodyCreationSettings settings(
+				new SphereShape( radius ),
+				RVec3( position ),
+				rotation,
+				EMotionType::Dynamic,
+				RAGDOLL_OBJECT_LAYER
+			);
+			settings.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
+			settings.mMassPropertiesOverride.mMass = std::max( 0.1f, boneMass );
+			settings.mCollisionGroup = CollisionGroup(
+				ragdoll.groupFilter,
+				static_cast<CollisionGroup::GroupID>( ragdoll.networkID ),
+				static_cast<CollisionGroup::SubGroupID>( i )
+			);
+			settings.mFriction = 0.85f;
+			settings.mRestitution = 0.02f;
+			settings.mLinearDamping = 0.04f;
+			settings.mAngularDamping = 0.12f;
+			settings.mMaxLinearVelocity = 1800.0f;
+			settings.mMaxAngularVelocity = 35.0f;
+
+			const BodyID bodyID = bodyInterface.CreateAndAddBody( settings, EActivation::Activate );
+			if( bodyID.IsInvalid() )
+			{
+				NPCPhysics_DestroyRagdoll( ragdoll );
+				return false;
+			}
+
+			ragdoll.bones[i].bodyID = bodyID;
+			ragdoll.bones[i].parent = studioBones[i].parent;
+			ragdoll.bones[i].radius = radius;
+			ragdoll.bones[i].initialPosition = position;
+
+			bodyInterface.SetLinearVelocity(
+				bodyID,
+				Vec3( ent->v.velocity[0], ent->v.velocity[1], ent->v.velocity[2] )
+			);
+			bodyInterface.SetAngularVelocity(
+				bodyID,
+				Vec3(
+					ent->v.avelocity[0] * RAGDOLL_DEGREES_TO_RADIANS,
+					ent->v.avelocity[1] * RAGDOLL_DEGREES_TO_RADIANS,
+					ent->v.avelocity[2] * RAGDOLL_DEGREES_TO_RADIANS
+				)
+			);
+		}
+
+		for( int i = 0; i < ragdoll.boneCount; ++i )
+		{
+			const int parent = ragdoll.bones[i].parent;
+			if( parent < 0 || parent >= ragdoll.boneCount || parent == i )
+				continue;
+
+			const BodyID bodyIDs[2] = {
+				ragdoll.bones[parent].bodyID,
+				ragdoll.bones[i].bodyID
+			};
+
+			BodyLockMultiWrite bodyLock(
+				g_npcPhysics.system.GetBodyLockInterface(),
+				bodyIDs,
+				2
+			);
+			Body *parentBody = bodyLock.GetBody( 0 );
+			Body *childBody = bodyLock.GetBody( 1 );
+			if( !parentBody || !childBody )
+			{
+				bodyLock.ReleaseLocks();
+				NPCPhysics_DestroyRagdoll( ragdoll );
+				return false;
+			}
+
+			const ::Vector &jointPosition = bonePositions[i];
+			const RVec3 joint(
+				jointPosition[0],
+				jointPosition[1],
+				jointPosition[2]
+			);
+
+			PointConstraintSettings constraintSettings;
+			constraintSettings.mSpace = EConstraintSpace::WorldSpace;
+			constraintSettings.mPoint1 = joint;
+			constraintSettings.mPoint2 = joint;
+
+			Ref<TwoBodyConstraint> constraint = constraintSettings.Create( *parentBody, *childBody );
+			if( constraint == nullptr )
+			{
+				bodyLock.ReleaseLocks();
+				NPCPhysics_DestroyRagdoll( ragdoll );
+				return false;
+			}
+
+			g_npcPhysics.system.AddConstraint( constraint.Get() );
+			ragdoll.constraints.push_back( constraint );
+			bodyLock.ReleaseLocks();
+		}
+
+		// Only mutate the edict after every body and joint exists. Any earlier
+		// failure leaves the regular GoldSrc death animation path untouched.
+		ent->v.iuser4 = ragdoll.networkID;
+		ent->v.solid = SOLID_NOT;
+		ent->v.movetype = MOVETYPE_NONE;
+		ent->v.takedamage = DAMAGE_NO;
+		ent->v.deadflag = DEAD_DEAD;
+		ent->v.nextthink = -1.0f;
+		ent->v.velocity = g_vecZero;
+		ent->v.avelocity = g_vecZero;
+
+		g_ragdolls.push_back( ragdoll );
+		ALERT( at_console, "[NPC physics] Created Jolt ragdoll for monster_zombie (%d bones).\n", ragdoll.boneCount );
+		return true;
+	}
+
+	static void NPCPhysics_ClipRagdollToWorld( NPCPhysicsRagdoll &ragdoll, BodyInterface &bodyInterface )
+	{
+		if( !g_engfuncs.pfnTraceLine )
+			return;
+
+		for( int i = 0; i < ragdoll.boneCount; ++i )
+		{
+			const RagdollBone &bone = ragdoll.bones[i];
+			const Vec3 &oldPosition = ragdoll.previousPositions[i];
+			const RVec3 currentPosition = bodyInterface.GetPosition( bone.bodyID );
+
+			const float start[3] = {
+				oldPosition.GetX(),
+				oldPosition.GetY(),
+				oldPosition.GetZ()
+			};
+			const float end[3] = {
+				float( currentPosition.GetX() ),
+				float( currentPosition.GetY() ),
+				float( currentPosition.GetZ() )
+			};
+
+			TraceResult trace;
+			g_engfuncs.pfnTraceLine( start, end, 1, ragdoll.entity, &trace );
+			if( trace.flFraction >= 1.0f || trace.fAllSolid )
+				continue;
+
+			Vec3 normal(
+				trace.vecPlaneNormal[0],
+				trace.vecPlaneNormal[1],
+				trace.vecPlaneNormal[2]
+			);
+			if( normal.LengthSq() < 0.01f )
+				continue;
+			normal = normal.Normalized();
+
+			const Vec3 clippedPosition(
+				trace.vecEndPos[0] + normal.GetX() * bone.radius,
+				trace.vecEndPos[1] + normal.GetY() * bone.radius,
+				trace.vecEndPos[2] + normal.GetZ() * bone.radius
+			);
+			bodyInterface.SetPosition(
+				bone.bodyID,
+				RVec3( clippedPosition ),
+				EActivation::Activate
+			);
+
+			Vec3 velocity = bodyInterface.GetLinearVelocity( bone.bodyID );
+			const float intoSurface = velocity.Dot( normal );
+			if( intoSurface < 0.0f )
+			{
+				velocity -= normal * intoSurface;
+				velocity *= 0.82f;
+				bodyInterface.SetLinearVelocity( bone.bodyID, velocity );
+			}
+		}
+	}
+
+	static short NPCPhysics_QuantizeQuaternion( float value )
+	{
+		value = std::max( -1.0f, std::min( 1.0f, value ) );
+		return static_cast<short>( value * 32767.0f );
+	}
+
+	static void NPCPhysics_SendRagdollPose( NPCPhysicsRagdoll &ragdoll, BodyInterface &bodyInterface )
+	{
+		if( g_msgRagdollPose <= 0 || !ragdoll.entity || ragdoll.entity->free )
+			return;
+
+		const int entityIndex = ENTINDEX( ragdoll.entity );
+		for( int start = 0; start < ragdoll.boneCount; start += RAGDOLL_NETWORK_BONES_PER_CHUNK )
+		{
+			const int count = std::min(
+				RAGDOLL_NETWORK_BONES_PER_CHUNK,
+				ragdoll.boneCount - start
+			);
+
+			MESSAGE_BEGIN( MSG_PVS, g_msgRagdollPose, ragdoll.entity->v.origin );
+				WRITE_SHORT( entityIndex );
+				WRITE_SHORT( ragdoll.networkID );
+				WRITE_BYTE( ragdoll.boneCount );
+				WRITE_BYTE( start );
+				WRITE_BYTE( count );
+
+				for( int i = 0; i < count; ++i )
+				{
+					const RagdollBone &bone = ragdoll.bones[start + i];
+					const RVec3 position = bodyInterface.GetPosition( bone.bodyID );
+					Quat rotation = bodyInterface.GetRotation( bone.bodyID );
+					rotation = rotation.Normalized();
+
+					WRITE_COORD( float( position.GetX() ) );
+					WRITE_COORD( float( position.GetY() ) );
+					WRITE_COORD( float( position.GetZ() ) );
+					WRITE_SHORT( NPCPhysics_QuantizeQuaternion( rotation.GetX() ) );
+					WRITE_SHORT( NPCPhysics_QuantizeQuaternion( rotation.GetY() ) );
+					WRITE_SHORT( NPCPhysics_QuantizeQuaternion( rotation.GetZ() ) );
+					WRITE_SHORT( NPCPhysics_QuantizeQuaternion( rotation.GetW() ) );
+				}
+			MESSAGE_END();
+		}
+	}
+
+	static int NPCPhysics_PhysicsEntity( edict_t * )
+	{
+		// Intentionally do not intercept or replace any living NPC or prop
+		// physics. Ragdolls are created explicitly from the death callback.
+		return 0;
+	}
+
+	static void NPCPhysics_EndFrame( void )
+	{
+		if( !g_npcPhysics.initialized || g_ragdolls.empty() )
+			return;
+
+		for( size_t i = g_ragdolls.size(); i > 0; --i )
+		{
+			NPCPhysicsRagdoll &ragdoll = g_ragdolls[i - 1];
+			if( !ragdoll.entity || ragdoll.entity->free ||
+				ragdoll.entity->serialnumber != ragdoll.serialNumber )
+			{
+				NPCPhysics_DestroyRagdoll( ragdoll );
+				g_ragdolls.erase( g_ragdolls.begin() + ( i - 1 ) );
+			}
+		}
+
+		if( g_ragdolls.empty() )
 			return;
 
 		float deltaTime = gpGlobals ? gpGlobals->frametime : ( 1.0f / 60.0f );
 		if( deltaTime <= 0.0f )
 			return;
-		deltaTime = std::min( deltaTime, NPC_PHYSICS_MAX_FRAME_TIME );
+		deltaTime = std::min( deltaTime, RAGDOLL_MAX_FRAME_TIME );
+
+		const float gravityScale = gpGlobals ? std::max( 0.0f, gpGlobals->gravity ) : 1.0f;
+		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -800.0f * gravityScale ) );
 
 		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
-		for( size_t i = 0; i < g_npcBodies.size(); ++i )
+		for( size_t r = 0; r < g_ragdolls.size(); ++r )
 		{
-			NPCPhysicsBody &record = g_npcBodies[i];
-			if( record.kind == NPC_PHYSICS_MONSTER )
+			NPCPhysicsRagdoll &ragdoll = g_ragdolls[r];
+			for( int i = 0; i < ragdoll.boneCount; ++i )
 			{
-				NPCPhysics_ApplyMonsterShadow( record, deltaTime, bodyInterface );
-				NPCPhysics_StoreMonsterPreStepVelocity( record, bodyInterface );
+				const RVec3 position = bodyInterface.GetPosition( ragdoll.bones[i].bodyID );
+				ragdoll.previousPositions[i] = Vec3(
+					float( position.GetX() ),
+					float( position.GetY() ),
+					float( position.GetZ() )
+				);
 			}
-			else
-				NPCPhysics_SyncPropToJolt( record, bodyInterface );
 		}
 
 		const uint collisionSteps = std::max( 1, std::min( 4, int( ceilf( deltaTime * 60.0f ) ) ) );
@@ -602,18 +662,50 @@ namespace
 			&g_npcPhysics.jobs
 		);
 
-		for( size_t i = 0; i < g_npcBodies.size(); ++i )
+		for( size_t r = 0; r < g_ragdolls.size(); ++r )
 		{
-			NPCPhysicsBody &record = g_npcBodies[i];
-			if( record.kind == NPC_PHYSICS_MONSTER )
+			NPCPhysicsRagdoll &ragdoll = g_ragdolls[r];
+			NPCPhysics_ClipRagdollToWorld( ragdoll, bodyInterface );
+
+			const RVec3 rootPosition = bodyInterface.GetPosition( ragdoll.bones[0].bodyID );
+			const float entityOrigin[3] = {
+				float( rootPosition.GetX() ) + ragdoll.entityOriginOffset[0],
+				float( rootPosition.GetY() ) + ragdoll.entityOriginOffset[1],
+				float( rootPosition.GetZ() ) + ragdoll.entityOriginOffset[2]
+			};
+			if( g_engfuncs.pfnSetOrigin )
+				g_engfuncs.pfnSetOrigin( ragdoll.entity, entityOrigin );
+
+			if( gpGlobals && gpGlobals->time >= ragdoll.nextPoseTime )
 			{
-				NPCPhysics_ClipMonsterToWorld( record, bodyInterface );
-				NPCPhysics_ApplyMonsterContactVelocityToGoldSrc( record, bodyInterface );
+				NPCPhysics_SendRagdollPose( ragdoll, bodyInterface );
+				ragdoll.nextPoseTime = gpGlobals->time + RAGDOLL_POSE_INTERVAL;
 			}
-			else
-				NPCPhysics_CopyPropVelocityToGoldSrc( record, bodyInterface );
 		}
 	}
+}
+
+int NPCPhysics_TryCreateRagdoll( edict_t *ent )
+{
+	if( !NPCPhysics_Enabled() || !ent || ent->free )
+		return FALSE;
+
+	if( ( ent->v.flags & FL_MONSTER ) == 0 ||
+		( ent->v.flags & ( FL_CLIENT | FL_KILLME | FL_DORMANT ) ) != 0 )
+		return FALSE;
+
+	// First pass is deliberately limited to the standard zombie. Other
+	// monster skeletons can be enabled after their bone layouts are verified.
+	if( !FStrEq( STRING( ent->v.classname ), "monster_zombie" ) )
+		return FALSE;
+
+	if( !NPCPhysics_CreateRagdoll( ent ) )
+	{
+		ALERT( at_console, "[NPC physics] Jolt ragdoll creation failed; using GoldSrc death animation.\n" );
+		return FALSE;
+	}
+
+	return TRUE;
 }
 
 int NPCPhysics_GetInterface( int version, void *callbacks )
@@ -623,42 +715,26 @@ int NPCPhysics_GetInterface( int version, void *callbacks )
 
 	CVAR_REGISTER( &g_svNpcVPhysics );
 	CVAR_REGISTER( &g_svNpcVPhysicsMass );
-	CVAR_REGISTER( &g_svNpcVPhysicsPropMass );
+
+	if( !g_msgRagdollPose && g_engfuncs.pfnRegUserMsg )
+		g_msgRagdollPose = g_engfuncs.pfnRegUserMsg( "RagdollPose", -1 );
 
 	xash_physics_interface_s *physics = reinterpret_cast<xash_physics_interface_s *>( callbacks );
-	if( !physics )
-		return FALSE;
 	memset( physics, 0, sizeof( *physics ) );
 	physics->version = version;
 	physics->SV_PhysicsEntity = NPCPhysics_PhysicsEntity;
 	physics->SV_EndFrame = NPCPhysics_EndFrame;
-
-	if( NPCPhysics_Enabled() )
-	{
-		if( !NPCPhysics_Initialize() )
-			return FALSE;
-
-		ALERT( at_console, "[NPC physics] Jolt shadow-body bridge initialized.\n" );
-	}
 	return TRUE;
 }
 
 void NPCPhysics_ResetMap( void )
 {
-	if( !g_npcPhysics.initialized )
-		return;
-
-	for( size_t i = 0; i < g_npcBodies.size(); ++i )
-		NPCPhysics_DestroyBody( g_npcBodies[i] );
-	g_npcBodies.clear();
-	g_npcPhysicsFrame = 0;
+	NPCPhysics_DestroyAllRagdolls();
 }
 
 void NPCPhysics_Shutdown( void )
 {
-	for( size_t i = 0; i < g_npcBodies.size(); ++i )
-		NPCPhysics_DestroyBody( g_npcBodies[i] );
-	g_npcBodies.clear();
+	NPCPhysics_DestroyAllRagdolls();
 
 	if( g_npcPhysics.initialized )
 	{
@@ -669,5 +745,6 @@ void NPCPhysics_Shutdown( void )
 		g_npcPhysics.tempAllocator = NULL;
 		g_npcPhysics.initialized = false;
 	}
-	g_npcPhysicsFrame = 0;
+
+	g_msgRagdollPose = 0;
 }
