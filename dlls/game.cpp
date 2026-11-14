@@ -31,7 +31,6 @@ cvar_t hl2_sprintspeed = { "hl2_sprintspeed", "320", FCVAR_SERVER };
 cvar_t hl2_suitpower_drain = { "hl2_suitpower_drain", "12.5", FCVAR_SERVER };
 cvar_t hl2_suitpower_recharge = { "hl2_suitpower_recharge", "12.5", FCVAR_SERVER };
 cvar_t hl2_suitpower_start_minimum = { "hl2_suitpower_start_minimum", "10", FCVAR_SERVER };
-cvar_t hl2_suitpower_recharge_delay = { "hl2_suitpower_recharge_delay", "0.5", FCVAR_SERVER };
 
 cvar_t displaysoundlist = {"displaysoundlist","0"};
 
@@ -521,7 +520,6 @@ void GameDLLInit( void )
 	CVAR_REGISTER( &hl2_suitpower_drain );
 	CVAR_REGISTER( &hl2_suitpower_recharge );
 	CVAR_REGISTER( &hl2_suitpower_start_minimum );
-	CVAR_REGISTER( &hl2_suitpower_recharge_delay );
 	CVAR_REGISTER( &allow_spectators );
 
 	CVAR_REGISTER( &teamplay );
