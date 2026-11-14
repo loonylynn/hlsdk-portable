@@ -2212,10 +2212,10 @@ void CBasePlayer::UpdateMovementSpeed( void )
 		WEAPON_SUIT_MASK ) != 0 );
 	float flMaxSpeed;
 
-	// iuser4, fuser1/fuser2/fuser4 and vuser1/vuser3/vuser4 are transferred
-	// by GoldSrc/Xash3D to both server and client playermove state. vuser1
-	// carries the Source-style view-punch spring velocity; the other fields
-	// carry sprint/device prediction state.
+	// The iuser/fuser/vuser fields below are transferred by GoldSrc/Xash3D
+	// to both server and client playermove state. vuser1 carries view-punch
+	// spring velocity; vuser2 carries Source duck-jump timers; vuser3/vuser4
+	// carry movement-speed and suit-power prediction settings.
 	if( bHasSuit )
 		pev->iuser4 |= HL2_PM_HAS_SUIT;
 	else
