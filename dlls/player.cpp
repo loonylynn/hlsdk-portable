@@ -2212,10 +2212,10 @@ void CBasePlayer::UpdateMovementSpeed( void )
 		WEAPON_SUIT_MASK ) != 0 );
 	float flMaxSpeed;
 
-	// iuser4, fuser1/fuser2/fuser4 and vuser1/vuser3/vuser4 are transferred
-	// by GoldSrc/Xash3D to both server and client playermove state. vuser1
-	// carries the Source-style view-punch spring velocity; the other fields
-	// carry sprint/device prediction state.
+	// The iuser/fuser/vuser fields below are transferred by GoldSrc/Xash3D
+	// to both server and client playermove state. vuser1 carries view-punch
+	// spring velocity; vuser2 carries Source duck-jump timers; vuser3/vuser4
+	// carry movement-speed and suit-power prediction settings.
 	if( bHasSuit )
 		pev->iuser4 |= HL2_PM_HAS_SUIT;
 	else
@@ -3331,11 +3331,14 @@ void CBasePlayer::Spawn( void )
 	m_afPhysicsFlags = 0;
 	m_fLongJump = FALSE;// no longjump module. 
 	pev->iuser4 &= ~( HL2_PM_HAS_SUIT | HL2_PM_SPRINTING |
-		HL2_PM_DEVICE_SPRINT | HL2_PM_WALKING );
+		HL2_PM_DEVICE_SPRINT | HL2_PM_WALKING |
+		HL2_PM_DUCK_ORIGIN_SHIFTED | HL2_PM_DUCK_AIR_OFFSET |
+		HL2_PM_IN_DUCK_JUMP );
 	pev->fuser1 = 0.0f; // time all auxiliary suit devices were last turned off
 	pev->fuser2 = 0.0f; // combined auxiliary suit device power load
 	pev->fuser4 = 100.0f; // auxiliary suit power, separate from armor battery
 	pev->vuser1 = Vector( 0.0f, 0.0f, 0.0f ); // HL2 view-punch spring velocity
+	pev->vuser2 = Vector( 0.0f, 0.0f, 0.0f ); // HL2 duck-jump timers: duck recovery, jump
 	pev->vuser3 = Vector( 150.0f, 190.0f, 320.0f );
 	pev->vuser4 = Vector( 12.5f, 12.5f, 10.0f );
 
