@@ -2999,6 +2999,8 @@ void CBasePlayer::UpdatePlayerSound( void )
 
 void CBasePlayer::PostThink()
 {
+	float flLandingVelocity;
+
 	if( g_fGameOver )
 		goto pt_end;	// intermission or finale
 
@@ -3023,58 +3025,65 @@ void CBasePlayer::PostThink()
 	// do weapon stuff
 	ItemPostFrame();
 
+	// Source CheckFalling subtracts a descending support's vertical velocity
+	// from impact velocity. The game DLL can read the actual ground edict,
+	// unlike shared GoldSrc PMove's physent_t.
+	flLandingVelocity = m_flFallVelocity;
+	if( FBitSet( pev->flags, FL_ONGROUND ) && pev->groundentity &&
+		pev->groundentity->v.velocity.z < 0.0f )
+	{
+		flLandingVelocity += pev->groundentity->v.velocity.z;
+		if( flLandingVelocity < 0.1f )
+			flLandingVelocity = 0.1f;
+	}
+
 	// check to see if player landed hard enough to make a sound
 	// falling farther than half of the maximum safe distance, but not as far a max safe distance will
 	// play a bootscrape sound, and no damage will be inflicted. Fallling a distance shorter than half
 	// of maximum safe distance will make no sound. Falling farther than max safe distance will play a 
 	// fallpain sound, and damage will be inflicted based on how far the player fell
 
-	if( ( FBitSet( pev->flags, FL_ONGROUND ) ) && ( pev->health > 0 ) && m_flFallVelocity >= PLAYER_FALL_PUNCH_THRESHHOLD )
+	if( FBitSet( pev->flags, FL_ONGROUND ) && pev->health > 0 )
 	{
-		// ALERT( at_console, "%f\n", m_flFallVelocity );
-		if( pev->watertype == CONTENT_WATER )
+		// Keep GoldSrc's original fall-damage input and 580-unit threshold.
+		// The descending-support correction below affects landing feedback only.
+		if( pev->watertype != CONTENT_WATER &&
+			m_flFallVelocity > PLAYER_MAX_SAFE_FALL_SPEED )
 		{
-			// Did he hit the world or a non-moving entity?
-			// BUG - this happens all the time in water, especially when 
-			// BUG - water has current force
-			// if( !pev->groundentity || VARS(pev->groundentity )->velocity.z == 0 )
-				// EMIT_SOUND( ENT( pev ), CHAN_BODY, "player/pl_wade1.wav", 1, ATTN_NORM );
-		}
-		else if( m_flFallVelocity > PLAYER_MAX_SAFE_FALL_SPEED )
-		{
-			// after this point, we start doing damage
 			float flFallDamage = g_pGameRules->FlPlayerFallDamage( this );
 
 			if( flFallDamage > pev->health )
 			{
-				//splat
-				// note: play on item channel because we play footstep landing on body channel
+				// Note: item channel, since landing footsteps use body channel.
 				EMIT_SOUND( ENT( pev ), CHAN_ITEM, "common/bodysplat.wav", 1, ATTN_NORM );
 			}
 
 			if( flFallDamage > 0 )
 			{
-				TakeDamage( VARS( eoNullEntity ), VARS( eoNullEntity ), flFallDamage, DMG_FALL ); 
+				TakeDamage( VARS( eoNullEntity ), VARS( eoNullEntity ), flFallDamage, DMG_FALL );
 				pev->punchangle.x = 0;
 			}
 		}
 
-		if( IsAlive() )
+		if( flLandingVelocity >= PLAYER_FALL_PUNCH_THRESHHOLD && IsAlive() )
 		{
+			// PMove applied its Source-style 0.013 roll punch using raw fall
+			// velocity. Correct the server state for a descending support.
+			if( flLandingVelocity < m_flFallVelocity )
+				pev->punchangle.z = flLandingVelocity * 0.013f;
+
 			SetAnimation( PLAYER_WALK );
 		}
 	}
 
 	if( FBitSet( pev->flags, FL_ONGROUND ) )
 	{
-		if( m_flFallVelocity > 64 && !g_pGameRules->IsMultiplayer() )
+		if( flLandingVelocity > 64.0f && !g_pGameRules->IsMultiplayer() )
 		{
-			CSoundEnt::InsertSound( bits_SOUND_PLAYER, pev->origin, (int)m_flFallVelocity, 0.2 );
-			// ALERT( at_console, "fall %f\n", m_flFallVelocity );
+			CSoundEnt::InsertSound( bits_SOUND_PLAYER, pev->origin, (int)flLandingVelocity, 0.2 );
 		}
 		m_flFallVelocity = 0;
 	}
-
 	// select the proper animation for the player character	
 	if( IsAlive() )
 	{
