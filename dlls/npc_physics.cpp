@@ -87,9 +87,9 @@ namespace
 		edict_t *entity;
 		int serialNumber;
 		BodyID bodyID;
-		Vector mins;
-		Vector maxs;
-		Vector center;
+		::Vector mins;
+		::Vector maxs;
+		::Vector center;
 		NPCPhysicsBodyKind kind;
 		uint32_t seenFrame;
 		float mass;
@@ -194,14 +194,15 @@ namespace
 		if( ( v.flags & ( FL_MONSTER | FL_CLIENT | FL_KILLME | FL_DORMANT ) ) != 0 )
 			return false;
 
-		if( v.movetype != MOVETYPE_TOSS && v.movetype != MOVETYPE_BOUNCE )
+		if( v.movetype != MOVETYPE_TOSS && v.movetype != MOVETYPE_BOUNCE && v.movetype != MOVETYPE_PUSHSTEP )
 			return false;
 
 		if( v.solid != SOLID_BBOX || v.modelindex == 0 )
 			return false;
 
-		// Exclude tiny debris and point-like entities. They are not useful
-		// shadow-controller partners and can otherwise flood the body budget.
+		// Include GoldSrc func_pushable (MOVETYPE_PUSHSTEP) and ordinary toss /
+		// bounce objects. Exclude tiny debris and point entities so they cannot
+		// flood the body budget or turn every effect sprite into a rigid body.
 		if( v.size[0] < 8.0f || v.size[1] < 8.0f || v.size[2] < 8.0f )
 			return false;
 
@@ -236,8 +237,8 @@ namespace
 			return false;
 
 		const entvars_t *pev = &ent->v;
-		Vector center = ( pev->mins + pev->maxs ) * 0.5f;
-		Vector half = ( pev->maxs - pev->mins ) * 0.5f;
+		::Vector center = ( pev->mins + pev->maxs ) * 0.5f;
+		::Vector half = ( pev->maxs - pev->mins ) * 0.5f;
 
 		half[0] = std::max( NPC_PHYSICS_MIN_EXTENT, half[0] );
 		half[1] = std::max( NPC_PHYSICS_MIN_EXTENT, half[1] );
