@@ -44,5 +44,5 @@ struct xash_physics_interface_s
 	xash_physics_callback_fn pfnVoiceData;
 };
 
-int NPCPhysics_GetInterface( int version, physics_interface_t *callbacks );
+int NPCPhysics_GetInterface( int version, void *callbacks );
 void NPCPhysics_Shutdown( void );
