@@ -645,8 +645,11 @@ static void DrawAuxPowerMeter( float flPower )
 	else
 		UnpackRGB( r, g, b, RGB_YELLOWISH );
 
-	// Match the normal dim HUD treatment used by the battery and flashlight.
-	ScaleColors( r, g, b, MIN_ALPHA );
+	// Use the flashlight HUD's active brightness while sprinting.
+	// The sprite remains additive; sprinting raises its alpha just like the
+	// flashlight casing/charge indicator does when the flashlight is switched on.
+	int iFillAlpha = ( g_iHL2AuxFlagsPost & HL2_PM_SPRINTING ) ? 225 : MIN_ALPHA;
+	ScaleColors( r, g, b, iFillAlpha );
 
 	AuxPower_GetPosition( &x, &y );
 	AuxPower_GetLayout( x, y, &left, &top, &width, &height,
@@ -676,11 +679,8 @@ static void DrawAuxPowerMeter( float flPower )
 				( g_rcAuxHudFill.right - g_rcAuxHudFill.left ) ) / 2;
 			int iFillOffsetY = ( ( g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top ) -
 				( g_rcAuxHudFill.bottom - g_rcAuxHudFill.top ) ) / 2;
-			// Switch the reserve fill to additive blending only while the player is sprinting.
-			if( g_iHL2AuxFlagsPost & HL2_PM_SPRINTING )
-				SPR_DrawAdditive( 0, frameX + iFillOffsetX, frameY + iFillOffsetY + 1, &rcFill );
-			else
-				SPR_Draw( 0, frameX + iFillOffsetX, frameY + iFillOffsetY + 1, &rcFill );
+			// Match the flashlight's additive sprite treatment in both states.
+			SPR_DrawAdditive( 0, frameX + iFillOffsetX, frameY + iFillOffsetY + 1, &rcFill );
 		}
 
 		// Draw the frame last so its outline stays crisp over the fill.
