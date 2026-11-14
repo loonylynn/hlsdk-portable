@@ -30,6 +30,7 @@
 #include "weapons.h"
 #include "func_break.h"
 #include "game.h"
+#include "xash_physint.h"
 
 extern DLL_GLOBAL Vector		g_vecAttackDir;
 extern DLL_GLOBAL int			g_iSkillLevel;
@@ -596,6 +597,15 @@ void CBaseMonster::Killed( entvars_t *pevAttacker, int iGib )
 	{
 		SetTouch( NULL );
 		BecomeDead();
+
+		// A successful Jolt ragdoll takes over immediately after death.
+		// If model pose capture or ragdoll construction fails, preserve the
+		// normal GoldSrc corpse/death-animation path below.
+		if( NPCPhysics_TryCreateRagdoll( ENT( pev ) ) )
+		{
+			m_IdealMonsterState = MONSTERSTATE_DEAD;
+			return;
+		}
 	}
 
 	// don't let the status bar glitch for players.with <0 health.
