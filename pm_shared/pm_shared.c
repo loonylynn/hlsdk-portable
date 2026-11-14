@@ -2787,50 +2787,60 @@ void PM_CheckWaterJump( void )
 
 void PM_CheckFalling( void )
 {
+	float flImpactVelocity = pmove->flFallVelocity;
+
+	// Source CheckFalling: impact speed is relative to the support when
+	// landing on a descending platform. Water landings bypass this adjustment.
+	if( pmove->waterlevel <= 0 && pmove->onground >= 0 &&
+		pmove->onground < pmove->numphysent )
+	{
+		float flGroundVelocity = pmove->physent_velocity[pmove->onground][2];
+
+		if( flGroundVelocity < 0.0f )
+		{
+			flImpactVelocity += flGroundVelocity;
+			if( flImpactVelocity < 0.1f )
+				flImpactVelocity = 0.1f;
+		}
+	}
+
 	if( pmove->onground != -1 && !pmove->dead && pmove->flFallVelocity >= PLAYER_FALL_PUNCH_THRESHHOLD )
 	{
 		float fvol = 0.5f;
 
 		if( pmove->waterlevel > 0 )
 		{
+			// Source leaves water landings unadjusted.
 		}
-		else if( pmove->flFallVelocity > PLAYER_MAX_SAFE_FALL_SPEED )
+		else
 		{
-			// NOTE:  In the original game dll, there were no breaks after these cases, causing the first one to 
-			// cascade into the second
-			//switch( RandomLong( 0, 1 ) )
-			//{
-			//case 0:
-				//pmove->PM_PlaySound( CHAN_VOICE, "player/pl_fallpain2.wav", 1, ATTN_NORM, 0, PITCH_NORM );
-				//break;
-			//case 1:
-				pmove->PM_PlaySound( CHAN_VOICE, "player/pl_fallpain3.wav", 1, ATTN_NORM, 0, PITCH_NORM );
-			//	break;
-			//}
-			fvol = 1.0f;
-		}
-		else if( pmove->flFallVelocity > PLAYER_HL2_LANDING_SAFE_SPEED )
-		{
-			// HL2's rough-landing feedback reaches full volume at its 20-foot
-			// safe speed (526.5 units/sec at 600 gravity). Keep actual GoldSrc
-			// fall damage and the fall-pain voice threshold at 580 units/sec.
-			fvol = 1.0f;
-		}
-		else if( pmove->flFallVelocity > PLAYER_HL2_LANDING_SAFE_SPEED / 2.0f )
-		{
-			qboolean tfc = false;
-			tfc = atoi( pmove->PM_Info_ValueForKey( pmove->physinfo, "tfc" ) ) == 1 ? true : false;
-
-			if( tfc )
+			// Preserve GoldSrc's fall-pain voice threshold. Actual fall damage
+			// remains separately calculated from the original fall velocity.
+			if( pmove->flFallVelocity > PLAYER_MAX_SAFE_FALL_SPEED )
 			{
 				pmove->PM_PlaySound( CHAN_VOICE, "player/pl_fallpain3.wav", 1, ATTN_NORM, 0, PITCH_NORM );
 			}
 
-			fvol = 0.85f;
-		}
-		else if( pmove->flFallVelocity < PLAYER_MIN_BOUNCE_SPEED )
-		{
-			fvol = 0;
+			if( flImpactVelocity > PLAYER_HL2_LANDING_SAFE_SPEED )
+			{
+				fvol = 1.0f;
+			}
+			else if( flImpactVelocity > PLAYER_HL2_LANDING_SAFE_SPEED / 2.0f )
+			{
+				qboolean tfc = false;
+				tfc = atoi( pmove->PM_Info_ValueForKey( pmove->physinfo, "tfc" ) ) == 1 ? true : false;
+
+				if( tfc && pmove->flFallVelocity <= PLAYER_MAX_SAFE_FALL_SPEED )
+				{
+					pmove->PM_PlaySound( CHAN_VOICE, "player/pl_fallpain3.wav", 1, ATTN_NORM, 0, PITCH_NORM );
+				}
+
+				fvol = 0.85f;
+			}
+			else if( flImpactVelocity < PLAYER_MIN_BOUNCE_SPEED )
+			{
+				fvol = 0.0f;
+			}
 		}
 
 		if( fvol > 0.0f )
@@ -2845,8 +2855,8 @@ void PM_CheckFalling( void )
 			// Play the impact step sound for the current surface.
 			PM_PlayStepSound( PM_MapTextureTypeStepType( pmove->chtexturetype ), fvol );
 
-			// Knock the screen around a little bit, temporary effect
-			pmove->punchangle[2] = pmove->flFallVelocity * 0.013f;	// punch z axis
+			// Source PlayerRoughLandingEffects: use support-relative impact speed.
+			pmove->punchangle[2] = flImpactVelocity * 0.013f;
 
 			if( pmove->punchangle[0] > 8 )
 			{
@@ -2856,11 +2866,10 @@ void PM_CheckFalling( void )
 	}
 
 	if( pmove->onground != -1 )
-	{	
+	{
 		pmove->flFallVelocity = 0;
 	}
 }
-
 /*
 =================
 PM_PlayWaterSounds
