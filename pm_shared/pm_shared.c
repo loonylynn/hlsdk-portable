@@ -1479,20 +1479,46 @@ void PM_WaterMove( void )
 	pmtrace_t trace;
 
 	float speed, newspeed, addspeed, accelspeed;
+	float clientMaxSpeed;
+	float upwardMovement;
 
-//
-// user intentions
-//
+	// Source uses m_flClientMaxSpeed for the vertical swim impulse.
+	// GoldSrc leaves clientmaxspeed at zero when no player-specific limit
+	// is set, so fall back to the effective maxspeed in that case.
+	clientMaxSpeed = pmove->clientmaxspeed;
+	if( clientMaxSpeed <= 0.0f )
+		clientMaxSpeed = pmove->maxspeed;
+
+	//
+	// User intentions.
+	//
 	for( i = 0; i < 3; i++ )
-		wishvel[i] = pmove->forward[i] * pmove->cmd.forwardmove + pmove->right[i] * pmove->cmd.sidemove;
+	{
+		wishvel[i] = pmove->forward[i] * pmove->cmd.forwardmove +
+			pmove->right[i] * pmove->cmd.sidemove;
+	}
 
-	// Sinking after no other movement occurs
-	if( !pmove->cmd.forwardmove && !pmove->cmd.sidemove && !pmove->cmd.upmove )
-		wishvel[2] -= 60;		// drift towards bottom
-	else  // Go straight up by upmove amount.
-		wishvel[2] += pmove->cmd.upmove;
+	// Holding jump swims straight upward at the player's client max speed.
+	if( pmove->cmd.buttons & IN_JUMP )
+	{
+		wishvel[2] += clientMaxSpeed;
+	}
+	// Sink when no movement input is present.
+	else if( !pmove->cmd.forwardmove && !pmove->cmd.sidemove &&
+		!pmove->cmd.upmove )
+	{
+		wishvel[2] -= 60.0f;
+	}
+	else
+	{
+		// Source exaggerates upward movement from forward input while
+		// looking up, but does not add downward movement when looking down.
+		upwardMovement = pmove->cmd.forwardmove * pmove->forward[2] * 2.0f;
+		upwardMovement = max( 0.0f, min( upwardMovement, clientMaxSpeed ) );
+		wishvel[2] += pmove->cmd.upmove + upwardMovement;
+	}
 
-	// Copy it over and determine speed
+	// Copy it over and determine speed.
 	VectorCopy( wishvel, wishdir );
 	wishspeed = VectorNormalize( wishdir );
 
@@ -1502,59 +1528,86 @@ void PM_WaterMove( void )
 		VectorScale( wishvel, pmove->maxspeed / wishspeed, wishvel );
 		wishspeed = pmove->maxspeed;
 	}
+
 	// Slow us down a bit.
 	wishspeed *= 0.8f;
 
-	VectorAdd( pmove->velocity, pmove->basevelocity, pmove->velocity );
-
-	// Water friction
+	// Water friction is applied to the player's own velocity before adding
+	// conveyor/current base velocity, matching Source's WaterMove().
 	VectorCopy( pmove->velocity, temp );
 	speed = VectorNormalize( temp );
-	if( speed )
+	if( speed > 0.0f )
 	{
-		newspeed = speed - pmove->frametime * speed * pmove->movevars->friction * pmove->friction;
+		newspeed = speed - pmove->frametime * speed *
+			pmove->movevars->friction * pmove->friction;
 
-		if( newspeed < 0 )
-			newspeed = 0;
+		if( newspeed < 0.1f )
+			newspeed = 0.0f;
+
 		VectorScale( pmove->velocity, newspeed / speed, pmove->velocity );
 	}
 	else
-		newspeed = 0;
-
-//
-// water acceleration
-//
-	if( wishspeed < 0.1f )
 	{
-		return;
+		newspeed = 0.0f;
 	}
 
-	addspeed = wishspeed - newspeed;
-	if( addspeed > 0 )
+	//
+	// Water acceleration.
+	//
+	if( wishspeed >= 0.1f )
 	{
-		VectorNormalize( wishvel );
-		accelspeed = pmove->movevars->accelerate * wishspeed * pmove->frametime * pmove->friction;
-		if( accelspeed > addspeed )
-			accelspeed = addspeed;
+		addspeed = wishspeed - newspeed;
+		if( addspeed > 0.0f )
+		{
+			VectorNormalize( wishvel );
+			accelspeed = pmove->movevars->accelerate * wishspeed *
+				pmove->frametime * pmove->friction;
+			if( accelspeed > addspeed )
+				accelspeed = addspeed;
 
-		for( i = 0; i < 3; i++ )
-			pmove->velocity[i] += accelspeed * wishvel[i];
+			for( i = 0; i < 3; i++ )
+				pmove->velocity[i] += accelspeed * wishvel[i];
+		}
 	}
 
-// Now move
-// assume it is a stair or a slope, so press down from stepheight above
+	// Add base velocity only for the movement trace. PM_PlayerMove removes
+	// it immediately after PM_WaterMove(), as in Source's movement path.
+	VectorAdd( pmove->velocity, pmove->basevelocity, pmove->velocity );
+
+	// First attempt the direct movement.
 	VectorMA( pmove->origin, pmove->frametime, pmove->velocity, dest );
-	VectorCopy( dest, start );
-	start[2] += pmove->movevars->stepsize + 1;
-	trace = pmove->PM_PlayerTrace( start, dest, PM_NORMAL, -1 );
-	if( !trace.startsolid && !trace.allsolid )	// FIXME: check steep slope?
-	{	// walked up the step, so just keep result and exit
-		VectorCopy( trace.endpos, pmove->origin );
-		return;
-	}
+	trace = pmove->PM_PlayerTrace( pmove->origin, dest, PM_NORMAL, -1 );
 
-	// Try moving straight along out normal path.
-	PM_FlyMove();
+	if( trace.fraction == 1.0f )
+	{
+		// Source presses down from one step height above the destination
+		// to follow steps and slopes while swimming.
+		VectorCopy( dest, start );
+		start[2] += pmove->movevars->stepsize + 1.0f;
+		trace = pmove->PM_PlayerTrace( start, dest, PM_NORMAL, -1 );
+
+		if( !trace.startsolid && !trace.allsolid )
+		{
+			VectorCopy( trace.endpos, pmove->origin );
+			return;
+		}
+
+		// The raised-to-destination trace was blocked; try a normal slide.
+		PM_FlyMove();
+	}
+	else
+	{
+		// Do not attempt to climb steps when swimming/falling without
+		// a ground contact. Use the normal Source-style slide path.
+		if( pmove->onground == -1 )
+		{
+			PM_FlyMove();
+			return;
+		}
+
+		// On ground, use the same two-path step solver as WalkMove().
+		PM_StepMove();
+	}
 }
 
 /*
