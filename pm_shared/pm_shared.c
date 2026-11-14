@@ -2928,44 +2928,40 @@ power reserve in shared client/server movement state. The fields used here
 are existing GoldSrc playermove user fields, not new network structures.
 ==============
 */
+/*
+==============
+PM_UpdateHL2MovementSpeed
+
+Source equivalent: CHL2_Player::HandleSpeedChanges.
+This stage selects walk/run/sprint and updates the predicted sprint state.
+Suit-power device accounting happens later in PM_ReduceTimers, matching
+CHL2GameMovement::ReduceTimers.
+==============
+*/
 static void PM_UpdateHL2MovementSpeed( void )
 {
 	float flWalkSpeed;
 	float flNormalSpeed;
 	float flSprintSpeed;
-	float flDrainRate;
-	float flRechargeRate;
-	float flStartMinimum;
 	float flPower;
-	float flFrameTime;
+	float flStartMinimum;
 	float flSelectedSpeed;
 	int bHasSuit;
 	int bWasSprinting;
 	int bSprinting;
-	int bWasWalking;
 	int bCanSprint;
 	int bSpeedButtonChanged;
 	int bWantsSprint;
 	int bWantsWalking;
-	int bStoppedSprinting;
-	int bFullyDucked;
 
 	flWalkSpeed = ( pmove->vuser3[0] > 1.0f ) ? pmove->vuser3[0] : 150.0f;
 	flNormalSpeed = ( pmove->vuser3[1] > 1.0f ) ? pmove->vuser3[1] : 190.0f;
 	flSprintSpeed = ( pmove->vuser3[2] > 1.0f ) ? pmove->vuser3[2] : 320.0f;
-
-	// HL2 single-player defaults: sprint drains 12.5%/s, suit recharges
-	// at 12.5%/s, and sprint requires at least 10% reserve.
-	flDrainRate = ( pmove->vuser4[0] >= 0.0f ) ? pmove->vuser4[0] : 12.5f;
-	flRechargeRate = ( pmove->vuser4[1] >= 0.0f ) ? pmove->vuser4[1] : 12.5f;
 	flStartMinimum = ( pmove->vuser4[2] >= 0.0f ) ? pmove->vuser4[2] : 10.0f;
-	flFrameTime = ( pmove->frametime > 0.0f ) ? pmove->frametime : 0.0f;
 
 	bHasSuit = ( pmove->iuser4 & HL2_PM_HAS_SUIT ) != 0;
 	bWasSprinting = ( pmove->iuser4 & HL2_PM_SPRINTING ) != 0;
 	bSprinting = bWasSprinting;
-	bWasWalking = ( pmove->iuser4 & HL2_PM_WALKING ) != 0;
-	bFullyDucked = ( pmove->flags & FL_DUCKING ) && !pmove->bInDuck;
 
 	flPower = pmove->fuser4;
 	if( flPower < 0.0f )
@@ -2973,118 +2969,49 @@ static void PM_UpdateHL2MovementSpeed( void )
 	else if( flPower > 100.0f )
 		flPower = 100.0f;
 
-	// Port of CHL2_Player::CanSprint / HandleSpeedChanges:
-	// sprint cannot be initiated while walking, fully ducked, or submerged.
-	// m_bSprintEnabled and the suit_no_sprint global state have no GoldSrc
-	// counterpart here, so the module remains enabled whenever the suit exists.
-	bCanSprint = !bWasWalking && !bFullyDucked && ( pmove->waterlevel != 3 );
+	// Source CanSprint: require a living player, an equipped suit, and
+	// disallow starting sprint while ducked or fully submerged.
+	bCanSprint = !pmove->dead && ( pmove->waterlevel != 3 ) &&
+		!( pmove->flags & FL_DUCKING ) &&
+		!( pmove->cmd.buttons & IN_DUCK );
+
 	bSpeedButtonChanged = ( ( pmove->cmd.buttons ^ pmove->oldbuttons ) & IN_SPEED ) != 0;
 	bWantsSprint = bHasSuit && bCanSprint && ( pmove->cmd.buttons & IN_SPEED );
 
-	// Match Source's edge-triggered sprint toggle. Keeping IN_SPEED held after
-	// depletion does not automatically restart sprint when the suit recharges.
+	// Match Source's edge-triggered sprint state: holding the key after
+	// depletion does not automatically restart when the suit recharges.
 	if( ( bSprinting != bWantsSprint ) && bSpeedButtonChanged )
 	{
-		if( bWantsSprint )
-		{
-			// CHL2_Player::StartSprinting only registers the sprint device
-			// when the suit has the minimum charge.
-			if( flPower >= flStartMinimum )
-				bSprinting = 1;
-		}
+		if( bWantsSprint && flPower >= flStartMinimum )
+			bSprinting = 1;
 		else
-		{
 			bSprinting = 0;
-			// Source clears the speed button when sprint is cancelled by a
-			// temporary restriction, so another press is required to resume.
-			pmove->cmd.buttons &= ~IN_SPEED;
-		}
 	}
-
-	// Source also stops a ground sprint when the player becomes fully ducked.
-	if( bSprinting && bFullyDucked && ( pmove->onground != -1 ) )
-		bSprinting = 0;
 
 	if( flPower < 0.01f )
 		bSprinting = 0;
 
-	// Source's walking state is independent of the sprint key state. Without
-	// the suit, walking is the forced movement mode.
+	// HL2 forces walking when the player has no suit.
 	if( bHasSuit )
+	{
 		bWantsWalking = ( pmove->cmd.buttons & IN_WALK ) &&
 			!bSprinting && !( pmove->cmd.buttons & IN_DUCK );
+	}
 	else
+	{
 		bWantsWalking = 1;
+		bSprinting = 0;
+		pmove->iuser4 &= ~( HL2_PM_SPRINTING | HL2_PM_DEVICE_SPRINT );
+		pmove->fuser2 = 0.0f;
+	}
 
 	if( bWantsWalking )
 		bSprinting = 0;
-
-	// SuitPower_RemoveDevice: disabling sprint costs 10% of the device's
-	// per-second drain rate and starts the 0.5-second no-load recharge delay.
-	bStoppedSprinting = bWasSprinting && !bSprinting;
-	if( bSprinting )
-	{
-		// A registered suit device prevents recharge while active.
-	}
-	else if( bStoppedSprinting )
-	{
-		if( bHasSuit )
-		{
-			flPower -= flDrainRate * 0.1f;
-			if( flPower < 0.0f )
-				flPower = 0.0f;
-		}
-		pmove->fuser1 = 0.5f;
-	}
-	else if( pmove->fuser1 > 0.0f )
-	{
-		// fuser1 is the GoldSrc countdown equivalent of Source's
-		// m_flTimeAllSuitDevicesOff + SUITPOWER_BEGIN_RECHARGE_DELAY.
-		pmove->fuser1 -= flFrameTime;
-		if( pmove->fuser1 < 0.0f )
-			pmove->fuser1 = 0.0f;
-	}
-	else if( flPower < 100.0f )
-	{
-		flPower += flRechargeRate * flFrameTime;
-		if( flPower > 100.0f )
-			flPower = 100.0f;
-	}
-
-	// SuitPower_Update drains only while an active device is drawing power.
-	// HL2's sprint device does not drain while the player's horizontal
-	// velocity is exactly zero.
-	if( bSprinting )
-	{
-		pmove->fuser1 = 0.5f;
-		if( fabs( pmove->velocity[0] ) != 0.0f ||
-			fabs( pmove->velocity[1] ) != 0.0f )
-		{
-			flPower -= flDrainRate * flFrameTime;
-			if( flPower < 0.0f )
-			{
-				flPower = 0.0f;
-				bSprinting = 0;
-				// Source calls StopSprinting when SuitPower_Drain fails.
-				flPower -= flDrainRate * 0.1f;
-				if( flPower < 0.0f )
-					flPower = 0.0f;
-				pmove->fuser1 = 0.5f;
-			}
-		}
-	}
 
 	if( bSprinting )
 		pmove->iuser4 |= HL2_PM_SPRINTING;
 	else
 		pmove->iuser4 &= ~HL2_PM_SPRINTING;
-
-	if( bWantsWalking )
-		pmove->iuser4 |= HL2_PM_WALKING;
-	else
-		pmove->iuser4 &= ~HL2_PM_WALKING;
-
-	pmove->fuser4 = flPower;
 
 	if( bSprinting )
 		flSelectedSpeed = flSprintSpeed;
@@ -3094,6 +3021,150 @@ static void PM_UpdateHL2MovementSpeed( void )
 		flSelectedSpeed = flNormalSpeed;
 
 	pmove->maxspeed = min( pmove->maxspeed, flSelectedSpeed );
+}
+
+/*
+==============
+PM_SuitPowerDrain
+
+Source equivalent: CHL2_Player::SuitPower_Drain.
+Power is expressed as percentage points, not a normalized 0..1 value.
+==============
+*/
+static int PM_SuitPowerDrain( float flPower )
+{
+	pmove->fuser4 -= flPower;
+
+	if( pmove->fuser4 < 0.01f )
+	{
+		pmove->fuser4 = 0.0f;
+		return 0;
+	}
+
+	return 1;
+}
+
+/*
+==============
+PM_SuitPowerCharge
+
+Source equivalent: CHL2_Player::SuitPower_Charge.
+==============
+*/
+static void PM_SuitPowerCharge( float flPower )
+{
+	pmove->fuser4 += flPower;
+	if( pmove->fuser4 > 100.0f )
+		pmove->fuser4 = 100.0f;
+}
+
+/*
+==============
+PM_SuitPowerAddSprintDevice
+
+Source equivalent: SuitPower_AddDevice(SuitDeviceSprint).
+==============
+*/
+static void PM_SuitPowerAddSprintDevice( float flDrainRate )
+{
+	if( pmove->iuser4 & HL2_PM_DEVICE_SPRINT )
+		return;
+
+	if( !( pmove->iuser4 & HL2_PM_HAS_SUIT ) )
+		return;
+
+	pmove->iuser4 |= HL2_PM_DEVICE_SPRINT;
+	pmove->fuser2 += flDrainRate;
+}
+
+/*
+==============
+PM_SuitPowerRemoveSprintDevice
+
+Source equivalent: SuitPower_RemoveDevice(SuitDeviceSprint).
+The 10% activation-rate penalty and all-devices-off timestamp are preserved.
+==============
+*/
+static void PM_SuitPowerRemoveSprintDevice( float flDrainRate )
+{
+	if( !( pmove->iuser4 & HL2_PM_DEVICE_SPRINT ) )
+		return;
+
+	if( !( pmove->iuser4 & HL2_PM_HAS_SUIT ) )
+		return;
+
+	PM_SuitPowerDrain( flDrainRate * 0.1f );
+	pmove->iuser4 &= ~HL2_PM_DEVICE_SPRINT;
+
+	pmove->fuser2 -= flDrainRate;
+	if( pmove->fuser2 < 0.0f )
+		pmove->fuser2 = 0.0f;
+
+	if( !( pmove->iuser4 & HL2_PM_DEVICE_SPRINT ) )
+		pmove->fuser1 = pmove->time;
+}
+
+/*
+==============
+PM_UpdateHL2SuitPower
+
+Source equivalent: CHL2_Player::ReduceTimers + SuitPower_Update.
+This is called from PM_ReduceTimers, which is the GoldSrc equivalent of
+CHL2GameMovement::ReduceTimers and runs after speed selection.
+==============
+*/
+static void PM_UpdateHL2SuitPower( void )
+{
+	float flDrainRate;
+	float flRechargeRate;
+	float flPowerLoad;
+	float flFrameTime;
+	float flHorizontalSpeedSqr;
+	int bDeviceActive;
+
+	flDrainRate = ( pmove->vuser4[0] >= 0.0f ) ? pmove->vuser4[0] : 12.5f;
+	flRechargeRate = ( pmove->vuser4[1] >= 0.0f ) ? pmove->vuser4[1] : 12.5f;
+	flFrameTime = ( pmove->frametime > 0.0f ) ? pmove->frametime : 0.0f;
+
+	if( !( pmove->iuser4 & HL2_PM_HAS_SUIT ) )
+	{
+		pmove->iuser4 &= ~( HL2_PM_SPRINTING | HL2_PM_DEVICE_SPRINT );
+		pmove->fuser2 = 0.0f;
+		return;
+	}
+
+	if( pmove->iuser4 & HL2_PM_SPRINTING )
+		PM_SuitPowerAddSprintDevice( flDrainRate );
+	else
+		PM_SuitPowerRemoveSprintDevice( flDrainRate );
+
+	bDeviceActive = ( pmove->iuser4 & HL2_PM_DEVICE_SPRINT ) != 0;
+
+	// Source waits until every suit device is off, the reserve is below
+	// 100%, and 0.5 seconds have elapsed since the last device shut down.
+	if( !bDeviceActive && pmove->fuser4 < 100.0f &&
+		pmove->time >= pmove->fuser1 + 0.5f )
+	{
+		PM_SuitPowerCharge( 12.5f * flFrameTime );
+	}
+	else if( bDeviceActive )
+	{
+		flPowerLoad = pmove->fuser2;
+
+		// Source does not spend sprint power while the player is stationary.
+		flHorizontalSpeedSqr = pmove->velocity[0] * pmove->velocity[0] +
+			pmove->velocity[1] * pmove->velocity[1];
+
+		if( flHorizontalSpeedSqr <= 0.0001f )
+		{
+			if( flPowerLoad <= flDrainRate + 0.0001f )
+				flPowerLoad = 0.0f;
+			else
+				flPowerLoad -= flDrainRate;
+		}
+
+		PM_SuitPowerDrain( flPowerLoad * flFrameTime );
+	}
 }
 
 /*
@@ -3177,6 +3248,8 @@ void PM_CheckParamters( void )
 
 void PM_ReduceTimers( void )
 {
+	PM_UpdateHL2SuitPower();
+
 	if( pmove->flTimeStepSound > 0 )
 	{
 		pmove->flTimeStepSound -= pmove->cmd.msec;
