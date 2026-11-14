@@ -277,7 +277,7 @@ namespace
 		// a proxy independently of the engine's collision bounds.
 		settings.mAllowedDOFs = EAllowedDOFs::TranslationX | EAllowedDOFs::TranslationY | EAllowedDOFs::TranslationZ;
 		settings.mGravityFactor = 0.0f; // GoldSrc continues to own gravity and world movement.
-		settings.mAllowSleeping = false;
+		settings.mAllowSleeping = ( kind == NPC_PHYSICS_PROP );
 		settings.mFriction = kind == NPC_PHYSICS_MONSTER ? 0.8f : 0.6f;
 		settings.mRestitution = 0.0f;
 		settings.mLinearDamping = 0.0f;
@@ -415,13 +415,16 @@ namespace
 
 		// Existing GoldSrc prop movement remains authoritative. Jolt only
 		// resolves the prop's contact with the NPC shadow bodies this frame.
-		bodyInterface.SetPositionAndRotation(
+		bodyInterface.SetPositionAndRotationWhenChanged(
 			record.bodyID,
 			position,
 			Quat::sIdentity(),
 			EActivation::Activate
 		);
-		bodyInterface.SetLinearVelocity( record.bodyID, NPCPhysics_EntityVelocity( pev ) );
+		const Vec3 velocity = NPCPhysics_EntityVelocity( pev );
+		bodyInterface.SetLinearVelocity( record.bodyID, velocity );
+		if( velocity.LengthSq() > 0.01f && !bodyInterface.IsActive( record.bodyID ) )
+			bodyInterface.ActivateBody( record.bodyID );
 	}
 
 	static void NPCPhysics_ClipMonsterToWorld( NPCPhysicsBody &record, BodyInterface &bodyInterface )
