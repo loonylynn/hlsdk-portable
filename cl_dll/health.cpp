@@ -65,10 +65,10 @@ int CHudHealth::Init( void )
 	HOOK_MESSAGE( Health );
 	HOOK_MESSAGE( Damage );
 
-	g_pAuxPowerX = CVAR_CREATE( "hud_auxpower_x", "-1", FCVAR_ARCHIVE );
-	g_pAuxPowerY = CVAR_CREATE( "hud_auxpower_y", "-1", FCVAR_ARCHIVE );
-	g_pAuxPowerGrid = CVAR_CREATE( "hud_auxpower_grid", "8", FCVAR_ARCHIVE );
-	g_pAuxPowerSnap = CVAR_CREATE( "hud_auxpower_snap", "1", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_auxpower_x", "-1", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_auxpower_y", "-1", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_auxpower_grid", "8", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_auxpower_snap", "1", FCVAR_ARCHIVE );
 
 	gEngfuncs.pfnAddCommand( "hud_auxpower_edit", AuxPower_EditCommand );
 	gEngfuncs.pfnAddCommand( "hud_auxpower_commit", AuxPower_CommitCommand );
@@ -198,10 +198,10 @@ void CHudHealth::GetPainColor( int &r, int &g, int &b )
 }
 
 // AUX. POWER HUD layout/editor state. Coordinates are stored in a 640x480 reference space.
-static cvar_t *g_pAuxPowerX = NULL;
-static cvar_t *g_pAuxPowerY = NULL;
-static cvar_t *g_pAuxPowerGrid = NULL;
-static cvar_t *g_pAuxPowerSnap = NULL;
+static void AuxPower_EditCommand( void );
+static void AuxPower_CommitCommand( void );
+static void AuxPower_CancelCommand( void );
+static void AuxPower_ReportCommand( void );
 
 static int g_bAuxPowerEditorActive = 0;
 static int g_iAuxPowerPreviewX = 0;
@@ -330,9 +330,12 @@ static void AuxPower_SnapPosition( int *x, int *y )
 	AuxPower_ClampPosition( x, y );
 }
 
-static void AuxPower_SetPreviewPosition( int x, int y )
+static void AuxPower_SetPreviewPosition( int x, int y, int forceNoSnap = 0 )
 {
-	AuxPower_SnapPosition( &x, &y );
+	if( forceNoSnap )
+		AuxPower_ClampPosition( &x, &y );
+	else
+		AuxPower_SnapPosition( &x, &y );
 	g_iAuxPowerPreviewX = x;
 	g_iAuxPowerPreviewY = y;
 }
@@ -570,7 +573,6 @@ extern "C" int DLLEXPORT HUD_AuxPowerEditorIsActive( void )
 extern "C" void DLLEXPORT HUD_AuxPowerEditorMouseMove( float deltaX, float deltaY )
 {
 	int maxX, maxY;
-	int left, top, width, height, labelX, labelY, frameX, frameY;
 
 	if( !g_bAuxPowerEditorActive )
 		return;
@@ -591,9 +593,6 @@ extern "C" void DLLEXPORT HUD_AuxPowerEditorMouseMove( float deltaX, float delta
 		int y = AuxPower_ScreenToRefY( g_iAuxPowerCursorY - g_iAuxPowerDragOffsetY );
 		AuxPower_SetPreviewPosition( x, y );
 	}
-
-	(void)left; (void)top; (void)width; (void)height;
-	(void)labelX; (void)labelY; (void)frameX; (void)frameY;
 }
 
 extern "C" void DLLEXPORT HUD_AuxPowerEditorMouseButtons( int buttons )
@@ -653,13 +652,13 @@ extern "C" void DLLEXPORT HUD_AuxPowerEditorKeyEvent( int down, int keynum )
 	case K_DOWNARROW:
 		step = g_bAuxPowerShiftDown ? 1 : AuxPower_GetGrid();
 		if( keynum == K_LEFTARROW )
-			AuxPower_SetPreviewPosition( g_iAuxPowerPreviewX - step, g_iAuxPowerPreviewY );
+			AuxPower_SetPreviewPosition( g_iAuxPowerPreviewX - step, g_iAuxPowerPreviewY, g_bAuxPowerShiftDown );
 		else if( keynum == K_RIGHTARROW )
-			AuxPower_SetPreviewPosition( g_iAuxPowerPreviewX + step, g_iAuxPowerPreviewY );
+			AuxPower_SetPreviewPosition( g_iAuxPowerPreviewX + step, g_iAuxPowerPreviewY, g_bAuxPowerShiftDown );
 		else if( keynum == K_UPARROW )
-			AuxPower_SetPreviewPosition( g_iAuxPowerPreviewX, g_iAuxPowerPreviewY - step );
+			AuxPower_SetPreviewPosition( g_iAuxPowerPreviewX, g_iAuxPowerPreviewY - step, g_bAuxPowerShiftDown );
 		else
-			AuxPower_SetPreviewPosition( g_iAuxPowerPreviewX, g_iAuxPowerPreviewY + step );
+			AuxPower_SetPreviewPosition( g_iAuxPowerPreviewX, g_iAuxPowerPreviewY + step, g_bAuxPowerShiftDown );
 		return;
 	case '[':
 		if( gEngfuncs.Cvar_SetValue )
