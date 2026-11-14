@@ -2047,7 +2047,7 @@ static void PM_GetUnDuckOrigin( vec3_t newOrigin )
 	else if( pmove->iuser4 & HL2_PM_DUCK_AIR_OFFSET )
 	{
 		// Reverse the eye-height compensation applied when the crouched hull
-		// was committed in mid-air. GoldSrc's view offsets differ by 16 units.
+		// was committed in mid-air. GoldSrc's ducked and standing hull centers differ by 18 units.
 		newOrigin[2] -= ( VEC_VIEW - VEC_DUCK_VIEW );
 	}
 }
@@ -2151,8 +2151,8 @@ static void PM_FinishDuck( void )
 		else
 		{
 			// Source commits the smaller hull immediately in air. GoldSrc's
-			// local eye offset drops by 16 units, so raise the centered origin
-			// by the same amount to prevent a camera pop.
+			// centered-hull eye offset drops by 18 units, so raise the origin
+			// by the same amount to preserve the Source camera position.
 			pmove->origin[2] += ( VEC_VIEW - VEC_DUCK_VIEW );
 			pmove->iuser4 &= ~HL2_PM_DUCK_ORIGIN_SHIFTED;
 			pmove->iuser4 |= HL2_PM_DUCK_AIR_OFFSET;
@@ -2236,7 +2236,8 @@ State mapping:
 PM_StartUnDuckJump
 
 Source StartUnDuckJump, translated to GoldSrc's centered hull and view
-heights. Source's 36-unit eye transition is 16 units in this HL1 PMove.
+heights. The centered GoldSrc origin shifts by 18 units while the
+// Source hull and eye transition spans 36 units.
 ==================
 */
 static void PM_StartUnDuckJump( void )
@@ -2313,8 +2314,9 @@ static qboolean PM_CanUnDuckJump( pmtrace_t *outTrace )
 ==================
 PM_FinishUnDuckJump
 
-Source FinishUnDuckJump translated to HL1's eye-height delta. A partial
-trace advances both the origin and eye offset by matching proportions.
+Source FinishUnDuckJump translated to centered GoldSrc hull coordinates.
+The origin includes the 18-unit hull-center handoff; the eye offset follows
+the remaining part of Source's 36-unit transition.
 ==================
 */
 static void PM_FinishUnDuckJump( const pmtrace_t *trace )
