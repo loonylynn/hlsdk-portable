@@ -1419,17 +1419,17 @@ void CStudioModelRenderer::StudioSetupBones( void )
 			ConcatTransforms( (*m_plighttransform)[pbones[i].parent], bonematrix, (*m_plighttransform)[i] );
 		}
 	}
-	// A live Jolt ragdoll provides absolute world-space transforms for each
-	// studio bone. If no matching pose has arrived yet, retain GoldSrc animation.
-	if( IEngineStudio.IsHardware() && m_pCurrentEntity->curstate.iuser4 > 0 )
+	// A Jolt ragdoll snapshot is keyed by the network entity index. Do not
+	// depend on entvars::iuser4 being propagated by every engine build.
+	// Until a complete, fresh snapshot exists, keep the ordinary GoldSrc pose.
+	if( IEngineStudio.IsHardware() && m_pCurrentEntity->index > 0 )
 	{
 		float ragdollTransform[3][4];
-		const int entityIndex = m_pCurrentEntity->curstate.number;
-		const int ragdollID = m_pCurrentEntity->curstate.iuser4;
+		const int entityIndex = m_pCurrentEntity->index;
 
 		for( i = 0; i < m_pStudioHeader->numbones; ++i )
 		{
-			if( Ragdoll_GetBoneTransform( entityIndex, ragdollID, i, ragdollTransform ) )
+			if( Ragdoll_GetBoneTransform( entityIndex, i, ragdollTransform ) )
 			{
 				MatrixCopy( ragdollTransform, (*m_pbonetransform)[i] );
 				MatrixCopy( ragdollTransform, (*m_plighttransform)[i] );
