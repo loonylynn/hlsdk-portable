@@ -42,6 +42,9 @@ static HSPRITE g_hAuxHudSprite = 0;
 static const wrect_t g_rcAuxHudFrame = { 9, 72, 7, 24 };
 static const wrect_t g_rcAuxHudFill = { 13, 66, 43, 52 };
 
+// Latest client-predicted aux reserve, updated by HUD_PlayerMove.
+float g_flHL2AuxPower = -1.0f;
+
 static void AuxPower_EditCommand( void );
 static void AuxPower_CommitCommand( void );
 static void AuxPower_CancelCommand( void );
@@ -747,8 +750,10 @@ int CHudHealth::Draw( float flTime )
 
 		// Use the same reserve field that shared PM updates for sprint drain/recharge.
 		cl_entity_t *pLocalPlayer = gEngfuncs.GetLocalPlayer();
-		if( pLocalPlayer )
-			DrawAuxPowerMeter( pLocalPlayer->curstate.fuser4 );
+		float flAuxPower = g_flHL2AuxPower;
+		if( flAuxPower < 0.0f && pLocalPlayer )
+			flAuxPower = pLocalPlayer->curstate.fuser4;
+		DrawAuxPowerMeter( flAuxPower );
 	}
 
 	DrawDamage( flTime );
