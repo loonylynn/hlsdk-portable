@@ -28,7 +28,6 @@ extern cvar_t	*cl_yawspeed;
 extern cvar_t	*cl_sidespeed;
 extern cvar_t	*cl_forwardspeed;
 extern cvar_t	*cl_pitchspeed;
-extern cvar_t	*cl_movespeedkey;
 cvar_t	*cl_laddermode;
 
 
@@ -226,11 +225,6 @@ void FWGSInput::IN_Move( float frametime, usercmd_t *cmd )
 			cmd->forwardmove = ac_forwardmove * cl_forwardspeed->value / ac_movecount;
 		if( ac_sidemove )
 			cmd->sidemove  = ac_sidemove * cl_sidespeed->value / ac_movecount;
-		if( ( in_speed.state & 1 ) && ( ac_sidemove || ac_forwardmove ) )
-		{
-			cmd->forwardmove *= cl_movespeedkey->value;
-			cmd->sidemove *= cl_movespeedkey->value;
-		}
 	}
 
 	ac_sidemove = ac_forwardmove = rel_pitch = rel_yaw = 0;
