@@ -126,8 +126,7 @@ namespace
 		if( !g_engfuncs.pfnCVarGetFloat )
 			return fallback;
 
-		float value = g_engfuncs.pfnCVarGetFloat( name );
-		return value > 0.0f ? value : fallback;
+		return g_engfuncs.pfnCVarGetFloat( name );
 	}
 
 	static bool NPCPhysics_Enabled()
@@ -525,6 +524,14 @@ namespace
 	{
 		if( !g_npcPhysics.initialized )
 			return;
+
+		if( !NPCPhysics_Enabled() )
+		{
+			for( size_t i = 0; i < g_npcBodies.size(); ++i )
+				NPCPhysics_DestroyBody( g_npcBodies[i] );
+			g_npcBodies.clear();
+			return;
+		}
 
 		const uint32_t frame = g_npcPhysicsFrame + 1;
 		for( size_t i = g_npcBodies.size(); i > 0; --i )
