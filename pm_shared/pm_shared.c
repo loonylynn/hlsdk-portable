@@ -2938,21 +2938,24 @@ static void PM_UpdateHL2MovementSpeed( void )
 	float flStartMinimum;
 	float flPower;
 	float flFrameTime;
-	float flHorizontalSpeedSqr;
 	float flSelectedSpeed;
 	int bHasSuit;
 	int bWasSprinting;
 	int bSprinting;
+	int bWasWalking;
 	int bCanSprint;
 	int bSpeedButtonChanged;
 	int bWantsSprint;
 	int bWantsWalking;
 	int bStoppedSprinting;
+	int bFullyDucked;
 
 	flWalkSpeed = ( pmove->vuser3[0] > 1.0f ) ? pmove->vuser3[0] : 150.0f;
 	flNormalSpeed = ( pmove->vuser3[1] > 1.0f ) ? pmove->vuser3[1] : 190.0f;
 	flSprintSpeed = ( pmove->vuser3[2] > 1.0f ) ? pmove->vuser3[2] : 320.0f;
 
+	// HL2 single-player defaults: sprint drains 12.5%/s, suit recharges
+	// at 12.5%/s, and sprint requires at least 10% reserve.
 	flDrainRate = ( pmove->vuser4[0] >= 0.0f ) ? pmove->vuser4[0] : 12.5f;
 	flRechargeRate = ( pmove->vuser4[1] >= 0.0f ) ? pmove->vuser4[1] : 12.5f;
 	flStartMinimum = ( pmove->vuser4[2] >= 0.0f ) ? pmove->vuser4[2] : 10.0f;
@@ -2961,6 +2964,8 @@ static void PM_UpdateHL2MovementSpeed( void )
 	bHasSuit = ( pmove->iuser4 & HL2_PM_HAS_SUIT ) != 0;
 	bWasSprinting = ( pmove->iuser4 & HL2_PM_SPRINTING ) != 0;
 	bSprinting = bWasSprinting;
+	bWasWalking = ( pmove->iuser4 & HL2_PM_WALKING ) != 0;
+	bFullyDucked = ( pmove->flags & FL_DUCKING ) && !pmove->bInDuck;
 
 	flPower = pmove->fuser4;
 	if( flPower < 0.0f )
@@ -2968,63 +2973,73 @@ static void PM_UpdateHL2MovementSpeed( void )
 	else if( flPower > 100.0f )
 		flPower = 100.0f;
 
-	if( !bHasSuit )
-	{
-		pmove->iuser4 &= ~HL2_PM_SPRINTING;
-		pmove->fuser4 = flPower;
-		pmove->maxspeed = min( pmove->maxspeed, flWalkSpeed );
-		return;
-	}
-
-	bCanSprint = !pmove->dead && ( pmove->waterlevel != 3 ) &&
-		!( pmove->flags & ( FL_DUCKING | FL_ONTRAIN | FL_FROZEN ) ) &&
-		!( pmove->cmd.buttons & IN_DUCK );
-
+	// Port of CHL2_Player::CanSprint / HandleSpeedChanges:
+	// sprint cannot be initiated while walking, fully ducked, or submerged.
+	// m_bSprintEnabled and the suit_no_sprint global state have no GoldSrc
+	// counterpart here, so the module remains enabled whenever the suit exists.
+	bCanSprint = !bWasWalking && !bFullyDucked && ( pmove->waterlevel != 3 );
 	bSpeedButtonChanged = ( ( pmove->cmd.buttons ^ pmove->oldbuttons ) & IN_SPEED ) != 0;
-	bWantsSprint = bCanSprint && ( pmove->cmd.buttons & IN_SPEED );
+	bWantsSprint = bHasSuit && bCanSprint && ( pmove->cmd.buttons & IN_SPEED );
 
-	// Source changes sprint state on the speed-button edge. This prevents
-	// holding the key from automatically restarting sprint after depletion.
+	// Match Source's edge-triggered sprint toggle. Keeping IN_SPEED held after
+	// depletion does not automatically restart sprint when the suit recharges.
 	if( ( bSprinting != bWantsSprint ) && bSpeedButtonChanged )
 	{
-		if( bWantsSprint && flPower >= flStartMinimum )
-			bSprinting = 1;
-		else
-			bSprinting = 0;
-	}
-
-	if( flPower <= 0.01f )
-		bSprinting = 0;
-
-	flHorizontalSpeedSqr = pmove->velocity[0] * pmove->velocity[0] +
-		pmove->velocity[1] * pmove->velocity[1];
-
-	if( bSprinting && flHorizontalSpeedSqr > 0.01f )
-	{
-		flPower -= flDrainRate * flFrameTime;
-		if( flPower <= 0.01f )
+		if( bWantsSprint )
 		{
-			flPower = 0.0f;
+			// CHL2_Player::StartSprinting only registers the sprint device
+			// when the suit has the minimum charge.
+			if( flPower >= flStartMinimum )
+				bSprinting = 1;
+		}
+		else
+		{
 			bSprinting = 0;
+			// Source clears the speed button when sprint is cancelled by a
+			// temporary restriction, so another press is required to resume.
+			pmove->cmd.buttons &= ~IN_SPEED;
 		}
 	}
 
+	// Source also stops a ground sprint when the player becomes fully ducked.
+	if( bSprinting && bFullyDucked && ( pmove->onground != -1 ) )
+		bSprinting = 0;
+
+	if( flPower < 0.01f )
+		bSprinting = 0;
+
+	// Source's walking state is independent of the sprint key state. Without
+	// the suit, walking is the forced movement mode.
+	if( bHasSuit )
+		bWantsWalking = ( pmove->cmd.buttons & IN_WALK ) &&
+			!bSprinting && !( pmove->cmd.buttons & IN_DUCK );
+	else
+		bWantsWalking = 1;
+
+	if( bWantsWalking )
+		bSprinting = 0;
+
+	// SuitPower_RemoveDevice: disabling sprint costs 10% of the device's
+	// per-second drain rate and starts the 0.5-second no-load recharge delay.
 	bStoppedSprinting = bWasSprinting && !bSprinting;
 	if( bSprinting )
 	{
-		// No recharge while sprint is active.
-		pmove->fuser1 = 0.5f;
+		// A registered suit device prevents recharge while active.
 	}
 	else if( bStoppedSprinting )
 	{
-		// HL2's device-removal penalty prevents rapid sprint tapping.
-		flPower -= flDrainRate * 0.1f;
-		if( flPower < 0.0f )
-			flPower = 0.0f;
+		if( bHasSuit )
+		{
+			flPower -= flDrainRate * 0.1f;
+			if( flPower < 0.0f )
+				flPower = 0.0f;
+		}
 		pmove->fuser1 = 0.5f;
 	}
 	else if( pmove->fuser1 > 0.0f )
 	{
+		// fuser1 is the GoldSrc countdown equivalent of Source's
+		// m_flTimeAllSuitDevicesOff + SUITPOWER_BEGIN_RECHARGE_DELAY.
 		pmove->fuser1 -= flFrameTime;
 		if( pmove->fuser1 < 0.0f )
 			pmove->fuser1 = 0.0f;
@@ -3036,14 +3051,40 @@ static void PM_UpdateHL2MovementSpeed( void )
 			flPower = 100.0f;
 	}
 
-	pmove->fuser4 = flPower;
+	// SuitPower_Update drains only while an active device is drawing power.
+	// HL2's sprint device does not drain while the player's horizontal
+	// velocity is exactly zero.
+	if( bSprinting )
+	{
+		pmove->fuser1 = 0.5f;
+		if( fabs( pmove->velocity[0] ) != 0.0f ||
+			fabs( pmove->velocity[1] ) != 0.0f )
+		{
+			flPower -= flDrainRate * flFrameTime;
+			if( flPower < 0.0f )
+			{
+				flPower = 0.0f;
+				bSprinting = 0;
+				// Source calls StopSprinting when SuitPower_Drain fails.
+				flPower -= flDrainRate * 0.1f;
+				if( flPower < 0.0f )
+					flPower = 0.0f;
+				pmove->fuser1 = 0.5f;
+			}
+		}
+	}
+
 	if( bSprinting )
 		pmove->iuser4 |= HL2_PM_SPRINTING;
 	else
 		pmove->iuser4 &= ~HL2_PM_SPRINTING;
 
-	bWantsWalking = ( pmove->cmd.buttons & IN_WALK ) &&
-		!bSprinting && !( pmove->cmd.buttons & IN_DUCK );
+	if( bWantsWalking )
+		pmove->iuser4 |= HL2_PM_WALKING;
+	else
+		pmove->iuser4 &= ~HL2_PM_WALKING;
+
+	pmove->fuser4 = flPower;
 
 	if( bSprinting )
 		flSelectedSpeed = flSprintSpeed;
