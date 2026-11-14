@@ -49,16 +49,12 @@ playermove_t *pmove = NULL;
 // Ducking time
 #define TIME_TO_DUCK		0.4f
 #define TIME_TO_UNDUCK		0.2f
-#define VEC_DUCK_HULL_MIN	-18
-#define VEC_DUCK_HULL_MAX	18
-#define VEC_DUCK_VIEW		12
+#define VEC_DUCK_VIEW		28.0f
 #define PM_DEAD_VIEWHEIGHT	-8
 #define MAX_CLIMB_SPEED		200
 #define STUCK_MOVEUP		1
 #define STUCK_MOVEDOWN		-1
-#define VEC_HULL_MIN		-36
-#define VEC_HULL_MAX		36
-#define VEC_VIEW		28
+#define VEC_VIEW		64.0f
 #define	STOP_EPSILON		0.1f
 
 #define CTEXTURESMAX		512			// max number of textures loaded
@@ -595,7 +591,12 @@ void PM_CatagorizeTextureType( void )
 	const char *pTextureName;
 
 	VectorCopy( pmove->origin, start );
-	VectorCopy( pmove->origin, end );
+
+	// PMove now uses Source's feet-origin convention. Start the legacy
+	// material trace at the center of the active hull, as GoldSrc did.
+	start[2] += ( pmove->player_mins[pmove->usehull][2] +
+		pmove->player_maxs[pmove->usehull][2] ) * 0.5f;
+	VectorCopy( start, end );
 
 	// Straight down
 	end[2] -= 64;
@@ -687,8 +688,8 @@ void PM_UpdateStepSound( void )
 
 	height = pmove->player_maxs[pmove->usehull][2] - pmove->player_mins[pmove->usehull][2];
 
-	knee[2] = pmove->origin[2] - 0.3f * height;
-	feet[2] = pmove->origin[2] - 0.5f * height;
+	knee[2] = pmove->origin[2] + 0.2f * height;
+	feet[2] = pmove->origin[2];
 
 	// Keep GoldSrc's original material lookup and water sampling.
 	if( fLadder )
@@ -2027,10 +2028,27 @@ float PM_SplineFraction( float value, float scale )
 
 /*
 ==================
+PM_GetDuckHullHeightDelta
+
+Source player hulls share the same bottom plane. Return the standing-to-ducked
+height difference used by Source's air transitions and duck-jump traces.
+==================
+*/
+static float PM_GetDuckHullHeightDelta( void )
+{
+	float standingHeight = pmove->player_maxs[0][2] - pmove->player_mins[0][2];
+	float duckHeight = pmove->player_maxs[1][2] - pmove->player_mins[1][2];
+
+	return standingHeight - duckHeight;
+}
+
+/*
+==================
 PM_GetUnDuckOrigin
 
-GoldSrc uses a centered player hull. When grounded, restore the standing
-origin by reversing the offset applied when the crouched hull was committed.
+Direct Source CanUnduck/FinishUnDuck origin calculation. The source hulls
+share a feet-level origin, so grounded unducking does not translate the origin.
+In the air, the origin is lowered by the hull-height delta.
 ==================
 */
 static void PM_GetUnDuckOrigin( vec3_t newOrigin )
@@ -2039,16 +2057,15 @@ static void PM_GetUnDuckOrigin( vec3_t newOrigin )
 
 	VectorCopy( pmove->origin, newOrigin );
 
-	if( pmove->iuser4 & HL2_PM_DUCK_ORIGIN_SHIFTED )
+	if( pmove->onground != -1 )
 	{
 		for( i = 0; i < 3; i++ )
 			newOrigin[i] += pmove->player_mins[1][i] - pmove->player_mins[0][i];
 	}
-	else if( pmove->iuser4 & HL2_PM_DUCK_AIR_OFFSET )
+	else
 	{
-		// Reverse the eye-height compensation applied when the crouched hull
-		// was committed in mid-air. GoldSrc's view offsets differ by 16 units.
-		newOrigin[2] -= ( VEC_VIEW - VEC_DUCK_VIEW );
+		float heightDelta = PM_GetDuckHullHeightDelta();
+		newOrigin[2] -= heightDelta;
 	}
 }
 
@@ -2056,8 +2073,8 @@ static void PM_GetUnDuckOrigin( vec3_t newOrigin )
 ==================
 PM_CanUnDuck
 
-Direct GoldSrc equivalent of Source CanUnduck, adapted to GoldSrc's
-centered hull and existing PM_PlayerTrace interface.
+Source CGameMovement::CanUnduck: test the standing hull while sweeping from
+the current feet-origin to the origin required for the standing hull.
 ==================
 */
 static qboolean PM_CanUnDuck( void )
@@ -2066,33 +2083,22 @@ static qboolean PM_CanUnDuck( void )
 	vec3_t newOrigin;
 	int oldHull = pmove->usehull;
 
-	// If the standing hull is already active (the player released duck
-	// before the duck transition completed), there is no hull expansion.
-	if( !( pmove->flags & FL_DUCKING ) )
-		return true;
-
 	PM_GetUnDuckOrigin( newOrigin );
 
-	// GoldSrc uses centered hulls, unlike Source's bottom-origin player.
-	// Test the current crouched hull at the adjusted position, then test
-	// the standing hull at that same endpoint. Sweeping a standing hull
-	// from the crouched origin incorrectly starts it below the floor.
-	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
-	if( trace.startsolid )
-		return false;
-
+	// Source temporarily clears m_bDucked before tracing the standing hull.
 	pmove->usehull = 0;
-	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
+	trace = pmove->PM_PlayerTrace( pmove->origin, newOrigin, PM_NORMAL, -1 );
 	pmove->usehull = oldHull;
 
-	return !trace.startsolid;
+	return !( trace.startsolid || trace.fraction != 1.0f );
 }
 
 /*
 ==================
 PM_FixPlayerCrouchStuck
 
-Try to move the player out of a crouch-transition collision.
+Source's crouch collision workaround: nudge the feet-origin upward until the
+new hull is clear, then restore the original position if no clear point exists.
 ==================
 */
 void PM_FixPlayerCrouchStuck( int direction )
@@ -2121,12 +2127,11 @@ void PM_FixPlayerCrouchStuck( int direction )
 ==================
 PM_FinishDuck
 
-Source FinishDuck translated to the GoldSrc hull-origin convention.
+Source CGameMovement::FinishDuck with Source's feet-origin hulls.
 ==================
 */
 static void PM_FinishDuck( void )
 {
-	int wasDucked = ( pmove->flags & FL_DUCKING ) != 0;
 	int i;
 
 	pmove->usehull = 1;
@@ -2135,39 +2140,30 @@ static void PM_FinishDuck( void )
 	pmove->flDuckTime = 0;
 	pmove->view_ofs[2] = VEC_DUCK_VIEW;
 
-	// GoldSrc uses a centered hull, so translate Source's origin handling
-	// into offsets that preserve the camera's world position at the instant
-	// the collision hull changes.
-	if( !wasDucked )
+	if( pmove->onground != -1 )
 	{
-		if( pmove->onground != -1 )
-		{
-			for( i = 0; i < 3; i++ )
-				pmove->origin[i] -= ( pmove->player_mins[1][i] - pmove->player_mins[0][i] );
-
-			pmove->iuser4 &= ~HL2_PM_DUCK_AIR_OFFSET;
-			pmove->iuser4 |= HL2_PM_DUCK_ORIGIN_SHIFTED;
-		}
-		else
-		{
-			// Source commits the smaller hull immediately in air. GoldSrc's
-			// local eye offset drops by 16 units, so raise the centered origin
-			// by the same amount to prevent a camera pop.
-			pmove->origin[2] += ( VEC_VIEW - VEC_DUCK_VIEW );
-			pmove->iuser4 &= ~HL2_PM_DUCK_ORIGIN_SHIFTED;
-			pmove->iuser4 |= HL2_PM_DUCK_AIR_OFFSET;
-		}
-
-		PM_FixPlayerCrouchStuck( STUCK_MOVEUP );
-		PM_CatagorizePosition();
+		for( i = 0; i < 3; i++ )
+			pmove->origin[i] -= pmove->player_mins[1][i] - pmove->player_mins[0][i];
 	}
+	else
+	{
+		for( i = 0; i < 3; i++ )
+		{
+			float normalSize = pmove->player_maxs[0][i] - pmove->player_mins[0][i];
+			float duckSize = pmove->player_maxs[1][i] - pmove->player_mins[1][i];
+			pmove->origin[i] += normalSize - duckSize;
+		}
+	}
+
+	PM_FixPlayerCrouchStuck( STUCK_MOVEUP );
+	PM_CatagorizePosition();
 }
 
 /*
 ==================
 PM_FinishUnDuck
 
-Source FinishUnDuck translated to the GoldSrc hull-origin convention.
+Source CGameMovement::FinishUnDuck with Source's feet-origin hulls.
 ==================
 */
 static void PM_FinishUnDuck( void )
@@ -2180,11 +2176,10 @@ static void PM_FinishUnDuck( void )
 	pmove->flags &= ~FL_DUCKING;
 	pmove->bInDuck = false;
 	pmove->flDuckTime = 0;
+	pmove->iuser4 &= ~HL2_PM_IN_DUCK_JUMP;
 	pmove->view_ofs[2] = VEC_VIEW;
 
 	VectorCopy( newOrigin, pmove->origin );
-	pmove->iuser4 &= ~( HL2_PM_DUCK_ORIGIN_SHIFTED |
-		HL2_PM_DUCK_AIR_OFFSET | HL2_PM_IN_DUCK_JUMP );
 	PM_CatagorizePosition();
 }
 
@@ -2192,35 +2187,22 @@ static void PM_FinishUnDuck( void )
 ==================
 PM_SetDuckedEyeOffset
 
-Source SetDuckedEyeOffset translated for GoldSrc's centered hull.
-The fully-ducked grounded origin is already 18 units lower, so the local
-view offset rises by that amount during the unduck transition.
+Source CGameMovement::SetDuckedEyeOffset. The default Source standing and
+ducked hulls share the same bottom plane, so fMore is zero.
 ==================
 */
 static void PM_SetDuckedEyeOffset( float duckFraction )
 {
-	float fMore = VEC_DUCK_HULL_MIN - VEC_HULL_MIN;
-	float standingView;
+	float fMore = pmove->player_mins[1][2] - pmove->player_mins[0][2];
 
 	duckFraction = max( 0.0f, min( duckFraction, 1.0f ) );
-
-	if( pmove->flags & FL_DUCKING )
-	{
-		standingView = ( pmove->iuser4 & HL2_PM_DUCK_ORIGIN_SHIFTED ) ?
-			( VEC_VIEW + fMore ) : VEC_VIEW;
-		pmove->view_ofs[2] = ( VEC_DUCK_VIEW * duckFraction ) +
-			( standingView * ( 1.0f - duckFraction ) );
-	}
-	else
-	{
-		pmove->view_ofs[2] = ( ( VEC_DUCK_VIEW - fMore ) * duckFraction ) +
-			( VEC_VIEW * ( 1.0f - duckFraction ) );
-	}
+	pmove->view_ofs[2] = ( ( VEC_DUCK_VIEW - fMore ) * duckFraction ) +
+		( VEC_VIEW * ( 1.0f - duckFraction ) );
 }
 
 /*
 ==================
-Source duck-jump helpers and shared PM_Duck state machine.
+Source duck-jump state and shared PM_Duck state machine.
 
 State mapping:
 	FL_DUCKING -> Source m_bDucked
@@ -2231,25 +2213,30 @@ State mapping:
 	vuser2[1]  -> Source m_flJumpTime
 ==================
 */
+
 /*
 ==================
 PM_StartUnDuckJump
 
-Source StartUnDuckJump, translated to GoldSrc's centered hull and view
-heights. Source's 36-unit eye transition is 16 units in this HL1 PMove.
+Source CGameMovement::StartUnDuckJump.
 ==================
 */
 static void PM_StartUnDuckJump( void )
 {
+	int i;
+
 	pmove->usehull = 1;
 	pmove->flags |= FL_DUCKING;
 	pmove->bInDuck = false;
 	pmove->flDuckTime = 0;
 	pmove->view_ofs[2] = VEC_DUCK_VIEW;
 
-	pmove->origin[2] += ( VEC_VIEW - VEC_DUCK_VIEW );
-	pmove->iuser4 &= ~HL2_PM_DUCK_ORIGIN_SHIFTED;
-	pmove->iuser4 |= HL2_PM_DUCK_AIR_OFFSET;
+	for( i = 0; i < 3; i++ )
+	{
+		float normalSize = pmove->player_maxs[0][i] - pmove->player_mins[0][i];
+		float duckSize = pmove->player_maxs[1][i] - pmove->player_mins[1][i];
+		pmove->origin[i] += normalSize - duckSize;
+	}
 
 	PM_FixPlayerCrouchStuck( STUCK_MOVEUP );
 	PM_CatagorizePosition();
@@ -2259,8 +2246,8 @@ static void PM_StartUnDuckJump( void )
 ==================
 PM_CanUnDuckJump
 
-Source CanUnDuckJump. Trace down using the crouched hull to find the
-landing point, then test the standing hull at that point.
+Source CGameMovement::CanUnDuckJump. Trace down to the standing-origin
+position with the ducked hull, then test the standing hull at that endpoint.
 ==================
 */
 static qboolean PM_CanUnDuckJump( pmtrace_t *outTrace )
@@ -2268,14 +2255,8 @@ static qboolean PM_CanUnDuckJump( pmtrace_t *outTrace )
 	pmtrace_t trace;
 	pmtrace_t traceUp;
 	vec3_t end;
-	float standingHeight;
-	float duckHeight;
-	float heightDelta;
+	float heightDelta = PM_GetDuckHullHeightDelta();
 	int oldHull = pmove->usehull;
-
-	standingHeight = pmove->player_maxs[0][2] - pmove->player_mins[0][2];
-	duckHeight = pmove->player_maxs[1][2] - pmove->player_mins[1][2];
-	heightDelta = standingHeight - duckHeight;
 
 	if( heightDelta <= 0.0f )
 		return false;
@@ -2309,44 +2290,26 @@ static qboolean PM_CanUnDuckJump( pmtrace_t *outTrace )
 ==================
 PM_FinishUnDuckJump
 
-Source FinishUnDuckJump translated to HL1's eye-height delta. A partial
-trace advances both the origin and eye offset by matching proportions.
+Source CGameMovement::FinishUnDuckJump.
 ==================
 */
 static void PM_FinishUnDuckJump( const pmtrace_t *trace )
 {
-	float viewDelta = VEC_VIEW - VEC_DUCK_VIEW;
-	float originDelta = viewDelta * trace->fraction;
-	float remainingViewDelta = viewDelta - originDelta;
+	float heightDelta = PM_GetDuckHullHeightDelta();
+	float originDelta = heightDelta * trace->fraction;
+	float remainingViewDelta = heightDelta - originDelta;
 
 	pmove->usehull = 0;
 	pmove->flags &= ~FL_DUCKING;
 	pmove->bInDuck = false;
 	pmove->flDuckTime = 0;
-	pmove->iuser4 &= ~( HL2_PM_DUCK_ORIGIN_SHIFTED |
-		HL2_PM_DUCK_AIR_OFFSET | HL2_PM_IN_DUCK_JUMP );
-
+	pmove->iuser4 &= ~HL2_PM_IN_DUCK_JUMP;
 	pmove->vuser2[0] = 0.0f;
 	pmove->vuser2[1] = 0.0f;
 	pmove->view_ofs[2] = VEC_VIEW - remainingViewDelta;
 	pmove->origin[2] -= originDelta;
 
 	PM_CatagorizePosition();
-}
-
-/*
-==================
-PM_SetDuckJumpEyeOffset
-
-Source UpdateDuckJumpEyeOffset interpolates the view after a duck-jump
-handoff. The origin has already been moved by FinishUnDuckJump.
-==================
-*/
-static void PM_SetDuckJumpEyeOffset( float duckFraction )
-{
-	duckFraction = max( 0.0f, min( duckFraction, 1.0f ) );
-	pmove->view_ofs[2] = ( VEC_DUCK_VIEW * duckFraction ) +
-		( VEC_VIEW * ( 1.0f - duckFraction ) );
 }
 
 /*
@@ -2365,23 +2328,45 @@ static void PM_UpdateDuckJumpEyeOffset( void )
 	if( pmove->vuser2[0] == 0.0f )
 		return;
 
-	duckMilliseconds = max( 0.0f,
-		HL2_DUCK_JUMP_TIME_MS - pmove->vuser2[0] );
+	duckMilliseconds = max( 0.0f, HL2_DUCK_JUMP_TIME_MS - pmove->vuser2[0] );
 	duckSeconds = duckMilliseconds * 0.001f;
 
 	if( duckSeconds > TIME_TO_UNDUCK )
 	{
 		pmove->vuser2[0] = 0.0f;
-		PM_SetDuckJumpEyeOffset( 0.0f );
+		PM_SetDuckedEyeOffset( 0.0f );
 	}
 	else
 	{
 		duckFraction = PM_SplineFraction(
 			1.0f - ( duckSeconds / TIME_TO_UNDUCK ), 1.0f );
-		PM_SetDuckJumpEyeOffset( duckFraction );
+		PM_SetDuckedEyeOffset( duckFraction );
 	}
 }
 
+static int pm_iSpeedCropped;
+
+static void PM_HandleDuckingSpeedCrop( void )
+{
+	if( !( pm_iSpeedCropped & 1 ) &&
+		( pmove->flags & FL_DUCKING ) && pmove->onground != -1 )
+	{
+		pmove->cmd.forwardmove *= PLAYER_DUCKING_MULTIPLIER;
+		pmove->cmd.sidemove *= PLAYER_DUCKING_MULTIPLIER;
+		pmove->cmd.upmove *= PLAYER_DUCKING_MULTIPLIER;
+		pm_iSpeedCropped |= 1;
+	}
+}
+
+/*
+==================
+PM_Duck
+
+Port of Source SDK CGameMovement::Duck. It uses Source's bottom-origin hull
+coordinates and eye heights directly; the only GoldSrc conversion occurs at
+the PM_Move engine boundary.
+==================
+*/
 void PM_Duck( void )
 {
 	int buttonsChanged = ( pmove->oldbuttons ^ pmove->cmd.buttons );
@@ -2401,41 +2386,19 @@ void PM_Duck( void )
 	else
 		pmove->oldbuttons &= ~IN_DUCK;
 
-	// A crouched player who lands now uses the grounded centered-hull
-	// correction when standing up, matching Source's ground-relative path.
-	if( bInDuck && pmove->onground != -1 )
-	{
-		pmove->iuser4 &= ~HL2_PM_DUCK_AIR_OFFSET;
-		pmove->iuser4 |= HL2_PM_DUCK_ORIGIN_SHIFTED;
-	}
-
-	// Preserve the existing GoldSrc handling for dead and observer states.
-	if( pmove->dead || pmove->iuser3 )
-	{
-		if( bInDuck && PM_CanUnDuck() )
-			PM_FinishUnDuck();
+	if( pmove->dead )
 		return;
-	}
 
-	// Source HandleDuckingSpeedCrop only crops movement while fully ducked
-	// and grounded. It does not slow airborne movement.
-	if( bInDuck && pmove->onground != -1 )
-	{
-		pmove->cmd.forwardmove *= PLAYER_DUCKING_MULTIPLIER;
-		pmove->cmd.sidemove *= PLAYER_DUCKING_MULTIPLIER;
-		pmove->cmd.upmove *= PLAYER_DUCKING_MULTIPLIER;
-	}
+	PM_HandleDuckingSpeedCrop();
 
-	// Source CGameMovement::Duck: the jump timer itself keeps the duck
-	// machinery active during an automatic single-player duck-jump.
+	// Holding duck, an active duck transition, or an automatic duck-jump
+	// enters the Source duck path.
 	if( ( pmove->cmd.buttons & IN_DUCK ) || pmove->bInDuck ||
 		bInDuck || bDuckJump )
 	{
-		// DUCK (or duck-jump).
+		// DUCK
 		if( ( pmove->cmd.buttons & IN_DUCK ) || bDuckJump )
 		{
-			// Start the ordinary duck transition only when no jump-related
-			// duck or eye transition is already active.
 			if( ( buttonsPressed & IN_DUCK ) && !bInDuck &&
 				!bDuckJump && !bDuckJumpTime )
 			{
@@ -2461,8 +2424,7 @@ void PM_Duck( void )
 				}
 			}
 
-			// Source's automatic single-player duck-jump. A successful jump
-			// enters the crouched hull even if the duck key was not pressed.
+			// Source's automatic single-player duck-jump.
 			if( bDuckJump )
 			{
 				if( !bInDuck )
@@ -2483,7 +2445,7 @@ void PM_Duck( void )
 				}
 			}
 		}
-		// UNDUCK (or attempt to...).
+		// UNDUCK
 		else
 		{
 			if( pmove->iuser4 & HL2_PM_IN_DUCK_JUMP )
@@ -2510,20 +2472,16 @@ void PM_Duck( void )
 				}
 			}
 
-			// Do not run ordinary unduck while the duck-jump eye transition
-			// is still being interpolated by UpdateDuckJumpEyeOffset().
 			if( bDuckJumpTime )
 				return;
 
-			// Source starts or reverses the ordinary unduck timer on the
-			// button-release edge. Preserve the exact 400 ms / 200 ms mapping.
 			if( buttonsReleased & IN_DUCK )
 			{
 				if( bInDuck && !bDuckJump )
 				{
 					pmove->flDuckTime = 1000;
 				}
-				else if( pmove->bInDuck && !bInDuck )
+				else if( pmove->bInDuck && !( pmove->flags & FL_DUCKING ) )
 				{
 					float unduckMilliseconds = TIME_TO_UNDUCK * 1000.0f;
 					float duckMilliseconds = TIME_TO_DUCK * 1000.0f;
@@ -2541,8 +2499,6 @@ void PM_Duck( void )
 
 			if( PM_CanUnDuck() )
 			{
-				// FinishUnDuckJump may have cleared FL_DUCKING earlier in
-				// this same call, so inspect the live state like Source does.
 				if( pmove->bInDuck || ( pmove->flags & FL_DUCKING ) )
 				{
 					duckMilliseconds = max( 0.0f,
@@ -2552,7 +2508,6 @@ void PM_Duck( void )
 					if( duckSeconds > TIME_TO_UNDUCK ||
 						( bInAir && !bDuckJump ) )
 					{
-						PM_SetDuckedEyeOffset( 0.0f );
 						PM_FinishUnDuck();
 					}
 					else
@@ -2566,7 +2521,6 @@ void PM_Duck( void )
 			}
 			else
 			{
-				// Source resets blocked unducks to the fully ducked state.
 				if( pmove->flDuckTime != 1000 )
 				{
 					PM_SetDuckedEyeOffset( 1.0f );
@@ -2578,10 +2532,9 @@ void PM_Duck( void )
 			}
 		}
 	}
-	else if( !pmove->dead && !pmove->iuser3 )
+	else if( !pmove->dead && !pmove->spectator && pmove->iuser1 <= 0 )
 	{
-		// Source's safety check: repair a stale ducked eye offset once no
-		// duck-jump eye interpolation is active.
+		// Source's safety repair for a stale crouched eye offset.
 		if( pmove->vuser2[0] == 0.0f &&
 			fabs( pmove->view_ofs[2] - VEC_VIEW ) > 0.1f )
 		{
@@ -3823,6 +3776,9 @@ void PM_PlayerMove( qboolean server )
 	// Are we running server code?
 	pmove->server = server;
 
+	// Source HandleDuckingSpeedCrop is applied at most once per user command.
+	pm_iSpeedCropped = 0;
+
 	// Set the current command's frame duration before parameter processing.
 	// PM_UpdateHL2MovementSpeed() runs from PM_CheckParamters() and uses
 	// frametime to drain or recharge the auxiliary suit reserve.
@@ -4179,11 +4135,34 @@ invoked by each side as appropriate.  There should be no distinction, internally
 and client.  This will ensure that prediction behaves appropriately.
 */
 
+static float PM_GetHullCenterOffset( int hull )
+{
+	if( hull < 0 || hull >= 4 )
+		hull = 0;
+
+	return ( pmove->player_mins[hull][2] +
+		pmove->player_maxs[hull][2] ) * 0.5f;
+}
+
 void PM_Move( struct playermove_s *ppmove, int server )
 {
+	float hullCenterOffset = 0.0f;
+	qboolean convertOrigin;
+
 	assert( pm_shared_initialized );
 
 	pmove = ppmove;
+
+	// GoldSrc's engine-facing player origin is centered in the active hull.
+	// Source movement uses a feet-level origin and eye offsets measured from
+	// that origin. Convert both at this boundary, not inside movement code.
+	convertOrigin = !( pmove->spectator || pmove->iuser1 > 0 );
+	if( convertOrigin )
+	{
+		hullCenterOffset = PM_GetHullCenterOffset( pmove->usehull );
+		pmove->origin[2] -= hullCenterOffset;
+		pmove->view_ofs[2] += hullCenterOffset;
+	}
 
 	//pmove->Con_Printf( "PM_Move: %g, frametime %g, onground %i\n", pmove->time, pmove->frametime, pmove->onground );
 	
@@ -4203,6 +4182,13 @@ void PM_Move( struct playermove_s *ppmove, int server )
 	if( !( pmove->multiplayer && atoi( pmove->PM_Info_ValueForKey( pmove->physinfo, "fr" )) == 0 ) && pmove->movetype == MOVETYPE_WALK )
 	{
 		pmove->friction = 1.0f;
+	}
+
+	if( convertOrigin )
+	{
+		hullCenterOffset = PM_GetHullCenterOffset( pmove->usehull );
+		pmove->origin[2] += hullCenterOffset;
+		pmove->view_ofs[2] -= hullCenterOffset;
 	}
 }
 
