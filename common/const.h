@@ -670,6 +670,11 @@
 #define IN_ALT1			(1<<14)
 #define IN_SCORE			(1<<15)   // Used by client.dll for when scoreboard is held down
 
+// HL2 movement state bits mapped onto unused legacy GoldSrc button slots.
+// Keep usercmd_t's 16-bit button field and the engine protocol unchanged.
+#define IN_SPEED			IN_RUN
+#define IN_WALK			IN_ALT1
+
 // Break Model Defines
 #define BREAK_TYPEMASK		0x4F
 #define BREAK_GLASS			0x01
