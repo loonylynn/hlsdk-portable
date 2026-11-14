@@ -368,14 +368,20 @@ namespace
 		totalMass = std::max( 10.0f, std::min( totalMass, 300.0f ) );
 
 		ragdoll.groupFilter = new GroupFilterTable( static_cast<uint>( ragdoll.boneCount ) );
+
+		// The initial skeleton uses a sphere for every studio bone. Those
+		// spheres overlap heavily by design, especially around the torso and
+		// hands. Allowing non-adjacent bones to collide makes the solver
+		// explosively separate the ragdoll from itself. Disable every
+		// same-ragdoll pair; the group ID still keeps different ragdolls
+		// eligible to collide with each other.
 		for( int i = 0; i < ragdoll.boneCount; ++i )
 		{
-			const int parent = studioBones[i].parent;
-			if( parent >= 0 && parent != i )
+			for( int j = i + 1; j < ragdoll.boneCount; ++j )
 			{
 				ragdoll.groupFilter->DisableCollision(
 					static_cast<CollisionGroup::SubGroupID>( i ),
-					static_cast<CollisionGroup::SubGroupID>( parent )
+					static_cast<CollisionGroup::SubGroupID>( j )
 				);
 			}
 		}
