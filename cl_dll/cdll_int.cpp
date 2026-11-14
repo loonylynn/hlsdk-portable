@@ -305,15 +305,9 @@ returns 1 if anything has been changed, 0 otherwise.
 ==========================
 */
 
-extern float g_flHL2AuxPowerClientData;
-
 int DLLEXPORT HUD_UpdateClientData( client_data_t *pcldata, float flTime )
 {
 	IN_Commands();
-
-	// Preserve the authoritative player reserve before prediction advances it.
-	if( pcldata )
-		g_flHL2AuxPowerClientData = pcldata->fuser4;
 
 	return gHUD.UpdateClientData( pcldata, flTime );
 }
