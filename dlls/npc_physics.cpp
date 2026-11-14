@@ -344,14 +344,16 @@ namespace
 		if( !NPCPhysics_Enabled() || !NPCPhysics_Initialize() )
 			return 0;
 
-		const uint32_t seenFrame = g_npcPhysicsFrame + 1;
-		if( NPCPhysics_IsAliveMonster( ent ) )
-			NPCPhysics_MarkEntity( ent, NPC_PHYSICS_MONSTER, seenFrame );
-		else if( NPCPhysics_IsMovableProp( ent ) )
-			NPCPhysics_MarkEntity( ent, NPC_PHYSICS_PROP, seenFrame );
-
-		// Returning 0 is essential: the normal GoldSrc MOVETYPE_STEP / TOSS
-		// simulation remains active and continues to own gravity and world clips.
+		// Living monsters must never be represented by Jolt shadow bodies.
+		// Their AI, animation, movement and collision remain entirely in GoldSrc.
+		// The old shadow-body experiment caused controller feedback to leak
+		// into entity velocity. The replacement path will create a skeletal
+		// Jolt ragdoll only from the zombie's death transition.
+		//
+		// Do not register movable props here either: until ragdolls exist,
+		// standalone Jolt prop bodies have no useful interaction partner and
+		// would only compete with GoldSrc's authoritative prop simulation.
+		(void)ent;
 		return 0;
 	}
 
