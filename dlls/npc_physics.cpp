@@ -106,7 +106,7 @@ namespace
 		bool initialized;
 
 		NPCPhysicsWorld()
-			: jobs( 2048 ),
+			: jobs(),
 			  tempAllocator( NULL ),
 			  initialized( false )
 		{
@@ -139,7 +139,12 @@ namespace
 		if( g_npcPhysics.initialized )
 			return true;
 
+		// The job system allocates its free-list page table during Init().
+		// Register Jolt's allocator first; the global world constructor must
+		// not allocate through JPH::Allocate before it has been initialized.
 		RegisterDefaultAllocator();
+		g_npcPhysics.jobs.Init( 2048 );
+
 		Factory::sInstance = new Factory();
 		RegisterTypes();
 
