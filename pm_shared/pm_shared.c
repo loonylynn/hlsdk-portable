@@ -2322,7 +2322,9 @@ changing the engine/DLL interface.
 */
 static void PM_StartUnDuck( void )
 {
-	pmove->bInDuck = true;
+	// Keep bInDuck reserved for the downward transition. Other shared
+	// movement code uses it to distinguish a fully crouched player.
+	pmove->bInDuck = false;
 	pmove->flDuckTime = -( TIME_TO_UNDUCK * 1000.0f );
 	PM_UpdateUnDuck();
 }
@@ -2370,13 +2372,15 @@ void PM_Duck( void )
 	{
 		// If crouch is pressed again during an unduck, reverse the timer
 		// at the current eased fraction instead of snapping the view.
-		if( ( nButtonPressed & IN_DUCK ) && pmove->bInDuck && pmove->flDuckTime <= 0.0f )
+		if( ( nButtonPressed & IN_DUCK ) && pmove->flDuckTime < 0.0f &&
+			( pmove->bInDuck || ( pmove->flags & FL_DUCKING ) ) )
 		{
 			time = -pmove->flDuckTime / ( TIME_TO_UNDUCK * 1000.0f );
 			time = max( 0.0f, min( time, 1.0f ) );
 			duckFraction = PM_SplineFraction( time, 1.0f );
 			downFraction = PM_SplineFractionInverse( duckFraction );
 			pmove->flDuckTime = 1000.0f - downFraction * ( TIME_TO_DUCK * 1000.0f );
+			pmove->bInDuck = true;
 		}
 		else if( ( nButtonPressed & IN_DUCK ) &&
 			!( pmove->flags & FL_DUCKING ) && !pmove->bInDuck )
@@ -2417,13 +2421,15 @@ void PM_Duck( void )
 			downFraction = PM_SplineFractionInverse( duckFraction );
 			pmove->flDuckTime = -( downFraction * TIME_TO_UNDUCK * 1000.0f );
 		}
-		else if( ( pmove->flags & FL_DUCKING ) && !pmove->bInDuck )
+		else if( ( pmove->flags & FL_DUCKING ) && !pmove->bInDuck &&
+			pmove->flDuckTime >= 0.0f )
 		{
 			PM_StartUnDuck();
 			return;
 		}
 
-		if( pmove->bInDuck && pmove->flDuckTime <= 0.0f )
+		if( pmove->flDuckTime < 0.0f &&
+			( pmove->bInDuck || ( pmove->flags & FL_DUCKING ) ) )
 			PM_UpdateUnDuck();
 	}
 }
