@@ -4,6 +4,7 @@
 #include "ragdoll.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 static const int MAX_RAGDOLL_ENTITIES = 2048;
@@ -72,7 +73,9 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 		entry.active = true;
 		entry.ragdollID = ragdollID;
 		entry.boneCount = boneCount;
-		Con_Printf( "[NPC ragdoll] Receiving entity %d, ID %d (%d bones).\n", entityIndex, ragdollID, boneCount );
+		char message[128];
+		snprintf( message, sizeof( message ), "[NPC ragdoll] Receiving entity %d, ID %d (%d bones).\n", entityIndex, ragdollID, boneCount );
+		ConsolePrint( message );
 	}
 
 	entry.lastUpdateTime = gEngfuncs.GetClientTime();
@@ -142,7 +145,9 @@ int Ragdoll_GetBoneTransform( int entityIndex, int boneIndex, float transform[3]
 
 	if( !entry.renderReported )
 	{
-		Con_Printf( "[NPC ragdoll] Applying pose for entity %d, ID %d.\n", entityIndex, entry.ragdollID );
+		char message[128];
+		snprintf( message, sizeof( message ), "[NPC ragdoll] Applying pose for entity %d, ID %d.\n", entityIndex, entry.ragdollID );
+		ConsolePrint( message );
 		entry.renderReported = true;
 	}
 
