@@ -2215,7 +2215,7 @@ void CBasePlayer::UpdateMovementSpeed( void )
 	if( bHasSuit )
 		pev->iuser4 |= HL2_PM_HAS_SUIT;
 	else
-		pev->iuser4 &= ~( HL2_PM_HAS_SUIT | HL2_PM_SPRINTING );
+		pev->iuser4 &= ~( HL2_PM_HAS_SUIT | HL2_PM_SPRINTING | HL2_PM_WALKING );
 
 	if( pev->fuser4 < 0.0f )
 		pev->fuser4 = 0.0f;
