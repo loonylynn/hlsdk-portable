@@ -230,6 +230,7 @@ typedef struct playermove_s
 	// Xash3D HL2 movement extension. Parallel to physents[]; contains each
 	// collision entity's velocity. Appended to preserve existing PMove offsets.
 	vec3_t		physent_velocity[MAX_PHYSENTS];
+	float		surfacefriction; // Source-style transient movement-surface friction.
 } playermove_t;
 
 #if __MINGW32__
