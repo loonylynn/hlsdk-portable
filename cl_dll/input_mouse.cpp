@@ -22,6 +22,9 @@ AbstractInput* currentInput = &fwgsInput;
 #endif
 extern "C"  void DLLEXPORT IN_ClientMoveEvent( float forwardmove, float sidemove )
 {
+	if( HUD_AuxPowerEditorIsActive() )
+		return;
+
 	currentInput->IN_ClientMoveEvent(forwardmove, sidemove);
 }
 
@@ -29,7 +32,16 @@ extern "C" void DLLEXPORT IN_ClientLookEvent( float relyaw, float relpitch )
 {
 	if( HUD_AuxPowerEditorIsActive() )
 	{
-		HUD_AuxPowerEditorMouseMove( relyaw, relpitch );
+		// Xash passes mouse deltas after applying m_yaw/m_pitch. Undo that
+		// scaling so the virtual cursor moves in screen-pixel-like units.
+		float yawScale = CVAR_GET_FLOAT( "m_yaw" );
+		float pitchScale = CVAR_GET_FLOAT( "m_pitch" );
+		if( yawScale > -0.0001f && yawScale < 0.0001f )
+			yawScale = 0.022f;
+		if( pitchScale > -0.0001f && pitchScale < 0.0001f )
+			pitchScale = 0.022f;
+
+		HUD_AuxPowerEditorMouseMove( -relyaw / yawScale, relpitch / pitchScale );
 		return;
 	}
 
