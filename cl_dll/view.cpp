@@ -217,6 +217,157 @@ float V_CalcBob( struct ref_params_s *pparams )
 }
 
 /*
+=============================================================================
+
+HL2 VIEWMODEL BOB AND LAG BACKPORT
+
+Backported from Source SDK 2013:
+  CBaseHLCombatWeapon::CalcViewmodelBob
+  CBaseHLCombatWeapon::AddViewmodelBob
+  CBaseViewModel::CalcViewModelLag
+
+The Source equations and default constants are retained. GoldSrc supplies
+predicted velocity and time through ref_params_s instead of CBasePlayer and
+gpGlobals. The camera's existing GoldSrc bob remains separate.
+
+=============================================================================
+*/
+#define HL2_BOB_CYCLE_MAX	0.45f
+#define HL2_BOB_UP			0.5f
+#define HL2_VIEWMODEL_LAG	1.5f
+
+static void V_ApplyHL2ViewModelBobAndLag( struct ref_params_s *pparams, cl_entity_t *view )
+{
+	static double bobtime;
+	static float lastbobtime;
+	static float verticalBob;
+	static float lateralBob;
+	static vec3_t lastFacing = { 0.0f, 0.0f, 0.0f };
+	static int lastModelIndex = -1;
+	static float lastViewTime = -1.0f;
+	static int haveLastFacing = 0;
+
+	float speed;
+	float bobOffset;
+	float cycle;
+	float flDiff;
+	float flSpeed;
+	float pitch;
+	vec3_t originalAngles;
+	vec3_t originalOrigin;
+	vec3_t originalViewAngles;
+	vec3_t forward, right, up;
+	vec3_t difference, negativeDifference;
+
+	if( !pparams || !view || !view->model )
+	{
+		haveLastFacing = 0;
+		lastModelIndex = -1;
+		return;
+	}
+
+	// CalcViewModelView passes the unbobbed eye angles to the lag routine.
+	VectorCopy( view->angles, originalAngles );
+
+	// Source CBaseHLCombatWeapon::CalcViewmodelBob.
+	// Keep its time-scaled cycle and 320-unit horizontal speed cap unchanged.
+	if( pparams->frametime != 0.0f )
+	{
+		speed = sqrt( pparams->simvel[0] * pparams->simvel[0] +
+			pparams->simvel[1] * pparams->simvel[1] );
+		speed = Q_max( -320.0f, Q_min( speed, 320.0f ) );
+		bobOffset = speed / 320.0f;
+
+		bobtime += ( pparams->time - lastbobtime ) * bobOffset;
+		lastbobtime = pparams->time;
+
+		// Vertical bob.
+		cycle = bobtime - (int)( bobtime / HL2_BOB_CYCLE_MAX ) * HL2_BOB_CYCLE_MAX;
+		cycle /= HL2_BOB_CYCLE_MAX;
+		if( cycle < HL2_BOB_UP )
+			cycle = M_PI_F * cycle / HL2_BOB_UP;
+		else
+			cycle = M_PI_F + M_PI_F * ( cycle - HL2_BOB_UP ) / ( 1.0f - HL2_BOB_UP );
+
+		verticalBob = speed * 0.005f;
+		verticalBob = verticalBob * 0.3f + verticalBob * 0.7f * sin( cycle );
+		verticalBob = Q_min( verticalBob, 4.0f );
+		verticalBob = Q_max( verticalBob, -7.0f );
+
+		// Lateral bob uses a cycle twice as long as the vertical cycle.
+		cycle = bobtime - (int)( bobtime / HL2_BOB_CYCLE_MAX * 2 ) *
+			HL2_BOB_CYCLE_MAX * 2;
+		cycle /= HL2_BOB_CYCLE_MAX * 2;
+		if( cycle < HL2_BOB_UP )
+			cycle = M_PI_F * cycle / HL2_BOB_UP;
+		else
+			cycle = M_PI_F + M_PI_F * ( cycle - HL2_BOB_UP ) / ( 1.0f - HL2_BOB_UP );
+
+		lateralBob = speed * 0.005f;
+		lateralBob = lateralBob * 0.3f + lateralBob * 0.7f * sin( cycle );
+		lateralBob = Q_min( lateralBob, 4.0f );
+		lateralBob = Q_max( lateralBob, -7.0f );
+	}
+
+	// Source CBaseHLCombatWeapon::AddViewmodelBob.
+	AngleVectors( view->angles, forward, right, NULL );
+	VectorMA( view->origin, verticalBob * 0.1f, forward, view->origin );
+	view->origin[2] += verticalBob * 0.1f;
+	view->angles[ROLL] += verticalBob * 0.5f;
+	view->angles[PITCH] -= verticalBob * 0.4f;
+	view->angles[YAW] -= lateralBob * 0.3f;
+	VectorMA( view->origin, lateralBob * 0.8f, right, view->origin );
+
+	// A viewmodel entity is reused for weapon changes. Rebase its lag vector
+	// when its model changes or the client clock moves backwards (map/demo reset).
+	AngleVectors( view->angles, forward, NULL, NULL );
+	if( !haveLastFacing || lastModelIndex != view->curstate.modelindex ||
+		pparams->time < lastViewTime )
+	{
+		VectorCopy( forward, lastFacing );
+		lastModelIndex = view->curstate.modelindex;
+		lastViewTime = pparams->time;
+		haveLastFacing = 1;
+	}
+	else if( pparams->frametime != 0.0f )
+	{
+		// Source CBaseViewModel::CalcViewModelLag.
+		VectorSubtract( forward, lastFacing, difference );
+		flSpeed = 5.0f;
+		flDiff = Length( difference );
+		if( flDiff > HL2_VIEWMODEL_LAG && HL2_VIEWMODEL_LAG > 0.0f )
+			flSpeed *= flDiff / HL2_VIEWMODEL_LAG;
+
+		VectorMA( lastFacing, flSpeed * pparams->frametime, difference, lastFacing );
+		VectorNormalize( lastFacing );
+		VectorScale( difference, -1.0f, negativeDifference );
+		VectorMA( view->origin, 5.0f, negativeDifference, view->origin );
+		lastViewTime = pparams->time;
+	}
+
+	// Source's pitch-dependent positional correction uses the original eye angles,
+	// not the already bobbed viewmodel angles.
+	VectorCopy( view->origin, originalOrigin );
+	VectorCopy( view->angles, originalViewAngles );
+	AngleVectors( originalAngles, forward, right, up );
+	pitch = originalAngles[PITCH];
+	if( pitch > 180.0f )
+		pitch -= 360.0f;
+	else if( pitch < -180.0f )
+		pitch += 360.0f;
+
+	// This is Source's default sv_viewmodel_lag_do_angles path with
+	// g_fMaxViewModelLag = 1.5. The zero-lag restore branch is inapplicable.
+	VectorMA( view->origin, -pitch * 0.035f, forward, view->origin );
+	VectorMA( view->origin, -pitch * 0.03f, right, view->origin );
+	VectorMA( view->origin, -pitch * 0.02f, up, view->origin );
+
+	(void)originalOrigin;
+	(void)originalViewAngles;
+}
+
+
+/*
 ===============
 V_CalcRoll
 Used by view and sv_user
@@ -590,17 +741,6 @@ void V_CalcNormalRefdef( struct ref_params_s *pparams )
 	// Let the viewmodel shake at about 10% of the amplitude
 	gEngfuncs.V_ApplyShake( view->origin, view->angles, 0.9f );
 
-	for( i = 0; i < 3; i++ )
-	{
-		view->origin[i] += bob * 0.4f * pparams->forward[i];
-	}
-	view->origin[2] += bob;
-
-	// throw in a little tilt.
-	view->angles[YAW] -= bob * 0.5f;
-	view->angles[ROLL] -= bob * 1.0f;
-	view->angles[PITCH] -= bob * 0.3f;
-
 	// pushing the view origin down off of the same X/Z plane as the ent's origin will give the
 	// gun a very nice 'shifting' effect when the player looks up/down. If there is a problem
 	// with view model distortion, this may be a cause. (SJB). 
@@ -723,6 +863,10 @@ void V_CalcNormalRefdef( struct ref_params_s *pparams )
 			}
 		}
 	}
+
+	// Source applies weapon-specific bob first, then BaseViewModel lag,
+	// after the player view and GoldSrc stair/train smoothing are finalized.
+	V_ApplyHL2ViewModelBobAndLag( pparams, view );
 
 	// Store off v_angles before munging for third person
 	v_angles = pparams->viewangles;
