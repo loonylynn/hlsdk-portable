@@ -3,6 +3,10 @@
 #include "hud.h"
 #include "cl_util.h"
 
+extern "C" int HUD_AuxPowerEditorIsActive( void );
+extern "C" void HUD_AuxPowerEditorMouseMove( float deltaX, float deltaY );
+extern "C" void HUD_AuxPowerEditorMouseButtons( int buttons );
+
 // shared between backends
 Vector dead_viewangles(0, 0, 0);
 cvar_t      *sensitivity;
@@ -23,6 +27,12 @@ extern "C"  void DLLEXPORT IN_ClientMoveEvent( float forwardmove, float sidemove
 
 extern "C" void DLLEXPORT IN_ClientLookEvent( float relyaw, float relpitch )
 {
+	if( HUD_AuxPowerEditorIsActive() )
+	{
+		HUD_AuxPowerEditorMouseMove( relyaw, relpitch );
+		return;
+	}
+
 	currentInput->IN_ClientLookEvent(relyaw, relpitch);
 }
 
@@ -33,6 +43,12 @@ void IN_Move( float frametime, usercmd_t *cmd )
 
 extern "C" void DLLEXPORT IN_MouseEvent( int mstate )
 {
+	if( HUD_AuxPowerEditorIsActive() )
+	{
+		HUD_AuxPowerEditorMouseButtons( mstate );
+		return;
+	}
+
 	currentInput->IN_MouseEvent(mstate);
 }
 
