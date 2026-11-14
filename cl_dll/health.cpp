@@ -44,6 +44,8 @@ static const wrect_t g_rcAuxHudFill = { 13, 66, 43, 52 };
 
 // Latest client-predicted aux reserve, updated by HUD_PlayerMove.
 float g_flHL2AuxPower = -1.0f;
+// Last authoritative value received through HUD_UpdateClientData.
+float g_flHL2AuxPowerClientData = -1.0f;
 
 static void AuxPower_EditCommand( void );
 static void AuxPower_CommitCommand( void );
@@ -403,8 +405,8 @@ static void AuxPower_PrintReport( void )
 	gEngfuncs.Con_Printf( "hud_auxpower_grid %d\n", grid );
 	gEngfuncs.Con_Printf( "hud_auxpower_snap %d\n",
 		( CVAR_GET_FLOAT( "hud_auxpower_snap" ) != 0.0f ) ? 1 : 0 );
-	gEngfuncs.Con_Printf( "auxpower predicted %.2f | player-state fuser4 %.2f\n",
-		g_flHL2AuxPower, flNetworkPower );
+	gEngfuncs.Con_Printf( "auxpower clientdata %.2f | predicted %.2f | entity-state %.2f\n",
+		g_flHL2AuxPowerClientData, g_flHL2AuxPower, flNetworkPower );
 	gEngfuncs.Con_Printf( "// anchor: top-left of the battery frame; reference space: 640x480\n" );
 	gEngfuncs.Con_Printf( "// battery bounds: %d x %d screen pixels; scale: 1.0\n",
 		width, height );
