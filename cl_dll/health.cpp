@@ -306,6 +306,7 @@ static void AuxPower_ClampPosition( int *x, int *y )
 
 	AuxPower_GetLayout( *x, *y, &left, &top, &width, &height,
 		&labelX, &labelY, &frameX, &frameY );
+	(void)left; (void)top; (void)labelX; (void)labelY; (void)frameX; (void)frameY;
 
 	maxX = 640 - AuxPower_ScreenToRefX( width );
 	maxY = 480 - AuxPower_ScreenToRefY( height );
@@ -349,6 +350,7 @@ static void AuxPower_PrintReport( void )
 	AuxPower_GetPosition( &x, &y );
 	AuxPower_GetLayout( x, y, &left, &top, &width, &height,
 		&labelX, &labelY, &frameX, &frameY );
+	(void)left; (void)top; (void)labelX; (void)labelY; (void)frameX; (void)frameY;
 
 	gEngfuncs.Con_Printf( "\n[AUX. POWER HUD] %s\n",
 		g_bAuxPowerEditorActive ? "PREVIEW (not committed)" : "CURRENT LAYOUT" );
@@ -406,6 +408,7 @@ static void AuxPower_StartEditor( void )
 	g_iAuxPowerPreviewY = y;
 	AuxPower_GetLayout( x, y, &left, &top, &width, &height,
 		&labelX, &labelY, &frameX, &frameY );
+	(void)labelX; (void)labelY; (void)frameX; (void)frameY;
 
 	g_iAuxPowerCursorX = left + width / 2;
 	g_iAuxPowerCursorY = top + height / 2;
@@ -601,7 +604,7 @@ extern "C" void DLLEXPORT HUD_AuxPowerEditorMouseMove( float deltaX, float delta
 
 extern "C" void DLLEXPORT HUD_AuxPowerEditorMouseButtons( int buttons )
 {
-	int x, y, left, top, width, height, labelX, labelY, frameX, frameY;
+	int left, top, width, height, labelX, labelY, frameX, frameY;
 	int leftDown = ( buttons & 1 ) != 0;
 	int wasLeftDown = ( g_iAuxPowerMouseButtons & 1 ) != 0;
 
