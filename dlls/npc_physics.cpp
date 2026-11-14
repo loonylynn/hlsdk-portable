@@ -576,7 +576,7 @@ namespace
 	}
 }
 
-int NPCPhysics_GetInterface( int version, physics_interface_t *callbacks )
+int NPCPhysics_GetInterface( int version, void *callbacks )
 {
 	if( version != XASH_SERVER_PHYSICS_INTERFACE_VERSION || !callbacks )
 		return FALSE;
@@ -586,6 +586,8 @@ int NPCPhysics_GetInterface( int version, physics_interface_t *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsPropMass );
 
 	xash_physics_interface_s *physics = reinterpret_cast<xash_physics_interface_s *>( callbacks );
+	if( !physics )
+		return FALSE;
 	memset( physics, 0, sizeof( *physics ) );
 	physics->SV_PhysicsEntity = NPCPhysics_PhysicsEntity;
 	physics->SV_EndFrame = NPCPhysics_EndFrame;
