@@ -3177,16 +3177,18 @@ void PM_PlayerMove( qboolean server )
 	physent_t *pLadder = NULL;
 
 	// Are we running server code?
-	pmove->server = server;                
+	pmove->server = server;
+
+	// Set the current command's frame duration before parameter processing.
+	// PM_UpdateHL2MovementSpeed() runs from PM_CheckParamters() and uses
+	// frametime to drain or recharge the auxiliary suit reserve.
+	pmove->frametime = pmove->cmd.msec * 0.001f;
 
 	// Adjust speeds etc.
 	PM_CheckParamters();
 
 	// Assume we don't touch anything
-	pmove->numtouch = 0;                    
-
-	// # of msec to apply movement
-	pmove->frametime = pmove->cmd.msec * 0.001f;
+	pmove->numtouch = 0;
 
 	PM_ReduceTimers();
 
