@@ -51,7 +51,7 @@ playermove_t *pmove = NULL;
 #define TIME_TO_UNDUCK		0.2f
 #define VEC_DUCK_HULL_MIN	-18
 #define VEC_DUCK_HULL_MAX	18
-#define VEC_DUCK_VIEW		12
+#define VEC_DUCK_VIEW		10
 #define PM_DEAD_VIEWHEIGHT	-8
 #define MAX_CLIMB_SPEED		200
 #define STUCK_MOVEUP		1
@@ -2290,6 +2290,10 @@ static qboolean PM_CanUnDuckJump( pmtrace_t *outTrace )
 		VectorCopy( pmove->origin, end );
 		end[2] -= heightDelta * trace.fraction;
 
+		// Source's endpoint is feet-origin. With centered GoldSrc hulls,
+		// move the standing-hull test point to the standing hull center.
+		end[2] += pmove->player_mins[1][2] - pmove->player_mins[0][2];
+
 		pmove->usehull = 0;
 		traceUp = pmove->PM_PlayerTrace( end, end, PM_NORMAL, -1 );
 		pmove->usehull = oldHull;
@@ -2315,9 +2319,11 @@ trace advances both the origin and eye offset by matching proportions.
 */
 static void PM_FinishUnDuckJump( const pmtrace_t *trace )
 {
-	float viewDelta = VEC_VIEW - VEC_DUCK_VIEW;
-	float originDelta = viewDelta * trace->fraction;
-	float remainingViewDelta = viewDelta - originDelta;
+	float hullHeightDelta = pmove->player_maxs[0][2] - pmove->player_mins[0][2] -
+		( pmove->player_maxs[1][2] - pmove->player_mins[1][2] );
+	float hullCenterDelta = pmove->player_mins[1][2] - pmove->player_mins[0][2];
+	float originDelta = hullHeightDelta * trace->fraction;
+	float remainingViewDelta = hullHeightDelta - originDelta;
 
 	pmove->usehull = 0;
 	pmove->flags &= ~FL_DUCKING;
@@ -2329,7 +2335,10 @@ static void PM_FinishUnDuckJump( const pmtrace_t *trace )
 	pmove->vuser2[0] = 0.0f;
 	pmove->vuser2[1] = 0.0f;
 	pmove->view_ofs[2] = VEC_VIEW - remainingViewDelta;
-	pmove->origin[2] -= originDelta;
+	// Convert Source's feet-origin handoff to GoldSrc's centered hulls.
+	// The center moves down by the full hull delta, plus the 18-unit
+	// difference between the ducked and standing hull centers.
+	pmove->origin[2] += hullCenterDelta - originDelta;
 
 	PM_CatagorizePosition();
 }
@@ -3093,7 +3102,9 @@ void PM_Jump( void )
 	}
 	else
 	{
-		pmove->velocity[2] = jump_velocity;
+		// Source adds the normal jump impulse to the velocity remaining after
+		// StartGravity; replacing it discards that half-frame gravity step.
+		pmove->velocity[2] += jump_velocity;
 	}
 
 	// HL2 single-player jump boost. It preserves the direction of the
