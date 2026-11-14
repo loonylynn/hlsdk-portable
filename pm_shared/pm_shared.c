@@ -2090,12 +2090,13 @@ fixed, as Source does when changing between the two hulls.
 static void PM_GetUnDuckOrigin( vec3_t newOrigin )
 {
 	float heightDiff;
+	int i;
 
 	VectorCopy( pmove->origin, newOrigin );
 
 	if( pmove->onground != -1 )
 	{
-		for( int i = 0; i < 3; i++ )
+		for( i = 0; i < 3; i++ )
 			newOrigin[i] += pmove->player_mins[1][i] - pmove->player_mins[0][i];
 	}
 	else
@@ -2123,11 +2124,31 @@ static qboolean PM_CanUnDuck( void )
 
 	PM_GetUnDuckOrigin( newOrigin );
 
-	pmove->usehull = 0;
+	// GoldSrc keeps the player's origin at a different height for its
+	// standing and crouched hulls. First verify that the crouched hull can
+	// make the small origin adjustment, then test the standing hull at the
+	// final position. Sweeping the standing hull from the crouched origin
+	// would begin 18 units inside the floor in GoldSrc's hull convention.
+	pmove->usehull = 1;
 	trace = pmove->PM_PlayerTrace( pmove->origin, newOrigin, PM_NORMAL, -1 );
+	if( trace.startsolid || trace.fraction != 1.0f )
+	{
+		pmove->usehull = oldHull;
+		return false;
+	}
+
+	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
+	if( trace.startsolid )
+	{
+		pmove->usehull = oldHull;
+		return false;
+	}
+
+	pmove->usehull = 0;
+	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
 	pmove->usehull = oldHull;
 
-	return ( !trace.startsolid && trace.fraction == 1.0f );
+	return ( !trace.startsolid && !trace.allsolid );
 }
 
 /*
@@ -2183,6 +2204,7 @@ second time.
 static void PM_FinishDuck( void )
 {
 	int wasDucked = ( pmove->flags & FL_DUCKING ) != 0;
+	int i;
 	float heightDiff;
 
 	pmove->usehull = 1;
@@ -2195,7 +2217,7 @@ static void PM_FinishDuck( void )
 	{
 		if( pmove->onground != -1 )
 		{
-			for( int i = 0; i < 3; i++ )
+			for( i = 0; i < 3; i++ )
 				pmove->origin[i] -= ( pmove->player_mins[1][i] - pmove->player_mins[0][i] );
 
 			// See if we are stuck?
