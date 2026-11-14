@@ -682,6 +682,7 @@
 #define HL2_PM_WALKING		(1 << 2)
 #define HL2_PM_DUCK_ORIGIN_SHIFTED	(1 << 4) // GoldSrc centered-hull crouch origin offset
 #define HL2_PM_DUCK_AIR_OFFSET		(1 << 5) // Airborne duck eye-position compensation
+#define HL2_PM_IN_DUCK_JUMP		(1 << 6) // Source m_bInDuckJump
 
 // Break Model Defines
 #define BREAK_TYPEMASK		0x4F
