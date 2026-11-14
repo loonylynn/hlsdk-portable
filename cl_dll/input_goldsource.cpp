@@ -145,7 +145,7 @@ extern cvar_t *cl_yawspeed;
 extern cvar_t *cl_sidespeed;
 extern cvar_t *cl_forwardspeed;
 extern cvar_t *cl_pitchspeed;
-extern cvar_t *cl_movespeedkey;
+extern cvar_t *cl_anglespeedkey;
 
 #if XASH_WIN32
 static cvar_t* m_rawinput = NULL;
@@ -1407,7 +1407,7 @@ void GoldSourceInput::IN_JoyMove ( float frametime, usercmd_t *cmd )
 	}
 
 	if (in_speed.state & 1)
-		speed = cl_movespeedkey->value;
+		speed = cl_anglespeedkey->value;
 	else
 		speed = 1;
 
@@ -1485,7 +1485,7 @@ void GoldSourceInput::IN_JoyMove ( float frametime, usercmd_t *cmd )
 				// user wants forward control to be forward control
 				if (fabs(fAxisValue) > joy_forwardthreshold->value)
 				{
-					cmd->forwardmove += (fAxisValue * joy_forwardsensitivity->value) * speed * cl_forwardspeed->value;
+					cmd->forwardmove += (fAxisValue * joy_forwardsensitivity->value) * cl_forwardspeed->value;
 				}
 			}
 			break;
@@ -1493,7 +1493,7 @@ void GoldSourceInput::IN_JoyMove ( float frametime, usercmd_t *cmd )
 		case AxisSide:
 			if (fabs(fAxisValue) > joy_sidethreshold->value)
 			{
-				cmd->sidemove += (fAxisValue * joy_sidesensitivity->value) * speed * cl_sidespeed->value;
+				cmd->sidemove += (fAxisValue * joy_sidesensitivity->value) * cl_sidespeed->value;
 			}
 			break;
 
@@ -1503,7 +1503,7 @@ void GoldSourceInput::IN_JoyMove ( float frametime, usercmd_t *cmd )
 				// user wants turn control to become side control
 				if (fabs(fAxisValue) > joy_sidethreshold->value)
 				{
-					cmd->sidemove -= (fAxisValue * joy_sidesensitivity->value) * speed * cl_sidespeed->value;
+					cmd->sidemove -= (fAxisValue * joy_sidesensitivity->value) * cl_sidespeed->value;
 				}
 			}
 			else
