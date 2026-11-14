@@ -22,6 +22,7 @@ struct ragdoll_entity_pose_t
 	int boneCount;
 	float lastUpdateTime;
 	bool active;
+	bool renderReported;
 	ragdoll_bone_pose_t bones[MAX_RAGDOLL_BONES];
 };
 
@@ -121,7 +122,7 @@ int Ragdoll_GetBoneTransform( int entityIndex, int boneIndex, float transform[3]
 		boneIndex < 0 || boneIndex >= MAX_RAGDOLL_BONES )
 		return 0;
 
-	const ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
+	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
 	if( !entry.active || entry.ragdollID <= 0 ||
 		boneIndex >= entry.boneCount || !entry.bones[boneIndex].valid )
 		return 0;
@@ -137,6 +138,12 @@ int Ragdoll_GetBoneTransform( int entityIndex, int boneIndex, float transform[3]
 	{
 		if( !entry.bones[i].valid )
 			return 0;
+	}
+
+	if( !entry.renderReported )
+	{
+		Con_Printf( "[NPC ragdoll] Applying pose for entity %d, ID %d.\\n", entityIndex, entry.ragdollID );
+		entry.renderReported = true;
 	}
 
 	const ragdoll_bone_pose_t &bone = entry.bones[boneIndex];
