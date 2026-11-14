@@ -2984,6 +2984,11 @@ static void PM_UpdateHL2MovementSpeed( void )
 			bSprinting = 0;
 	}
 
+	// Source's HandleSpeedChanges stops sprint when the reserve is below
+	// 0.01%, even if the last device-drain step landed exactly on zero.
+	if( flPower < 0.01f )
+		bSprinting = 0;
+
 	// CHL2_Player::PreThink also stops a manual sprint when fully ducked
 	// on the ground. In Source this is separate from CanSprint().
 	if( bSprinting && bFullyDucked && pmove->onground != -1 )
