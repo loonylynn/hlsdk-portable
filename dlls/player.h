@@ -166,10 +166,6 @@ public:
 	BOOL			m_fNoPlayerSound;	// a debugging feature. Player makes no sound if this is true. 
 	BOOL			m_fLongJump; // does this player have the longjump module?
 
-	// HL2-style auxiliary suit power, separate from armor battery.
-	float				m_flSuitPower;
-	float				m_flSuitPowerRechargeTime;
-	BOOL				m_bIsSprinting;
 
 	float       m_tSneaking;
 	int			m_iUpdateTime;		// stores the number of frame ticks before sending HUD update messages
