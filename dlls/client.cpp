@@ -1763,6 +1763,14 @@ void UpdateClientData( const struct edict_s *ent, int sendweapons, struct client
 		cd->iuser1		= pev->iuser1;
 		cd->iuser2		= pev->iuser2;
 	}
+
+	// Preserve the shared player-movement user fields for client prediction.
+	cd->iuser3		= pev->iuser3;
+	cd->iuser4		= pev->iuser4;
+	cd->fuser1		= pev->fuser1;
+	cd->fuser4		= pev->fuser4;
+	cd->vuser3		= pev->vuser3;
+	cd->vuser4		= pev->vuser4;
 #if CLIENT_WEAPONS
 	if( sendweapons )
 	{
