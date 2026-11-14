@@ -180,9 +180,16 @@ char DLLEXPORT HUD_PlayerMoveTexture( char *name )
 	return PM_FindTextureType( name );
 }
 
+extern float g_flHL2AuxPower;
+
 void DLLEXPORT HUD_PlayerMove( struct playermove_s *ppmove, int server )
 {
 	PM_Move( ppmove, server );
+
+	// Keep the HUD in step with client prediction instead of waiting for
+	// the next replicated player-state update.
+	if( !server && ppmove )
+		g_flHL2AuxPower = ppmove->fuser4;
 }
 
 int DLLEXPORT Initialize( cl_enginefunc_t *pEnginefuncs, int iVersion )
