@@ -44,8 +44,15 @@ static const wrect_t g_rcAuxHudFill = { 13, 66, 43, 52 };
 
 // Latest client-predicted aux reserve, updated by HUD_PlayerMove.
 float g_flHL2AuxPower = -1.0f;
-// Reserve copied from the post-prediction local_state_t result.
+// Reserve and PM settings copied from the post-prediction local_state_t result.
 float g_flHL2AuxPowerPostRun = -1.0f;
+float g_flHL2AuxPowerFrom = -1.0f;
+float g_flHL2AuxDrainRate = -1.0f;
+float g_flHL2AuxRechargeRate = -1.0f;
+float g_flHL2AuxStartMinimum = -1.0f;
+int g_iHL2AuxFlagsFrom = 0;
+int g_iHL2AuxFlagsPost = 0;
+int g_iHL2AuxButtons = 0;
 
 static void AuxPower_EditCommand( void );
 static void AuxPower_CommitCommand( void );
@@ -405,8 +412,12 @@ static void AuxPower_PrintReport( void )
 	gEngfuncs.Con_Printf( "hud_auxpower_grid %d\n", grid );
 	gEngfuncs.Con_Printf( "hud_auxpower_snap %d\n",
 		( CVAR_GET_FLOAT( "hud_auxpower_snap" ) != 0.0f ) ? 1 : 0 );
-	gEngfuncs.Con_Printf( "auxpower post-run %.2f | predicted %.2f | entity-state %.2f\n",
-		g_flHL2AuxPowerPostRun, g_flHL2AuxPower, flNetworkPower );
+	gEngfuncs.Con_Printf( "auxpower from %.2f | post-run %.2f | predicted %.2f | entity-state %.2f\n",
+		g_flHL2AuxPowerFrom, g_flHL2AuxPowerPostRun, g_flHL2AuxPower, flNetworkPower );
+	gEngfuncs.Con_Printf( "PM flags from 0x%08x -> 0x%08x | buttons 0x%08x\n",
+		g_iHL2AuxFlagsFrom, g_iHL2AuxFlagsPost, g_iHL2AuxButtons );
+	gEngfuncs.Con_Printf( "PM power rates: drain %.2f | recharge %.2f | sprint minimum %.2f\n",
+		g_flHL2AuxDrainRate, g_flHL2AuxRechargeRate, g_flHL2AuxStartMinimum );
 	gEngfuncs.Con_Printf( "// anchor: top-left of the battery frame; reference space: 640x480\n" );
 	gEngfuncs.Con_Printf( "// battery bounds: %d x %d screen pixels; scale: 1.0\n",
 		width, height );
