@@ -1122,11 +1122,10 @@ void SetupVisibility( edict_t *pViewEntity, edict_t *pClient, unsigned char **pv
 	}
 	else
 	{
+		// PM_Move returns the HL1-centered entity origin and a view offset
+		// already converted from Source's feet-origin convention. The eye
+		// position is therefore origin + view_ofs for both hull states.
 		org = pView->v.origin + pView->v.view_ofs;
-		if( pView->v.flags & FL_DUCKING )
-		{
-			org = org + ( VEC_HULL_MIN - VEC_DUCK_HULL_MIN );
-		}
 	}
 
 	*pvs = ENGINE_SET_PVS( org );
@@ -1942,14 +1941,14 @@ int GetHullBounds( int hullnumber, float *mins, float *maxs )
 
 	switch( hullnumber )
 	{
-	case 0:				// Normal player
-		VEC_HULL_MIN.CopyToArray(mins);
-		VEC_HULL_MAX.CopyToArray(maxs);
+	case 0:				// Source standing player hull (feet-origin)
+		Vector( -16, -16, 0 ).CopyToArray(mins);
+		Vector(  16,  16, 72 ).CopyToArray(maxs);
 		iret = 1;
 		break;
-	case 1:				// Crouched player
-		VEC_DUCK_HULL_MIN.CopyToArray(mins);
-		VEC_DUCK_HULL_MAX.CopyToArray(maxs);
+	case 1:				// Source ducked player hull (feet-origin)
+		Vector( -16, -16, 0 ).CopyToArray(mins);
+		Vector(  16,  16, 36 ).CopyToArray(maxs);
 		iret = 1;
 		break;
 	case 2:				// Point based hull
