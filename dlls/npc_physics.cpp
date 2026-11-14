@@ -639,8 +639,12 @@ namespace
 			return;
 		deltaTime = std::min( deltaTime, RAGDOLL_MAX_FRAME_TIME );
 
-		const float gravityScale = gpGlobals ? std::max( 0.0f, gpGlobals->gravity ) : 1.0f;
-		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -800.0f * gravityScale ) );
+		// GoldSrc's sv_gravity is already expressed in world units/sec^2
+		// (normally 800), not as a normalized multiplier.
+		float gravity = NPCPhysics_GetCvar( "sv_gravity", 800.0f );
+		if( gravity < 0.0f )
+			gravity = 800.0f;
+		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -gravity ) );
 
 		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
 		for( size_t r = 0; r < g_ragdolls.size(); ++r )
