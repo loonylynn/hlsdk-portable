@@ -678,7 +678,7 @@
 // HL2 movement and suit-power state carried in the player's existing iuser4 field.
 #define HL2_PM_HAS_SUIT			(1 << 0)
 #define HL2_PM_SPRINTING		(1 << 1) // Source m_bNewSprinting
-#define HL2_PM_DEVICE_SPRINT	(1 << 2) // Source m_bitsActiveDevices sprint bit
+#define HL2_PM_DEVICE_SPRINT	(1 << 3) // Source m_bitsActiveDevices sprint bit
 #define HL2_PM_WALKING		(1 << 2)
 
 // Break Model Defines
