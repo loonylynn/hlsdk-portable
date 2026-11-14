@@ -166,6 +166,11 @@ public:
 	BOOL			m_fNoPlayerSound;	// a debugging feature. Player makes no sound if this is true. 
 	BOOL			m_fLongJump; // does this player have the longjump module?
 
+	// HL2-style auxiliary suit power, separate from armor battery.
+	float				m_flSuitPower;
+	float				m_flSuitPowerRechargeTime;
+	BOOL				m_bIsSprinting;
+
 	float       m_tSneaking;
 	int			m_iUpdateTime;		// stores the number of frame ticks before sending HUD update messages
 	int			m_iClientHealth;	// the health currently known by the client.  If this changes, send a new
@@ -209,6 +214,7 @@ public:
 	virtual void Jump( void );
 	virtual void Duck( void );
 	virtual void PreThink( void );
+	void UpdateMovementSpeed( void );
 	virtual void PostThink( void );
 	virtual Vector GetGunPosition( void );
 	virtual int TakeHealth( float flHealth, int bitsDamageType );
