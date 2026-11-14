@@ -13,7 +13,6 @@
 
 #include "extdll.h"
 #include "util.h"
-#include "cbase.h"
 #include "eiface.h"
 #include "enginecallback.h"
 #include "xash_physint.h"
@@ -312,11 +311,8 @@ namespace
 		if( !NPCPhysics_GetStudioHeader( ent, &header ) )
 			return false;
 
-		CBaseEntity *baseEntity = CBaseEntity::Instance( ent );
-		if( !baseEntity )
+		if( !g_engfuncs.pfnGetBonePosition )
 			return false;
-
-		CBaseAnimating *animating = static_cast<CBaseAnimating *>( baseEntity );
 		mstudiobone_t *studioBones = reinterpret_cast<mstudiobone_t *>(
 			reinterpret_cast<byte *>( header ) + header->boneindex
 		);
@@ -342,7 +338,12 @@ namespace
 
 		for( int i = 0; i < ragdoll.boneCount; ++i )
 		{
-			animating->GetBonePosition( i, bonePositions[i], boneAngles[i] );
+			g_engfuncs.pfnGetBonePosition(
+				ent,
+				i,
+				&bonePositions[i][0],
+				&boneAngles[i][0]
+			);
 
 			if( studioBones[i].parent < -1 || studioBones[i].parent >= ragdoll.boneCount )
 				return false;
