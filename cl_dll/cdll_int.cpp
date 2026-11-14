@@ -182,15 +182,29 @@ char DLLEXPORT HUD_PlayerMoveTexture( char *name )
 }
 
 extern float g_flHL2AuxPower;
+extern int g_iHL2AuxPMFlagsIn;
+extern int g_iHL2AuxPMFlagsOut;
+extern float g_flHL2AuxPMPowerIn;
+extern float g_flHL2AuxPMPowerOut;
 
 void DLLEXPORT HUD_PlayerMove( struct playermove_s *ppmove, int server )
 {
+	// Capture the exact movement state supplied by Xash3D before shared PM
+	// modifies it. This is distinct from HUD_PostRunCmd's local_state data.
+	if( !server && ppmove )
+	{
+		g_iHL2AuxPMFlagsIn = ppmove->iuser4;
+		g_flHL2AuxPMPowerIn = ppmove->fuser4;
+	}
+
 	PM_Move( ppmove, server );
 
-	// Keep the HUD in step with client prediction instead of waiting for
-	// the next replicated player-state update.
 	if( !server && ppmove )
+	{
+		g_iHL2AuxPMFlagsOut = ppmove->iuser4;
+		g_flHL2AuxPMPowerOut = ppmove->fuser4;
 		g_flHL2AuxPower = ppmove->fuser4;
+	}
 }
 
 int DLLEXPORT Initialize( cl_enginefunc_t *pEnginefuncs, int iVersion )
