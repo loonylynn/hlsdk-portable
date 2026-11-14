@@ -2245,7 +2245,7 @@ void PM_Duck( void )
 		{
 			// Start ducking only on the press edge, when neither fully ducked
 			// nor already transitioning.
-			if( ( buttonsPressed & IN_DUCK ) && !bInDuck && !pmove->bInDuck )
+			if( ( buttonsPressed & IN_DUCK ) && !bInDuck )
 			{
 				pmove->flDuckTime = 1000;
 				pmove->bInDuck = true;
