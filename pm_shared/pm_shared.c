@@ -2066,19 +2066,26 @@ static qboolean PM_CanUnDuck( void )
 	vec3_t newOrigin;
 	int oldHull = pmove->usehull;
 
+	// If the standing hull is already active (the player released duck
+	// before the duck transition completed), there is no hull expansion.
 	if( !( pmove->flags & FL_DUCKING ) )
 		return true;
 
 	PM_GetUnDuckOrigin( newOrigin );
 
-	// Source temporarily selects the standing hull, then traces the complete
-	// origin handoff. This catches obstructions between the crouched and
-	// standing positions as well as at the endpoint.
+	// GoldSrc uses centered hulls, unlike Source's bottom-origin player.
+	// Test the current crouched hull at the adjusted position, then test
+	// the standing hull at that same endpoint. Sweeping a standing hull
+	// from the crouched origin incorrectly starts it below the floor.
+	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
+	if( trace.startsolid )
+		return false;
+
 	pmove->usehull = 0;
-	trace = pmove->PM_PlayerTrace( pmove->origin, newOrigin, PM_NORMAL, -1 );
+	trace = pmove->PM_PlayerTrace( newOrigin, newOrigin, PM_NORMAL, -1 );
 	pmove->usehull = oldHull;
 
-	return !trace.startsolid && trace.fraction == 1.0f;
+	return !trace.startsolid;
 }
 
 /*
