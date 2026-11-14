@@ -2082,8 +2082,6 @@ static qboolean PM_CanUnDuck( void )
 }
 
 /*
-
-/*
 ==================
 PM_FixPlayerCrouchStuck
 
@@ -2215,17 +2213,15 @@ static void PM_SetDuckedEyeOffset( float duckFraction )
 
 /*
 ==================
-PM_Duck
+Source duck-jump helpers and shared PM_Duck state machine.
 
-Direct shared-PMove translation of Source CGameMovement::Duck.
-
-Field mapping:
-	FL_DUCKING -> Source m_bDucked / player FL_DUCKING
+State mapping:
+	FL_DUCKING -> Source m_bDucked
 	bInDuck    -> Source m_bDucking
-	flDuckTime -> Source m_flDucktime (1000 ms countdown)
-
-The duck-down and unduck transitions share the same positive countdown.
-No negative timer sentinels or extra playermove_t fields are used.
+	flDuckTime -> Source m_flDucktime
+	iuser4 bit -> Source m_bInDuckJump
+	vuser2[0]  -> Source m_flDuckJumpTime
+	vuser2[1]  -> Source m_flJumpTime
 ==================
 */
 /*
@@ -2514,7 +2510,9 @@ void PM_Duck( void )
 
 			if( PM_CanUnDuck() )
 			{
-				if( pmove->bInDuck || bInDuck )
+				// FinishUnDuckJump may have cleared FL_DUCKING earlier in
+				// this same call, so inspect the live state like Source does.
+				if( pmove->bInDuck || ( pmove->flags & FL_DUCKING ) )
 				{
 					duckMilliseconds = max( 0.0f,
 						1000.0f - (float)pmove->flDuckTime );
