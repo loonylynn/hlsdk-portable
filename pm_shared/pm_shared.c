@@ -2921,6 +2921,135 @@ void PM_DropPunchAngle( vec3_t punchangle )
 
 /*
 ==============
+PM_UpdateHL2MovementSpeed
+
+Selects the HL2 walk/run/sprint speed and advances the auxiliary suit
+power reserve in shared client/server movement state. The fields used here
+are existing GoldSrc playermove user fields, not new network structures.
+==============
+*/
+static void PM_UpdateHL2MovementSpeed( void )
+{
+	float flWalkSpeed;
+	float flNormalSpeed;
+	float flSprintSpeed;
+	float flDrainRate;
+	float flRechargeRate;
+	float flStartMinimum;
+	float flPower;
+	float flFrameTime;
+	float flHorizontalSpeedSqr;
+	float flSelectedSpeed;
+	int bHasSuit;
+	int bWasSprinting;
+	int bSprinting;
+	int bCanSprint;
+	int bWantsSprint;
+	int bWantsWalking;
+	int bStoppedSprinting;
+
+	flWalkSpeed = ( pmove->vuser3[0] > 1.0f ) ? pmove->vuser3[0] : 150.0f;
+	flNormalSpeed = ( pmove->vuser3[1] > 1.0f ) ? pmove->vuser3[1] : 190.0f;
+	flSprintSpeed = ( pmove->vuser3[2] > 1.0f ) ? pmove->vuser3[2] : 320.0f;
+
+	flDrainRate = ( pmove->vuser4[0] >= 0.0f ) ? pmove->vuser4[0] : 12.5f;
+	flRechargeRate = ( pmove->vuser4[1] >= 0.0f ) ? pmove->vuser4[1] : 12.5f;
+	flStartMinimum = ( pmove->vuser4[2] >= 0.0f ) ? pmove->vuser4[2] : 10.0f;
+	flFrameTime = ( pmove->frametime > 0.0f ) ? pmove->frametime : 0.0f;
+
+	bHasSuit = ( pmove->iuser4 & HL2_PM_HAS_SUIT ) != 0;
+	bWasSprinting = ( pmove->iuser4 & HL2_PM_SPRINTING ) != 0;
+	bSprinting = bWasSprinting;
+
+	flPower = pmove->fuser4;
+	if( flPower < 0.0f )
+		flPower = 0.0f;
+	else if( flPower > 100.0f )
+		flPower = 100.0f;
+
+	if( !bHasSuit )
+	{
+		pmove->iuser4 &= ~HL2_PM_SPRINTING;
+		pmove->fuser4 = flPower;
+		pmove->maxspeed = min( pmove->maxspeed, flWalkSpeed );
+		return;
+	}
+
+	bCanSprint = !pmove->dead && ( pmove->waterlevel != 3 ) &&
+		!( pmove->flags & ( FL_DUCKING | FL_ONTRAIN | FL_FROZEN ) ) &&
+		!( pmove->cmd.buttons & IN_DUCK );
+
+	bWantsSprint = bCanSprint && ( pmove->cmd.buttons & IN_SPEED );
+	if( !bWantsSprint || flPower <= 0.01f )
+	{
+		bSprinting = false;
+	}
+	else if( !bSprinting && flPower >= flStartMinimum )
+	{
+		bSprinting = true;
+	}
+
+	flHorizontalSpeedSqr = pmove->velocity[0] * pmove->velocity[0] +
+		pmove->velocity[1] * pmove->velocity[1];
+
+	if( bSprinting && flHorizontalSpeedSqr > 0.01f )
+	{
+		flPower -= flDrainRate * flFrameTime;
+		if( flPower <= 0.01f )
+		{
+			flPower = 0.0f;
+			bSprinting = false;
+		}
+	}
+
+	bStoppedSprinting = bWasSprinting && !bSprinting;
+	if( bSprinting )
+	{
+		// No recharge while sprint is active.
+		pmove->fuser1 = 0.5f;
+	}
+	else if( bStoppedSprinting )
+	{
+		// HL2's device-removal penalty prevents rapid sprint tapping.
+		flPower -= flDrainRate * 0.1f;
+		if( flPower < 0.0f )
+			flPower = 0.0f;
+		pmove->fuser1 = 0.5f;
+	}
+	else if( pmove->fuser1 > 0.0f )
+	{
+		pmove->fuser1 -= flFrameTime;
+		if( pmove->fuser1 < 0.0f )
+			pmove->fuser1 = 0.0f;
+	}
+	else if( flPower < 100.0f )
+	{
+		flPower += flRechargeRate * flFrameTime;
+		if( flPower > 100.0f )
+			flPower = 100.0f;
+	}
+
+	pmove->fuser4 = flPower;
+	if( bSprinting )
+		pmove->iuser4 |= HL2_PM_SPRINTING;
+	else
+		pmove->iuser4 &= ~HL2_PM_SPRINTING;
+
+	bWantsWalking = ( pmove->cmd.buttons & IN_WALK ) &&
+		!bSprinting && !( pmove->cmd.buttons & IN_DUCK );
+
+	if( bSprinting )
+		flSelectedSpeed = flSprintSpeed;
+	else if( bWantsWalking )
+		flSelectedSpeed = flWalkSpeed;
+	else
+		flSelectedSpeed = flNormalSpeed;
+
+	pmove->maxspeed = min( pmove->maxspeed, flSelectedSpeed );
+}
+
+/*
+==============
 PM_CheckParamters
 
 ==============
@@ -2930,6 +3059,8 @@ void PM_CheckParamters( void )
 	float spd;
 	float maxspeed;
 	vec3_t v_angle;
+
+	PM_UpdateHL2MovementSpeed();
 
 	spd = ( pmove->cmd.forwardmove * pmove->cmd.forwardmove ) + ( pmove->cmd.sidemove * pmove->cmd.sidemove ) +
 		( pmove->cmd.upmove * pmove->cmd.upmove );
