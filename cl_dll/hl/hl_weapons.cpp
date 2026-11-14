@@ -1043,15 +1043,35 @@ be ignored
 =====================
 */
 extern float g_flHL2AuxPowerPostRun;
+extern float g_flHL2AuxPowerFrom;
+extern float g_flHL2AuxDrainRate;
+extern float g_flHL2AuxRechargeRate;
+extern float g_flHL2AuxStartMinimum;
+extern int g_iHL2AuxFlagsFrom;
+extern int g_iHL2AuxFlagsPost;
+extern int g_iHL2AuxButtons;
 
 void _DLLEXPORT HUD_PostRunCmd( struct local_state_s *from, struct local_state_s *to, struct usercmd_s *cmd, int runfuncs, double time, unsigned int random_seed )
 {
 	g_runfuncs = runfuncs;
 
-	// local_state_t is the real prediction result; its client sub-structure
-	// carries the custom movement fields copied through Xash3D's PM pipeline.
+	// Capture the playerdata entering and leaving prediction, plus the
+	// settings and button/flag state that determine suit-device activity.
+	if( from )
+	{
+		g_flHL2AuxPowerFrom = from->client.fuser4;
+		g_iHL2AuxFlagsFrom = from->client.iuser4;
+	}
 	if( to )
+	{
 		g_flHL2AuxPowerPostRun = to->client.fuser4;
+		g_flHL2AuxDrainRate = to->client.vuser4[0];
+		g_flHL2AuxRechargeRate = to->client.vuser4[1];
+		g_flHL2AuxStartMinimum = to->client.vuser4[2];
+		g_iHL2AuxFlagsPost = to->client.iuser4;
+	}
+	if( cmd )
+		g_iHL2AuxButtons = cmd->buttons;
 
 #if CLIENT_WEAPONS
 	if( cl_lw && cl_lw->value )
