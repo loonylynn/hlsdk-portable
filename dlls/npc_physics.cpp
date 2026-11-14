@@ -538,7 +538,7 @@ namespace
 			// normal swept-center trace then reports allsolid and cannot
 			// recover it. Try a short vertical sweep around its new position;
 			// accept only an upward-facing world surface (normally the floor).
-			if( trace.fAllSolid )
+			if( trace.fStartSolid || trace.fAllSolid )
 			{
 				const float recoveryDistance = 32.0f;
 				const float recoveryStart[3] = {
