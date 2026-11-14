@@ -3331,7 +3331,8 @@ void CBasePlayer::Spawn( void )
 	m_afPhysicsFlags = 0;
 	m_fLongJump = FALSE;// no longjump module. 
 	pev->iuser4 &= ~( HL2_PM_HAS_SUIT | HL2_PM_SPRINTING |
-		HL2_PM_DEVICE_SPRINT | HL2_PM_WALKING );
+		HL2_PM_DEVICE_SPRINT | HL2_PM_WALKING |
+		HL2_PM_DUCK_ORIGIN_SHIFTED );
 	pev->fuser1 = 0.0f; // time all auxiliary suit devices were last turned off
 	pev->fuser2 = 0.0f; // combined auxiliary suit device power load
 	pev->fuser4 = 100.0f; // auxiliary suit power, separate from armor battery
