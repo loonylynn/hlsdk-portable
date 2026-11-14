@@ -40,6 +40,8 @@ DECLARE_MESSAGE( m_Health, Damage )
 
 // Auxiliary power HUD sheet: frame and fill are cropped from one 80x64 sprite.
 static HSPRITE g_hAuxHudSprite = 0;
+// Fades the AUX meter in/out using HL2's 0.4-second suit-power animation.
+static float g_flAuxHudVisibility = 0.0f;
 static const wrect_t g_rcAuxHudFrame = { 9, 72, 7, 24 };
 static const wrect_t g_rcAuxHudFill = { 13, 66, 43, 52 };
 
@@ -101,6 +103,7 @@ int CHudHealth::Init( void )
 	gEngfuncs.pfnAddCommand( "hud_auxpower_report", AuxPower_ReportCommand );
 	m_iHealth = 100;
 	m_fFade = 0;
+	g_flAuxHudVisibility = 0.0f;
 	m_iFlags = 0;
 	m_bitsDamage = 0;
 	m_fAttackFront = m_fAttackRear = m_fAttackRight = m_fAttackLeft = 0;
@@ -115,6 +118,8 @@ int CHudHealth::Init( void )
 
 void CHudHealth::Reset( void )
 {
+	g_flAuxHudVisibility = 0.0f;
+
 	// make sure the pain compass is cleared when the player respawns
 	m_fAttackFront = m_fAttackRear = m_fAttackRight = m_fAttackLeft = 0;
 
@@ -629,15 +634,42 @@ static void AuxPower_DrawEditorOverlay( int x, int y, int width, int height )
 static void DrawAuxPowerMeter( float flPower )
 {
 	int r, g, b;
+	int fillR, fillG, fillB;
+	int frameR, frameG, frameB;
 	int x, y, left, top, width, height;
 	int labelX, labelY, frameX, frameY;
 	int iEmptyWidth;
+	int iFillAlpha, iFrameAlpha;
 	wrect_t rcFill;
+	bool bSprinting = ( g_iHL2AuxFlagsPost & HL2_PM_SPRINTING ) != 0;
 
+	// Do not treat an uninitialized prediction value as an empty reserve.
 	if( flPower < 0.0f )
-		flPower = 0.0f;
+		flPower = 100.0f;
 	else if( flPower > 100.0f )
 		flPower = 100.0f;
+
+	// HL2 hides the suit-power display at full charge and shows it once
+	// any suit device has consumed power. Its HUD animation fades over 0.4s.
+	float flVisibilityStep = gHUD.m_flTimeDelta / 0.4f;
+	if( flVisibilityStep < 0.0f )
+		flVisibilityStep = 0.0f;
+
+	if( flPower < 100.0f || g_bAuxPowerEditorActive )
+	{
+		g_flAuxHudVisibility += flVisibilityStep;
+		if( g_flAuxHudVisibility > 1.0f )
+			g_flAuxHudVisibility = 1.0f;
+	}
+	else
+	{
+		g_flAuxHudVisibility -= flVisibilityStep;
+		if( g_flAuxHudVisibility < 0.0f )
+			g_flAuxHudVisibility = 0.0f;
+	}
+
+	if( g_flAuxHudVisibility <= 0.0f && !g_bAuxPowerEditorActive )
+		return;
 
 	// Use the HUD accent normally and the stock HUD red as a low-power warning.
 	if( flPower <= 20.0f )
@@ -645,11 +677,17 @@ static void DrawAuxPowerMeter( float flPower )
 	else
 		UnpackRGB( r, g, b, RGB_YELLOWISH );
 
-	// Use the flashlight HUD's active brightness while sprinting.
-	// The sprite remains additive; sprinting raises its alpha just like the
-	// flashlight casing/charge indicator does when the flashlight is switched on.
-	int iFillAlpha = ( g_iHL2AuxFlagsPost & HL2_PM_SPRINTING ) ? 225 : MIN_ALPHA;
-	ScaleColors( r, g, b, iFillAlpha );
+	// Fade both sprite pieces with the same overall visibility envelope.
+	// Only the fill gets the flashlight-like brightness boost while sprinting.
+	fillR = frameR = r;
+	fillG = frameG = g;
+	fillB = frameB = b;
+	iFillAlpha = bSprinting ? 225 : MIN_ALPHA;
+	iFrameAlpha = MIN_ALPHA;
+	iFillAlpha = (int)( (float)iFillAlpha * g_flAuxHudVisibility + 0.5f );
+	iFrameAlpha = (int)( (float)iFrameAlpha * g_flAuxHudVisibility + 0.5f );
+	ScaleColors( fillR, fillG, fillB, iFillAlpha );
+	ScaleColors( frameR, frameG, frameB, iFrameAlpha );
 
 	AuxPower_GetPosition( &x, &y );
 	AuxPower_GetLayout( x, y, &left, &top, &width, &height,
@@ -672,19 +710,19 @@ static void DrawAuxPowerMeter( float flPower )
 		rcFill.right -= iEmptyWidth;
 		if( rcFill.right > rcFill.left )
 		{
-			SPR_Set( g_hAuxHudSprite, r, g, b );
+			SPR_Set( g_hAuxHudSprite, fillR, fillG, fillB );
 			// Center the fill inside the frame using the cropped source dimensions.
 			// For the current 63x17 frame and 53x9 fill, this yields a 5x4 inset.
 			int iFillOffsetX = ( ( g_rcAuxHudFrame.right - g_rcAuxHudFrame.left ) -
 				( g_rcAuxHudFill.right - g_rcAuxHudFill.left ) ) / 2;
 			int iFillOffsetY = ( ( g_rcAuxHudFrame.bottom - g_rcAuxHudFrame.top ) -
 				( g_rcAuxHudFill.bottom - g_rcAuxHudFill.top ) ) / 2;
-			// Match the flashlight's additive sprite treatment in both states.
+			// Keep additive blending; sprinting changes only the fill brightness.
 			SPR_DrawAdditive( 0, frameX + iFillOffsetX, frameY + iFillOffsetY + 1, &rcFill );
 		}
 
-		// Draw the frame last so its outline stays crisp over the fill.
-		SPR_Set( g_hAuxHudSprite, r, g, b );
+		// Draw the dimmer frame last so its outline stays crisp over the fill.
+		SPR_Set( g_hAuxHudSprite, frameR, frameG, frameB );
 		SPR_DrawAdditive( 0, frameX, frameY, &g_rcAuxHudFrame );
 	}
 
