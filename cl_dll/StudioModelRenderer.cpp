@@ -625,14 +625,20 @@ typedef struct studio_ragdoll_anchor_diagnostics_s
 	qboolean haveBounds;
 } studio_ragdoll_anchor_diagnostics_t;
 
+typedef struct studio_ragdoll_anchor_context_s
+{
+	studio_ragdoll_surface_anchor_t anchor;
+	studio_ragdoll_anchor_diagnostics_t diagnostics;
+} studio_ragdoll_anchor_context_t;
+
 static void StudioFindNearestRagdollSurface(
 	const studio_ragdoll_triangle_t *triangle,
 	void *opaqueContext )
 {
-	studio_ragdoll_surface_anchor_t *anchor =
-		(studio_ragdoll_surface_anchor_t *)opaqueContext;
-	studio_ragdoll_anchor_diagnostics_t *diagnostics =
-		(studio_ragdoll_anchor_diagnostics_t *)( anchor + 1 );
+	studio_ragdoll_anchor_context_t *context =
+		(studio_ragdoll_anchor_context_t *)opaqueContext;
+	studio_ragdoll_surface_anchor_t *anchor = &context->anchor;
+	studio_ragdoll_anchor_diagnostics_t *diagnostics = &context->diagnostics;
 	++anchor->triangleCount;
 
 	for( int vertex = 0; vertex < 3; ++vertex )
@@ -990,11 +996,7 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	// First locate the real render-surface point nearest the Jolt contact.
 	// The proxy hull and the skinned zombie mesh are not coincident, so the
 	// shot ray alone can pass outside the small decal footprint.
-	struct studio_ragdoll_anchor_context_s
-	{
-		studio_ragdoll_surface_anchor_t anchor;
-		studio_ragdoll_anchor_diagnostics_t diagnostics;
-	} anchorContext;
+	studio_ragdoll_anchor_context_t anchorContext;
 	memset( &anchorContext, 0, sizeof( anchorContext ) );
 	studio_ragdoll_surface_anchor_t &anchor = anchorContext.anchor;
 	anchor.point = worldPosition;
