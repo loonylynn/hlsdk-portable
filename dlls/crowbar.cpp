@@ -21,6 +21,9 @@
 #include "nodes.h"
 #include "player.h"
 #include "gamerules.h"
+#ifndef CLIENT_DLL
+#include "xash_physint.h"
+#endif
 
 #define	CROWBAR_BODYHIT_VOLUME 128
 #define	CROWBAR_WALLHIT_VOLUME 512
@@ -199,6 +202,26 @@ int CCrowbar::Swing( int fFirst )
 				FindHullIntersection( vecSrc, tr, VEC_DUCK_HULL_MIN, VEC_DUCK_HULL_MAX, m_pPlayer->edict() );
 			vecEnd = tr.vecEndPos;	// This is the point on the actual surface (the hull could have hit space)
 		}
+	}
+	float impactDamage = gSkillData.plrDmgCrowbar;
+#if CLIENT_WEAPONS
+	if( !( ( m_flNextPrimaryAttack + 1.0f == UTIL_WeaponTimeBase() ) || g_pGameRules->IsMultiplayer() ) )
+#else
+	if( !( ( m_flNextPrimaryAttack + 1.0f < UTIL_WeaponTimeBase() ) || g_pGameRules->IsMultiplayer() ) )
+#endif
+		impactDamage *= 0.5f;
+
+	float hitFraction = tr.flFraction;
+	float hitPosition[3];
+	edict_t *hitEntity = NULL;
+	if( NPCPhysics_TraceAndApplyImpact(
+		&vecSrc[0], &vecEnd[0], tr.flFraction, impactDamage * 45.0f,
+		&hitFraction, hitPosition, &hitEntity ) )
+	{
+		tr.flFraction = hitFraction;
+		tr.vecEndPos = Vector( hitPosition[0], hitPosition[1], hitPosition[2] );
+		tr.pHit = hitEntity;
+		vecEnd = tr.vecEndPos;
 	}
 #endif
 	if( fFirst )
