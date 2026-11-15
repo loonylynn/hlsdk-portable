@@ -1943,17 +1943,17 @@ int NPCPhysics_TraceAndApplyImpact(
 					( inverseStudioRotation * worldNormal ).Normalized();
 				const float markRadius = std::max(
 					0.85f, std::min( 1.9f, 0.85f + impulseMagnitude * 0.00035f ) );
-			const int encodedRadius = static_cast<int>( markRadius * 4.0f + 0.5f );
-			const int encodedNormalX = static_cast<int>( localNormal.GetX() * 127.0f + 128.0f );
-			const int encodedNormalY = static_cast<int>( localNormal.GetY() * 127.0f + 128.0f );
-			const int encodedNormalZ = static_cast<int>( localNormal.GetZ() * 127.0f + 128.0f );
-			const int markColor = bloodColor == BLOOD_COLOR_GREEN ? 1 :
-				( bloodColor == BLOOD_COLOR_YELLOW ? 2 : 0 );
-			const float markOrigin[3] = {
-				float( impactPoint.GetX() ),
-				float( impactPoint.GetY() ),
-				float( impactPoint.GetZ() )
-			};
+				const int encodedRadius = static_cast<int>( markRadius * 4.0f + 0.5f );
+				const int encodedNormalX = static_cast<int>( localNormal.GetX() * 127.0f + 128.0f );
+				const int encodedNormalY = static_cast<int>( localNormal.GetY() * 127.0f + 128.0f );
+				const int encodedNormalZ = static_cast<int>( localNormal.GetZ() * 127.0f + 128.0f );
+				const int markColor = bloodColor == BLOOD_COLOR_GREEN ? 1 :
+					( bloodColor == BLOOD_COLOR_YELLOW ? 2 : 0 );
+				const float markOrigin[3] = {
+					float( impactPoint.GetX() ),
+					float( impactPoint.GetY() ),
+					float( impactPoint.GetZ() )
+				};
 
 				MESSAGE_BEGIN( MSG_PVS, g_msgRagdollImpact, markOrigin );
 					WRITE_SHORT( ENTINDEX( targetEntity ) );
