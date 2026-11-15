@@ -447,13 +447,51 @@ static void StudioForEachRagdollModelTriangle(
 				model->vertinfoindex, model->vertindex, model->meshindex,
 				vertexRangeValid ? 1 : 0, boneRangeValid ? 1 : 0,
 				meshRangeValid ? 1 : 0 );
+			int invalidRawVertices = 0;
+			int invalidBoneIndices = 0;
+			int firstInvalidRawVertex = -1;
+			float rawMinimum[3] = { 1.0e30f, 1.0e30f, 1.0e30f };
+			float rawMaximum[3] = { -1.0e30f, -1.0e30f, -1.0e30f };
+			for( int vertex = 0; vertex < model->numverts; ++vertex )
+			{
+				qboolean finite = true;
+				for( int axis = 0; axis < 3; ++axis )
+				{
+					const float value = vertices[vertex][axis];
+					if( !( value == value ) || fabsf( value ) > 1.0e20f )
+						finite = false;
+					else
+					{
+						if( value < rawMinimum[axis] ) rawMinimum[axis] = value;
+						if( value > rawMaximum[axis] ) rawMaximum[axis] = value;
+					}
+				}
+				if( !finite )
+				{
+					++invalidRawVertices;
+					if( firstInvalidRawVertex < 0 ) firstInvalidRawVertex = vertex;
+				}
+				if( vertexBones[vertex] >= renderer->m_pStudioHeader->numbones )
+					++invalidBoneIndices;
+			}
+			gEngfuncs.Con_Printf(
+				"[Ragdoll decal vertex scan] entity %d: vertices=%d invalid=%d bad-bones=%d first-invalid=%d bounds [%.3f %.3f %.3f]-[%.3f %.3f %.3f]\n",
+				entityIndex, model->numverts, invalidRawVertices, invalidBoneIndices,
+				firstInvalidRawVertex,
+				rawMinimum[0], rawMinimum[1], rawMinimum[2],
+				rawMaximum[0], rawMaximum[1], rawMaximum[2] );
 			for( int sample = 0; sample < 4 && sample < model->numverts; ++sample )
 			{
 				gEngfuncs.Con_Printf(
-					"[Ragdoll decal raw vertex] entity %d index %d bone %u local [%.6g %.6g %.6g]\n",
+					"[Ragdoll decal raw vertex] entity %d index %d bone %u local [%.9g %.9g %.9g]\n",
 					entityIndex, sample, (unsigned int)vertexBones[sample],
 					vertices[sample][0], vertices[sample][1], vertices[sample][2] );
 			}
+			if( model->numverts > 65 )
+				gEngfuncs.Con_Printf(
+					"[Ragdoll decal raw vertex] entity %d index 65 bone %u local [%.9g %.9g %.9g]\n",
+					entityIndex, (unsigned int)vertexBones[65],
+					vertices[65][0], vertices[65][1], vertices[65][2] );
 			lastDataProbeEntity = entityIndex;
 		}
 
@@ -467,25 +505,54 @@ static void StudioForEachRagdollModelTriangle(
 				mesh->triindex <= 0 )
 				continue;
 
-			const short *commands =
-				(const short *)((const byte *)renderer->m_pStudioHeader + mesh->triindex);
+			const byte *headerBytes = (const byte *)renderer->m_pStudioHeader;
+			if( mesh->triindex <= 0 ||
+				mesh->triindex > headerLength - (int)sizeof( short ) )
+			{
+				if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
+					gEngfuncs.Con_Printf )
+					gEngfuncs.Con_Printf(
+						"[Ragdoll decal command stream] entity %d mesh %d: invalid triindex=%d header-length=%d\n",
+						renderer->m_pCurrentEntity ? renderer->m_pCurrentEntity->index : -1,
+						meshIndex, mesh->triindex, headerLength );
+				continue;
+			}
+			int commandOffset = mesh->triindex;
 			int trianglesVisited = 0;
+			qboolean malformedCommandStream = false;
 
 			for( int commandIndex = 0;
 				commandIndex <= mesh->numtris && trianglesVisited < mesh->numtris;
 				++commandIndex )
 			{
-				const int signedVertexCount = *commands++;
+				if( commandOffset < 0 ||
+					commandOffset > headerLength - (int)sizeof( short ) )
+				{
+					malformedCommandStream = true;
+					break;
+				}
+				const int signedVertexCount =
+					*(const short *)( headerBytes + commandOffset );
+				commandOffset += sizeof( short );
 				if( signedVertexCount == 0 )
 					break;
 
 				const qboolean isFan = signedVertexCount < 0;
 				const int vertexCount = isFan ? -signedVertexCount : signedVertexCount;
 				if( vertexCount < 3 || vertexCount > MAXSTUDIOVERTS )
+				{
+					malformedCommandStream = true;
 					break;
+				}
 
+				const int commandBytes = vertexCount * (int)sizeof( mstudiotrivert_t );
+				if( commandOffset > headerLength - commandBytes )
+				{
+					malformedCommandStream = true;
+					break;
+				}
 				const mstudiotrivert_t *commandVertices =
-					(const mstudiotrivert_t *)commands;
+					(const mstudiotrivert_t *)( headerBytes + commandOffset );
 
 				for( int vertex = 2;
 					vertex < vertexCount && trianglesVisited < mesh->numtris;
@@ -534,8 +601,14 @@ static void StudioForEachRagdollModelTriangle(
 					++trianglesVisited;
 				}
 
-				commands += vertexCount * 4;
+				commandOffset += commandBytes;
 			}
+			if( malformedCommandStream && cl_ragdoll_bloodmarks_debug &&
+				cl_ragdoll_bloodmarks_debug->value > 0.0f && gEngfuncs.Con_Printf )
+				gEngfuncs.Con_Printf(
+					"[Ragdoll decal command stream] entity %d mesh %d: malformed at offset=%d, triangles=%d/%d\n",
+					renderer->m_pCurrentEntity ? renderer->m_pCurrentEntity->index : -1,
+					meshIndex, commandOffset, trianglesVisited, mesh->numtris );
 		}
 	}
 
@@ -1240,7 +1313,7 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 		const int hasTransform = StudioGetRagdollBoneToWorld(
 			renderer, anchorContext.diagnostics.invalidBone, sampleTransform );
 		gEngfuncs.Con_Printf(
-			"[Ragdoll decal invalid vertex] entity %d model %s submodel %s vertex %d bone %d transform=%d local [%.3f %.3f %.3f] world [%.3f %.3f %.3f] matrix-row0 [%.3f %.3f %.3f %.3f] header-flags 0x%x\n",
+			"[Ragdoll decal invalid vertex] entity %d model %s submodel %s vertex %d bone %d transform=%d local [%.9g %.9g %.9g] world [%.9g %.9g %.9g] matrix [%.6g %.6g %.6g %.6g] [%.6g %.6g %.6g %.6g] [%.6g %.6g %.6g %.6g] header-flags 0x%x\n",
 			entityIndex,
 			renderer->m_pStudioHeader ? renderer->m_pStudioHeader->name : "?",
 			renderer->m_pSubModel ? renderer->m_pSubModel->name : "?",
@@ -1256,6 +1329,14 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 			hasTransform ? sampleTransform[0][1] : 0.0f,
 			hasTransform ? sampleTransform[0][2] : 0.0f,
 			hasTransform ? sampleTransform[0][3] : 0.0f,
+			hasTransform ? sampleTransform[1][0] : 0.0f,
+			hasTransform ? sampleTransform[1][1] : 0.0f,
+			hasTransform ? sampleTransform[1][2] : 0.0f,
+			hasTransform ? sampleTransform[1][3] : 0.0f,
+			hasTransform ? sampleTransform[2][0] : 0.0f,
+			hasTransform ? sampleTransform[2][1] : 0.0f,
+			hasTransform ? sampleTransform[2][2] : 0.0f,
+			hasTransform ? sampleTransform[2][3] : 0.0f,
 			renderer->m_pStudioHeader ? renderer->m_pStudioHeader->flags : 0 );
 	}
 	if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
