@@ -610,9 +610,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         description="Convert a Valve ragdoll collision SMD and its QC/QCI directives to a Jolt .jrag file.")
     parser.add_argument("qci", type=Path, help="model QC/QCI file; recursively follows $include directives")
     parser.add_argument("--smd", type=Path,
-                        help="collision SMD; defaults to <collisionjoints name>.smd beside the QCI")
+                        help="collision SMD; defaults to the path beside the file containing $collisionjoints")
     parser.add_argument("-o", "--output", type=Path,
-                        help="output .jrag path (default: QCI path with .jrag extension)")
+                        help="output .jrag path (default: input QC/QCI path with .jrag extension)")
     parser.add_argument("--friction", type=float, default=0.8,
                         help="Jolt friction (default: 0.8; not encoded by Valve's QCI directives)")
     parser.add_argument("--restitution", type=float, default=0.0,
