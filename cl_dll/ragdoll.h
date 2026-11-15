@@ -7,6 +7,14 @@ int Ragdoll_MessageHandler( const char *name, int size, void *buffer );
 int Ragdoll_ImpactMessageHandler( const char *name, int size, void *buffer );
 void Ragdoll_DebugRenderGate( int entityIndex, int ragdollMarker, int hardwareRenderer );
 int Ragdoll_GetBoneTransform( int entityIndex, int boneIndex, float transform[3][4] );
+int Ragdoll_TraceLine(
+	const float start[3],
+	const float end[3],
+	float maximumFraction,
+	float *hitFraction,
+	float hitPosition[3],
+	int *hitEntityIndex
+);
 int Ragdoll_GetImpactMarkCount( int entityIndex );
 int Ragdoll_GetImpactMark(
 	int entityIndex,

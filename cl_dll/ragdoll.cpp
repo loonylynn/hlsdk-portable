@@ -1,7 +1,12 @@
 #include "hud.h"
 #include "cl_util.h"
 #include "parsemsg.h"
+#include "com_model.h"
+#include "studio.h"
+#include "r_studioint.h"
 #include "ragdoll.h"
+
+extern engine_studio_api_t IEngineStudio;
 
 #include <math.h>
 #include <stdio.h>
@@ -417,6 +422,235 @@ int Ragdoll_GetImpactMark(
 	memcpy( worldPosition, mark.worldPosition, sizeof( mark.worldPosition ) );
 	*radius = mark.radius;
 	*bloodColor = mark.bloodColor;
+	return 1;
+}
+
+
+static float Ragdoll_Dot3( const float a[3], const float b[3] )
+{
+	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+static float Ragdoll_ClampRange( float value, float minimum, float maximum )
+{
+	if( value < minimum ) return minimum;
+	if( value > maximum ) return maximum;
+	return value;
+}
+
+// Return the first point where a finite ray enters a capsule around segment AB.
+// The closest-point iteration is stable for almost-parallel ray/segment pairs.
+static int Ragdoll_RayCapsuleFraction(
+	const float rayStart[3],
+	const float rayDirection[3],
+	float rayLengthSquared,
+	float maximumFraction,
+	const float segmentStart[3],
+	const float segmentEnd[3],
+	float radius,
+	float *hitFraction )
+{
+	float segment[3], offset[3];
+	float segmentLengthSquared = 0.0f;
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		segment[axis] = segmentEnd[axis] - segmentStart[axis];
+		offset[axis] = rayStart[axis] - segmentStart[axis];
+		segmentLengthSquared += segment[axis] * segment[axis];
+	}
+
+	float rayFraction = 0.0f;
+	float segmentFraction = 0.0f;
+	if( segmentLengthSquared > 0.000001f )
+	{
+		const float raySegment = Ragdoll_Dot3( rayDirection, segment );
+		const float rayOffset = Ragdoll_Dot3( rayDirection, offset );
+		const float segmentOffset = Ragdoll_Dot3( segment, offset );
+		const float denominator =
+			rayLengthSquared * segmentLengthSquared - raySegment * raySegment;
+		if( denominator > 0.000001f )
+		{
+			rayFraction =
+				( raySegment * segmentOffset - rayOffset * segmentLengthSquared ) /
+				denominator;
+			segmentFraction =
+				( raySegment * rayFraction - segmentOffset ) / segmentLengthSquared;
+		}
+	}
+
+	rayFraction = Ragdoll_ClampRange( rayFraction, 0.0f, maximumFraction );
+	segmentFraction = Ragdoll_ClampRange( segmentFraction, 0.0f, 1.0f );
+
+	// Refit both parameters after clamping one another to their finite segments.
+	for( int iteration = 0; iteration < 3; ++iteration )
+	{
+		float rayPoint[3], segmentPoint[3], between[3];
+		for( int axis = 0; axis < 3; ++axis )
+		{
+			rayPoint[axis] = rayStart[axis] + rayDirection[axis] * rayFraction;
+			segmentPoint[axis] =
+				segmentStart[axis] + segment[axis] * segmentFraction;
+			between[axis] = segmentPoint[axis] - rayPoint[axis];
+		}
+		rayFraction = Ragdoll_ClampRange(
+			Ragdoll_Dot3( between, rayDirection ) / rayLengthSquared,
+			0.0f, maximumFraction );
+		for( int axis = 0; axis < 3; ++axis )
+		{
+			rayPoint[axis] = rayStart[axis] + rayDirection[axis] * rayFraction;
+			between[axis] = rayPoint[axis] - segmentStart[axis];
+		}
+		if( segmentLengthSquared > 0.000001f )
+			segmentFraction = Ragdoll_ClampRange(
+				Ragdoll_Dot3( between, segment ) / segmentLengthSquared,
+				0.0f, 1.0f );
+	}
+
+	float rayPoint[3], segmentPoint[3], separation[3];
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		rayPoint[axis] = rayStart[axis] + rayDirection[axis] * rayFraction;
+		segmentPoint[axis] = segmentStart[axis] + segment[axis] * segmentFraction;
+		separation[axis] = segmentPoint[axis] - rayPoint[axis];
+	}
+	const float distanceSquared = Ragdoll_Dot3( separation, separation );
+	const float radiusSquared = radius * radius;
+	if( distanceSquared > radiusSquared )
+		return 0;
+
+	const float rayLength = sqrtf( rayLengthSquared );
+	const float halfChord = sqrtf( (std::max)( 0.0f, radiusSquared - distanceSquared ) );
+	const float entryFraction = Ragdoll_ClampRange(
+		rayFraction - halfChord / rayLength, 0.0f, maximumFraction );
+	*hitFraction = entryFraction;
+	return 1;
+}
+
+int Ragdoll_TraceLine(
+	const float start[3],
+	const float end[3],
+	float maximumFraction,
+	float *hitFraction,
+	float hitPosition[3],
+	int *hitEntityIndex )
+{
+	if( !start || !end || !hitFraction || !hitPosition || !hitEntityIndex )
+		return 0;
+
+	maximumFraction = Ragdoll_ClampRange( maximumFraction, 0.0f, 1.0f );
+	float direction[3];
+	for( int axis = 0; axis < 3; ++axis )
+		direction[axis] = end[axis] - start[axis];
+	const float lengthSquared = Ragdoll_Dot3( direction, direction );
+	if( lengthSquared <= 0.000001f )
+		return 0;
+
+	const float now = (float)gEngfuncs.GetClientTime();
+	float bestFraction = maximumFraction;
+	int bestEntity = -1;
+
+	for( int entityIndex = 1; entityIndex < MAX_RAGDOLL_ENTITIES; ++entityIndex )
+	{
+		ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
+		if( !entry.active || !entry.initialSnapshotComplete ||
+			entry.studioBoneCount <= 0 || entry.studioBoneCount > MAX_RAGDOLL_BONES ||
+			now < entry.lastUpdateTime ||
+			now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT )
+			continue;
+
+		float positions[MAX_RAGDOLL_BONES][3];
+		bool valid[MAX_RAGDOLL_BONES] = {};
+		for( int boneIndex = 0; boneIndex < entry.studioBoneCount; ++boneIndex )
+		{
+			const ragdoll_bone_pose_t &bone = entry.bones[boneIndex];
+			if( !bone.valid )
+				continue;
+			float rotation[4];
+			Ragdoll_GetInterpolatedBonePose(
+				bone, now, positions[boneIndex], rotation );
+			valid[boneIndex] = true;
+		}
+
+		cl_entity_t *entity = gEngfuncs.GetEntityByIndex( entityIndex );
+		studiohdr_t *header = NULL;
+		if( entity && entity->model && entity->model->type == mod_studio &&
+			IEngineStudio.Mod_Extradata )
+			header = (studiohdr_t *)IEngineStudio.Mod_Extradata( entity->model );
+		mstudiobone_t *bones = NULL;
+		int boneCount = entry.studioBoneCount;
+		if( header && header->numbones > 0 && header->numbones <= MAX_RAGDOLL_BONES )
+		{
+			bones = (mstudiobone_t *)((byte *)header + header->boneindex);
+			if( header->numbones < boneCount )
+				boneCount = header->numbones;
+		}
+
+		for( int boneIndex = 0; boneIndex < boneCount; ++boneIndex )
+		{
+			if( !valid[boneIndex] )
+				continue;
+
+			float radius = 4.5f;
+			const char *name = bones ? bones[boneIndex].name : "";
+			if( strstr( name, "Pelvis" ) || strstr( name, "Spine" ) ||
+				strstr( name, "Head" ) || strstr( name, "Neck" ) )
+				radius = 7.0f;
+
+			float candidateFraction;
+			if( bones && bones[boneIndex].parent >= 0 &&
+				bones[boneIndex].parent < boneCount &&
+				valid[bones[boneIndex].parent] )
+			{
+				if( Ragdoll_RayCapsuleFraction(
+						start, direction, lengthSquared, bestFraction,
+						positions[bones[boneIndex].parent],
+						positions[boneIndex], radius, &candidateFraction ) &&
+					candidateFraction < bestFraction )
+				{
+					bestFraction = candidateFraction;
+					bestEntity = entityIndex;
+				}
+			}
+			else if( Ragdoll_RayCapsuleFraction(
+					start, direction, lengthSquared, bestFraction,
+					positions[boneIndex], positions[boneIndex],
+					radius, &candidateFraction ) &&
+				candidateFraction < bestFraction )
+			{
+				bestFraction = candidateFraction;
+				bestEntity = entityIndex;
+			}
+		}
+
+		// Models without a usable hierarchy still get a conservative joint
+		// test, rather than allowing the predicted trace to decal the wall behind.
+		if( !bones )
+		{
+			for( int boneIndex = 0; boneIndex < boneCount; ++boneIndex )
+			{
+				if( !valid[boneIndex] )
+					continue;
+				float candidateFraction;
+				if( Ragdoll_RayCapsuleFraction(
+						start, direction, lengthSquared, bestFraction,
+						positions[boneIndex], positions[boneIndex],
+						6.0f, &candidateFraction ) &&
+					candidateFraction < bestFraction )
+				{
+					bestFraction = candidateFraction;
+					bestEntity = entityIndex;
+				}
+			}
+		}
+	}
+
+	if( bestEntity < 0 )
+		return 0;
+
+	*hitFraction = bestFraction;
+	for( int axis = 0; axis < 3; ++axis )
+		hitPosition[axis] = start[axis] + direction[axis] * bestFraction;
+	*hitEntityIndex = bestEntity;
 	return 1;
 }
 

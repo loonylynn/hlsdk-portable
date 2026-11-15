@@ -29,6 +29,7 @@
 #include "r_efx.h"
 #include "event_api.h"
 #include "event_args.h"
+#include "ragdoll.h"
 #include "in_defs.h"
 
 #include <string.h>
@@ -425,10 +426,26 @@ void EV_HLDM_FireBullets( int idx, float *forward, float *right, float *up, int 
 		gEngfuncs.pEventAPI->EV_SetTraceHull( 2 );
 		gEngfuncs.pEventAPI->EV_PlayerTrace( vecSrc, vecEnd, PM_NORMAL, -1, &tr );
 
+		// The predicted GoldSrc trace cannot collide with SOLID_NOT ragdoll
+		// carriers. Test the replicated articulated pose before accepting a
+		// BSP hit, otherwise local prediction paints the wall behind a corpse.
+		float ragdollFraction = tr.fraction;
+		float ragdollPosition[3];
+		int ragdollEntity = -1;
+		const qboolean hitRagdoll = Ragdoll_TraceLine(
+			vecSrc, vecEnd, tr.fraction,
+			&ragdollFraction, ragdollPosition, &ragdollEntity );
+		if( hitRagdoll )
+		{
+			tr.fraction = ragdollFraction;
+			VectorCopy( ragdollPosition, tr.endpos );
+		}
+
 		tracer = EV_HLDM_CheckTracer( idx, vecSrc, tr.endpos, forward, right, iBulletType, iTracerFreq, tracerCount );
 
-		// do damage, paint decals
-		if( tr.fraction != 1.0f )
+		// Server-side ragdoll impact messages draw the attached blood mark.
+		// Never run the client BSP decal path for that same shot.
+		if( tr.fraction != 1.0f && !hitRagdoll )
 		{
 			switch( iBulletType )
 			{
