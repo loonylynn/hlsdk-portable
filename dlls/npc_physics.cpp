@@ -249,6 +249,7 @@ namespace
 	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsBulletScale = { "sv_npc_vphysics_bullet_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsCrowbarScale = { "sv_npc_vphysics_crowbar_scale", "1.0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsBlastScale = { "sv_npc_vphysics_blast_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
@@ -1828,6 +1829,131 @@ int NPCPhysics_IsRagdollEntity( edict_t *ent )
 	return FALSE;
 }
 
+int NPCPhysics_ApplyBlastImpulse(
+	edict_t *targetEntity,
+	const float *origin,
+	float radius,
+	float impulseMagnitude )
+{
+	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
+		!targetEntity || targetEntity->free || !origin ||
+		!std::isfinite( radius ) || radius <= 0.001f ||
+		!std::isfinite( impulseMagnitude ) || impulseMagnitude <= 0.0f ||
+		!std::isfinite( origin[0] ) || !std::isfinite( origin[1] ) ||
+		!std::isfinite( origin[2] ) )
+		return 0;
+
+	NPCPhysicsRagdoll *targetRagdoll = NULL;
+	for( size_t i = 0; i < g_ragdolls.size(); ++i )
+	{
+		NPCPhysicsRagdoll &ragdoll = g_ragdolls[i];
+		if( ragdoll.entity == targetEntity &&
+			ragdoll.serialNumber == targetEntity->serialnumber &&
+			ragdoll.addedToPhysicsSystem && ragdoll.physicsRagdoll.GetPtr() )
+		{
+			targetRagdoll = &ragdoll;
+			break;
+		}
+	}
+
+	if( !targetRagdoll || targetRagdoll->bodyCount <= 0 )
+		return 0;
+
+	struct NPCPhysicsBlastCandidate
+	{
+		BodyID bodyID;
+		RVec3 position;
+		Vec3 direction;
+		float falloff;
+	};
+
+	std::vector<NPCPhysicsBlastCandidate> candidates;
+	candidates.reserve( targetRagdoll->bodyCount );
+	BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+
+	for( int body = 0; body < targetRagdoll->bodyCount; ++body )
+	{
+		const BodyID bodyID = targetRagdoll->physicsRagdoll->GetBodyID( body );
+		const RVec3 position = bodyInterface.GetPosition( bodyID );
+		const Vec3 offset(
+			float( position.GetX() ) - origin[0],
+			float( position.GetY() ) - origin[1],
+			float( position.GetZ() ) - origin[2] );
+		const float distance = offset.Length();
+		if( !std::isfinite( distance ) || distance >= radius )
+			continue;
+
+		Vec3 direction;
+		if( distance > 0.001f )
+		{
+			direction = offset / distance;
+
+			// The nearest Jolt hit must be this body. The same query includes
+			// the native BSP world and inline brush colliders, so a wall or
+			// another ragdoll body can occlude this part of the blast.
+			const RRayCast ray(
+				RVec3( origin[0], origin[1], origin[2] ),
+				offset );
+			RayCastResult hit;
+			hit.mFraction = 1.0f;
+			if( !g_npcPhysics.system.GetNarrowPhaseQuery().CastRay( ray, hit ) ||
+				hit.mBodyID != bodyID )
+				continue;
+		}
+		else
+		{
+			// Avoid an undefined radial direction when an explosion is
+			// centered inside a body; use a small upward impulse instead.
+			direction = Vec3( 0.0f, 0.0f, 1.0f );
+		}
+
+		NPCPhysicsBlastCandidate candidate;
+		candidate.bodyID = bodyID;
+		candidate.position = position;
+		candidate.direction = direction;
+		candidate.falloff = 1.0f - distance / radius;
+		if( candidate.falloff <= 0.0f )
+			continue;
+		candidates.push_back( candidate );
+	}
+
+	if( candidates.empty() )
+	{
+		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT(
+				at_console,
+				"[NPC blast] No visible ragdoll bodies in range: ent=%d id=%d radius=%.1f.\n",
+				ENTINDEX( targetEntity ), targetRagdoll->networkID, radius
+			);
+		return 0;
+	}
+
+	const float baseImpulse = (std::min)( impulseMagnitude, 3000.0f );
+	for( size_t i = 0; i < candidates.size(); ++i )
+	{
+		const NPCPhysicsBlastCandidate &candidate = candidates[i];
+		Vec3 impulse = candidate.direction * ( baseImpulse * candidate.falloff );
+		impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
+		bodyInterface.ActivateBody( candidate.bodyID );
+		bodyInterface.AddImpulse( candidate.bodyID, impulse, candidate.position );
+	}
+
+	// Force the next end-frame snapshot to carry the blast response promptly.
+	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
+		targetRagdoll->nextPoseTime = gpGlobals->time;
+
+	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT(
+			at_console,
+			"[NPC blast] Applied ragdoll impulse: ent=%d id=%d bodies=%d/%d radius=%.1f base-impulse=%.1f.\n",
+			ENTINDEX( targetEntity ), targetRagdoll->networkID,
+			(int)candidates.size(), targetRagdoll->bodyCount,
+			radius, baseImpulse
+		);
+
+	return (int)candidates.size();
+}
+
 int NPCPhysics_TraceAndApplyImpact(
 	const float *start,
 	const float *end,
@@ -2024,6 +2150,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsMass );
 	CVAR_REGISTER( &g_svNpcVPhysicsBulletScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsCrowbarScale );
+	CVAR_REGISTER( &g_svNpcVPhysicsBlastScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsDebug );
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
