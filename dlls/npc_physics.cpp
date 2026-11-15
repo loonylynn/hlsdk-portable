@@ -1874,8 +1874,6 @@ int NPCPhysics_ApplyBlastImpulse(
 		BodyID bodyID;
 		Vec3 direction;
 		float impulseMagnitude;
-		float distance;
-		float mass;
 	};
 
 	const float desiredSpeed = (std::min)( blastDamage * 4.0f, 400.0f );
