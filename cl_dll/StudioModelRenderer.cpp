@@ -1184,7 +1184,7 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 		const int hasTransform = StudioGetRagdollBoneToWorld(
 			renderer, anchorContext.diagnostics.invalidBone, sampleTransform );
 		gEngfuncs.Con_Printf(
-			"[Ragdoll decal invalid vertex] entity %d model %s submodel %s bone %d transform=%d local [%.3f %.3f %.3f] world [%.3f %.3f %.3f] matrix-row0 [%.3f %.3f %.3f %.3f] header-flags 0x%x blend-vertices %d\n",
+			"[Ragdoll decal invalid vertex] entity %d model %s submodel %s bone %d transform=%d local [%.3f %.3f %.3f] world [%.3f %.3f %.3f] matrix-row0 [%.3f %.3f %.3f %.3f] header-flags 0x%x\n",
 			entityIndex,
 			renderer->m_pStudioHeader ? renderer->m_pStudioHeader->name : "?",
 			renderer->m_pSubModel ? renderer->m_pSubModel->name : "?",
@@ -1199,8 +1199,7 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 			hasTransform ? sampleTransform[0][1] : 0.0f,
 			hasTransform ? sampleTransform[0][2] : 0.0f,
 			hasTransform ? sampleTransform[0][3] : 0.0f,
-			renderer->m_pStudioHeader ? renderer->m_pStudioHeader->flags : 0,
-			renderer->m_pSubModel ? renderer->m_pSubModel->blendvertinfoindex : 0 );
+			renderer->m_pStudioHeader ? renderer->m_pStudioHeader->flags : 0 );
 	}
 	if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
 		gEngfuncs.Con_Printf )
