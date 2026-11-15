@@ -1906,8 +1906,8 @@ int NPCPhysics_TraceAndApplyImpact(
 	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
 		targetRagdoll->nextPoseTime = gpGlobals->time;
 
-	// Send a bone-local blood mark. The client transforms it with the same
-	// interpolated bone pose used to render the articulated corpse.
+	// Send a world-space impact mark. The client projects it onto the
+	// articulated studio mesh, then attaches the result to its skinned triangles.
 	if( g_msgRagdollImpact > 0 && targetBodyIndex >= 0 &&
 		targetBodyIndex < targetRagdoll->bodyCount )
 	{
