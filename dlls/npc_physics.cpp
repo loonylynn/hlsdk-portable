@@ -1,18 +1,8 @@
 /*
- * Source-style articulated zombie ragdolls using Jolt as the rigid-body backend.
- *
- * This follows the Source ragdoll data flow:
- *   - one physics element per hitbox-bearing studio bone
- *   - physical parent links skip non-physical intermediary bones
- *   - constrained joints use limited angular motion and friction
- *   - client rendering overrides only simulated bones; other bones inherit
- *     from their simulated parent using the frozen death animation pose
- *   - animation pose derivatives seed the initial linear/angular velocities
- *
- * GoldSrc studio hitboxes are used as the available collision source. Unlike
- * Source models, standard HL1 MDLs do not carry Source VCollide/.phy solids or
- * ragdollconstraint KeyValues, so this is an architecture-faithful conversion,
- * not a byte-for-byte reproduction of Source's Havok collision assets.
+ * Source-authored zombie ragdolls using Jolt as the rigid-body backend.
+ * Collision hulls, physical ancestry, mass and angular limits are generated
+ * from the model's ragdoll.smd / ragdoll.qci. GoldSrc owns living NPCs; Jolt
+ * owns the corpse only after a successful death handoff.
  */
 
 #include "extdll.h"
@@ -21,6 +11,7 @@
 #include "enginecallback.h"
 #include "xash_physint.h"
 #include "studio.h"
+#include "npc_zombie_ragdoll_data.h"
 
 #include <Jolt/Jolt.h>
 #include <Jolt/RegisterTypes.h>
@@ -31,7 +22,7 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Body/BodyLockMulti.h>
-#include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/GroupFilterTable.h>
 #include <Jolt/Physics/Collision/CollisionGroup.h>
@@ -41,7 +32,6 @@
 #include <cmath>
 #include <cfloat>
 #include <cstdint>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -83,23 +73,6 @@ namespace
 		bool ShouldCollide( ObjectLayer, BroadPhaseLayer ) const override { return true; }
 	};
 
-	struct BoneHitboxBounds
-	{
-		float mins[3];
-		float maxs[3];
-		bool valid;
-
-		BoneHitboxBounds()
-			: valid( false )
-		{
-			for( int i = 0; i < 3; ++i )
-			{
-				mins[i] = FLT_MAX;
-				maxs[i] = -FLT_MAX;
-			}
-		}
-	};
-
 	struct NPCPhysicsLivePose
 	{
 		int serialNumber;
@@ -122,7 +95,6 @@ namespace
 		int studioBoneIndex;
 		int parentElementIndex;
 		Vec3 localShapeCenter;
-		Vec3 halfExtents;
 		Quat initialRotation;
 	};
 
@@ -184,7 +156,7 @@ namespace
 	static bool g_worldCollisionReady = false;
 
 	static cvar_t g_svNpcVPhysics = { "sv_npc_vphysics", "1", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "80", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "115", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
 	{
@@ -289,17 +261,6 @@ namespace
 		if( boneOffset > length || boneBytes > length - boneOffset )
 			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie studio bone table exceeds model bounds" ) : false;
 
-		if( header->numhitboxes <= 0 || header->numhitboxes > 1024 )
-			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie model has no usable hitboxes" ) : false;
-
-		if( header->hitboxindex < (int)sizeof( studiohdr_t ) )
-			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie studio hitbox table offset is invalid" ) : false;
-
-		const size_t hitboxOffset = static_cast<size_t>( header->hitboxindex );
-		const size_t hitboxBytes = static_cast<size_t>( header->numhitboxes ) * sizeof( mstudiobbox_t );
-		if( hitboxOffset > length || hitboxBytes > length - hitboxOffset )
-			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie studio hitbox table exceeds model bounds" ) : false;
-
 		*headerOut = header;
 		return true;
 	}
@@ -395,61 +356,6 @@ namespace
 		pose.entityAngles = ent->v.angles;
 		pose.sampleTime = gpGlobals->time;
 	}
-
-	static void NPCPhysics_GetJointLimits(
-		const char *boneName,
-		float &twistLimit,
-		float &swingLimit,
-		float &friction )
-	{
-		std::string name = boneName ? boneName : "";
-		for( size_t i = 0; i < name.size(); ++i )
-		{
-			if( name[i] >= 'A' && name[i] <= 'Z' )
-				name[i] = char( name[i] - 'A' + 'a' );
-		}
-
-		// Defaults are deliberately broad. Model-specific constraints can replace
-		// these when a matching Source-style ragdoll definition is supplied.
-		twistLimit = 1.0f;
-		swingLimit = 0.9f;
-		friction = 4.0f;
-
-		if( name.find( "elbow" ) != std::string::npos ||
-			name.find( "forearm" ) != std::string::npos ||
-			name.find( "knee" ) != std::string::npos ||
-			name.find( "calf" ) != std::string::npos )
-		{
-			twistLimit = 0.45f;
-			swingLimit = 0.55f;
-			friction = 3.0f;
-		}
-		else if( name.find( "shoulder" ) != std::string::npos ||
-			name.find( "upperarm" ) != std::string::npos ||
-			name.find( "thigh" ) != std::string::npos ||
-			name.find( "hip" ) != std::string::npos )
-		{
-			twistLimit = 1.25f;
-			swingLimit = 1.35f;
-			friction = 5.0f;
-		}
-		else if( name.find( "head" ) != std::string::npos ||
-			name.find( "neck" ) != std::string::npos )
-		{
-			twistLimit = 0.8f;
-			swingLimit = 0.7f;
-			friction = 2.5f;
-		}
-		else if( name.find( "spine" ) != std::string::npos ||
-			name.find( "chest" ) != std::string::npos ||
-			name.find( "pelvis" ) != std::string::npos )
-		{
-			twistLimit = 0.5f;
-			swingLimit = 0.4f;
-			friction = 6.0f;
-		}
-	}
-
 
 	static void NPCPhysics_DestroyWorldCollider()
 	{
@@ -601,6 +507,19 @@ namespace
 		return true;
 	}
 
+	static bool NPCPhysics_NameEquals( const char *a, const char *b )
+	{
+		if( !a || !b ) return false;
+		while( *a && *b )
+		{
+			char ca = *a++, cb = *b++;
+			if( ca >= 'A' && ca <= 'Z' ) ca = char( ca - 'A' + 'a' );
+			if( cb >= 'A' && cb <= 'Z' ) cb = char( cb - 'A' + 'a' );
+			if( ca != cb ) return false;
+		}
+		return *a == *b;
+	}
+
 	static Vec3 NPCPhysics_ClampVector( const Vec3 &value, float maxLength )
 	{
 		const float length = value.Length();
@@ -633,10 +552,6 @@ namespace
 		mstudiobone_t *studioBones = reinterpret_cast<mstudiobone_t *>(
 			reinterpret_cast<byte *>( header ) + header->boneindex
 		);
-		mstudiobbox_t *hitboxes = reinterpret_cast<mstudiobbox_t *>(
-			reinterpret_cast<byte *>( header ) + header->hitboxindex
-		);
-
 		NPCPhysicsRagdoll ragdoll;
 		ragdoll.entity = ent;
 		ragdoll.serialNumber = ent->serialnumber;
@@ -647,129 +562,112 @@ namespace
 		std::vector<::Vector> bonePositions( ragdoll.studioBoneCount );
 		std::vector<::Vector> boneAngles( ragdoll.studioBoneCount );
 		std::vector<Quat> boneRotations( ragdoll.studioBoneCount );
-		std::vector<BoneHitboxBounds> bounds( ragdoll.studioBoneCount );
-		std::vector<int> boneToElement( ragdoll.studioBoneCount, -1 );
-
 		for( int i = 0; i < ragdoll.studioBoneCount; ++i )
 		{
-			if( studioBones[i].parent < -1 ||
-				studioBones[i].parent >= ragdoll.studioBoneCount ||
-				studioBones[i].parent == i )
+			if( studioBones[i].parent < -1 || studioBones[i].parent >= ragdoll.studioBoneCount || studioBones[i].parent == i )
 				return NPCPhysics_RagdollSetupFailed( "zombie studio skeleton contains an invalid parent index" );
-
-			g_engfuncs.pfnGetBonePosition(
-				ent,
-				i,
-				&bonePositions[i][0],
-				&boneAngles[i][0]
-			);
+			g_engfuncs.pfnGetBonePosition( ent, i, &bonePositions[i][0], &boneAngles[i][0] );
 			boneRotations[i] = NPCPhysics_AnglesToQuaternion( boneAngles[i] );
 		}
 
-		// Source's RagdollExtractBoneIndices maps physics solids to named bones.
-		// HL1 MDLs lack Source VCollide solids, so each hitbox-bearing studio bone
-		// becomes one box-shaped physics element. Multiple hitboxes on the same
-		// bone are unioned into one local-space box.
-		for( int i = 0; i < header->numhitboxes; ++i )
+		// Resolve the authored SMD rig by name rather than assuming compiled MDL indices.
+		std::vector<int> rigStudioBones( NPC_ZOMBIE_RAGDOLL_BODY_COUNT, -1 );
+		std::vector<int> studioBoneToRig( ragdoll.studioBoneCount, -1 );
+		for( int body = 0; body < NPC_ZOMBIE_RAGDOLL_BODY_COUNT; ++body )
 		{
-			const int boneIndex = hitboxes[i].bone;
-			if( boneIndex < 0 || boneIndex >= ragdoll.studioBoneCount )
-				continue;
-
-			BoneHitboxBounds &boneBounds = bounds[boneIndex];
-			for( int axis = 0; axis < 3; ++axis )
-			{
-				boneBounds.mins[axis] = std::min( boneBounds.mins[axis], hitboxes[i].bbmin[axis] );
-				boneBounds.maxs[axis] = std::max( boneBounds.maxs[axis], hitboxes[i].bbmax[axis] );
-			}
-			boneBounds.valid = true;
-		}
-
-		for( int i = 0; i < ragdoll.studioBoneCount; ++i )
-		{
-			if( !bounds[i].valid )
-				continue;
-
-			RagdollBone bone;
-			bone.studioBoneIndex = i;
-			bone.parentElementIndex = -1;
-			bone.bodyID = BodyID();
-			bone.initialRotation = boneRotations[i];
-
-			const Vec3 localMin(
-				bounds[i].mins[0],
-				bounds[i].mins[1],
-				bounds[i].mins[2]
-			);
-			const Vec3 localMax(
-				bounds[i].maxs[0],
-				bounds[i].maxs[1],
-				bounds[i].maxs[2]
-			);
-			bone.localShapeCenter = ( localMin + localMax ) * 0.5f;
-			bone.halfExtents = ( localMax - localMin ) * 0.5f;
-
-			bone.halfExtents = Vec3(
-				std::max( 0.75f, bone.halfExtents.GetX() ),
-				std::max( 0.75f, bone.halfExtents.GetY() ),
-				std::max( 0.75f, bone.halfExtents.GetZ() )
-			);
-
-			boneToElement[i] = static_cast<int>( ragdoll.bones.size() );
-			ragdoll.bones.push_back( bone );
-		}
-
-		ragdoll.bodyCount = static_cast<int>( ragdoll.bones.size() );
-		if( ragdoll.bodyCount <= 0 || ragdoll.bodyCount > 128 )
-			return NPCPhysics_RagdollSetupFailed( "zombie model produced no valid hitbox bodies or too many bodies" );
-
-		// Match Source's hierarchy collapse: a physical element is connected to
-		// the nearest ancestor that also owns a physical element, not blindly to
-		// the immediately preceding studio bone.
-		for( int i = 0; i < ragdoll.bodyCount; ++i )
-		{
-			RagdollBone &bone = ragdoll.bones[i];
-			int parentBone = studioBones[bone.studioBoneIndex].parent;
-
-			while( parentBone >= 0 && parentBone < ragdoll.studioBoneCount )
-			{
-				if( boneToElement[parentBone] >= 0 )
+			const char *requiredName = g_npcZombieRagdollBodies[body].boneName;
+			for( int studio = 0; studio < ragdoll.studioBoneCount; ++studio )
+				if( NPCPhysics_NameEquals( studioBones[studio].name, requiredName ) )
 				{
-					bone.parentElementIndex = boneToElement[parentBone];
-					break;
+					if( rigStudioBones[body] >= 0 )
+						return NPCPhysics_RagdollSetupFailed( "duplicate names for an authored zombie physics bone" );
+					rigStudioBones[body] = studio;
 				}
-				parentBone = studioBones[parentBone].parent;
+			if( rigStudioBones[body] < 0 )
+			{
+				ALERT( at_console, "[NPC physics] Ragdoll setup failed: authored physics bone '%s' is missing from the zombie MDL.\\n", requiredName );
+				return false;
 			}
-
-			if( bone.parentElementIndex < 0 && ragdoll.rootElement < 0 )
-				ragdoll.rootElement = i;
+			studioBoneToRig[rigStudioBones[body]] = body;
 		}
 
-		if( ragdoll.rootElement < 0 )
-			return NPCPhysics_RagdollSetupFailed( "no hitbox body could be selected as the ragdoll root" );
+		// Verify that the compiled studio hierarchy still has the SMD's physical ancestry.
+		for( int body = 0; body < NPC_ZOMBIE_RAGDOLL_BODY_COUNT; ++body )
+		{
+			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
+			if( definition.parentBody >= body || definition.parentBody < -1 )
+				return NPCPhysics_RagdollSetupFailed( "generated zombie rig has an invalid parent-body index" );
+			int ancestor = studioBones[rigStudioBones[body]].parent;
+			while( ancestor >= 0 && studioBoneToRig[ancestor] < 0 )
+				ancestor = studioBones[ancestor].parent;
+			const int actualParent = ancestor < 0 ? -1 : studioBoneToRig[ancestor];
+			if( actualParent != definition.parentBody )
+			{
+				ALERT( at_console, "[NPC physics] Ragdoll setup failed: parent mismatch for authored bone '%s'.\\n", definition.boneName );
+				return false;
+			}
+		}
 
-		// Keep the edict origin near the moving physics assembly so Xash's
-		// entity culling/PVS bounds follow the corpse. The custom bone matrices
-		// remain absolute world transforms and do not depend on this offset.
+		ragdoll.bodyCount = NPC_ZOMBIE_RAGDOLL_BODY_COUNT;
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+		{
+			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
+			RagdollBone bone;
+			bone.studioBoneIndex = rigStudioBones[body];
+			bone.parentElementIndex = definition.parentBody;
+			bone.bodyID = BodyID();
+			bone.localShapeCenter = Vec3( definition.localShapeCenter.x, definition.localShapeCenter.y, definition.localShapeCenter.z );
+			bone.initialRotation = boneRotations[bone.studioBoneIndex];
+			ragdoll.bones.push_back( bone );
+			if( bone.parentElementIndex < 0 )
+			{
+				if( ragdoll.rootElement >= 0 )
+					return NPCPhysics_RagdollSetupFailed( "authored zombie rig has multiple root bodies" );
+				ragdoll.rootElement = body;
+			}
+		}
+		if( ragdoll.rootElement < 0 )
+			return NPCPhysics_RagdollSetupFailed( "authored zombie rig has no root body" );
+
 		const int rootStudioBone = ragdoll.bones[ragdoll.rootElement].studioBoneIndex;
 		ragdoll.entityOriginOffset = ent->v.origin - bonePositions[rootStudioBone];
 
-		float totalWeight = 0.0f;
+		// Build Jolt convex hulls from the eight authored vertices for each SMD solid.
+		std::vector<Ref<Shape> > physicsShapes( ragdoll.bodyCount );
 		std::vector<float> massWeights( ragdoll.bodyCount, 0.0f );
-		for( int i = 0; i < ragdoll.bodyCount; ++i )
+		float totalWeight = 0.0f;
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
-			const Vec3 &half = ragdoll.bones[i].halfExtents;
-			const float weight = std::max(
-				1.0f,
-				8.0f * half.GetX() * half.GetY() * half.GetZ()
-			);
-			massWeights[i] = weight;
-			totalWeight += weight;
+			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
+			if( !definition.points || definition.pointCount < 4 || definition.pointCount > 32 )
+				return NPCPhysics_RagdollSetupFailed( "authored zombie collision hull has an invalid point count" );
+			Vec3 points[32];
+			for( int point = 0; point < definition.pointCount; ++point )
+			{
+				const NPCZombieRagdollPoint &p = definition.points[point];
+				if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) )
+					return NPCPhysics_RagdollSetupFailed( "authored zombie hull contains a non-finite vertex" );
+				points[point] = Vec3( p.x, p.y, p.z );
+			}
+			ConvexHullShapeSettings hullSettings( points, definition.pointCount, 0.05f );
+			Shape::ShapeResult result = hullSettings.Create();
+			if( !result.IsValid() )
+			{
+				ALERT( at_console, "[NPC physics] Ragdoll setup failed: Jolt could not build hull '%s'.\\n", definition.boneName );
+				return false;
+			}
+			physicsShapes[body] = result.Get();
+			massWeights[body] = physicsShapes[body]->GetVolume();
+			if( !std::isfinite( massWeights[body] ) || massWeights[body] <= 0.0001f )
+				return NPCPhysics_RagdollSetupFailed( "authored zombie collision hull has invalid volume" );
+			totalWeight += massWeights[body];
 		}
+		if( totalWeight <= 0.0001f || !std::isfinite( totalWeight ) )
+			return NPCPhysics_RagdollSetupFailed( "authored zombie hull set has zero combined volume" );
 
-		float totalMass = NPCPhysics_GetCvar( "sv_npc_vphysics_mass", 80.0f );
+		float totalMass = NPCPhysics_GetCvar( "sv_npc_vphysics_mass", NPC_ZOMBIE_RAGDOLL_TOTAL_MASS );
 		if( totalMass <= 0.0f )
-			totalMass = 80.0f;
+			totalMass = NPC_ZOMBIE_RAGDOLL_TOTAL_MASS;
 		totalMass = std::max( 10.0f, std::min( totalMass, 300.0f ) );
 
 		ragdoll.groupFilter = new GroupFilterTable( static_cast<uint>( ragdoll.bodyCount ) );
@@ -825,7 +723,7 @@ namespace
 			const float bodyMass = totalMass * massWeights[i] / totalWeight;
 
 			BodyCreationSettings settings(
-				new BoxShape( bone.halfExtents, 0.05f ),
+				physicsShapes[i].GetPtr(),
 				RVec3( bodyCenter ),
 				rotation,
 				EMotionType::Dynamic,
@@ -840,8 +738,9 @@ namespace
 			);
 			settings.mFriction = 0.8f;
 			settings.mRestitution = 0.0f;
-			settings.mLinearDamping = 0.025f;
-			settings.mAngularDamping = 0.06f;
+			settings.mLinearDamping = NPC_ZOMBIE_RAGDOLL_LINEAR_DAMPING;
+			const float angularDamping = g_npcZombieRagdollBodies[i].angularDampingOverride;
+			settings.mAngularDamping = angularDamping > 0.0f ? angularDamping : NPC_ZOMBIE_RAGDOLL_ANGULAR_DAMPING;
 			settings.mMaxLinearVelocity = RAGDOLL_VELOCITY_LIMIT;
 			settings.mMaxAngularVelocity = RAGDOLL_ANGULAR_VELOCITY_LIMIT;
 			settings.mMotionQuality = EMotionQuality::LinearCast;
@@ -970,8 +869,8 @@ namespace
 
 			// The two constraint frames are aligned in world space at creation,
 			// preserving the animation's initial relative bone orientation.
-			const Vec3 axisX = parentBone.initialRotation.RotateAxisX().Normalized();
-			const Vec3 axisY = parentBone.initialRotation.RotateAxisY().Normalized();
+			const Vec3 axisX = childBone.initialRotation.RotateAxisX().Normalized();
+			const Vec3 axisY = childBone.initialRotation.RotateAxisY().Normalized();
 			constraintSettings.mAxisX1 = axisX;
 			constraintSettings.mAxisY1 = axisY;
 			constraintSettings.mAxisX2 = axisX;
@@ -981,34 +880,22 @@ namespace
 			constraintSettings.MakeFixedAxis( SixDOFConstraintSettings::TranslationY );
 			constraintSettings.MakeFixedAxis( SixDOFConstraintSettings::TranslationZ );
 
-			float twistLimit, swingLimit, friction;
-			NPCPhysics_GetJointLimits(
-				studioBones[childStudioBone].name,
-				twistLimit,
-				swingLimit,
-				friction
-			);
-			constraintSettings.mSwingType = ESwingType::Cone;
-			constraintSettings.SetLimitedAxis(
+			const NPCZombieRagdollBodyDefinition &jointDefinition = g_npcZombieRagdollBodies[i];
+			constraintSettings.mSwingType = ESwingType::Pyramid;
+			const SixDOFConstraintSettings::EAxis rotationAxes[3] = {
 				SixDOFConstraintSettings::RotationX,
-				-twistLimit,
-				twistLimit
-			);
-			// Jolt's cone swing convention takes a non-negative half-angle;
-			// the cone is symmetric about zero internally.
-			constraintSettings.SetLimitedAxis(
 				SixDOFConstraintSettings::RotationY,
-				0.0f,
-				swingLimit
-			);
-			constraintSettings.SetLimitedAxis(
-				SixDOFConstraintSettings::RotationZ,
-				0.0f,
-				swingLimit
-			);
-			constraintSettings.mMaxFriction[SixDOFConstraintSettings::RotationX] = friction;
-			constraintSettings.mMaxFriction[SixDOFConstraintSettings::RotationY] = friction;
-			constraintSettings.mMaxFriction[SixDOFConstraintSettings::RotationZ] = friction;
+				SixDOFConstraintSettings::RotationZ
+			};
+			for( int axis = 0; axis < 3; ++axis )
+			{
+				const float minDegrees = jointDefinition.jointMinDegrees[axis];
+				const float maxDegrees = jointDefinition.jointMaxDegrees[axis];
+				const float minRadians = minDegrees <= -1.0e20f ? -FLT_MAX : minDegrees * RAGDOLL_DEGREES_TO_RADIANS;
+				const float maxRadians = maxDegrees >= 1.0e20f ? FLT_MAX : maxDegrees * RAGDOLL_DEGREES_TO_RADIANS;
+				constraintSettings.SetLimitedAxis( rotationAxes[axis], minRadians, maxRadians );
+			}
+			// No joint-friction value is authored in the QC, so no artificial torque cap is added.
 
 			Ref<TwoBodyConstraint> constraint = constraintSettings.Create( *parentBody, *childBody );
 			if( constraint.GetPtr() == NULL )
