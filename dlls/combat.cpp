@@ -1463,6 +1463,63 @@ Go to the trouble of combining multiple pellets into a single damage call.
 This version is used by Monsters.
 ================
 */
+
+#ifndef CLIENT_DLL
+static float NPCPhysics_GetBulletImpactDamage( int bulletType, int damage, BOOL playerBullet )
+{
+	if( damage > 0 )
+		return (float)damage;
+
+	if( playerBullet )
+	{
+		switch( bulletType )
+		{
+		case BULLET_PLAYER_MP5: return gSkillData.plrDmgMP5;
+		case BULLET_PLAYER_BUCKSHOT: return gSkillData.plrDmgBuckshot;
+		case BULLET_PLAYER_357: return gSkillData.plrDmg357;
+		case BULLET_NONE: return 50.0f;
+		case BULLET_PLAYER_9MM:
+		default: return gSkillData.plrDmg9MM;
+		}
+	}
+
+	switch( bulletType )
+	{
+	case BULLET_MONSTER_MP5: return gSkillData.monDmgMP5;
+	case BULLET_MONSTER_12MM: return gSkillData.monDmg12MM;
+	case BULLET_NONE: return 50.0f;
+	case BULLET_MONSTER_9MM:
+	default: return gSkillData.monDmg9MM;
+	}
+}
+
+static void NPCPhysics_ApplyBulletImpact(
+	const Vector &start, const Vector &end, int bulletType, int damage,
+	BOOL playerBullet, TraceResult *trace )
+{
+	if( !trace )
+		return;
+
+	float impactDamage = NPCPhysics_GetBulletImpactDamage(
+		bulletType, damage, playerBullet );
+	float impulseMagnitude = impactDamage * 12.0f;
+	if( impulseMagnitude > 1500.0f )
+		impulseMagnitude = 1500.0f;
+
+	float hitFraction = trace->flFraction;
+	float hitPosition[3];
+	edict_t *hitEntity = NULL;
+	if( NPCPhysics_TraceAndApplyImpact(
+		&start[0], &end[0], trace->flFraction, impulseMagnitude,
+		&hitFraction, hitPosition, &hitEntity ) )
+	{
+		trace->flFraction = hitFraction;
+		trace->vecEndPos = Vector( hitPosition[0], hitPosition[1], hitPosition[2] );
+		trace->pHit = hitEntity;
+	}
+}
+#endif
+
 void CBaseEntity::FireBullets( ULONG cShots, Vector vecSrc, Vector vecDirShooting, Vector vecSpread, float flDistance, int iBulletType, int iTracerFreq, int iDamage, entvars_t *pevAttacker )
 {
 	static int tracerCount;
@@ -1494,6 +1551,9 @@ void CBaseEntity::FireBullets( ULONG cShots, Vector vecSrc, Vector vecDirShootin
 
 		vecEnd = vecSrc + vecDir * flDistance;
 		UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, ENT( pev )/*pentIgnore*/, &tr );
+#ifndef CLIENT_DLL
+		NPCPhysics_ApplyBulletImpact( vecSrc, vecEnd, iBulletType, iDamage, FALSE, &tr );
+#endif
 
 		tracer = 0;
 		if( iTracerFreq != 0 && ( tracerCount++ % iTracerFreq ) == 0 )
@@ -1624,6 +1684,9 @@ Vector CBaseEntity::FireBulletsPlayer( ULONG cShots, Vector vecSrc, Vector vecDi
 
 		vecEnd = vecSrc + vecDir * flDistance;
 		UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, ENT( pev )/*pentIgnore*/, &tr );
+#ifndef CLIENT_DLL
+		NPCPhysics_ApplyBulletImpact( vecSrc, vecEnd, iBulletType, iDamage, TRUE, &tr );
+#endif
 
 		// do damage, paint decals
 		if( tr.flFraction != 1.0f )
