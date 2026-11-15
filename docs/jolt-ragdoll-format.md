@@ -113,3 +113,42 @@ fraction and also sees the Jolt BSP/brush colliders, preventing impacts through
 nearer world geometry. The hit position is returned to the weapon trace so bullet
 tracers and hit handling stop at the ragdoll. Living NPCs continue using the
 original GoldSrc damage and collision path.
+
+
+### Weapon force model and attached impact marks
+
+Bullet impulses use the same physical conversion used by the HL2 ammo definitions:
+projectile mass in grains is converted to kilograms, muzzle velocity in feet per
+second is converted to inches per second, and the Source 3.5 impulse exaggeration
+factor is applied. The initial mappings are 200-grain / 1225-ft/s pistol and
+SMG ammunition, 800-grain / 5000-ft/s .357 ammunition, and 400-grain / 1200-ft/s
+shotgun buckshot. The 12 mm monster round uses a provisional 400-grain /
+1225-ft/s mapping. All impulses are capped by the Jolt bridge to avoid extreme
+velocities with the reduced zombie rig.
+
+The crowbar follows Source's melee damage-force calculation:
+base damage multiplied by a 75 kg target mass and a 4 in/s-per-damage scale.
+Both paths apply their impulse at the actual Jolt contact point, wake the hit
+body, and request an immediate pose snapshot.
+
+Server tuning cvars (default 1.0):
+
+- `sv_npc_vphysics_bullet_scale`: scales the Source-derived bullet impulse.
+- `sv_npc_vphysics_crowbar_scale`: scales the Source-style crowbar impulse.
+
+When a bullet or crowbar hits a bleeding Jolt ragdoll, the old GoldSrc reverse
+`TraceBleed` trace is skipped. That trace ignored monsters and could pass through
+the physics corpse to leave a decal on the floor or wall behind it. Blood
+particles still spawn at the impact point.
+
+The server also sends the struck studio bone, local hit point, and local surface
+normal to clients. The hardware studio renderer draws an irregular alpha blood
+patch using that bone's interpolated pose, so the mark follows the moving limb.
+`cl_ragdoll_bloodmarks 0` disables these marks. The client retains up to 32
+recent marks per ragdoll.
+
+These first-pass marks are bone-attached overlays, not triangle-clipped Source
+studio decals. They follow the articulated bone but are not yet clipped to the
+exact skinned mesh surface. The current impact integration covers hitscan bullets
+and the crowbar; projectiles and explosive radius impulses are not yet wired into
+the Jolt ragdoll path.
