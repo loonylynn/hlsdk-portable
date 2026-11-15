@@ -615,6 +615,8 @@ typedef struct studio_ragdoll_mark_cache_s
 	int bloodColor;
 	unsigned int age;
 	int fragmentCount;
+	int projectionAttempts;
+	float retryTime;
 	studio_ragdoll_decal_fragment_t fragments[STUDIO_RAGDOLL_DECAL_MAX_FRAGMENTS];
 } studio_ragdoll_mark_cache_t;
 
@@ -852,7 +854,8 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	const float localPosition[3],
 	const float localNormal[3],
 	float sourceRadius,
-	int bloodColor )
+	int bloodColor,
+	int projectionAttempt )
 {
 	float boneTransform[3][4];
 	if( !Ragdoll_GetBoneTransform( entityIndex, boneIndex, boneTransform ) )
@@ -877,6 +880,7 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	if( cache->radius < 1.0f ) cache->radius = 1.0f;
 	if( cache->radius > 2.5f ) cache->radius = 2.5f;
 	cache->bloodColor = bloodColor;
+	cache->projectionAttempts = projectionAttempt;
 	for( int axis = 0; axis < 3; ++axis )
 	{
 		cache->localPosition[axis] = localPosition[axis];
@@ -910,11 +914,18 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	if( !search.found )
 	{
 		cache->age = ++g_StudioRagdollDecalCacheClock;
+		// An impact message can arrive just before the pose snapshot caused by
+		// that same hit. The client interpolates incoming bones over the snapshot
+		// interval, so a first projection against the previous pose can miss by
+		// a large amount. Retry a few times at 5 Hz instead of caching failure
+		// forever or rescanning the full model every rendered frame.
+		if( projectionAttempt < 4 )
+			cache->retryTime = (float)gEngfuncs.GetClientTime() + 0.20f;
 		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
 			gEngfuncs.Con_Printf )
 			gEngfuncs.Con_Printf(
-				"[Ragdoll decals] entity %d bone %d: parsed %d triangles, no surface within 12 units (nearest %.2f; mark %.1f %.1f %.1f; surface %.1f %.1f %.1f)\n",
-				entityIndex, boneIndex, search.triangleCount,
+				"[Ragdoll decals] entity %d bone %d: attempt %d/5 parsed %d triangles, no surface within 12 units (nearest %.2f; mark %.1f %.1f %.1f; surface %.1f %.1f %.1f)\n",
+				entityIndex, boneIndex, projectionAttempt + 1, search.triangleCount,
 				sqrtf( search.nearestDistanceSquared ),
 				search.point[0], search.point[1], search.point[2],
 				search.nearestPoint[0], search.nearestPoint[1], search.nearestPoint[2] );
@@ -1109,7 +1120,16 @@ static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 		{
 			cache = StudioBuildRagdollMarkCache(
 				renderer, entity->index, boneIndex,
-				localPosition, localNormal, sourceRadius, bloodColor );
+				localPosition, localNormal, sourceRadius, bloodColor, 0 );
+		}
+		else if( cache->fragmentCount <= 0 && cache->retryTime > 0.0f &&
+			(float)gEngfuncs.GetClientTime() >= cache->retryTime )
+		{
+			const int nextAttempt = cache->projectionAttempts + 1;
+			cache->valid = false;
+			cache = StudioBuildRagdollMarkCache(
+				renderer, entity->index, boneIndex,
+				localPosition, localNormal, sourceRadius, bloodColor, nextAttempt );
 		}
 
 		if( cache && cache->fragmentCount > 0 )
