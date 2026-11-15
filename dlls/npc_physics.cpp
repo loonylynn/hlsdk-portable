@@ -19,6 +19,9 @@
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
@@ -1801,6 +1804,80 @@ namespace
 			}
 		}
 	}
+}
+
+int NPCPhysics_TraceAndApplyImpact(
+	const float *start,
+	const float *end,
+	float maxFraction,
+	float impulseMagnitude,
+	float *hitFraction,
+	float *hitPosition,
+	edict_t **hitEntity )
+{
+	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
+		!start || !end || !hitFraction || !hitPosition || !hitEntity ||
+		!std::isfinite( maxFraction ) || !std::isfinite( impulseMagnitude ) ||
+		impulseMagnitude <= 0.0f )
+		return FALSE;
+
+	maxFraction = std::max( 0.0f, std::min( maxFraction, 1.0f ) );
+	const JPH::Vec3 rayDirection(
+		end[0] - start[0],
+		end[1] - start[1],
+		end[2] - start[2] );
+	const float rayLength = rayDirection.Length();
+	if( !std::isfinite( rayLength ) || rayLength <= 0.001f )
+		return FALSE;
+
+	const JPH::RRayCast ray(
+		JPH::RVec3( start[0], start[1], start[2] ),
+		rayDirection );
+	JPH::RayCastResult hit;
+	hit.mFraction = maxFraction;
+	if( !g_npcPhysics.system.GetNarrowPhaseQuery().CastRay( ray, hit ) )
+		return FALSE;
+
+	// The Jolt world and brush colliders participate in the ray test too.
+	// Only accept a body that belongs to one of our articulated NPC ragdolls.
+	edict_t *targetEntity = NULL;
+	bool foundRagdollBody = false;
+	for( size_t ragdollIndex = 0; ragdollIndex < g_ragdolls.size(); ++ragdollIndex )
+	{
+		NPCPhysicsRagdoll &ragdoll = g_ragdolls[ragdollIndex];
+		if( !ragdoll.entity || ragdoll.entity->free ||
+			ragdoll.entity->serialnumber != ragdoll.serialNumber ||
+			!ragdoll.addedToPhysicsSystem || !ragdoll.physicsRagdoll.GetPtr() )
+			continue;
+
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+		{
+			if( ragdoll.physicsRagdoll->GetBodyID( body ) == hit.mBodyID )
+			{
+				targetEntity = ragdoll.entity;
+				foundRagdollBody = true;
+				break;
+			}
+		}
+		if( foundRagdollBody )
+			break;
+	}
+
+	if( !foundRagdollBody || !targetEntity )
+		return FALSE;
+
+	const JPH::RVec3 impactPoint = ray.GetPointOnRay( hit.mFraction );
+	JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
+	impulse = NPCPhysics_ClampVector( impulse, 1500.0f );
+	g_npcPhysics.system.GetBodyInterface().AddImpulse(
+		hit.mBodyID, impulse, impactPoint );
+
+	*hitFraction = hit.mFraction;
+	hitPosition[0] = float( impactPoint.GetX() );
+	hitPosition[1] = float( impactPoint.GetY() );
+	hitPosition[2] = float( impactPoint.GetZ() );
+	*hitEntity = targetEntity;
+	return TRUE;
 }
 
 int NPCPhysics_TryCreateRagdoll( edict_t *ent )
