@@ -298,7 +298,7 @@ def parse_qci(path: Path) -> QCIData:
         elif directive == "$jointrotdamping":
             if len(parts) != 3:
                 raise ValueError("{}:{}: $jointrotdamping expects a bone name and value".format(
-                    path, line_number))
+                    source_path, line_number))
             value = _finite_float(parts[2], "{}:{}".format(source_path, line_number))
             if value < 0:
                 raise ValueError("{}:{}: joint rotational damping cannot be negative".format(source_path, line_number))
