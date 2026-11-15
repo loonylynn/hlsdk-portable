@@ -427,7 +427,7 @@ int Ragdoll_GetImpactMark(
 	const float now = (float)gEngfuncs.GetClientTime();
 	if( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT )
 	{
-		memset( &entry, 0, sizeof( entry ) );
+		Ragdoll_ClearEntity( entityIndex );
 		return 0;
 	}
 
