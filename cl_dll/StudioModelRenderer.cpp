@@ -847,6 +847,24 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	if( !Ragdoll_GetBoneTransform( entityIndex, boneIndex, boneTransform ) )
 		return NULL;
 
+	// Cache failed projections too: a malformed or unusual studio mesh must
+	// never trigger a full-model scan every frame.
+	studio_ragdoll_mark_cache_t *cache = StudioAllocateRagdollMarkCache();
+	memset( cache, 0, sizeof( *cache ) );
+	cache->valid = true;
+	cache->entityIndex = entityIndex;
+	cache->model = renderer->m_pRenderModel;
+	cache->boneIndex = boneIndex;
+	cache->radius = sourceRadius;
+	if( cache->radius < 1.0f ) cache->radius = 1.0f;
+	if( cache->radius > 2.5f ) cache->radius = 2.5f;
+	cache->bloodColor = bloodColor;
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		cache->localPosition[axis] = localPosition[axis];
+		cache->localNormal[axis] = localNormal[axis];
+	}
+
 	studio_ragdoll_surface_search_t search;
 	memset( &search, 0, sizeof( search ) );
 	for( int axis = 0; axis < 3; ++axis )
@@ -871,22 +889,9 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	StudioForEachRagdollModelTriangle(
 		renderer, StudioFindRagdollImpactSurface, &search );
 	if( !search.found )
-		return NULL;
-
-	studio_ragdoll_mark_cache_t *cache = StudioAllocateRagdollMarkCache();
-	memset( cache, 0, sizeof( *cache ) );
-	cache->valid = true;
-	cache->entityIndex = entityIndex;
-	cache->model = renderer->m_pRenderModel;
-	cache->boneIndex = boneIndex;
-	cache->radius = sourceRadius;
-	if( cache->radius < 1.0f ) cache->radius = 1.0f;
-	if( cache->radius > 2.5f ) cache->radius = 2.5f;
-	cache->bloodColor = bloodColor;
-	for( int axis = 0; axis < 3; ++axis )
 	{
-		cache->localPosition[axis] = localPosition[axis];
-		cache->localNormal[axis] = localNormal[axis];
+		cache->age = ++g_StudioRagdollDecalCacheClock;
+		return cache;
 	}
 
 	studio_ragdoll_decal_build_t build;
