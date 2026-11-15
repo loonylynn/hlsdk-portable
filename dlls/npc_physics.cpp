@@ -184,6 +184,7 @@ namespace
 	static std::vector<NPCPhysicsBrushModelShape> g_brushModelShapes;
 	static std::vector<NPCPhysicsBrushCollider> g_brushColliders;
 	static bool g_brushCollisionUnavailableLogged = false;
+	static bool g_brushCollisionStatusLogged = false;
 	static BodyID g_worldCollisionBodyID;
 	static Ref<Shape> g_worldCollisionShape;
 	static bool g_worldCollisionReady = false;
@@ -618,7 +619,7 @@ namespace
 		{
 			ALERT(
 				at_console,
-				"[NPC physics] Jolt could not build inline brush model %d collision mesh.\\n",
+				"[NPC physics] Jolt could not build inline brush model %d collision mesh.\n",
 				modelIndex
 			);
 			return Ref<Shape>();
@@ -631,7 +632,7 @@ namespace
 
 		ALERT(
 			at_console,
-			"[NPC physics] Cached inline brush model %d: %u vertices, %u triangles.\\n",
+			"[NPC physics] Cached inline brush model %d: %u vertices, %u triangles.\n",
 			modelIndex,
 			vertexCount,
 			indexCount / 3
@@ -659,7 +660,7 @@ namespace
 			{
 				ALERT(
 					at_console,
-					"[NPC physics] Inline BSP entity collision API is unavailable; func_wall and other brush entities will not collide.\\n"
+					"[NPC physics] Inline BSP entity collision API is unavailable; func_wall and other brush entities will not collide.\n"
 				);
 				g_brushCollisionUnavailableLogged = true;
 			}
@@ -669,6 +670,11 @@ namespace
 		const int entityCount = g_brushCollisionMeshAPI->GetEntityCount();
 		if( entityCount < 0 || entityCount > 8192 )
 			return;
+		if( !g_brushCollisionStatusLogged )
+		{
+			ALERT( at_console, "[NPC physics] Found %d inline SOLID_BSP entity colliders.\\n", entityCount );
+			g_brushCollisionStatusLogged = true;
+		}
 
 		std::vector<int> presentEntities;
 		presentEntities.reserve( entityCount );
@@ -690,11 +696,10 @@ namespace
 				!std::isfinite( position.GetZ() ) )
 				continue;
 
+			presentEntities.push_back( entityInfo.entityIndex );
 			Ref<Shape> shape = NPCPhysics_GetBrushModelShape( entityInfo.modelIndex );
 			if( !shape.GetPtr() )
 				continue;
-
-			presentEntities.push_back( entityInfo.entityIndex );
 			int colliderIndex = NPCPhysics_FindBrushCollider( entityInfo.entityIndex );
 			if( colliderIndex >= 0 &&
 				g_brushColliders[colliderIndex].modelIndex != entityInfo.modelIndex )
@@ -724,7 +729,7 @@ namespace
 				{
 					ALERT(
 						at_console,
-						"[NPC physics] Could not create inline brush collider for entity %d.\\n",
+						"[NPC physics] Could not create inline brush collider for entity %d.\n",
 						entityInfo.entityIndex
 					);
 					continue;
@@ -737,6 +742,12 @@ namespace
 				collider.position = position;
 				collider.rotation = rotation;
 				g_brushColliders.push_back( collider );
+				ALERT(
+					at_console,
+					"[NPC physics] Added inline BSP collider: entity %d, model %d.\\n",
+					entityInfo.entityIndex,
+					entityInfo.modelIndex
+				);
 				continue;
 			}
 
@@ -1381,6 +1392,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	g_worldCollisionMeshAPI = NULL;
 	g_brushCollisionMeshAPI = NULL;
 	g_brushCollisionUnavailableLogged = false;
+	g_brushCollisionStatusLogged = false;
 	if( g_serverPhysicsAPI->pfnGetNativeObject )
 	{
 		g_worldCollisionMeshAPI = reinterpret_cast<xash_world_collision_mesh_api_s *>(
@@ -1470,6 +1482,7 @@ void NPCPhysics_Shutdown( void )
 	g_worldCollisionMeshAPI = NULL;
 	g_brushCollisionMeshAPI = NULL;
 	g_brushCollisionUnavailableLogged = false;
+	g_brushCollisionStatusLogged = false;
 	g_livePoses.clear();
 	g_msgRagdollPose = 0;
 }
