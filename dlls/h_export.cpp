@@ -1,14 +1,14 @@
 /***
 *
 *	Copyright (c) 1996-2002, Valve LLC. All rights reserved.
-*	
-*	This product contains software technology licensed from Id 
-*	Software, Inc. ("Id Technology").  Id Technology (c) 1996 Id Software, Inc. 
+*
+*	This product contains software technology licensed from Id
+*	Software, Inc. ("Id Technology"). Id Technology (c) 1996 Id Software, Inc.
 *	All Rights Reserved.
 *
 *   Use, distribution, and modification of this source code and/or resulting
 *   object code is restricted to non-commercial enhancements to products from
-*   Valve LLC.  All other use, distribution, or modification is prohibited
+*   Valve LLC. All other use, distribution, or modification is prohibited
 *   without written permission from Valve LLC.
 *
 ****/
@@ -22,6 +22,7 @@
 
 #include "extdll.h"
 #include "util.h"
+#include "xash_physint.h"
 
 #include "cbase.h"
 
@@ -53,4 +54,15 @@ extern "C" void DLLEXPORT EXPORT2 GiveFnptrsToDll( enginefuncs_t *pengfuncsFromE
 {
 	memcpy( &g_engfuncs, pengfuncsFromEngine, sizeof(enginefuncs_t) );
 	gpGlobals = pGlobals;
+}
+
+// Xash3D looks up this exact export when initializing the extended server
+// physics interface. Without it, the SDK's SV_PhysicsEntity/SV_EndFrame
+// callbacks are never installed, even though NPCPhysics_GetInterface exists.
+extern "C" int DLLEXPORT EXPORT2 Server_GetPhysicsInterface(
+	int version,
+	void *serverAPI,
+	void *callbacks )
+{
+	return NPCPhysics_GetInterface( version, serverAPI, callbacks );
 }
