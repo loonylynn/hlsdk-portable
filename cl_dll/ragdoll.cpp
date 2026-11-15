@@ -8,7 +8,6 @@
 
 extern engine_studio_api_t IEngineStudio;
 
-#include <algorithm>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -462,49 +461,64 @@ static int Ragdoll_RayCapsuleFraction(
 
 	float rayFraction = 0.0f;
 	float segmentFraction = 0.0f;
+	const float rayOffset = Ragdoll_Dot3( rayDirection, offset );
+	const float segmentOffset = Ragdoll_Dot3( segment, offset );
 	if( segmentLengthSquared > 0.000001f )
 	{
 		const float raySegment = Ragdoll_Dot3( rayDirection, segment );
-		const float rayOffset = Ragdoll_Dot3( rayDirection, offset );
-		const float segmentOffset = Ragdoll_Dot3( segment, offset );
 		const float denominator =
 			rayLengthSquared * segmentLengthSquared - raySegment * raySegment;
 		if( denominator > 0.000001f )
 		{
 			rayFraction =
-				( raySegment * segmentOffset - rayOffset * segmentLengthSquared ) /
-				denominator;
-			segmentFraction =
-				( raySegment * rayFraction - segmentOffset ) / segmentLengthSquared;
+				( raySegment * segmentOffset -
+				  rayOffset * segmentLengthSquared ) / denominator;
 		}
+		else
+		{
+			// Nearly parallel: begin with the closest point to the segment start.
+			rayFraction = -rayOffset / rayLengthSquared;
+		}
+		segmentFraction = ( segmentOffset +
+			raySegment * rayFraction ) / segmentLengthSquared;
+	}
+	else
+	{
+		// Degenerate segment: treat it as a sphere at segmentStart.
+		rayFraction = -rayOffset / rayLengthSquared;
 	}
 
 	rayFraction = Ragdoll_ClampRange( rayFraction, 0.0f, maximumFraction );
 	segmentFraction = Ragdoll_ClampRange( segmentFraction, 0.0f, 1.0f );
 
-	// Refit both parameters after clamping one another to their finite segments.
+	// Alternate exact projections onto each finite segment. Fractions are
+	// absolute parameters from rayStart/segmentStart, not parameter deltas.
 	for( int iteration = 0; iteration < 3; ++iteration )
 	{
-		float rayPoint[3], segmentPoint[3], between[3];
+		float segmentPoint[3], between[3];
 		for( int axis = 0; axis < 3; ++axis )
 		{
-			rayPoint[axis] = rayStart[axis] + rayDirection[axis] * rayFraction;
 			segmentPoint[axis] =
 				segmentStart[axis] + segment[axis] * segmentFraction;
-			between[axis] = segmentPoint[axis] - rayPoint[axis];
+			between[axis] = segmentPoint[axis] - rayStart[axis];
 		}
 		rayFraction = Ragdoll_ClampRange(
 			Ragdoll_Dot3( between, rayDirection ) / rayLengthSquared,
 			0.0f, maximumFraction );
-		for( int axis = 0; axis < 3; ++axis )
-		{
-			rayPoint[axis] = rayStart[axis] + rayDirection[axis] * rayFraction;
-			between[axis] = rayPoint[axis] - segmentStart[axis];
-		}
+
 		if( segmentLengthSquared > 0.000001f )
+		{
+			float rayPoint[3];
+			for( int axis = 0; axis < 3; ++axis )
+			{
+				rayPoint[axis] =
+					rayStart[axis] + rayDirection[axis] * rayFraction;
+				between[axis] = rayPoint[axis] - segmentStart[axis];
+			}
 			segmentFraction = Ragdoll_ClampRange(
 				Ragdoll_Dot3( between, segment ) / segmentLengthSquared,
 				0.0f, 1.0f );
+		}
 	}
 
 	float rayPoint[3], segmentPoint[3], separation[3];
