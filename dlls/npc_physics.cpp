@@ -1916,26 +1916,33 @@ int NPCPhysics_TraceAndApplyImpact(
 		if( bloodColor != DONT_BLEED )
 		{
 			const RagdollBone &bone = targetRagdoll->bones[targetBodyIndex];
-			const JPH::Quat bodyRotation = bodyInterface.GetRotation( hit.mBodyID );
-			const JPH::RVec3 bodyPosition = bodyInterface.GetPosition( hit.mBodyID );
-			const JPH::Vec3 bodyOrigin(
-				float( bodyPosition.GetX() ),
-				float( bodyPosition.GetY() ),
-				float( bodyPosition.GetZ() ) );
-			const JPH::Vec3 boneOrigin =
-				bodyOrigin - bodyRotation * bone.localShapeCenter;
-			const JPH::Vec3 hitPoint(
-				float( impactPoint.GetX() ),
-				float( impactPoint.GetY() ),
-				float( impactPoint.GetZ() ) );
-			const JPH::Quat inverseRotation = bodyRotation.Conjugated();
-			const JPH::Vec3 localPosition =
-				inverseRotation * ( hitPoint - boneOrigin );
-			const JPH::Vec3 worldNormal = -( rayDirection / rayLength );
-			const JPH::Vec3 localNormal =
-				( inverseRotation * worldNormal ).Normalized();
-			const float markRadius = std::max(
-				2.5f, std::min( 6.0f, 2.5f + impulseMagnitude * 0.001f ) );
+			if( bone.studioBoneIndex >= 0 &&
+				bone.studioBoneIndex < targetRagdoll->studioBoneCount )
+			{
+				// The client attaches the mark to the mapped studio-bone matrix,
+				// not the raw Jolt body's center-of-mass transform. Use the exact
+				// same mapped pose here so the local point survives skeleton retargeting.
+				const Vec3 rootBoneOrigin =
+					NPCPhysics_GetRootBoneOrigin( *targetRagdoll, bodyInterface );
+				NPCPhysics_UpdateMappedStudioPose(
+					*targetRagdoll, bodyInterface, rootBoneOrigin );
+				const Mat44 &studioBoneTransform =
+					targetRagdoll->studioPoseModelSpace[bone.studioBoneIndex];
+				const Vec3 studioBoneOrigin =
+					rootBoneOrigin + studioBoneTransform.GetTranslation();
+				const Quat inverseStudioRotation =
+					studioBoneTransform.GetQuaternion().Normalized().Conjugated();
+				const Vec3 hitPoint(
+					float( impactPoint.GetX() ),
+					float( impactPoint.GetY() ),
+					float( impactPoint.GetZ() ) );
+				const Vec3 localPosition =
+					inverseStudioRotation * ( hitPoint - studioBoneOrigin );
+				const Vec3 worldNormal = -( rayDirection / rayLength );
+				const Vec3 localNormal =
+					( inverseStudioRotation * worldNormal ).Normalized();
+				const float markRadius = std::max(
+					0.85f, std::min( 1.9f, 0.85f + impulseMagnitude * 0.00035f ) );
 			const int encodedRadius = static_cast<int>( markRadius * 4.0f + 0.5f );
 			const int encodedNormalX = static_cast<int>( localNormal.GetX() * 127.0f + 128.0f );
 			const int encodedNormalY = static_cast<int>( localNormal.GetY() * 127.0f + 128.0f );
@@ -1948,20 +1955,20 @@ int NPCPhysics_TraceAndApplyImpact(
 				float( impactPoint.GetZ() )
 			};
 
-			MESSAGE_BEGIN( MSG_PVS, g_msgRagdollImpact, markOrigin );
-				WRITE_SHORT( ENTINDEX( targetEntity ) );
-				WRITE_SHORT( targetRagdoll->networkID );
-				WRITE_BYTE( bone.studioBoneIndex );
-				WRITE_COORD( localPosition.GetX() );
-				WRITE_COORD( localPosition.GetY() );
-				WRITE_COORD( localPosition.GetZ() );
-				WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalX ) ) );
-				WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalY ) ) );
-				WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalZ ) ) );
-				WRITE_BYTE( std::max( 1, std::min( 255, encodedRadius ) ) );
-				WRITE_BYTE( markColor );
-			MESSAGE_END();
-		}
+				MESSAGE_BEGIN( MSG_PVS, g_msgRagdollImpact, markOrigin );
+					WRITE_SHORT( ENTINDEX( targetEntity ) );
+					WRITE_SHORT( targetRagdoll->networkID );
+					WRITE_BYTE( bone.studioBoneIndex );
+					WRITE_COORD( localPosition.GetX() );
+					WRITE_COORD( localPosition.GetY() );
+					WRITE_COORD( localPosition.GetZ() );
+					WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalX ) ) );
+					WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalY ) ) );
+					WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalZ ) ) );
+					WRITE_BYTE( std::max( 1, std::min( 255, encodedRadius ) ) );
+					WRITE_BYTE( markColor );
+				MESSAGE_END();
+			}
 	}
 
 	*hitFraction = hit.mFraction;
