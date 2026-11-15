@@ -12,6 +12,7 @@ static const int MAX_RAGDOLL_BONES = 128;
 static const float RAGDOLL_SNAPSHOT_INTERVAL = 0.05f;
 static const float RAGDOLL_MAX_INTERPOLATION_INTERVAL = 0.25f;
 static const float RAGDOLL_STALE_TIMEOUT = 0.45f;
+static const int MAX_RAGDOLL_IMPACT_MARKS = 32;
 
 // The custom snapshot stream, not an entity-state user field, identifies ragdolls.
 
@@ -26,6 +27,15 @@ struct ragdoll_bone_pose_t
 	bool valid;
 };
 
+struct ragdoll_impact_mark_t
+{
+	int boneIndex;
+	float localPosition[3];
+	float localNormal[3];
+	float radius;
+	int bloodColor;
+};
+
 struct ragdoll_entity_pose_t
 {
 	int ragdollID;
@@ -38,6 +48,8 @@ struct ragdoll_entity_pose_t
 	bool renderReported;
 	bool snapshotCompletionReported;
 	bool renderGateReported;
+	int impactMarkCount;
+	ragdoll_impact_mark_t impactMarks[MAX_RAGDOLL_IMPACT_MARKS];
 	ragdoll_bone_pose_t bones[MAX_RAGDOLL_BONES];
 };
 
@@ -129,6 +141,7 @@ void Ragdoll_Init( void )
 
 	Ragdoll_ClearAll();
 	gEngfuncs.pfnHookUserMsg( "RagdollPose", Ragdoll_MessageHandler );
+	gEngfuncs.pfnHookUserMsg( "RagdollImpact", Ragdoll_ImpactMessageHandler );
 	g_RagdollMessageHooked = true;
 }
 
@@ -283,6 +296,135 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 		ConsolePrint( message );
 		entry.snapshotCompletionReported = true;
 	}
+	return 1;
+}
+
+int Ragdoll_ImpactMessageHandler( const char *, int size, void *buffer )
+{
+	// entity, ragdoll ID, studio bone, bone-local position, bone-local normal,
+	// radius (quarter units), and blood palette (red, green, yellow).
+	if( !buffer || size < 16 )
+		return 0;
+
+	BEGIN_READ( buffer, size );
+	const int entityIndex = READ_SHORT();
+	const int ragdollID = READ_SHORT();
+	const int boneIndex = READ_BYTE();
+	const float localPosition[3] = {
+		READ_COORD(), READ_COORD(), READ_COORD()
+	};
+	float localNormal[3] = {
+		( READ_BYTE() - 128 ) / 127.0f,
+		( READ_BYTE() - 128 ) / 127.0f,
+		( READ_BYTE() - 128 ) / 127.0f
+	};
+	const float radius = (float)READ_BYTE() * 0.25f;
+	const int bloodColor = READ_BYTE();
+
+	if( entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES ||
+		ragdollID <= 0 || boneIndex < 0 ||
+		!isfinite( localPosition[0] ) || !isfinite( localPosition[1] ) ||
+		!isfinite( localPosition[2] ) || !isfinite( radius ) ||
+		radius <= 0.0f || bloodColor < 0 || bloodColor > 2 )
+		return 0;
+
+	float normalLengthSquared =
+		localNormal[0] * localNormal[0] +
+		localNormal[1] * localNormal[1] +
+		localNormal[2] * localNormal[2];
+	if( normalLengthSquared < 0.0001f )
+	{
+		localNormal[0] = 0.0f;
+		localNormal[1] = 0.0f;
+		localNormal[2] = 1.0f;
+	}
+	else
+	{
+		const float inverseLength = 1.0f / sqrtf( normalLengthSquared );
+		for( int axis = 0; axis < 3; ++axis )
+			localNormal[axis] *= inverseLength;
+	}
+
+	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
+	if( !entry.active || entry.ragdollID != ragdollID ||
+		boneIndex >= entry.studioBoneCount ||
+		!entry.initialSnapshotComplete )
+		return 0;
+
+	ragdoll_impact_mark_t mark;
+	mark.boneIndex = boneIndex;
+	memcpy( mark.localPosition, localPosition, sizeof( mark.localPosition ) );
+	memcpy( mark.localNormal, localNormal, sizeof( mark.localNormal ) );
+	mark.radius = radius;
+	mark.bloodColor = bloodColor;
+
+	if( entry.impactMarkCount < MAX_RAGDOLL_IMPACT_MARKS )
+	{
+		entry.impactMarks[entry.impactMarkCount++] = mark;
+	}
+	else
+	{
+		memmove(
+			&entry.impactMarks[0],
+			&entry.impactMarks[1],
+			sizeof( entry.impactMarks[0] ) * ( MAX_RAGDOLL_IMPACT_MARKS - 1 )
+		);
+		entry.impactMarks[MAX_RAGDOLL_IMPACT_MARKS - 1] = mark;
+	}
+
+	return 1;
+}
+
+int Ragdoll_GetImpactMarkCount( int entityIndex )
+{
+	if( entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES )
+		return 0;
+
+	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
+	if( !entry.active || !entry.initialSnapshotComplete )
+		return 0;
+
+	const float now = (float)gEngfuncs.GetClientTime();
+	if( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT )
+	{
+		memset( &entry, 0, sizeof( entry ) );
+		return 0;
+	}
+
+	return entry.impactMarkCount;
+}
+
+int Ragdoll_GetImpactMark(
+	int entityIndex,
+	int markIndex,
+	int *boneIndex,
+	float localPosition[3],
+	float localNormal[3],
+	float *radius,
+	int *bloodColor )
+{
+	if( !boneIndex || !localPosition || !localNormal || !radius || !bloodColor ||
+		entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES )
+		return 0;
+
+	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
+	if( !entry.active || !entry.initialSnapshotComplete ||
+		markIndex < 0 || markIndex >= entry.impactMarkCount )
+		return 0;
+
+	const float now = (float)gEngfuncs.GetClientTime();
+	if( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT )
+	{
+		memset( &entry, 0, sizeof( entry ) );
+		return 0;
+	}
+
+	const ragdoll_impact_mark_t &mark = entry.impactMarks[markIndex];
+	*boneIndex = mark.boneIndex;
+	memcpy( localPosition, mark.localPosition, sizeof( mark.localPosition ) );
+	memcpy( localNormal, mark.localNormal, sizeof( mark.localNormal ) );
+	*radius = mark.radius;
+	*bloodColor = mark.bloodColor;
 	return 1;
 }
 
