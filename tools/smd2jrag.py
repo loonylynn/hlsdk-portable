@@ -222,7 +222,7 @@ def _find_collisionjoints_sources(path: Path, visiting: Optional[set] = None):
         found = [(path, match) for match in matches]
 
         for line_number, line in enumerate(source.splitlines(), 1):
-            if not re.match(r'^\\s*\\$include(?:\\s|$)', line, flags=re.IGNORECASE):
+            if not re.match(r'^\s*\$include(?:\s|$)', line, flags=re.IGNORECASE):
                 continue
             parts = _tokens(line, "{}:{}".format(path, line_number))
             if len(parts) != 2:
