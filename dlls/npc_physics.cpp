@@ -103,6 +103,8 @@ namespace
 		int serialNumber;
 		int boneCount;
 		float sampleTime;
+		::Vector entityOrigin;
+		::Vector entityAngles;
 		std::vector<Vec3> positions;
 		std::vector<Quat> rotations;
 
@@ -379,6 +381,8 @@ namespace
 			pose.rotations[i] = NPCPhysics_AnglesToQuaternion( angles );
 		}
 
+		pose.entityOrigin = ent->v.origin;
+		pose.entityAngles = ent->v.angles;
 		pose.sampleTime = gpGlobals->time;
 	}
 
@@ -703,7 +707,20 @@ namespace
 				const Vec3 previousCenter =
 					livePose->positions[boneIndex] +
 					livePose->rotations[boneIndex] * bone.localShapeCenter;
-				linearVelocity += ( bodyCenter - previousCenter ) / animationDeltaTime;
+
+				// The animation derivative is an absolute world-space velocity,
+				// as in Source's CalcBoneDerivatives. Add only the bone-local part
+				// to the entity's current velocity; otherwise locomotion gets
+				// counted twice. This also preserves a death impulse already put
+				// into pev->velocity by GoldSrc.
+				const Vec3 entityLinearVelocity(
+					( ent->v.origin[0] - livePose->entityOrigin[0] ) / animationDeltaTime,
+					( ent->v.origin[1] - livePose->entityOrigin[1] ) / animationDeltaTime,
+					( ent->v.origin[2] - livePose->entityOrigin[2] ) / animationDeltaTime
+				);
+				linearVelocity +=
+					( bodyCenter - previousCenter ) / animationDeltaTime -
+					entityLinearVelocity;
 
 				Quat deltaRotation = rotation * livePose->rotations[boneIndex].Conjugated();
 				deltaRotation = deltaRotation.Normalized();
@@ -716,7 +733,23 @@ namespace
 						-deltaRotation.GetW()
 					);
 				}
-				angularVelocity += deltaRotation.GetAngularVelocity( animationDeltaTime );
+
+				Quat entityDeltaRotation =
+					NPCPhysics_AnglesToQuaternion( ent->v.angles ) *
+					NPCPhysics_AnglesToQuaternion( livePose->entityAngles ).Conjugated();
+				entityDeltaRotation = entityDeltaRotation.Normalized();
+				if( entityDeltaRotation.GetW() < 0.0f )
+				{
+					entityDeltaRotation = Quat(
+						-entityDeltaRotation.GetX(),
+						-entityDeltaRotation.GetY(),
+						-entityDeltaRotation.GetZ(),
+						-entityDeltaRotation.GetW()
+					);
+				}
+				angularVelocity +=
+					deltaRotation.GetAngularVelocity( animationDeltaTime ) -
+					entityDeltaRotation.GetAngularVelocity( animationDeltaTime );
 			}
 
 			linearVelocity = NPCPhysics_ClampVector( linearVelocity, RAGDOLL_VELOCITY_LIMIT );
