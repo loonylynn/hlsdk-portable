@@ -672,7 +672,7 @@ namespace
 			return;
 		if( !g_brushCollisionStatusLogged )
 		{
-			ALERT( at_console, "[NPC physics] Found %d inline SOLID_BSP entity colliders.\\n", entityCount );
+			ALERT( at_console, "[NPC physics] Found %d inline SOLID_BSP entity colliders.\n", entityCount );
 			g_brushCollisionStatusLogged = true;
 		}
 
@@ -744,7 +744,7 @@ namespace
 				g_brushColliders.push_back( collider );
 				ALERT(
 					at_console,
-					"[NPC physics] Added inline BSP collider: entity %d, model %d.\\n",
+					"[NPC physics] Added inline BSP collider: entity %d, model %d.\n",
 					entityInfo.entityIndex,
 					entityInfo.modelIndex
 				);
