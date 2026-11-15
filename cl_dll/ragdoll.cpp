@@ -137,6 +137,8 @@ static void Ragdoll_GetInterpolatedBonePose(
 void Ragdoll_ClearAll( void )
 {
 	memset( g_RagdollPoses, 0, sizeof( g_RagdollPoses ) );
+	if( IEngineStudio.StudioClearDecals )
+		IEngineStudio.StudioClearDecals();
 }
 
 void Ragdoll_Init( void )
