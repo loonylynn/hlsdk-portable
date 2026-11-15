@@ -51,7 +51,8 @@ namespace
 	static constexpr uint32_t RAGDOLL_MAX_CONTACT_CONSTRAINTS = 8192;
 	static constexpr float RAGDOLL_FIXED_STEP = 1.0f / 120.0f;
 	static constexpr int RAGDOLL_MAX_STEPS_PER_FRAME = 8;
-	static constexpr float RAGDOLL_POSE_INTERVAL = 0.05f;
+	static constexpr float RAGDOLL_ACTIVE_POSE_INTERVAL = 0.05f;
+	static constexpr float RAGDOLL_SLEEPING_POSE_INTERVAL = 0.20f;
 	static constexpr int RAGDOLL_NETWORK_BODIES_PER_CHUNK = 10;
 	static constexpr float RAGDOLL_DEGREES_TO_RADIANS = 0.01745329251994329577f;
 	static constexpr float RAGDOLL_VELOCITY_LIMIT = 2000.0f;
@@ -1781,8 +1782,22 @@ namespace
 
 			if( gpGlobals->time >= ragdoll.nextPoseTime )
 			{
+				// A settled corpse needs only an occasional full-pose heartbeat.
+				// Keep the original 20 Hz stream while any articulated body moves.
+				bool isActive = false;
+				for( int body = 0; body < ragdoll.bodyCount; ++body )
+				{
+					if( bodyInterface.IsActive( ragdoll.physicsRagdoll->GetBodyID( body ) ) )
+					{
+						isActive = true;
+						break;
+					}
+				}
+
 				NPCPhysics_SendRagdollPose( ragdoll, bodyInterface );
-				ragdoll.nextPoseTime = gpGlobals->time + RAGDOLL_POSE_INTERVAL;
+				ragdoll.nextPoseTime = gpGlobals->time + ( isActive
+					? RAGDOLL_ACTIVE_POSE_INTERVAL
+					: RAGDOLL_SLEEPING_POSE_INTERVAL );
 			}
 		}
 	}
