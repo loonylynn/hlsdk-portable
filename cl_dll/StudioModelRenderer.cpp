@@ -252,6 +252,7 @@ typedef struct studio_ragdoll_triangle_s
 	float world[3][3];
 	float local[3][3];
 	int bone[3];
+	int vertexIndex[3];
 } studio_ragdoll_triangle_t;
 
 typedef void (*studio_ragdoll_triangle_callback_t)(
@@ -408,6 +409,57 @@ static void StudioForEachRagdollModelTriangle(
 		const mstudiomesh_t *meshes =
 			(const mstudiomesh_t *)((const byte *)renderer->m_pStudioHeader + model->meshindex);
 
+		const int headerLength = renderer->m_pStudioHeader->length;
+		const qboolean vertexRangeValid =
+			model->vertindex > 0 && model->numverts > 0 &&
+			headerLength > 0 &&
+			model->vertindex <= headerLength &&
+			model->numverts <= ( headerLength - model->vertindex ) / (int)sizeof( vec3_t );
+		const qboolean boneRangeValid =
+			model->vertinfoindex > 0 && model->numverts > 0 &&
+			headerLength > 0 &&
+			model->vertinfoindex <= headerLength &&
+			model->numverts <= headerLength - model->vertinfoindex;
+		const qboolean meshRangeValid =
+			model->meshindex > 0 && model->nummesh > 0 &&
+			headerLength > 0 &&
+			model->meshindex <= headerLength &&
+			model->nummesh <= ( headerLength - model->meshindex ) / (int)sizeof( mstudiomesh_t );
+
+		static int lastDataProbeEntity = -1;
+		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
+			gEngfuncs.Con_Printf &&
+			lastDataProbeEntity != ( renderer->m_pCurrentEntity ?
+				renderer->m_pCurrentEntity->index : -1 ) )
+		{
+			const int entityIndex = renderer->m_pCurrentEntity ?
+				renderer->m_pCurrentEntity->index : -1;
+			gEngfuncs.Con_Printf(
+				"[Ragdoll decal model data] entity %d model %s bodypart %d submodel %s header=%p ident=0x%x version=%d length=%d submodel=%p numverts=%d nummesh=%d vertinfo=%d vertindex=%d meshindex=%d ranges vertex=%d bone=%d mesh=%d\n",
+				entityIndex,
+				renderer->m_pStudioHeader->name,
+				bodyPartIndex, model->name,
+				(void *)renderer->m_pStudioHeader,
+				renderer->m_pStudioHeader->ident,
+				renderer->m_pStudioHeader->version,
+				headerLength, (void *)model,
+				model->numverts, model->nummesh,
+				model->vertinfoindex, model->vertindex, model->meshindex,
+				vertexRangeValid ? 1 : 0, boneRangeValid ? 1 : 0,
+				meshRangeValid ? 1 : 0 );
+			for( int sample = 0; sample < 4 && sample < model->numverts; ++sample )
+			{
+				gEngfuncs.Con_Printf(
+					"[Ragdoll decal raw vertex] entity %d index %d bone %u local [%.6g %.6g %.6g]\n",
+					entityIndex, sample, (unsigned int)vertexBones[sample],
+					vertices[sample][0], vertices[sample][1], vertices[sample][2] );
+			}
+			lastDataProbeEntity = entityIndex;
+		}
+
+		if( !vertexRangeValid || !boneRangeValid || !meshRangeValid )
+			continue;
+
 		for( int meshIndex = 0; meshIndex < model->nummesh; ++meshIndex )
 		{
 			const mstudiomesh_t *mesh = &meshes[meshIndex];
@@ -463,9 +515,11 @@ static void StudioForEachRagdollModelTriangle(
 					qboolean valid = true;
 					for( int corner = 0; corner < 3; ++corner )
 					{
+						triangle.vertexIndex[corner] =
+							commandVertices[indices[corner]].vertindex;
 						if( !StudioGetRagdollWorldVertex(
 								renderer, vertexBones, vertices,
-								commandVertices[indices[corner]].vertindex,
+								triangle.vertexIndex[corner],
 								triangle.local[corner],
 								triangle.world[corner],
 								&triangle.bone[corner] ) )
@@ -699,6 +753,7 @@ typedef struct studio_ragdoll_anchor_diagnostics_s
 	qboolean haveBounds;
 	qboolean haveInvalidSample;
 	int invalidBone;
+	int invalidVertexIndex;
 	float invalidLocal[3];
 	float invalidWorld[3];
 } studio_ragdoll_anchor_diagnostics_t;
@@ -728,6 +783,7 @@ static void StudioFindNearestRagdollSurface(
 			{
 				diagnostics->haveInvalidSample = true;
 				diagnostics->invalidBone = triangle->bone[vertex];
+				diagnostics->invalidVertexIndex = triangle->vertexIndex[vertex];
 				VectorCopy( triangle->local[vertex], diagnostics->invalidLocal );
 				VectorCopy( triangle->world[vertex], diagnostics->invalidWorld );
 			}
@@ -1184,10 +1240,11 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 		const int hasTransform = StudioGetRagdollBoneToWorld(
 			renderer, anchorContext.diagnostics.invalidBone, sampleTransform );
 		gEngfuncs.Con_Printf(
-			"[Ragdoll decal invalid vertex] entity %d model %s submodel %s bone %d transform=%d local [%.3f %.3f %.3f] world [%.3f %.3f %.3f] matrix-row0 [%.3f %.3f %.3f %.3f] header-flags 0x%x\n",
+			"[Ragdoll decal invalid vertex] entity %d model %s submodel %s vertex %d bone %d transform=%d local [%.3f %.3f %.3f] world [%.3f %.3f %.3f] matrix-row0 [%.3f %.3f %.3f %.3f] header-flags 0x%x\n",
 			entityIndex,
 			renderer->m_pStudioHeader ? renderer->m_pStudioHeader->name : "?",
 			renderer->m_pSubModel ? renderer->m_pSubModel->name : "?",
+			anchorContext.diagnostics.invalidVertexIndex,
 			anchorContext.diagnostics.invalidBone, hasTransform,
 			anchorContext.diagnostics.invalidLocal[0],
 			anchorContext.diagnostics.invalidLocal[1],
