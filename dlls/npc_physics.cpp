@@ -448,7 +448,9 @@ namespace
 	static bool NPCPhysics_CreateRagdoll( edict_t *ent )
 	{
 		if( !ent || ent->free || !NPCPhysics_Initialize() ||
-			g_msgRagdollPose <= 0 || !g_engfuncs.pfnGetBonePosition )
+			g_msgRagdollPose <= 0 ||
+			!g_serverPhysicsAPI || !g_serverPhysicsAPI->pfnTraceNoEnts ||
+			!g_engfuncs.pfnGetBonePosition )
 			return false;
 
 		studiohdr_t *header = NULL;
