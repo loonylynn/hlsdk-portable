@@ -1841,6 +1841,7 @@ int NPCPhysics_TraceAndApplyImpact(
 	// The Jolt world and brush colliders participate in the ray test too.
 	// Only accept a body that belongs to one of our articulated NPC ragdolls.
 	edict_t *targetEntity = NULL;
+	NPCPhysicsRagdoll *targetRagdoll = NULL;
 	bool foundRagdollBody = false;
 	for( size_t ragdollIndex = 0; ragdollIndex < g_ragdolls.size(); ++ragdollIndex )
 	{
@@ -1855,6 +1856,7 @@ int NPCPhysics_TraceAndApplyImpact(
 			if( ragdoll.physicsRagdoll->GetBodyID( body ) == hit.mBodyID )
 			{
 				targetEntity = ragdoll.entity;
+				targetRagdoll = &ragdoll;
 				foundRagdollBody = true;
 				break;
 			}
@@ -1871,6 +1873,11 @@ int NPCPhysics_TraceAndApplyImpact(
 	impulse = NPCPhysics_ClampVector( impulse, 1500.0f );
 	g_npcPhysics.system.GetBodyInterface().AddImpulse(
 		hit.mBodyID, impulse, impactPoint );
+
+	// A sleeping corpse normally sends only a 5 Hz heartbeat. A weapon strike
+	// should be visible on the next end-frame snapshot, not after that interval.
+	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
+		targetRagdoll->nextPoseTime = gpGlobals->time;
 
 	*hitFraction = hit.mFraction;
 	hitPosition[0] = float( impactPoint.GetX() );
