@@ -491,82 +491,126 @@ typedef struct studio_ragdoll_surface_anchor_s
 	qboolean found;
 } studio_ragdoll_surface_anchor_t;
 
-static void StudioClosestPointOnRagdollTriangle(
+static qboolean StudioVectorIsFinite3( const float vector[3] )
+{
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		if( !( vector[axis] == vector[axis] ) ||
+			fabsf( vector[axis] ) > 1.0e20f )
+			return false;
+	}
+	return true;
+}
+
+static double StudioDot3Double( const double *a, const double *b )
+{
+	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+static void StudioClosestPointOnRagdollSegment(
+	const float point[3],
+	const float a[3],
+	const float b[3],
+	float closest[3] )
+{
+	double direction[3], offset[3];
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		direction[axis] = (double)b[axis] - (double)a[axis];
+		offset[axis] = (double)point[axis] - (double)a[axis];
+	}
+	const double lengthSquared = StudioDot3Double( direction, direction );
+	double fraction = 0.0;
+	if( lengthSquared > 1.0e-24 )
+	{
+		fraction = StudioDot3Double( offset, direction ) / lengthSquared;
+		if( fraction < 0.0 ) fraction = 0.0;
+		if( fraction > 1.0 ) fraction = 1.0;
+	}
+	for( int axis = 0; axis < 3; ++axis )
+		closest[axis] = (float)( (double)a[axis] + direction[axis] * fraction );
+}
+
+static qboolean StudioClosestPointOnRagdollTriangle(
 	const float point[3],
 	const float a[3],
 	const float b[3],
 	const float c[3],
 	float closest[3] )
 {
-	float ab[3], ac[3], ap[3];
+	if( !StudioVectorIsFinite3( point ) ||
+		!StudioVectorIsFinite3( a ) ||
+		!StudioVectorIsFinite3( b ) ||
+		!StudioVectorIsFinite3( c ) )
+		return false;
+
+	double ab[3], ac[3], ap[3], normal[3];
 	for( int axis = 0; axis < 3; ++axis )
 	{
-		ab[axis] = b[axis] - a[axis];
-		ac[axis] = c[axis] - a[axis];
-		ap[axis] = point[axis] - a[axis];
+		ab[axis] = (double)b[axis] - (double)a[axis];
+		ac[axis] = (double)c[axis] - (double)a[axis];
+		ap[axis] = (double)point[axis] - (double)a[axis];
 	}
-	const float d1 = StudioDot3( ab, ap );
-	const float d2 = StudioDot3( ac, ap );
-	if( d1 <= 0.0f && d2 <= 0.0f )
-	{
-		VectorCopy( a, closest );
-		return;
-	}
+	normal[0] = ab[1] * ac[2] - ab[2] * ac[1];
+	normal[1] = ab[2] * ac[0] - ab[0] * ac[2];
+	normal[2] = ab[0] * ac[1] - ab[1] * ac[0];
+	const double areaSquared = StudioDot3Double( normal, normal );
 
-	float bp[3];
-	for( int axis = 0; axis < 3; ++axis )
-		bp[axis] = point[axis] - b[axis];
-	const float d3 = StudioDot3( ab, bp );
-	const float d4 = StudioDot3( ac, bp );
-	if( d3 >= 0.0f && d4 <= d3 )
+	// Project onto the triangle plane, then test its barycentric coordinates.
+	// Use double precision here: very skinny SMD triangles can make the
+	// float Ericson denominator cancel to zero and produce an infinite point.
+	if( areaSquared > 1.0e-24 )
 	{
-		VectorCopy( b, closest );
-		return;
-	}
-
-	const float vc = d1 * d4 - d3 * d2;
-	if( vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f )
-	{
-		const float v = d1 / ( d1 - d3 );
+		const double planeFraction = StudioDot3Double( ap, normal ) / areaSquared;
+		double projected[3], fromA[3];
 		for( int axis = 0; axis < 3; ++axis )
-			closest[axis] = a[axis] + v * ab[axis];
-		return;
+		{
+			projected[axis] = (double)point[axis] - normal[axis] * planeFraction;
+			fromA[axis] = projected[axis] - (double)a[axis];
+		}
+
+		const double d00 = StudioDot3Double( ab, ab );
+		const double d01 = StudioDot3Double( ab, ac );
+		const double d11 = StudioDot3Double( ac, ac );
+		const double d20 = StudioDot3Double( fromA, ab );
+		const double d21 = StudioDot3Double( fromA, ac );
+		const double denominator = d00 * d11 - d01 * d01;
+		if( denominator > 1.0e-24 )
+		{
+			const double v = ( d11 * d20 - d01 * d21 ) / denominator;
+			const double w = ( d00 * d21 - d01 * d20 ) / denominator;
+			const double u = 1.0 - v - w;
+			if( u >= -1.0e-7 && v >= -1.0e-7 && w >= -1.0e-7 )
+			{
+				for( int axis = 0; axis < 3; ++axis )
+					closest[axis] = (float)projected[axis];
+				return StudioVectorIsFinite3( closest );
+			}
+		}
 	}
 
-	float cp[3];
-	for( int axis = 0; axis < 3; ++axis )
-		cp[axis] = point[axis] - c[axis];
-	const float d5 = StudioDot3( ab, cp );
-	const float d6 = StudioDot3( ac, cp );
-	if( d6 >= 0.0f && d5 <= d6 )
+	// Outside the triangle, or nearly degenerate: the nearest point lies on
+	// one of its edges. Compare all three segment candidates without division
+	// by a near-zero triangle-area denominator.
+	float candidate[3];
+	double bestDistanceSquared = 1.0e300;
+	const float *edgeStarts[3] = { a, b, c };
+	const float *edgeEnds[3] = { b, c, a };
+	for( int edge = 0; edge < 3; ++edge )
 	{
-		VectorCopy( c, closest );
-		return;
-	}
-
-	const float vb = d5 * d2 - d1 * d6;
-	if( vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f )
-	{
-		const float w = d2 / ( d2 - d6 );
+		StudioClosestPointOnRagdollSegment(
+			point, edgeStarts[edge], edgeEnds[edge], candidate );
+		double delta[3];
 		for( int axis = 0; axis < 3; ++axis )
-			closest[axis] = a[axis] + w * ac[axis];
-		return;
+			delta[axis] = (double)candidate[axis] - (double)point[axis];
+		const double distanceSquared = StudioDot3Double( delta, delta );
+		if( distanceSquared < bestDistanceSquared )
+		{
+			bestDistanceSquared = distanceSquared;
+			VectorCopy( candidate, closest );
+		}
 	}
-
-	const float va = d3 * d6 - d5 * d4;
-	if( va <= 0.0f && ( d4 - d3 ) >= 0.0f && ( d5 - d6 ) >= 0.0f )
-	{
-		const float w = ( d4 - d3 ) / ( ( d4 - d3 ) + ( d5 - d6 ) );
-		for( int axis = 0; axis < 3; ++axis )
-			closest[axis] = b[axis] + w * ( c[axis] - b[axis] );
-		return;
-	}
-
-	const float denominator = 1.0f / ( va + vb + vc );
-	const float v = vb * denominator;
-	const float w = vc * denominator;
-	for( int axis = 0; axis < 3; ++axis )
-		closest[axis] = a[axis] + ab[axis] * v + ac[axis] * w;
+	return StudioVectorIsFinite3( closest );
 }
 
 static void StudioFindNearestRagdollSurface(
@@ -577,6 +621,11 @@ static void StudioFindNearestRagdollSurface(
 		(studio_ragdoll_surface_anchor_t *)opaqueContext;
 	++anchor->triangleCount;
 
+	if( !StudioVectorIsFinite3( triangle->world[0] ) ||
+		!StudioVectorIsFinite3( triangle->world[1] ) ||
+		!StudioVectorIsFinite3( triangle->world[2] ) )
+		return;
+
 	float edge1[3], edge2[3], faceNormal[3];
 	for( int axis = 0; axis < 3; ++axis )
 	{
@@ -586,21 +635,28 @@ static void StudioFindNearestRagdollSurface(
 	faceNormal[0] = edge1[1] * edge2[2] - edge1[2] * edge2[1];
 	faceNormal[1] = edge1[2] * edge2[0] - edge1[0] * edge2[2];
 	faceNormal[2] = edge1[0] * edge2[1] - edge1[1] * edge2[0];
-	if( StudioDot3( faceNormal, faceNormal ) < 0.000001f )
+	const float normalLengthSquared = StudioDot3( faceNormal, faceNormal );
+	if( !( normalLengthSquared > 0.000001f ) ||
+		!( normalLengthSquared < 1.0e30f ) )
 		return;
 
 	float closest[3];
-	StudioClosestPointOnRagdollTriangle(
-		anchor->point,
-		triangle->world[0],
-		triangle->world[1],
-		triangle->world[2],
-		closest );
+	if( !StudioClosestPointOnRagdollTriangle(
+			anchor->point,
+			triangle->world[0],
+			triangle->world[1],
+			triangle->world[2],
+			closest ) )
+		return;
 
-	float delta[3];
+	double delta[3];
 	for( int axis = 0; axis < 3; ++axis )
-		delta[axis] = closest[axis] - anchor->point[axis];
-	const float distanceSquared = StudioDot3( delta, delta );
+		delta[axis] = (double)closest[axis] - (double)anchor->point[axis];
+	const double distanceSquaredDouble = StudioDot3Double( delta, delta );
+	if( !( distanceSquaredDouble >= 0.0 ) ||
+		!( distanceSquaredDouble < 1.0e30 ) )
+		return;
+	const float distanceSquared = (float)distanceSquaredDouble;
 	if( anchor->found && distanceSquared >= anchor->distanceSquared )
 		return;
 
