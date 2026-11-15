@@ -135,21 +135,21 @@ class SMDToJRAGTests(unittest.TestCase):
         collision_dir = nested_dir / "collision"
         collision_dir.mkdir(parents=True)
         (model_dir / "model.qc").write_text(
-            '$include "physics/main.qci"\\n', encoding="utf-8"
+            '$include "physics/main.qci"\n', encoding="utf-8"
         )
         (model_dir / "physics").mkdir(exist_ok=True)
         (model_dir / "physics" / "main.qci").write_text(
-            '$include "nested/ragdoll.qci"\\n', encoding="utf-8"
+            '$include "nested/ragdoll.qci"\n', encoding="utf-8"
         )
         ragdoll_qci = nested_dir / "ragdoll.qci"
         ragdoll_qci.write_text(
-            '$collisionjoints "collision/ragdoll.smd" {\\n'
-            '    $mass 115\\n'
-            '    $inertia 10\\n'
-            '    $damping 0.01\\n'
-            '    $rotdamping 1.5\\n'
-            '    $rootbone "Bip01"\\n'
-            '}\\n',
+            '$collisionjoints "collision/ragdoll.smd" {\n'
+            '    $mass 115\n'
+            '    $inertia 10\n'
+            '    $damping 0.01\n'
+            '    $rotdamping 1.5\n'
+            '    $rootbone "Bip01"\n'
+            '}\n',
             encoding="utf-8",
         )
         (collision_dir / "ragdoll.smd").write_text(
@@ -166,14 +166,14 @@ class SMDToJRAGTests(unittest.TestCase):
     def test_qc_include_cycle_is_rejected(self):
         first = self.root / "first.qc"
         second = self.root / "second.qci"
-        first.write_text('$include "second.qci"\\n', encoding="utf-8")
-        second.write_text('$include "first.qc"\\n', encoding="utf-8")
+        first.write_text('$include "second.qci"\n', encoding="utf-8")
+        second.write_text('$include "first.qc"\n', encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "include cycle"):
             smd2jrag.parse_qci(first)
 
     def test_missing_qc_include_is_reported(self):
         qc = self.root / "missing_include.qc"
-        qc.write_text('$include "absent/ragdoll.qci"\\n', encoding="utf-8")
+        qc.write_text('$include "absent/ragdoll.qci"\n', encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "included file"):
             smd2jrag.parse_qci(qc)
 
