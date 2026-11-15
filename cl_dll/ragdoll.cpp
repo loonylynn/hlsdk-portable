@@ -30,8 +30,8 @@ struct ragdoll_bone_pose_t
 struct ragdoll_impact_mark_t
 {
 	int boneIndex;
-	float localPosition[3];
-	float localNormal[3];
+	float worldPosition[3];
+	float worldNormal[3];
 	float radius;
 	int bloodColor;
 };
@@ -301,8 +301,8 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 
 int Ragdoll_ImpactMessageHandler( const char *, int size, void *buffer )
 {
-	// entity, ragdoll ID, studio bone, bone-local position, bone-local normal,
-	// radius (quarter units), and blood palette (red, green, yellow).
+	// entity, ragdoll ID, physics-mapped studio bone, world-space impact point,
+	// world-space impact normal, radius (quarter units), and blood palette.
 	if( !buffer || size < 16 )
 		return 0;
 
@@ -310,10 +310,10 @@ int Ragdoll_ImpactMessageHandler( const char *, int size, void *buffer )
 	const int entityIndex = READ_SHORT();
 	const int ragdollID = READ_SHORT();
 	const int boneIndex = READ_BYTE();
-	const float localPosition[3] = {
+	const float worldPosition[3] = {
 		READ_COORD(), READ_COORD(), READ_COORD()
 	};
-	float localNormal[3] = {
+	float worldNormal[3] = {
 		( READ_BYTE() - 128 ) / 127.0f,
 		( READ_BYTE() - 128 ) / 127.0f,
 		( READ_BYTE() - 128 ) / 127.0f
@@ -323,22 +323,22 @@ int Ragdoll_ImpactMessageHandler( const char *, int size, void *buffer )
 
 	if( entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES ||
 		ragdollID <= 0 || boneIndex < 0 ||
-		!( localPosition[0] >= -4096.0f && localPosition[0] <= 4096.0f ) ||
-		!( localPosition[1] >= -4096.0f && localPosition[1] <= 4096.0f ) ||
-		!( localPosition[2] >= -4096.0f && localPosition[2] <= 4096.0f ) ||
+		!( worldPosition[0] >= -4096.0f && worldPosition[0] <= 4096.0f ) ||
+		!( worldPosition[1] >= -4096.0f && worldPosition[1] <= 4096.0f ) ||
+		!( worldPosition[2] >= -4096.0f && worldPosition[2] <= 4096.0f ) ||
 		!( radius > 0.0f && radius <= 64.0f ) ||
 		bloodColor < 0 || bloodColor > 2 )
 		return 0;
 
 	float normalLengthSquared =
-		localNormal[0] * localNormal[0] +
-		localNormal[1] * localNormal[1] +
-		localNormal[2] * localNormal[2];
+		worldNormal[0] * worldNormal[0] +
+		worldNormal[1] * worldNormal[1] +
+		worldNormal[2] * worldNormal[2];
 	if( normalLengthSquared < 0.0001f )
 	{
-		localNormal[0] = 0.0f;
-		localNormal[1] = 0.0f;
-		localNormal[2] = 1.0f;
+		worldNormal[0] = 0.0f;
+		worldNormal[1] = 0.0f;
+		worldNormal[2] = 1.0f;
 	}
 	else
 	{
@@ -355,8 +355,8 @@ int Ragdoll_ImpactMessageHandler( const char *, int size, void *buffer )
 
 	ragdoll_impact_mark_t mark;
 	mark.boneIndex = boneIndex;
-	memcpy( mark.localPosition, localPosition, sizeof( mark.localPosition ) );
-	memcpy( mark.localNormal, localNormal, sizeof( mark.localNormal ) );
+	memcpy( mark.worldPosition, worldPosition, sizeof( mark.worldPosition ) );
+	memcpy( mark.worldNormal, worldNormal, sizeof( mark.worldNormal ) );
 	mark.radius = radius;
 	mark.bloodColor = bloodColor;
 
@@ -400,12 +400,12 @@ int Ragdoll_GetImpactMark(
 	int entityIndex,
 	int markIndex,
 	int *boneIndex,
-	float localPosition[3],
-	float localNormal[3],
+	float worldPosition[3],
+	float worldNormal[3],
 	float *radius,
 	int *bloodColor )
 {
-	if( !boneIndex || !localPosition || !localNormal || !radius || !bloodColor ||
+	if( !boneIndex || !worldPosition || !worldNormal || !radius || !bloodColor ||
 		entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES )
 		return 0;
 
@@ -423,8 +423,8 @@ int Ragdoll_GetImpactMark(
 
 	const ragdoll_impact_mark_t &mark = entry.impactMarks[markIndex];
 	*boneIndex = mark.boneIndex;
-	memcpy( localPosition, mark.localPosition, sizeof( mark.localPosition ) );
-	memcpy( localNormal, mark.localNormal, sizeof( mark.localNormal ) );
+	memcpy( worldPosition, mark.worldPosition, sizeof( mark.worldPosition ) );
+	memcpy( worldNormal, mark.worldNormal, sizeof( mark.worldNormal ) );
 	*radius = mark.radius;
 	*bloodColor = mark.bloodColor;
 	return 1;

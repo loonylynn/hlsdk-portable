@@ -12,8 +12,8 @@ int Ragdoll_GetImpactMark(
 	int entityIndex,
 	int markIndex,
 	int *boneIndex,
-	float localPosition[3],
-	float localNormal[3],
+	float worldPosition[3],
+	float worldNormal[3],
 	float *radius,
 	int *bloodColor
 );

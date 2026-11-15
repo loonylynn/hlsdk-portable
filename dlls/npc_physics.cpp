@@ -1919,34 +1919,17 @@ int NPCPhysics_TraceAndApplyImpact(
 			if( bone.studioBoneIndex >= 0 &&
 				bone.studioBoneIndex < targetRagdoll->studioBoneCount )
 			{
-				// The client attaches the mark to the mapped studio-bone matrix,
-				// not the raw Jolt body's center-of-mass transform. Use the exact
-				// same mapped pose here so the local point survives skeleton retargeting.
-				const Vec3 rootBoneOrigin =
-					NPCPhysics_GetRootBoneOrigin( *targetRagdoll, bodyInterface );
-				NPCPhysics_UpdateMappedStudioPose(
-					*targetRagdoll, bodyInterface, rootBoneOrigin );
-				const Mat44 &studioBoneTransform =
-					targetRagdoll->studioPoseModelSpace[bone.studioBoneIndex];
-				const Vec3 studioBoneOrigin =
-					rootBoneOrigin + studioBoneTransform.GetTranslation();
-				const Quat inverseStudioRotation =
-					studioBoneTransform.GetQuaternion().Normalized().Conjugated();
-				const Vec3 hitPoint(
-					float( impactPoint.GetX() ),
-					float( impactPoint.GetY() ),
-					float( impactPoint.GetZ() ) );
-				const Vec3 localPosition =
-					inverseStudioRotation * ( hitPoint - studioBoneOrigin );
+				// Source's C_BaseEntity::AddStudioDecal projects a world-space
+				// ray onto the studio model instance. Send the true Jolt contact
+				// point and world-space incoming normal; the client projects them
+				// onto its rendered triangles and then caches bone-attached fragments.
 				const Vec3 worldNormal = -( rayDirection / rayLength );
-				const Vec3 localNormal =
-					( inverseStudioRotation * worldNormal ).Normalized();
 				const float markRadius = (std::max)(
 					0.85f, (std::min)( 1.9f, 0.85f + impulseMagnitude * 0.00035f ) );
 				const int encodedRadius = static_cast<int>( markRadius * 4.0f + 0.5f );
-				const int encodedNormalX = static_cast<int>( localNormal.GetX() * 127.0f + 128.0f );
-				const int encodedNormalY = static_cast<int>( localNormal.GetY() * 127.0f + 128.0f );
-				const int encodedNormalZ = static_cast<int>( localNormal.GetZ() * 127.0f + 128.0f );
+				const int encodedNormalX = static_cast<int>( worldNormal.GetX() * 127.0f + 128.0f );
+				const int encodedNormalY = static_cast<int>( worldNormal.GetY() * 127.0f + 128.0f );
+				const int encodedNormalZ = static_cast<int>( worldNormal.GetZ() * 127.0f + 128.0f );
 				const int markColor = bloodColor == BLOOD_COLOR_GREEN ? 1 :
 					( bloodColor == BLOOD_COLOR_YELLOW ? 2 : 0 );
 				const float markOrigin[3] = {
@@ -1959,9 +1942,9 @@ int NPCPhysics_TraceAndApplyImpact(
 					WRITE_SHORT( ENTINDEX( targetEntity ) );
 					WRITE_SHORT( targetRagdoll->networkID );
 					WRITE_BYTE( bone.studioBoneIndex );
-					WRITE_COORD( localPosition.GetX() );
-					WRITE_COORD( localPosition.GetY() );
-					WRITE_COORD( localPosition.GetZ() );
+					WRITE_COORD( impactPoint.GetX() );
+					WRITE_COORD( impactPoint.GetY() );
+					WRITE_COORD( impactPoint.GetZ() );
 					WRITE_BYTE( (std::max)( 0, (std::min)( 255, encodedNormalX ) ) );
 					WRITE_BYTE( (std::max)( 0, (std::min)( 255, encodedNormalY ) ) );
 					WRITE_BYTE( (std::max)( 0, (std::min)( 255, encodedNormalZ ) ) );

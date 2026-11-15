@@ -609,8 +609,8 @@ typedef struct studio_ragdoll_mark_cache_s
 	int entityIndex;
 	model_t *model;
 	int boneIndex;
-	float localPosition[3];
-	float localNormal[3];
+	float worldPosition[3];
+	float worldNormal[3];
 	float radius;
 	int bloodColor;
 	unsigned int age;
@@ -790,8 +790,8 @@ static qboolean StudioSameRagdollMark(
 	int entityIndex,
 	model_t *model,
 	int boneIndex,
-	const float localPosition[3],
-	const float localNormal[3],
+	const float worldPosition[3],
+	const float worldNormal[3],
 	float radius,
 	int bloodColor )
 {
@@ -803,8 +803,8 @@ static qboolean StudioSameRagdollMark(
 
 	for( int axis = 0; axis < 3; ++axis )
 	{
-		if( fabsf( cache->localPosition[axis] - localPosition[axis] ) > 0.001f ||
-			fabsf( cache->localNormal[axis] - localNormal[axis] ) > 0.001f )
+		if( fabsf( cache->worldPosition[axis] - worldPosition[axis] ) > 0.001f ||
+			fabsf( cache->worldNormal[axis] - worldNormal[axis] ) > 0.001f )
 			return false;
 	}
 	return true;
@@ -814,8 +814,8 @@ static studio_ragdoll_mark_cache_t *StudioFindRagdollMarkCache(
 	int entityIndex,
 	model_t *model,
 	int boneIndex,
-	const float localPosition[3],
-	const float localNormal[3],
+	const float worldPosition[3],
+	const float worldNormal[3],
 	float radius,
 	int bloodColor )
 {
@@ -824,7 +824,7 @@ static studio_ragdoll_mark_cache_t *StudioFindRagdollMarkCache(
 		studio_ragdoll_mark_cache_t *cache = &g_StudioRagdollDecalCache[i];
 		if( StudioSameRagdollMark(
 				cache, entityIndex, model, boneIndex,
-				localPosition, localNormal, radius, bloodColor ) )
+				worldPosition, worldNormal, radius, bloodColor ) )
 		{
 			cache->age = ++g_StudioRagdollDecalCacheClock;
 			return cache;
@@ -851,23 +851,12 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	CStudioModelRenderer *renderer,
 	int entityIndex,
 	int boneIndex,
-	const float localPosition[3],
-	const float localNormal[3],
+	const float worldPosition[3],
+	const float worldNormal[3],
 	float sourceRadius,
 	int bloodColor,
 	int projectionAttempt )
 {
-	float boneTransform[3][4];
-	if( !Ragdoll_GetBoneTransform( entityIndex, boneIndex, boneTransform ) )
-	{
-		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
-			gEngfuncs.Con_Printf )
-			gEngfuncs.Con_Printf(
-				"[Ragdoll decals] entity %d bone %d: no client bone transform yet\n",
-				entityIndex, boneIndex );
-		return NULL;
-	}
-
 	// Cache failed projections too: a malformed or unusual studio mesh must
 	// never trigger a full-model scan every frame.
 	studio_ragdoll_mark_cache_t *cache = StudioAllocateRagdollMarkCache();
@@ -883,23 +872,20 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	cache->projectionAttempts = projectionAttempt;
 	for( int axis = 0; axis < 3; ++axis )
 	{
-		cache->localPosition[axis] = localPosition[axis];
-		cache->localNormal[axis] = localNormal[axis];
+		cache->worldPosition[axis] = worldPosition[axis];
+		cache->worldNormal[axis] = worldNormal[axis];
 	}
 
 	studio_ragdoll_surface_search_t search;
 	memset( &search, 0, sizeof( search ) );
+	// Match Source's AddStudioDecal contract: the impact is supplied in
+	// world space and projected against the rendered studio-model triangles.
+	// Do not reconstruct it through a per-bone transform; that round-trip was
+	// the source of large offsets between the Jolt hit and this skinned mesh.
 	for( int axis = 0; axis < 3; ++axis )
 	{
-		search.point[axis] =
-			boneTransform[axis][0] * localPosition[0] +
-			boneTransform[axis][1] * localPosition[1] +
-			boneTransform[axis][2] * localPosition[2] +
-			boneTransform[axis][3];
-		search.impactNormal[axis] =
-			boneTransform[axis][0] * localNormal[0] +
-			boneTransform[axis][1] * localNormal[1] +
-			boneTransform[axis][2] * localNormal[2];
+		search.point[axis] = worldPosition[axis];
+		search.impactNormal[axis] = worldNormal[axis];
 	}
 	StudioNormalize3( search.impactNormal );
 	if( StudioDot3( search.impactNormal, search.impactNormal ) < 0.5f )
@@ -924,7 +910,7 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
 			gEngfuncs.Con_Printf )
 			gEngfuncs.Con_Printf(
-				"[Ragdoll decals] entity %d bone %d: attempt %d/5 parsed %d triangles, no surface within 12 units (nearest %.2f; mark %.1f %.1f %.1f; surface %.1f %.1f %.1f)\n",
+				"[Ragdoll decals] entity %d bone %d: world hit attempt %d/5 parsed %d triangles, no surface within 12 units (nearest %.2f; mark %.1f %.1f %.1f; surface %.1f %.1f %.1f)\n",
 				entityIndex, boneIndex, projectionAttempt + 1, search.triangleCount,
 				sqrtf( search.nearestDistanceSquared ),
 				search.point[0], search.point[1], search.point[2],
@@ -1104,23 +1090,23 @@ static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 	for( int markIndex = 0; markIndex < markCount; ++markIndex )
 	{
 		int boneIndex = -1;
-		float localPosition[3];
-		float localNormal[3];
+		float worldPosition[3];
+		float worldNormal[3];
 		float sourceRadius = 0.0f;
 		int bloodColor = 0;
 		if( !Ragdoll_GetImpactMark(
 				entity->index, markIndex, &boneIndex,
-				localPosition, localNormal, &sourceRadius, &bloodColor ) )
+				worldPosition, worldNormal, &sourceRadius, &bloodColor ) )
 			continue;
 
 		studio_ragdoll_mark_cache_t *cache = StudioFindRagdollMarkCache(
 			entity->index, renderer->m_pRenderModel, boneIndex,
-			localPosition, localNormal, sourceRadius, bloodColor );
+			worldPosition, worldNormal, sourceRadius, bloodColor );
 		if( !cache )
 		{
 			cache = StudioBuildRagdollMarkCache(
 				renderer, entity->index, boneIndex,
-				localPosition, localNormal, sourceRadius, bloodColor, 0 );
+				worldPosition, worldNormal, sourceRadius, bloodColor, 0 );
 		}
 		else if( cache->fragmentCount <= 0 && cache->retryTime > 0.0f &&
 			(float)gEngfuncs.GetClientTime() >= cache->retryTime )
@@ -1129,7 +1115,7 @@ static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 			cache->valid = false;
 			cache = StudioBuildRagdollMarkCache(
 				renderer, entity->index, boneIndex,
-				localPosition, localNormal, sourceRadius, bloodColor, nextAttempt );
+				worldPosition, worldNormal, sourceRadius, bloodColor, nextAttempt );
 		}
 
 		if( cache && cache->fragmentCount > 0 )
