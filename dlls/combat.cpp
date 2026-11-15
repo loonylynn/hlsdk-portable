@@ -1493,28 +1493,41 @@ static float NPCPhysics_GetBulletImpactDamage( int bulletType, int damage, BOOL 
 	}
 }
 
-static float NPCPhysics_GetBulletImpulsePerDamage( int bulletType, BOOL playerBullet )
+// Source's BULLET_IMPULSE formula: convert projectile mass from grains
+// to kilograms, muzzle velocity from ft/s to inches/s, then apply the
+// same 3.5 physics exaggeration factor used by HL2's ammo definitions.
+static float NPCPhysics_CalculateBulletImpulse( float grains, float feetPerSecond )
+{
+	const float massPounds = 0.002285f * grains / 16.0f;
+	const float massKilograms = massPounds * 0.45359237f;
+	return feetPerSecond * 12.0f * massKilograms * 3.5f;
+}
+
+static float NPCPhysics_GetBulletImpactImpulse( int bulletType, BOOL playerBullet )
 {
 	if( playerBullet )
 	{
 		switch( bulletType )
 		{
-		case BULLET_PLAYER_9MM: return 20.0f;
-		case BULLET_PLAYER_MP5: return 24.0f;
-		case BULLET_PLAYER_BUCKSHOT: return 19.0f;
-		case BULLET_PLAYER_357: return 36.0f;
-		case BULLET_NONE: return 45.0f;
-		default: return 20.0f;
+		case BULLET_PLAYER_357:
+			return NPCPhysics_CalculateBulletImpulse( 800.0f, 5000.0f );
+		case BULLET_PLAYER_BUCKSHOT:
+			return NPCPhysics_CalculateBulletImpulse( 400.0f, 1200.0f );
+		case BULLET_PLAYER_9MM:
+		case BULLET_PLAYER_MP5:
+		default:
+			return NPCPhysics_CalculateBulletImpulse( 200.0f, 1225.0f );
 		}
 	}
 
 	switch( bulletType )
 	{
-	case BULLET_MONSTER_9MM: return 20.0f;
-	case BULLET_MONSTER_MP5: return 24.0f;
-	case BULLET_MONSTER_12MM: return 32.0f;
-	case BULLET_NONE: return 45.0f;
-	default: return 20.0f;
+	case BULLET_MONSTER_12MM:
+		return NPCPhysics_CalculateBulletImpulse( 400.0f, 1225.0f );
+	case BULLET_MONSTER_9MM:
+	case BULLET_MONSTER_MP5:
+	default:
+		return NPCPhysics_CalculateBulletImpulse( 200.0f, 1225.0f );
 	}
 }
 
@@ -1528,8 +1541,9 @@ static void NPCPhysics_ApplyBulletImpact(
 	const float impactDamage = NPCPhysics_GetBulletImpactDamage(
 		bulletType, damage, playerBullet );
 	const float configuredScale = CVAR_GET_FLOAT( "sv_npc_vphysics_bullet_scale" );
+	(void)impactDamage;
 	const float impulseMagnitude =
-		impactDamage * NPCPhysics_GetBulletImpulsePerDamage( bulletType, playerBullet ) *
+		NPCPhysics_GetBulletImpactImpulse( bulletType, playerBullet ) *
 		std::max( 0.0f, configuredScale );
 
 	float hitFraction = trace->flFraction;
