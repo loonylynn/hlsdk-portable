@@ -229,17 +229,502 @@ static int StudioGetRagdollBloodTexture( void )
 
 /*
 ====================
-StudioDrawRagdollImpactMarks
+StudioForEachRagdollModelTriangle
 
-Render small blood patches from the struck bone's local coordinates. The
-studio bone matrix is sampled from the same interpolated Jolt pose used for
-the corpse mesh, so marks travel with the articulated limb.
+Walk the active GoldSrc studio submodels and decode their triangle
+strip/fan command streams. Vertices are transformed with the exact bone
+matrices used by the studio renderer, including the replicated Jolt pose.
 ====================
 */
-static void StudioDrawRagdollImpactMarks( cl_entity_t *entity )
+typedef void (*studio_ragdoll_triangle_callback_t)( const float triangle[3][3], void *context );
+
+static qboolean StudioGetRagdollWorldVertex(
+	CStudioModelRenderer *renderer,
+	const byte *vertexBones,
+	const vec3_t *vertices,
+	int vertexIndex,
+	vec3_t worldPosition )
+{
+	if( !renderer || !renderer->m_pStudioHeader || !renderer->m_plighttransform ||
+		!vertexBones || !vertices ||
+		vertexIndex < 0 || vertexIndex >= renderer->m_pSubModel->numverts )
+		return false;
+
+	const int boneIndex = vertexBones[vertexIndex];
+	if( boneIndex < 0 || boneIndex >= renderer->m_pStudioHeader->numbones )
+		return false;
+
+	VectorTransform(
+		vertices[vertexIndex],
+		(*renderer->m_plighttransform)[boneIndex],
+		worldPosition
+	);
+	return true;
+}
+
+static void StudioForEachRagdollModelTriangle(
+	CStudioModelRenderer *renderer,
+	studio_ragdoll_triangle_callback_t callback,
+	void *context )
+{
+	if( !renderer || !renderer->m_pStudioHeader ||
+		!IEngineStudio.StudioSetupModel || !callback )
+		return;
+
+	mstudiobodyparts_t *savedBodyPart = renderer->m_pBodyPart;
+	mstudiomodel_t *savedSubModel = renderer->m_pSubModel;
+
+	const int bodyPartCount = renderer->m_pStudioHeader->numbodyparts;
+	if( bodyPartCount <= 0 || bodyPartCount > MAXSTUDIOBODYPARTS )
+		return;
+
+	for( int bodyPartIndex = 0; bodyPartIndex < bodyPartCount; ++bodyPartIndex )
+	{
+		void *bodyPart = NULL;
+		void *subModel = NULL;
+		IEngineStudio.StudioSetupModel( bodyPartIndex, &bodyPart, &subModel );
+		renderer->m_pBodyPart = (mstudiobodyparts_t *)bodyPart;
+		renderer->m_pSubModel = (mstudiomodel_t *)subModel;
+
+		mstudiomodel_t *model = renderer->m_pSubModel;
+		if( !model || model->numverts <= 0 ||
+			model->numverts > MAXSTUDIOVERTS ||
+			model->nummesh <= 0 || model->nummesh > MAXSTUDIOMESHES ||
+			!model->vertinfoindex || !model->vertindex || !model->meshindex )
+			continue;
+
+		const byte *vertexBones =
+			(const byte *)renderer->m_pStudioHeader + model->vertinfoindex;
+		const vec3_t *vertices =
+			(const vec3_t *)((const byte *)renderer->m_pStudioHeader + model->vertindex);
+		const mstudiomesh_t *meshes =
+			(const mstudiomesh_t *)((const byte *)renderer->m_pStudioHeader + model->meshindex);
+
+		for( int meshIndex = 0; meshIndex < model->nummesh; ++meshIndex )
+		{
+			const mstudiomesh_t *mesh = &meshes[meshIndex];
+			if( mesh->numtris <= 0 || mesh->numtris > MAXSTUDIOTRIANGLES ||
+				mesh->triindex <= 0 )
+				continue;
+
+			const short *commands =
+				(const short *)((const byte *)renderer->m_pStudioHeader + mesh->triindex);
+			int trianglesVisited = 0;
+
+			// Each command is a signed vertex count followed by that many
+			// mstudiotrivert_t records. Positive counts are strips; negative
+			// counts are fans, matching the GoldSrc studio mesh format.
+			for( int commandIndex = 0;
+				commandIndex <= mesh->numtris && trianglesVisited < mesh->numtris;
+				++commandIndex )
+			{
+				const int signedVertexCount = *commands++;
+				if( signedVertexCount == 0 )
+					break;
+
+				const qboolean isFan = signedVertexCount < 0;
+				const int vertexCount = isFan ? -signedVertexCount : signedVertexCount;
+				if( vertexCount < 3 || vertexCount > MAXSTUDIOVERTS )
+					break;
+
+				const mstudiotrivert_t *commandVertices =
+					(const mstudiotrivert_t *)commands;
+
+				for( int vertex = 2;
+					vertex < vertexCount && trianglesVisited < mesh->numtris;
+					++vertex )
+				{
+					int indices[3];
+					if( isFan )
+					{
+						indices[0] = 0;
+						indices[1] = vertex - 1;
+						indices[2] = vertex;
+					}
+					else if( vertex & 1 )
+					{
+						indices[0] = vertex - 1;
+						indices[1] = vertex - 2;
+						indices[2] = vertex;
+					}
+					else
+					{
+						indices[0] = vertex - 2;
+						indices[1] = vertex - 1;
+						indices[2] = vertex;
+					}
+
+					float triangle[3][3];
+					if( StudioGetRagdollWorldVertex(
+							renderer, vertexBones, vertices,
+							commandVertices[indices[0]].vertindex, triangle[0] ) &&
+						StudioGetRagdollWorldVertex(
+							renderer, vertexBones, vertices,
+							commandVertices[indices[1]].vertindex, triangle[1] ) &&
+						StudioGetRagdollWorldVertex(
+							renderer, vertexBones, vertices,
+							commandVertices[indices[2]].vertindex, triangle[2] ) )
+					{
+						callback( triangle, context );
+					}
+					++trianglesVisited;
+				}
+
+				commands += vertexCount * 4;
+			}
+		}
+	}
+
+	renderer->m_pBodyPart = savedBodyPart;
+	renderer->m_pSubModel = savedSubModel;
+}
+
+static float StudioDot3( const float *a, const float *b )
+{
+	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+static void StudioNormalize3( float vector[3] )
+{
+	const float lengthSquared = StudioDot3( vector, vector );
+	if( lengthSquared <= 0.000001f )
+		return;
+
+	const float inverseLength = 1.0f / sqrtf( lengthSquared );
+	for( int axis = 0; axis < 3; ++axis )
+		vector[axis] *= inverseLength;
+}
+
+static void StudioClosestPointOnSegment(
+	const float point[3],
+	const float start[3],
+	const float end[3],
+	float closest[3] )
+{
+	float direction[3];
+	float toPoint[3];
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		direction[axis] = end[axis] - start[axis];
+		toPoint[axis] = point[axis] - start[axis];
+	}
+
+	const float lengthSquared = StudioDot3( direction, direction );
+	float fraction = lengthSquared > 0.000001f
+		? StudioDot3( toPoint, direction ) / lengthSquared
+		: 0.0f;
+	if( fraction < 0.0f ) fraction = 0.0f;
+	if( fraction > 1.0f ) fraction = 1.0f;
+
+	for( int axis = 0; axis < 3; ++axis )
+		closest[axis] = start[axis] + direction[axis] * fraction;
+}
+
+static void StudioClosestPointOnTriangle(
+	const float point[3],
+	const float a[3],
+	const float b[3],
+	const float c[3],
+	float closest[3] )
+{
+	float ab[3], ac[3], normal[3], projected[3];
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		ab[axis] = b[axis] - a[axis];
+		ac[axis] = c[axis] - a[axis];
+	}
+	normal[0] = ab[1] * ac[2] - ab[2] * ac[1];
+	normal[1] = ab[2] * ac[0] - ab[0] * ac[2];
+	normal[2] = ab[0] * ac[1] - ab[1] * ac[0];
+	StudioNormalize3( normal );
+
+	float pointFromA[3];
+	for( int axis = 0; axis < 3; ++axis )
+		pointFromA[axis] = point[axis] - a[axis];
+	const float planeDistance = StudioDot3( pointFromA, normal );
+	for( int axis = 0; axis < 3; ++axis )
+		projected[axis] = point[axis] - normal[axis] * planeDistance;
+
+	float ap[3];
+	for( int axis = 0; axis < 3; ++axis )
+		ap[axis] = projected[axis] - a[axis];
+	const float d00 = StudioDot3( ab, ab );
+	const float d01 = StudioDot3( ab, ac );
+	const float d11 = StudioDot3( ac, ac );
+	const float d20 = StudioDot3( ap, ab );
+	const float d21 = StudioDot3( ap, ac );
+	const float denominator = d00 * d11 - d01 * d01;
+
+	if( denominator > 0.000001f )
+	{
+		const float v = ( d11 * d20 - d01 * d21 ) / denominator;
+		const float w = ( d00 * d21 - d01 * d20 ) / denominator;
+		const float u = 1.0f - v - w;
+		if( u >= 0.0f && v >= 0.0f && w >= 0.0f )
+		{
+			for( int axis = 0; axis < 3; ++axis )
+				closest[axis] = a[axis] * u + b[axis] * v + c[axis] * w;
+			return;
+		}
+	}
+
+	float candidates[3][3];
+	StudioClosestPointOnSegment( point, a, b, candidates[0] );
+	StudioClosestPointOnSegment( point, b, c, candidates[1] );
+	StudioClosestPointOnSegment( point, c, a, candidates[2] );
+
+	float bestDistance = 1.0e30f;
+	for( int candidate = 0; candidate < 3; ++candidate )
+	{
+		float delta[3];
+		for( int axis = 0; axis < 3; ++axis )
+			delta[axis] = candidates[candidate][axis] - point[axis];
+		const float distance = StudioDot3( delta, delta );
+		if( distance < bestDistance )
+		{
+			bestDistance = distance;
+			for( int axis = 0; axis < 3; ++axis )
+				closest[axis] = candidates[candidate][axis];
+		}
+	}
+}
+
+struct studio_ragdoll_surface_search_s
+{
+	float point[3];
+	float impactNormal[3];
+	float maxDistanceSquared;
+	float bestScore;
+	float surfacePoint[3];
+	float surfaceNormal[3];
+	qboolean found;
+};
+
+static void StudioFindRagdollImpactSurface(
+	const float triangle[3][3],
+	void *opaqueContext )
+{
+	studio_ragdoll_surface_search_s *context =
+		(studio_ragdoll_surface_search_s *)opaqueContext;
+	float edge1[3], edge2[3], normal[3];
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		edge1[axis] = triangle[1][axis] - triangle[0][axis];
+		edge2[axis] = triangle[2][axis] - triangle[0][axis];
+	}
+
+	normal[0] = edge1[1] * edge2[2] - edge1[2] * edge2[1];
+	normal[1] = edge1[2] * edge2[0] - edge1[0] * edge2[2];
+	normal[2] = edge1[0] * edge2[1] - edge1[1] * edge2[0];
+	const float normalLengthSquared = StudioDot3( normal, normal );
+	if( normalLengthSquared < 0.000001f )
+		return;
+	StudioNormalize3( normal );
+
+	float alignment = StudioDot3( normal, context->impactNormal );
+	if( fabsf( alignment ) < 0.05f )
+		return;
+	if( alignment < 0.0f )
+	{
+		alignment = -alignment;
+		for( int axis = 0; axis < 3; ++axis )
+			normal[axis] = -normal[axis];
+	}
+
+	float closest[3], delta[3];
+	StudioClosestPointOnTriangle(
+		context->point, triangle[0], triangle[1], triangle[2], closest );
+	for( int axis = 0; axis < 3; ++axis )
+		delta[axis] = closest[axis] - context->point[axis];
+	const float distanceSquared = StudioDot3( delta, delta );
+	if( distanceSquared > context->maxDistanceSquared )
+		return;
+
+	// Prefer a nearby triangle facing the incoming impact direction, while
+	// still allowing for coarse convex-hull normals on the physics side.
+	const float score = distanceSquared + ( 1.0f - alignment ) * 0.5f;
+	if( context->found && score >= context->bestScore )
+		return;
+
+	context->found = true;
+	context->bestScore = score;
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		context->surfacePoint[axis] = closest[axis];
+		context->surfaceNormal[axis] = normal[axis];
+	}
+}
+
+typedef struct studio_ragdoll_decal_vertex_s
+{
+	float position[3];
+	float u, v, depth;
+} studio_ragdoll_decal_vertex_t;
+
+typedef struct studio_ragdoll_decal_draw_s
+{
+	triangleapi_t *tri;
+	float center[3];
+	float normal[3];
+	float tangent[3];
+	float bitangent[3];
+	float radius;
+	float depthTolerance;
+} studio_ragdoll_decal_draw_t;
+
+static float StudioRagdollDecalClipDistance(
+	const studio_ragdoll_decal_vertex_t &vertex,
+	int plane,
+	float depthTolerance )
+{
+	switch( plane )
+	{
+	case 0: return vertex.u + 1.0f;
+	case 1: return 1.0f - vertex.u;
+	case 2: return vertex.v + 1.0f;
+	case 3: return 1.0f - vertex.v;
+	case 4: return vertex.depth + depthTolerance;
+	default: return depthTolerance - vertex.depth;
+	}
+}
+
+static int StudioClipRagdollDecalPolygon(
+	const studio_ragdoll_decal_vertex_t *input,
+	int inputCount,
+	studio_ragdoll_decal_vertex_t *output,
+	int plane,
+	float depthTolerance )
+{
+	int outputCount = 0;
+	if( inputCount <= 0 )
+		return 0;
+
+	studio_ragdoll_decal_vertex_t previous = input[inputCount - 1];
+	float previousDistance =
+		StudioRagdollDecalClipDistance( previous, plane, depthTolerance );
+	qboolean previousInside = previousDistance >= 0.0f;
+
+	for( int index = 0; index < inputCount; ++index )
+	{
+		const studio_ragdoll_decal_vertex_t current = input[index];
+		const float currentDistance =
+			StudioRagdollDecalClipDistance( current, plane, depthTolerance );
+		const qboolean currentInside = currentDistance >= 0.0f;
+
+		if( previousInside != currentInside && outputCount < 16 )
+		{
+			const float denominator = previousDistance - currentDistance;
+			if( fabsf( denominator ) > 0.000001f )
+			{
+				const float fraction = previousDistance / denominator;
+				studio_ragdoll_decal_vertex_t intersection;
+				for( int axis = 0; axis < 3; ++axis )
+					intersection.position[axis] = previous.position[axis] +
+						( current.position[axis] - previous.position[axis] ) * fraction;
+				intersection.u = previous.u + ( current.u - previous.u ) * fraction;
+				intersection.v = previous.v + ( current.v - previous.v ) * fraction;
+				intersection.depth = previous.depth +
+					( current.depth - previous.depth ) * fraction;
+				output[outputCount++] = intersection;
+			}
+		}
+
+		if( currentInside && outputCount < 16 )
+			output[outputCount++] = current;
+
+		previous = current;
+		previousDistance = currentDistance;
+		previousInside = currentInside;
+	}
+
+	return outputCount;
+}
+
+static void StudioDrawRagdollImpactTriangle(
+	const float triangle[3][3],
+	void *opaqueContext )
+{
+	studio_ragdoll_decal_draw_t *context =
+		(studio_ragdoll_decal_draw_t *)opaqueContext;
+	float edge1[3], edge2[3], faceNormal[3];
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		edge1[axis] = triangle[1][axis] - triangle[0][axis];
+		edge2[axis] = triangle[2][axis] - triangle[0][axis];
+	}
+	faceNormal[0] = edge1[1] * edge2[2] - edge1[2] * edge2[1];
+	faceNormal[1] = edge1[2] * edge2[0] - edge1[0] * edge2[2];
+	faceNormal[2] = edge1[0] * edge2[1] - edge1[1] * edge2[0];
+	const float faceLengthSquared = StudioDot3( faceNormal, faceNormal );
+	if( faceLengthSquared < 0.000001f )
+		return;
+	StudioNormalize3( faceNormal );
+
+	// Project onto the visible side only; this prevents a mark from appearing
+	// on the opposite side of a thin limb or torso.
+	if( StudioDot3( faceNormal, context->normal ) < 0.12f )
+		return;
+
+	studio_ragdoll_decal_vertex_t first[16];
+	studio_ragdoll_decal_vertex_t second[16];
+	for( int vertex = 0; vertex < 3; ++vertex )
+	{
+		float delta[3];
+		for( int axis = 0; axis < 3; ++axis )
+		{
+			first[vertex].position[axis] = triangle[vertex][axis];
+			delta[axis] = triangle[vertex][axis] - context->center[axis];
+		}
+		first[vertex].u = StudioDot3( delta, context->tangent ) / context->radius;
+		first[vertex].v = StudioDot3( delta, context->bitangent ) / context->radius;
+		first[vertex].depth = StudioDot3( delta, context->normal );
+	}
+
+	int vertexCount = 3;
+	studio_ragdoll_decal_vertex_t *input = first;
+	studio_ragdoll_decal_vertex_t *output = second;
+	for( int plane = 0; plane < 6; ++plane )
+	{
+		vertexCount = StudioClipRagdollDecalPolygon(
+			input, vertexCount, output, plane, context->depthTolerance );
+		if( vertexCount < 3 )
+			return;
+		studio_ragdoll_decal_vertex_t *swap = input;
+		input = output;
+		output = swap;
+	}
+
+	context->tri->Begin( TRI_TRIANGLE_FAN );
+	for( int vertex = 0; vertex < vertexCount; ++vertex )
+	{
+		float biasedPosition[3];
+		for( int axis = 0; axis < 3; ++axis )
+			biasedPosition[axis] =
+				input[vertex].position[axis] + faceNormal[axis] * 0.025f;
+
+		context->tri->TexCoord2f(
+			input[vertex].u * 0.5f + 0.5f,
+			input[vertex].v * 0.5f + 0.5f );
+		context->tri->Vertex3fv( biasedPosition );
+	}
+	context->tri->End();
+}
+
+/*
+====================
+StudioDrawRagdollImpactMarks
+
+Backport the useful part of Source's studio decal projection: find the
+closest skinned model surface, project a small decal volume, and clip every
+affected studio triangle against it. The resulting polygons lie on the
+actual animated/Jolt-skinned mesh instead of floating bone-aligned quads.
+====================
+*/
+static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 {
 	triangleapi_t *tri = gEngfuncs.pTriAPI;
-	if( !entity || entity->index <= 0 || !tri ||
+	cl_entity_t *entity = renderer ? renderer->m_pCurrentEntity : NULL;
+	if( !renderer || !entity || entity->index <= 0 || !tri ||
 		!cl_ragdoll_bloodmarks || cl_ragdoll_bloodmarks->value <= 0.0f )
 		return;
 
@@ -265,109 +750,93 @@ static void StudioDrawRagdollImpactMarks( cl_entity_t *entity )
 		int boneIndex = -1;
 		float localPosition[3];
 		float localNormal[3];
-		float radius = 0.0f;
+		float sourceRadius = 0.0f;
 		int bloodColor = 0;
 		float boneTransform[3][4];
 
 		if( !Ragdoll_GetImpactMark(
-			entity->index, markIndex, &boneIndex,
-			localPosition, localNormal, &radius, &bloodColor ) ||
+				entity->index, markIndex, &boneIndex,
+				localPosition, localNormal, &sourceRadius, &bloodColor ) ||
 			!Ragdoll_GetBoneTransform( entity->index, boneIndex, boneTransform ) )
 			continue;
 
-		vec3_t center;
-		vec3_t normal;
+		studio_ragdoll_surface_search_s search;
+		memset( &search, 0, sizeof( search ) );
 		for( int axis = 0; axis < 3; ++axis )
 		{
-			center[axis] =
+			search.point[axis] =
 				boneTransform[axis][0] * localPosition[0] +
 				boneTransform[axis][1] * localPosition[1] +
 				boneTransform[axis][2] * localPosition[2] +
 				boneTransform[axis][3];
-			normal[axis] =
+			search.impactNormal[axis] =
 				boneTransform[axis][0] * localNormal[0] +
 				boneTransform[axis][1] * localNormal[1] +
 				boneTransform[axis][2] * localNormal[2];
 		}
-
-		float normalLength = sqrtf(
-			normal[0] * normal[0] +
-			normal[1] * normal[1] +
-			normal[2] * normal[2] );
-		if( normalLength < 0.001f )
+		StudioNormalize3( search.impactNormal );
+		if( StudioDot3( search.impactNormal, search.impactNormal ) < 0.5f )
 			continue;
-		for( int axis = 0; axis < 3; ++axis )
-			normal[axis] /= normalLength;
 
-		vec3_t reference = { 0.0f, 0.0f, 1.0f };
-		if( fabsf( normal[2] ) > 0.90f )
+		float radius = sourceRadius;
+		if( radius < 0.75f ) radius = 0.75f;
+		if( radius > 2.50f ) radius = 2.50f;
+		const float searchRadius = radius * 2.5f + 1.0f;
+		search.maxDistanceSquared = searchRadius * searchRadius;
+		search.bestScore = 1.0e30f;
+		search.found = false;
+
+		StudioForEachRagdollModelTriangle(
+			renderer, StudioFindRagdollImpactSurface, &search );
+		if( !search.found )
+			continue;
+
+		studio_ragdoll_decal_draw_t draw;
+		memset( &draw, 0, sizeof( draw ) );
+		draw.tri = tri;
+		draw.radius = radius;
+		draw.depthTolerance = radius * 0.25f + 0.08f;
+		for( int axis = 0; axis < 3; ++axis )
+		{
+			draw.center[axis] = search.surfacePoint[axis];
+			draw.normal[axis] = search.surfaceNormal[axis];
+		}
+
+		float reference[3] = { 0.0f, 0.0f, 1.0f };
+		if( fabsf( draw.normal[2] ) > 0.90f )
 		{
 			reference[0] = 0.0f;
 			reference[1] = 1.0f;
 			reference[2] = 0.0f;
 		}
 
-		vec3_t tangent;
-		vec3_t bitangent;
-		tangent[0] = reference[1] * normal[2] - reference[2] * normal[1];
-		tangent[1] = reference[2] * normal[0] - reference[0] * normal[2];
-		tangent[2] = reference[0] * normal[1] - reference[1] * normal[0];
-		float tangentLength = sqrtf(
-			tangent[0] * tangent[0] +
-			tangent[1] * tangent[1] +
-			tangent[2] * tangent[2] );
-		if( tangentLength < 0.001f )
-			continue;
-		for( int axis = 0; axis < 3; ++axis )
-			tangent[axis] /= tangentLength;
+		draw.tangent[0] = reference[1] * draw.normal[2] - reference[2] * draw.normal[1];
+		draw.tangent[1] = reference[2] * draw.normal[0] - reference[0] * draw.normal[2];
+		draw.tangent[2] = reference[0] * draw.normal[1] - reference[1] * draw.normal[0];
+		StudioNormalize3( draw.tangent );
+		draw.bitangent[0] = draw.normal[1] * draw.tangent[2] - draw.normal[2] * draw.tangent[1];
+		draw.bitangent[1] = draw.normal[2] * draw.tangent[0] - draw.normal[0] * draw.tangent[2];
+		draw.bitangent[2] = draw.normal[0] * draw.tangent[1] - draw.normal[1] * draw.tangent[0];
 
-		bitangent[0] = normal[1] * tangent[2] - normal[2] * tangent[1];
-		bitangent[1] = normal[2] * tangent[0] - normal[0] * tangent[2];
-		bitangent[2] = normal[0] * tangent[1] - normal[1] * tangent[0];
-
-		// Slight surface bias avoids z-fighting with the studio mesh.
-		for( int axis = 0; axis < 3; ++axis )
-			center[axis] += normal[axis] * 0.45f;
-
-		float red = 0.34f;
-		float green = 0.015f;
-		float blue = 0.005f;
+		float red = 0.30f;
+		float green = 0.012f;
+		float blue = 0.004f;
 		if( bloodColor == 1 )
 		{
 			red = 0.025f;
-			green = 0.30f;
-			blue = 0.025f;
+			green = 0.24f;
+			blue = 0.018f;
 		}
 		else if( bloodColor == 2 )
 		{
-			red = 0.35f;
-			green = 0.27f;
-			blue = 0.015f;
+			red = 0.30f;
+			green = 0.22f;
+			blue = 0.012f;
 		}
 
-		const float halfSize = radius * 0.82f;
-		vec3_t vertices[4];
-		const float signs[4][2] = {
-			{ -1.0f, -1.0f }, { 1.0f, -1.0f },
-			{ 1.0f, 1.0f }, { -1.0f, 1.0f }
-		};
-		for( int vertex = 0; vertex < 4; ++vertex )
-		{
-			for( int axis = 0; axis < 3; ++axis )
-			{
-				vertices[vertex][axis] = center[axis] +
-					( tangent[axis] * signs[vertex][0] +
-					  bitangent[axis] * signs[vertex][1] ) * halfSize;
-			}
-		}
-
-		tri->Color4f( red, green, blue, 0.92f );
-		tri->Begin( TRI_QUADS );
-		tri->TexCoord2f( 0.0f, 0.0f ); tri->Vertex3fv( vertices[0] );
-		tri->TexCoord2f( 1.0f, 0.0f ); tri->Vertex3fv( vertices[1] );
-		tri->TexCoord2f( 1.0f, 1.0f ); tri->Vertex3fv( vertices[2] );
-		tri->TexCoord2f( 0.0f, 1.0f ); tri->Vertex3fv( vertices[3] );
-		tri->End();
+		tri->Color4f( red, green, blue, 0.82f );
+		StudioForEachRagdollModelTriangle(
+			renderer, StudioDrawRagdollImpactTriangle, &draw );
 	}
 
 	tri->Color4f( 1.0f, 1.0f, 1.0f, 1.0f );
@@ -2390,7 +2859,7 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 			g_BlobShadowStudioEntity == m_pCurrentEntity->index ?
 				g_BlobShadowStudioOrigin : m_pCurrentEntity->origin
 		);
-		StudioDrawRagdollImpactMarks( m_pCurrentEntity );
+		StudioDrawRagdollImpactMarks( this );
 	}
 }
 
