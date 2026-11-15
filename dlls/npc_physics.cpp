@@ -134,6 +134,14 @@ namespace
 	{
 		std::string path;
 		NPCPhysicsRagdollDefinition definition;
+		std::string error;
+		bool loaded;
+		bool errorReported;
+
+		NPCPhysicsCachedRagdollDefinition()
+			: loaded( false ), errorReported( false )
+		{
+		}
 	};
 
 	struct NPCPhysicsBrushModelShape
@@ -252,13 +260,15 @@ namespace
 		return false;
 	}
 
-	static bool NPCPhysics_IsZombie( edict_t *ent )
+	static bool NPCPhysics_IsEligibleMonster( edict_t *ent )
 	{
 		return ent && !ent->free &&
 			( ent->v.flags & FL_MONSTER ) != 0 &&
-			( ent->v.flags & ( FL_CLIENT | FL_KILLME | FL_DORMANT ) ) == 0 &&
-			FStrEq( STRING( ent->v.classname ), "monster_zombie" );
+			( ent->v.flags & ( FL_CLIENT | FL_KILLME | FL_DORMANT ) ) == 0;
 	}
+
+	static const NPCPhysicsRagdollDefinition *NPCPhysics_GetRagdollDefinition(
+		edict_t *ent, bool reportErrors );
 
 	static bool NPCPhysics_Initialize()
 	{
@@ -319,22 +329,22 @@ namespace
 
 		studiohdr_t *header = reinterpret_cast<studiohdr_t *>( GET_MODEL_PTR( ent ) );
 		if( !header )
-			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie has no loaded studio model" ) : false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "NPC has no loaded studio model" ) : false;
 
 		if( header->ident != IDSTUDIOHEADER || header->version != STUDIO_VERSION )
-			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie studio model has an unsupported header or version" ) : false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "NPC studio model has an unsupported header or version" ) : false;
 
 		if( header->length < (int)sizeof( studiohdr_t ) ||
 			header->numbones < 1 ||
 			header->numbones > MAXSTUDIOBONES ||
 			header->boneindex < (int)sizeof( studiohdr_t ) )
-			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie studio bone table is invalid" ) : false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "NPC studio bone table is invalid" ) : false;
 
 		const size_t length = static_cast<size_t>( header->length );
 		const size_t boneOffset = static_cast<size_t>( header->boneindex );
 		const size_t boneBytes = static_cast<size_t>( header->numbones ) * sizeof( mstudiobone_t );
 		if( boneOffset > length || boneBytes > length - boneOffset )
-			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie studio bone table exceeds model bounds" ) : false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "NPC studio bone table exceeds model bounds" ) : false;
 
 		*headerOut = header;
 		return true;
@@ -378,9 +388,14 @@ namespace
 
 	static void NPCPhysics_CaptureLivePose( edict_t *ent )
 	{
-		if( !g_serverPhysicsAPI || !NPCPhysics_IsZombie( ent ) ||
+		if( !g_serverPhysicsAPI || !NPCPhysics_IsEligibleMonster( ent ) ||
 			ent->v.deadflag != DEAD_NO || !gpGlobals ||
 			!g_engfuncs.pfnGetBonePosition )
+			return;
+
+		// Only retain animation history for NPC models that actually opt in
+		// through a sibling .jrag definition. Missing definitions are cached.
+		if( !NPCPhysics_GetRagdollDefinition( ent, false ) )
 			return;
 
 		const int entityIndex = ENTINDEX( ent );
@@ -1121,37 +1136,55 @@ namespace
 		return parsed;
 	}
 
-	static const NPCPhysicsRagdollDefinition *NPCPhysics_GetRagdollDefinition( edict_t *ent )
+	static const NPCPhysicsRagdollDefinition *NPCPhysics_GetRagdollDefinition(
+		edict_t *ent, bool reportErrors )
 	{
 		std::string path;
 		if( !NPCPhysics_GetRagdollDefinitionPath( ent, path ) )
-		{
-			ALERT(
-				at_console,
-				"[NPC physics] No .jrag path could be derived from model '%s'.\n",
-				ent && ent->v.model ? STRING( ent->v.model ) : "<none>"
-			);
 			return NULL;
-		}
 
 		for( size_t i = 0; i < g_ragdollDefinitionCache.size(); ++i )
-			if( g_ragdollDefinitionCache[i].path == path )
-				return &g_ragdollDefinitionCache[i].definition;
+		{
+			NPCPhysicsCachedRagdollDefinition &cached = g_ragdollDefinitionCache[i];
+			if( cached.path != path )
+				continue;
+
+			if( cached.loaded )
+				return &cached.definition;
+
+			if( reportErrors && !cached.errorReported )
+			{
+				ALERT(
+					at_console,
+					"[NPC physics] No ragdoll for model '%s': %s. GoldSrc death animation will be used.\n",
+					path.c_str(),
+					cached.error.c_str()
+				);
+				cached.errorReported = true;
+			}
+			return NULL;
+		}
 
 		NPCPhysicsCachedRagdollDefinition cached;
 		cached.path = path;
-		std::string error;
-		if( !NPCPhysics_LoadRagdollDefinition( path, cached.definition, error ) )
+		if( !NPCPhysics_LoadRagdollDefinition( path, cached.definition, cached.error ) )
 		{
-			ALERT(
-				at_console,
-				"[NPC physics] Could not load ragdoll definition '%s': %s.\n",
-				path.c_str(),
-				error.c_str()
-			);
+			g_ragdollDefinitionCache.push_back( std::move( cached ) );
+			NPCPhysicsCachedRagdollDefinition &failed = g_ragdollDefinitionCache.back();
+			if( reportErrors )
+			{
+				ALERT(
+					at_console,
+					"[NPC physics] No ragdoll for model '%s': %s. GoldSrc death animation will be used.\n",
+					path.c_str(),
+					failed.error.c_str()
+				);
+				failed.errorReported = true;
+			}
 			return NULL;
 		}
 
+		cached.loaded = true;
 		g_ragdollDefinitionCache.push_back( std::move( cached ) );
 		const NPCPhysicsRagdollDefinition *loaded = &g_ragdollDefinitionCache.back().definition;
 		ALERT(
@@ -1176,7 +1209,7 @@ namespace
 	{
 		if( !ent || ent->free )
 			return NPCPhysics_RagdollSetupFailed( "NPC entity is invalid" );
-		const NPCPhysicsRagdollDefinition *physicsDefinition = NPCPhysics_GetRagdollDefinition( ent );
+		const NPCPhysicsRagdollDefinition *physicsDefinition = NPCPhysics_GetRagdollDefinition( ent, true );
 		if( !physicsDefinition )
 			return false;
 		if( !NPCPhysics_Initialize() )
@@ -1213,7 +1246,7 @@ namespace
 		for( int i = 0; i < ragdoll.studioBoneCount; ++i )
 		{
 			if( studioBones[i].parent < -1 || studioBones[i].parent >= ragdoll.studioBoneCount || studioBones[i].parent == i )
-				return NPCPhysics_RagdollSetupFailed( "zombie studio skeleton contains an invalid parent index" );
+				return NPCPhysics_RagdollSetupFailed( "NPC studio skeleton contains an invalid parent index" );
 			g_engfuncs.pfnGetBonePosition( ent, i, &bonePositions[i][0], &boneAngles[i][0] );
 			boneRotations[i] = NPCPhysics_AnglesToQuaternion( boneAngles[i] );
 		}
@@ -1321,11 +1354,11 @@ namespace
 			physicsShapes[body] = result.Get();
 			massWeights[body] = physicsShapes[body]->GetVolume();
 			if( !std::isfinite( massWeights[body] ) || massWeights[body] <= 0.0001f )
-				return NPCPhysics_RagdollSetupFailed( "authored zombie collision hull has invalid volume" );
+				return NPCPhysics_RagdollSetupFailed( "authored NPC collision hull has invalid volume" );
 			totalWeight += massWeights[body];
 		}
 		if( totalWeight <= 0.0001f || !std::isfinite( totalWeight ) )
-			return NPCPhysics_RagdollSetupFailed( "authored zombie hull set has zero combined volume" );
+			return NPCPhysics_RagdollSetupFailed( "authored NPC hull set has zero combined volume" );
 
 		float totalMass = NPCPhysics_GetCvar( "sv_npc_vphysics_mass", 0.0f );
 		if( totalMass <= 0.0f )
@@ -1345,9 +1378,9 @@ namespace
 		{
 			const int parent = studioBones[studio].parent;
 			if( parent < -1 || parent >= studio )
-				return NPCPhysics_RagdollSetupFailed( "compiled zombie studio skeleton is not parent-first" );
+				return NPCPhysics_RagdollSetupFailed( "compiled NPC studio skeleton is not parent-first" );
 			if( !studioBones[studio].name[0] )
-				return NPCPhysics_RagdollSetupFailed( "compiled zombie studio skeleton contains an unnamed bone" );
+				return NPCPhysics_RagdollSetupFailed( "compiled NPC studio skeleton contains an unnamed bone" );
 			ragdoll.studioSkeleton->AddJoint( studioBones[studio].name, parent );
 		}
 
@@ -1757,7 +1790,7 @@ namespace
 
 int NPCPhysics_TryCreateRagdoll( edict_t *ent )
 {
-	if( !NPCPhysics_Enabled() || !NPCPhysics_IsZombie( ent ) )
+	if( !NPCPhysics_Enabled() || !NPCPhysics_IsEligibleMonster( ent ) )
 		return FALSE;
 
 	if( !NPCPhysics_CreateRagdoll( ent ) )
