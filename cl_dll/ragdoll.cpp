@@ -323,9 +323,11 @@ int Ragdoll_ImpactMessageHandler( const char *, int size, void *buffer )
 
 	if( entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES ||
 		ragdollID <= 0 || boneIndex < 0 ||
-		!isfinite( localPosition[0] ) || !isfinite( localPosition[1] ) ||
-		!isfinite( localPosition[2] ) || !isfinite( radius ) ||
-		radius <= 0.0f || bloodColor < 0 || bloodColor > 2 )
+		!( localPosition[0] >= -4096.0f && localPosition[0] <= 4096.0f ) ||
+		!( localPosition[1] >= -4096.0f && localPosition[1] <= 4096.0f ) ||
+		!( localPosition[2] >= -4096.0f && localPosition[2] <= 4096.0f ) ||
+		!( radius > 0.0f && radius <= 64.0f ) ||
+		bloodColor < 0 || bloodColor > 2 )
 		return 0;
 
 	float normalLengthSquared =
