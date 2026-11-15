@@ -1219,7 +1219,7 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
 		gEngfuncs.Con_Printf )
 		gEngfuncs.Con_Printf(
-			"[Ragdoll decals] entity %d bone %d: scanned %d, usable %d, bad-vertices %d, degenerate %d, bad-closest %d, bad-distance %d, bounds [%.1f %.1f %.1f]-[%.1f %.1f %.1f], anchor %s (%.2f units, bone %d), fragments %d, radius %.2f, ray %.1f\n",
+			"[Ragdoll decals] entity %d bone %d: scanned %d, usable %d, bad-vertices %d, degenerate %d, bad-closest %d, bad-distance %d, bounds [%.1f %.1f %.1f]-[%.1f %.1f %.1f], anchor %s (%.2f units, bone %d), fragments %d, quad %d, radius %.2f, ray %.1f\n",
 			entityIndex, boneIndex, build.triangleCount,
 			anchorContext.diagnostics.usableTriangles,
 			anchorContext.diagnostics.invalidVertices,
@@ -1235,7 +1235,8 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 			anchor.found ? "found" : "missing",
 			anchor.found ? sqrtf( anchor.distanceSquared ) : -1.0f,
 			anchor.found ? anchor.boneIndex : -1,
-			cache->fragmentCount, cache->radius, rayLength );
+			cache->fragmentCount, cache->quadValid ? 1 : 0,
+			cache->radius, rayLength );
 	return cache;
 }
 
