@@ -905,6 +905,9 @@ namespace
 		if( !g_serverPhysicsAPI || !g_serverPhysicsAPI->pfnTraceNoEnts )
 			return;
 
+		const float zeroMins[3] = { 0.0f, 0.0f, 0.0f };
+		const float zeroMaxs[3] = { 0.0f, 0.0f, 0.0f };
+
 		for( int i = 0; i < ragdoll.bodyCount; ++i )
 		{
 			const RagdollBone &bone = ragdoll.bones[i];
@@ -916,7 +919,7 @@ namespace
 				ragdoll.previousPositions[i].GetY(),
 				ragdoll.previousPositions[i].GetZ()
 			};
-			const float end[3] = {
+			float resolvedPosition[3] = {
 				float( currentPosition.GetX() ),
 				float( currentPosition.GetY() ),
 				float( currentPosition.GetZ() )
@@ -936,69 +939,121 @@ namespace
 				worldHalfExtents.GetZ()
 			};
 
+			// First resolve the complete movement segment with a conservative
+			// world-space AABB around the rotated studio hitbox.
 			xash_trace_t trace = g_serverPhysicsAPI->pfnTraceNoEnts(
-				start, mins, maxs, end, 0, ragdoll.entity
+				start, mins, maxs, resolvedPosition, 0, ragdoll.entity
 			);
 
-			// Recover bodies that were already embedded when this step began.
-			// The sweep uses the actual world-space AABB of the oriented hitbox,
-			// rather than the old zero-width center ray.
+			// A body can cross the BSP between two physics frames, leaving its
+			// starting and ending positions embedded. Search substantially
+			// farther above it, then sweep the same hull down through the world.
 			if( trace.startsolid || trace.allsolid )
 			{
-				// Begin well above the current body. A small offset can still
-				// start inside the BSP when the first pose was already deeply
-				// embedded; the 64-unit margin lets the full hull find the floor.
+				const float recoveryDistance = std::min(
+					2048.0f,
+					std::max( 256.0f, worldHalfExtents.GetZ() * 8.0f + 64.0f )
+				);
 				const float recoveryStart[3] = {
-					end[0], end[1], end[2] + worldHalfExtents.GetZ() + 64.0f
+					resolvedPosition[0],
+					resolvedPosition[1],
+					resolvedPosition[2] + recoveryDistance
 				};
 				const float recoveryEnd[3] = {
-					end[0], end[1], end[2] - worldHalfExtents.GetZ() - 64.0f
+					resolvedPosition[0],
+					resolvedPosition[1],
+					resolvedPosition[2] - recoveryDistance
 				};
 				xash_trace_t recoveryTrace = g_serverPhysicsAPI->pfnTraceNoEnts(
 					recoveryStart, mins, maxs, recoveryEnd, 0, ragdoll.entity
 				);
 
-				if( recoveryTrace.fraction >= 1.0f ||
-					recoveryTrace.startsolid ||
-					recoveryTrace.allsolid ||
-					recoveryTrace.plane.normal[2] < 0.5f )
-					continue;
-
-				trace = recoveryTrace;
+				if( !recoveryTrace.startsolid &&
+					!recoveryTrace.allsolid &&
+					recoveryTrace.fraction < 1.0f &&
+					recoveryTrace.plane.normal[2] > 0.5f )
+				{
+					trace = recoveryTrace;
+				}
 			}
 
-			if( trace.fraction >= 1.0f )
-				continue;
-
-			Vec3 normal(
-				trace.plane.normal[0],
-				trace.plane.normal[1],
-				trace.plane.normal[2]
-			);
-			if( normal.LengthSq() < 0.01f )
-				continue;
-			normal = normal.Normalized();
-
-			// The engine trace already swept the full hull. Only add a tiny skin
-			// distance; do not add the old sphere radius a second time.
-			const Vec3 clippedPosition(
-				trace.endpos[0] + normal.GetX() * 0.05f,
-				trace.endpos[1] + normal.GetY() * 0.05f,
-				trace.endpos[2] + normal.GetZ() * 0.05f
-			);
-			bodyInterface.SetPosition(
-				bone.bodyID,
-				RVec3( clippedPosition ),
-				EActivation::Activate
-			);
-
-			Vec3 velocity = bodyInterface.GetLinearVelocity( bone.bodyID );
-			const float intoSurface = velocity.Dot( normal );
-			if( intoSurface < 0.0f )
+			if( !trace.startsolid && !trace.allsolid && trace.fraction < 1.0f )
 			{
-				velocity -= normal * intoSurface;
-				velocity *= 0.82f;
-				bodyInterface.SetLinearVelocity( bone.bodyID, velocity );
+				Vec3 normal(
+					trace.plane.normal[0],
+					trace.plane.normal[1],
+					trace.plane.normal[2]
+				);
+				if( normal.LengthSq() > 0.01f )
+				{
+					normal = normal.Normalized();
+					resolvedPosition[0] = trace.endpos[0] + normal.GetX() * 0.05f;
+					resolvedPosition[1] = trace.endpos[1] + normal.GetY() * 0.05f;
+					resolvedPosition[2] = trace.endpos[2] + normal.GetZ() * 0.05f;
+					bodyInterface.SetPosition(
+						bone.bodyID,
+						RVec3( resolvedPosition[0], resolvedPosition[1], resolvedPosition[2] ),
+						EActivation::Activate
+					);
+
+					Vec3 velocity = bodyInterface.GetLinearVelocity( bone.bodyID );
+					const float intoSurface = velocity.Dot( normal );
+					if( intoSurface < 0.0f )
+					{
+						velocity -= normal * intoSurface;
+						velocity *= 0.82f;
+						bodyInterface.SetLinearVelocity( bone.bodyID, velocity );
+					}
+				}
+			}
+
+			// A short, independent vertical support probe prevents slow BSP
+			// penetration even if the horizontal/diagonal movement sweep misses
+			// a thin floor. It is a point trace through the body's vertical AABB;
+			// when it finds an upward-facing plane, place the body's bottom just
+			// above that plane and remove downward velocity.
+			const float supportStart[3] = {
+				resolvedPosition[0],
+				resolvedPosition[1],
+				resolvedPosition[2] + worldHalfExtents.GetZ() + 2.0f
+			};
+			const float supportEnd[3] = {
+				resolvedPosition[0],
+				resolvedPosition[1],
+				resolvedPosition[2] - worldHalfExtents.GetZ() - 2.0f
+			};
+			xash_trace_t supportTrace = g_serverPhysicsAPI->pfnTraceNoEnts(
+				supportStart,
+				const_cast<float *>( zeroMins ),
+				const_cast<float *>( zeroMaxs ),
+				supportEnd,
+				0,
+				ragdoll.entity
+			);
+
+			if( !supportTrace.startsolid &&
+				!supportTrace.allsolid &&
+				supportTrace.fraction < 1.0f &&
+				supportTrace.plane.normal[2] > 0.5f )
+			{
+				const float supportedCenterZ =
+					supportTrace.endpos[2] + worldHalfExtents.GetZ() + 0.05f;
+				if( resolvedPosition[2] < supportedCenterZ )
+				{
+					resolvedPosition[2] = supportedCenterZ;
+					bodyInterface.SetPosition(
+						bone.bodyID,
+						RVec3( resolvedPosition[0], resolvedPosition[1], resolvedPosition[2] ),
+						EActivation::Activate
+					);
+
+					Vec3 velocity = bodyInterface.GetLinearVelocity( bone.bodyID );
+					if( velocity.GetY() == velocity.GetY() && velocity.GetZ() < 0.0f )
+					{
+						velocity.SetZ( 0.0f );
+						bodyInterface.SetLinearVelocity( bone.bodyID, velocity );
+					}
+				}
 			}
 		}
 	}
