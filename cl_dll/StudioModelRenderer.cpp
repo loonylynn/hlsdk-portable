@@ -472,6 +472,146 @@ typedef struct studio_ragdoll_decal_build_s
 	int triangleCount;
 } studio_ragdoll_decal_build_t;
 
+/*
+ * Jolt ragdoll collision shapes are deliberately coarse. Their ray hit can
+ * lie several units inside or outside the visible studio skin, so projecting
+ * only around the shot line can miss every rendered triangle. Find the
+ * nearest point on the currently skinned mesh and use that as the decal
+ * anchor; this is the studio-renderer equivalent of Source's model trace
+ * fallback when the physics proxy does not exactly match the render mesh.
+ */
+typedef struct studio_ragdoll_surface_anchor_s
+{
+	const float *point;
+	float closest[3];
+	float normal[3];
+	float distanceSquared;
+	int boneIndex;
+	int triangleCount;
+	qboolean found;
+} studio_ragdoll_surface_anchor_t;
+
+static void StudioClosestPointOnRagdollTriangle(
+	const float point[3],
+	const float a[3],
+	const float b[3],
+	const float c[3],
+	float closest[3] )
+{
+	float ab[3], ac[3], ap[3];
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		ab[axis] = b[axis] - a[axis];
+		ac[axis] = c[axis] - a[axis];
+		ap[axis] = point[axis] - a[axis];
+	}
+	const float d1 = StudioDot3( ab, ap );
+	const float d2 = StudioDot3( ac, ap );
+	if( d1 <= 0.0f && d2 <= 0.0f )
+	{
+		VectorCopy( a, closest );
+		return;
+	}
+
+	float bp[3];
+	for( int axis = 0; axis < 3; ++axis )
+		bp[axis] = point[axis] - b[axis];
+	const float d3 = StudioDot3( ab, bp );
+	const float d4 = StudioDot3( ac, bp );
+	if( d3 >= 0.0f && d4 <= d3 )
+	{
+		VectorCopy( b, closest );
+		return;
+	}
+
+	const float vc = d1 * d4 - d3 * d2;
+	if( vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f )
+	{
+		const float v = d1 / ( d1 - d3 );
+		for( int axis = 0; axis < 3; ++axis )
+			closest[axis] = a[axis] + v * ab[axis];
+		return;
+	}
+
+	float cp[3];
+	for( int axis = 0; axis < 3; ++axis )
+		cp[axis] = point[axis] - c[axis];
+	const float d5 = StudioDot3( ab, cp );
+	const float d6 = StudioDot3( ac, cp );
+	if( d6 >= 0.0f && d5 <= d6 )
+	{
+		VectorCopy( c, closest );
+		return;
+	}
+
+	const float vb = d5 * d2 - d1 * d6;
+	if( vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f )
+	{
+		const float w = d2 / ( d2 - d6 );
+		for( int axis = 0; axis < 3; ++axis )
+			closest[axis] = a[axis] + w * ac[axis];
+		return;
+	}
+
+	const float va = d3 * d6 - d5 * d4;
+	if( va <= 0.0f && ( d4 - d3 ) >= 0.0f && ( d5 - d6 ) >= 0.0f )
+	{
+		const float w = ( d4 - d3 ) / ( ( d4 - d3 ) + ( d5 - d6 ) );
+		for( int axis = 0; axis < 3; ++axis )
+			closest[axis] = b[axis] + w * ( c[axis] - b[axis] );
+		return;
+	}
+
+	const float denominator = 1.0f / ( va + vb + vc );
+	const float v = vb * denominator;
+	const float w = vc * denominator;
+	for( int axis = 0; axis < 3; ++axis )
+		closest[axis] = a[axis] + ab[axis] * v + ac[axis] * w;
+}
+
+static void StudioFindNearestRagdollSurface(
+	const studio_ragdoll_triangle_t *triangle,
+	void *opaqueContext )
+{
+	studio_ragdoll_surface_anchor_t *anchor =
+		(studio_ragdoll_surface_anchor_t *)opaqueContext;
+	++anchor->triangleCount;
+
+	float edge1[3], edge2[3], faceNormal[3];
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		edge1[axis] = triangle->world[1][axis] - triangle->world[0][axis];
+		edge2[axis] = triangle->world[2][axis] - triangle->world[0][axis];
+	}
+	faceNormal[0] = edge1[1] * edge2[2] - edge1[2] * edge2[1];
+	faceNormal[1] = edge1[2] * edge2[0] - edge1[0] * edge2[2];
+	faceNormal[2] = edge1[0] * edge2[1] - edge1[1] * edge2[0];
+	if( StudioDot3( faceNormal, faceNormal ) < 0.000001f )
+		return;
+
+	float closest[3];
+	StudioClosestPointOnRagdollTriangle(
+		anchor->point,
+		triangle->world[0],
+		triangle->world[1],
+		triangle->world[2],
+		closest );
+
+	float delta[3];
+	for( int axis = 0; axis < 3; ++axis )
+		delta[axis] = closest[axis] - anchor->point[axis];
+	const float distanceSquared = StudioDot3( delta, delta );
+	if( anchor->found && distanceSquared >= anchor->distanceSquared )
+		return;
+
+	StudioNormalize3( faceNormal );
+	anchor->found = true;
+	anchor->distanceSquared = distanceSquared;
+	anchor->boneIndex = triangle->bone[0];
+	VectorCopy( closest, anchor->closest );
+	VectorCopy( faceNormal, anchor->normal );
+}
+
 static float StudioRagdollDecalClipDistance(
 	const studio_ragdoll_decal_vertex_t &vertex,
 	int plane,
@@ -734,18 +874,47 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	for( int axis = 0; axis < 3; ++axis )
 		rayDirection[axis] /= rayLength;
 
+	// First locate the real render-surface point nearest the Jolt contact.
+	// The proxy hull and the skinned zombie mesh are not coincident, so the
+	// shot ray alone can pass outside the small decal footprint.
+	studio_ragdoll_surface_anchor_t anchor;
+	memset( &anchor, 0, sizeof( anchor ) );
+	anchor.point = worldPosition;
+	anchor.distanceSquared = 1.0e30f;
+	StudioForEachRagdollModelTriangle(
+		renderer, StudioFindNearestRagdollSurface, &anchor );
+
 	studio_ragdoll_decal_build_t build;
 	memset( &build, 0, sizeof( build ) );
 	build.cache = cache;
 	build.radius = cache->radius;
-	// Source's default AddStudioDecal path uses noPokeThru=false, so it
-	// clips the planar footprint in U/V but does not reject vertices merely
-	// because they lie farther down the ray than the contact point.
+	// Source's standard model decal path leaves projection depth open. Here
+	// the projector is surface-anchored to compensate for the coarser Jolt
+	// proxy; an effectively unbounded depth preserves that behavior.
 	build.depthTolerance = 1.0e6f;
-	for( int axis = 0; axis < 3; ++axis )
+	if( anchor.found )
 	{
-		build.center[axis] = rayStart[axis];
-		build.normal[axis] = -rayDirection[axis];
+		for( int axis = 0; axis < 3; ++axis )
+		{
+			build.center[axis] = anchor.closest[axis];
+			build.normal[axis] = anchor.normal[axis];
+		}
+		// Face the mark toward the incoming shot so it remains visible from
+		// the side that actually hit the corpse.
+		float toShooter[3];
+		for( int axis = 0; axis < 3; ++axis )
+			toShooter[axis] = rayStart[axis] - anchor.closest[axis];
+		if( StudioDot3( build.normal, toShooter ) < 0.0f )
+			for( int axis = 0; axis < 3; ++axis )
+				build.normal[axis] = -build.normal[axis];
+	}
+	else
+	{
+		for( int axis = 0; axis < 3; ++axis )
+		{
+			build.center[axis] = worldPosition[axis];
+			build.normal[axis] = -rayDirection[axis];
+		}
 	}
 
 	// This is the same decal basis used by CStudioRender::ComputePoseToDecal:
@@ -773,8 +942,11 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
 		gEngfuncs.Con_Printf )
 		gEngfuncs.Con_Printf(
-			"[Ragdoll decals] entity %d bone %d: source-style planar projection scanned %d triangles, clipped %d fragments, radius %.2f, ray length %.1f\n",
+			"[Ragdoll decals] entity %d bone %d: surface-anchored projection scanned %d triangles, anchor %s (%.2f units, bone %d), clipped %d fragments, radius %.2f, ray length %.1f\n",
 			entityIndex, boneIndex, build.triangleCount,
+			anchor.found ? "found" : "missing",
+			anchor.found ? sqrtf( anchor.distanceSquared ) : -1.0f,
+			anchor.found ? anchor.boneIndex : -1,
 			cache->fragmentCount, cache->radius, rayLength );
 	return cache;
 }
