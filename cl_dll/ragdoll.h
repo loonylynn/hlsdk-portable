@@ -23,5 +23,6 @@ int Ragdoll_GetImpactMark(
 	float rayStart[3],
 	float worldPosition[3],
 	float *radius,
-	int *bloodColor
+	int *bloodColor,
+	int *ragdollID
 );
