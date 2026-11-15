@@ -520,7 +520,10 @@ static int Ragdoll_RayCapsuleFraction(
 		return 0;
 
 	const float rayLength = sqrtf( rayLengthSquared );
-	const float halfChord = sqrtf( (std::max)( 0.0f, radiusSquared - distanceSquared ) );
+	float chordSquared = radiusSquared - distanceSquared;
+	if( chordSquared < 0.0f )
+		chordSquared = 0.0f;
+	const float halfChord = sqrtf( chordSquared );
 	const float entryFraction = Ragdoll_ClampRange(
 		rayFraction - halfChord / rayLength, 0.0f, maximumFraction );
 	*hitFraction = entryFraction;
