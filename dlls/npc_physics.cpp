@@ -673,9 +673,6 @@ namespace
 		std::vector<int> presentEntities;
 		presentEntities.reserve( entityCount );
 		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
-		float deltaTime = gpGlobals ? gpGlobals->frametime : ( 1.0f / 60.0f );
-		if( deltaTime < 0.001f || deltaTime > 0.1f )
-			deltaTime = 1.0f / 60.0f;
 
 		for( int ordinal = 0; ordinal < entityCount; ++ordinal )
 		{
@@ -1455,6 +1452,7 @@ void NPCPhysics_ResetMap( void )
 void NPCPhysics_Shutdown( void )
 {
 	NPCPhysics_DestroyAllRagdolls();
+	NPCPhysics_DestroyBrushColliders();
 	NPCPhysics_DestroyWorldCollider();
 
 	if( g_npcPhysics.initialized )
