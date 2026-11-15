@@ -132,6 +132,7 @@ namespace
 		int rootElement;
 		float nextPoseTime;
 		::Vector networkOrigin;
+		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
 		std::vector<Ref<TwoBodyConstraint> > constraints;
 		Ref<GroupFilterTable> groupFilter;
@@ -573,6 +574,12 @@ namespace
 		if( ragdoll.rootElement < 0 )
 			return false;
 
+		// Keep the edict origin near the moving physics assembly so Xash's
+		// entity culling/PVS bounds follow the corpse. The custom bone matrices
+		// remain absolute world transforms and do not depend on this offset.
+		const int rootStudioBone = ragdoll.bones[ragdoll.rootElement].studioBoneIndex;
+		ragdoll.entityOriginOffset = ent->v.origin - bonePositions[rootStudioBone];
+
 		float totalWeight = 0.0f;
 		std::vector<float> massWeights( ragdoll.bodyCount, 0.0f );
 		for( int i = 0; i < ragdoll.bodyCount; ++i )
@@ -783,14 +790,16 @@ namespace
 				-twistLimit,
 				twistLimit
 			);
+			// Jolt's cone swing convention takes a non-negative half-angle;
+			// the cone is symmetric about zero internally.
 			constraintSettings.SetLimitedAxis(
 				SixDOFConstraintSettings::RotationY,
-				-swingLimit,
+				0.0f,
 				swingLimit
 			);
 			constraintSettings.SetLimitedAxis(
 				SixDOFConstraintSettings::RotationZ,
-				-swingLimit,
+				0.0f,
 				swingLimit
 			);
 			constraintSettings.mMaxFriction[SixDOFConstraintSettings::RotationX] = friction;
@@ -1091,6 +1100,32 @@ namespace
 		for( size_t r = 0; r < g_ragdolls.size(); ++r )
 		{
 			NPCPhysicsRagdoll &ragdoll = g_ragdolls[r];
+
+			// Move the carrier edict with the simulated root element. Besides
+			// keeping the corpse's network origin useful, this keeps renderer
+			// culling and the entity's PVS bounds near a ragdoll that has fallen.
+			if( ragdoll.rootElement >= 0 &&
+				ragdoll.rootElement < ragdoll.bodyCount &&
+				g_engfuncs.pfnSetOrigin )
+			{
+				const RagdollBone &rootBone = ragdoll.bones[ragdoll.rootElement];
+				const RVec3 rootBodyPosition = bodyInterface.GetPosition( rootBone.bodyID );
+				const Quat rootRotation = bodyInterface.GetRotation( rootBone.bodyID );
+				const Vec3 rootBoneOrigin =
+					Vec3(
+						float( rootBodyPosition.GetX() ),
+						float( rootBodyPosition.GetY() ),
+						float( rootBodyPosition.GetZ() )
+					) - rootRotation * rootBone.localShapeCenter;
+
+				const float entityOrigin[3] = {
+					rootBoneOrigin.GetX() + ragdoll.entityOriginOffset[0],
+					rootBoneOrigin.GetY() + ragdoll.entityOriginOffset[1],
+					rootBoneOrigin.GetZ() + ragdoll.entityOriginOffset[2]
+				};
+				g_engfuncs.pfnSetOrigin( ragdoll.entity, entityOrigin );
+			}
+
 			if( gpGlobals->time >= ragdoll.nextPoseTime )
 			{
 				NPCPhysics_SendRagdollPose( ragdoll, bodyInterface );
