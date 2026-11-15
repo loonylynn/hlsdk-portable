@@ -8,6 +8,7 @@
 
 extern engine_studio_api_t IEngineStudio;
 
+#include <algorithm>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
