@@ -42,7 +42,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install --yes gcc-multilib g++-multilib ninja-build
 
-    - name: Build Linux 32-bit game libraries
+    - name: Build Linux 32-bit game DLLs for Xash3D/GoldSrc
       if: startsWith(matrix.os, 'ubuntu')
       run: |
         cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DPOLLY=ON -B build -S . -DCMAKE_EXE_LINKER_FLAGS="-Wl,--no-undefined" -DCMAKE_INSTALL_PREFIX="$PWD/dist"
