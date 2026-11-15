@@ -47,6 +47,7 @@ class QCIData:
     inertia: float
     linear_damping: float
     angular_damping: float
+    source_path: Path
     limits: Dict[str, Tuple[List[float], List[float]]] = field(default_factory=dict)
     angular_damping_overrides: Dict[str, float] = field(default_factory=dict)
 
@@ -198,17 +199,56 @@ def _strip_qci_comments(text: str) -> str:
     return "\n".join(line.split("//", 1)[0] for line in text.splitlines())
 
 
-def parse_qci(path: Path) -> QCIData:
+def _find_collisionjoints_sources(path: Path, visiting: Optional[set] = None):
+    """Find collisionjoints blocks in a QC/QCI and its recursively included files."""
+    if visiting is None:
+        visiting = set()
+    resolved = path.resolve()
+    if resolved in visiting:
+        chain = " -> ".join(str(item) for item in list(visiting) + [resolved])
+        raise ValueError("QC/QCI include cycle detected: {}".format(chain))
+
     try:
         source = path.read_text(encoding="utf-8-sig")
     except OSError as exc:
-        raise ValueError("could not read QCI '{}': {}".format(path, exc)) from exc
-    source = _strip_qci_comments(source)
-    match = re.search(
-        r'^\s*\$collisionjoints\s+(?:"([^"]+)"|([^\s{]+))\s*\{(.*?)^\s*\}',
-        source, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
-    if not match:
-        raise ValueError("{}: could not find a '$collisionjoints name { ... }' block".format(path))
+        raise ValueError("could not read QC/QCI '{}': {}".format(path, exc)) from exc
+
+    visiting.add(resolved)
+    try:
+        source = _strip_qci_comments(source)
+        matches = list(re.finditer(
+            r'^\s*\$collisionjoints\s+(?:"([^"]+)"|([^\s{]+))\s*\{(.*?)^\s*\}',
+            source, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL))
+        found = [(path, match) for match in matches]
+
+        for line_number, line in enumerate(source.splitlines(), 1):
+            parts = _tokens(line, "{}:{}".format(path, line_number))
+            if not parts or parts[0].lower() != "$include":
+                continue
+            if len(parts) != 2:
+                raise ValueError("{}:{}: $include expects exactly one file path".format(path, line_number))
+            include_path = (path.parent / parts[1]).resolve()
+            if not include_path.is_file():
+                raise ValueError("{}:{}: included file '{}' does not exist".format(
+                    path, line_number, include_path))
+            found.extend(_find_collisionjoints_sources(include_path, visiting))
+        return found
+    finally:
+        visiting.remove(resolved)
+
+
+def parse_qci(path: Path) -> QCIData:
+    sources = _find_collisionjoints_sources(path)
+    if not sources:
+        raise ValueError("{}: could not find a '$collisionjoints name { ... }' block in this file or its $include files".format(path))
+    if len(sources) != 1:
+        locations = ", ".join("{} ({})".format(source_path, match.start() + 1)
+                              for source_path, match in sources)
+        raise ValueError("{}: found multiple $collisionjoints blocks; use a QC/QCI containing exactly one ragdoll definition ({})".format(
+            path, locations))
+
+    source_path, match = sources[0]
+    source_text = _strip_qci_comments(source_path.read_text(encoding="utf-8-sig"))
     collision_name = match.group(1) or match.group(2)
 
     mass = inertia = linear_damping = angular_damping = None
@@ -285,6 +325,7 @@ def parse_qci(path: Path) -> QCIData:
         inertia=inertia,
         linear_damping=linear_damping,
         angular_damping=angular_damping,
+        source_path=source_path,
         limits=limits,
         angular_damping_overrides=damping_overrides,
     )
@@ -554,7 +595,10 @@ def convert(qci_path: Path, smd_path: Optional[Path], output_path: Path,
             friction: float = 0.8, restitution: float = 0.0) -> List[OutputBody]:
     qci = parse_qci(qci_path)
     if smd_path is None:
-        smd_path = qci_path.parent / (qci.collision_name + ".smd")
+        collision_file = qci.collision_name
+        if Path(collision_file).suffix.lower() != ".smd":
+            collision_file += ".smd"
+        smd_path = qci.source_path.parent / collision_file
     smd = parse_smd(smd_path)
     bodies = build_bodies(smd, qci)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -565,7 +609,7 @@ def convert(qci_path: Path, smd_path: Optional[Path], output_path: Path,
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Convert a Valve ragdoll collision SMD and its QC/QCI directives to a Jolt .jrag file.")
-    parser.add_argument("qci", type=Path, help="QC/QCI file containing a $collisionjoints block")
+    parser.add_argument("qci", type=Path, help="model QC/QCI file; recursively follows $include directives")
     parser.add_argument("--smd", type=Path,
                         help="collision SMD; defaults to <collisionjoints name>.smd beside the QCI")
     parser.add_argument("-o", "--output", type=Path,
