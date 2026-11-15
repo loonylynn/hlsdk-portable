@@ -132,7 +132,14 @@ int Server_GetPhysicsInterface( int version, server_physics_api_t *api, physics_
 {
 	g_fIsXash3D = true;
 	(void)api;
-	return NPCPhysics_GetInterface( version, interface );
+	// The legacy declarations intentionally keep these Xash ABI tables
+	// opaque (void *). Pass their addresses through to the ragdoll module,
+	// which interprets the server API trace callbacks and output table.
+	return NPCPhysics_GetInterface(
+		version,
+		reinterpret_cast<void *>( api ),
+		reinterpret_cast<void *>( interface )
+	);
 }
 #if !XASH_WIN32
 }
