@@ -1396,7 +1396,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 
 	ALERT(
 		at_console,
-		"[NPC physics] Native-object bridge: serverAPI=%p getter=%s.\\n",
+		"[NPC physics] Native-object bridge: serverAPI=%p getter=%s.\n",
 		serverAPI,
 		g_serverPhysicsAPI->pfnGetNativeObject ? "present" : "NULL"
 	);
@@ -1407,7 +1407,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 		g_worldCollisionMeshAPI = reinterpret_cast<xash_world_collision_mesh_api_s *>( worldObject );
 		ALERT(
 			at_console,
-			"[NPC physics] World mesh API lookup: ptr=%p%s.\\n",
+			"[NPC physics] World mesh API lookup: ptr=%p%s.\n",
 			worldObject,
 			g_worldCollisionMeshAPI
 				? ( g_worldCollisionMeshAPI->version == XASH_WORLD_COLLISION_MESH_API_VERSION &&
@@ -1431,7 +1431,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 				g_brushCollisionMeshAPI->GetMeshData;
 			ALERT(
 				at_console,
-				"[NPC physics] Brush mesh API lookup: ptr=%p version=%d expected=%d callbacks=%d/%d/%d/%d.\\n",
+				"[NPC physics] Brush mesh API lookup: ptr=%p version=%d expected=%d callbacks=%d/%d/%d/%d.\n",
 				brushObject,
 				g_brushCollisionMeshAPI->version,
 				XASH_BRUSH_COLLISION_MESH_API_VERSION,
@@ -1445,12 +1445,12 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 		}
 		else
 		{
-			ALERT( at_console, "[NPC physics] Brush mesh API lookup returned NULL.\\n" );
+			ALERT( at_console, "[NPC physics] Brush mesh API lookup returned NULL.\n" );
 		}
 	}
 	else
 	{
-		ALERT( at_console, "[NPC physics] Native-object bridge has no getter callback.\\n" );
+		ALERT( at_console, "[NPC physics] Native-object bridge has no getter callback.\n" );
 	}
 	if( gpGlobals )
 	{
