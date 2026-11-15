@@ -1183,17 +1183,12 @@ void RadiusDamage( Vector vecSrc, entvars_t *pevInflictor, entvars_t *pevAttacke
 #ifndef CLIENT_DLL
 				if( isJoltRagdoll && flRadius > 0.0f && flDamage > 0.0f )
 				{
-					const float blastScale = (std::max)(
-						0.0f, CVAR_GET_FLOAT( "sv_npc_vphysics_blast_scale" ) );
-					if( blastScale > 0.0f )
-					{
-						// Per-body falloff and BSP occlusion are evaluated by Jolt.
-						// Keep this independent from the legacy health-damage path.
-						NPCPhysics_ApplyBlastImpulse(
-							pEntity->edict(), &vecSrc[0], flRadius,
-							flDamage * 12.0f * blastScale
-						);
-					}
+					// Jolt derives per-body momentum from mass, local exposure and
+					// the explosion's distance falloff. Keep this separate from
+					// GoldSrc health damage.
+					NPCPhysics_ApplyBlastImpulse(
+						pEntity->edict(), &vecSrc[0], flRadius, flDamage
+					);
 				}
 #endif
 
