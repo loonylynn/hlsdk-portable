@@ -421,7 +421,7 @@ namespace
 		VertexList vertices;
 		IndexedTriangleList triangles;
 		vertices.reserve( vertexCount );
-		triangles.reserve( static_cast<size_t>( indexCount / 3 ) * 2 );
+		triangles.reserve( indexCount / 3 );
 
 		for( uint32_t i = 0; i < vertexCount; ++i )
 		{
@@ -447,9 +447,6 @@ namespace
 				return false;
 			}
 			triangles.emplace_back( i0, i1, i2, 0 );
-			// Jolt's simulation mesh is single-sided. Include reverse winding too,
-			// so a BSP plane orientation mismatch cannot create a collision hole.
-			triangles.emplace_back( i0, i2, i1, 0 );
 		}
 
 		// The mesh is static and concave, so Jolt can use its BVH directly.
@@ -497,10 +494,9 @@ namespace
 		g_worldCollisionReady = true;
 		ALERT(
 			at_console,
-			"[NPC physics] Two-sided native BSP collision loaded: %u vertices, %u source triangles (%u Jolt triangles).\n",
+			"[NPC physics] Native BSP collision loaded: %u vertices, %u outward-wound triangles.\n",
 			vertexCount,
-			indexCount / 3,
-			( indexCount / 3 ) * 2
+			indexCount / 3
 		);
 		return true;
 	}
