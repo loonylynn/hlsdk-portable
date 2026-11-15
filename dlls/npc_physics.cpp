@@ -1372,7 +1372,7 @@ namespace
 		float totalMass = NPCPhysics_GetCvar( "sv_npc_vphysics_mass", 0.0f );
 		if( totalMass <= 0.0f )
 			totalMass = physicsDefinition->totalMass;
-		totalMass = std::max( 10.0f, std::min( totalMass, 300.0f ) );
+		totalMass = (std::max)( 10.0f, (std::min)( totalMass, 300.0f ) );
 
 		// Build the reduced physical skeleton and complete compiled studio skeleton.
 		ragdoll.physicsSkeleton = new Skeleton();
@@ -1470,7 +1470,7 @@ namespace
 			part.mObjectLayer = RAGDOLL_OBJECT_LAYER;
 			part.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
 			part.mInertiaMultiplier = physicsDefinition->inertiaMultiplier;
-			part.mMassPropertiesOverride.mMass = std::max( 0.25f, bodyMass );
+			part.mMassPropertiesOverride.mMass = (std::max)( 0.25f, bodyMass );
 			part.mFriction = physicsDefinition->friction;
 			part.mRestitution = physicsDefinition->restitution;
 			part.mLinearDamping = physicsDefinition->linearDamping;
@@ -1660,7 +1660,7 @@ namespace
 
 	static short NPCPhysics_QuantizeQuaternion( float value )
 	{
-		value = std::max( -1.0f, std::min( 1.0f, value ) );
+		value = (std::max)( -1.0f, (std::min)( 1.0f, value ) );
 		return static_cast<short>( value * 32767.0f );
 	}
 
@@ -1678,7 +1678,7 @@ namespace
 
 		for( int start = 0; start < snapshotBoneCount; start += RAGDOLL_NETWORK_BODIES_PER_CHUNK )
 		{
-			const int count = std::min(
+			const int count = (std::min)(
 				RAGDOLL_NETWORK_BODIES_PER_CHUNK, snapshotBoneCount - start );
 			MESSAGE_BEGIN( MSG_PVS, g_msgRagdollPose, ragdoll.entity->v.origin );
 				WRITE_SHORT( entityIndex );
@@ -1842,7 +1842,7 @@ int NPCPhysics_TraceAndApplyImpact(
 		impulseMagnitude <= 0.0f )
 		return FALSE;
 
-	maxFraction = std::max( 0.0f, std::min( maxFraction, 1.0f ) );
+	maxFraction = (std::max)( 0.0f, (std::min)( maxFraction, 1.0f ) );
 	const JPH::Vec3 rayDirection(
 		end[0] - start[0],
 		end[1] - start[1],
@@ -1941,8 +1941,8 @@ int NPCPhysics_TraceAndApplyImpact(
 				const Vec3 worldNormal = -( rayDirection / rayLength );
 				const Vec3 localNormal =
 					( inverseStudioRotation * worldNormal ).Normalized();
-				const float markRadius = std::max(
-					0.85f, std::min( 1.9f, 0.85f + impulseMagnitude * 0.00035f ) );
+				const float markRadius = (std::max)(
+					0.85f, (std::min)( 1.9f, 0.85f + impulseMagnitude * 0.00035f ) );
 				const int encodedRadius = static_cast<int>( markRadius * 4.0f + 0.5f );
 				const int encodedNormalX = static_cast<int>( localNormal.GetX() * 127.0f + 128.0f );
 				const int encodedNormalY = static_cast<int>( localNormal.GetY() * 127.0f + 128.0f );
@@ -1962,10 +1962,10 @@ int NPCPhysics_TraceAndApplyImpact(
 					WRITE_COORD( localPosition.GetX() );
 					WRITE_COORD( localPosition.GetY() );
 					WRITE_COORD( localPosition.GetZ() );
-					WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalX ) ) );
-					WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalY ) ) );
-					WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalZ ) ) );
-					WRITE_BYTE( std::max( 1, std::min( 255, encodedRadius ) ) );
+					WRITE_BYTE( (std::max)( 0, (std::min)( 255, encodedNormalX ) ) );
+					WRITE_BYTE( (std::max)( 0, (std::min)( 255, encodedNormalY ) ) );
+					WRITE_BYTE( (std::max)( 0, (std::min)( 255, encodedNormalZ ) ) );
+					WRITE_BYTE( (std::max)( 1, (std::min)( 255, encodedRadius ) ) );
 					WRITE_BYTE( markColor );
 				MESSAGE_END();
 			}
@@ -2071,7 +2071,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	}
 	if( gpGlobals )
 	{
-		const int maxEntities = std::max( 2048, gpGlobals->maxEntities + 1 );
+		const int maxEntities = (std::max)( 2048, gpGlobals->maxEntities + 1 );
 		g_livePoses.resize( maxEntities );
 	}
 
