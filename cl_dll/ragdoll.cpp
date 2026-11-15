@@ -35,6 +35,8 @@ struct ragdoll_entity_pose_t
 	bool active;
 	bool initialSnapshotComplete;
 	bool renderReported;
+	bool snapshotCompletionReported;
+	bool renderGateReported;
 	ragdoll_bone_pose_t bones[MAX_RAGDOLL_BONES];
 };
 
@@ -253,7 +255,49 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 	}
 
 	entry.initialSnapshotComplete = ( entry.receivedBodyCount >= entry.bodyCount );
+	if( entry.initialSnapshotComplete && !entry.snapshotCompletionReported )
+	{
+		char message[160];
+		snprintf(
+			message,
+			sizeof( message ),
+			"[NPC ragdoll] Snapshot complete for entity %d, ID %d (%d/%d bodies).\\n",
+			entityIndex,
+			ragdollID,
+			entry.receivedBodyCount,
+			entry.bodyCount
+		);
+		ConsolePrint( message );
+		entry.snapshotCompletionReported = true;
+	}
 	return 1;
+}
+
+void Ragdoll_DebugRenderGate( int entityIndex, int ragdollMarker, int hardwareRenderer )
+{
+	if( entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES )
+		return;
+
+	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
+	if( !entry.active || entry.renderGateReported )
+		return;
+
+	char message[192];
+	snprintf(
+		message,
+		sizeof( message ),
+		"[NPC ragdoll] Render gate entity %d, ID %d: marker=%d hardware=%d bodies=%d/%d complete=%d age=%.3f.\\n",
+		entityIndex,
+		entry.ragdollID,
+		ragdollMarker,
+		hardwareRenderer,
+		entry.receivedBodyCount,
+		entry.bodyCount,
+		entry.initialSnapshotComplete ? 1 : 0,
+		(float)gEngfuncs.GetClientTime() - entry.lastUpdateTime
+	);
+	ConsolePrint( message );
+	entry.renderGateReported = true;
 }
 
 int Ragdoll_GetBoneTransform(
