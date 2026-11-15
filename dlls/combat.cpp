@@ -1135,10 +1135,16 @@ void RadiusDamage( Vector vecSrc, entvars_t *pevInflictor, entvars_t *pevAttacke
 	if( !pevAttacker )
 		pevAttacker = pevInflictor;
 
-	// iterate on all entities in the vicinity.
+	// Iterate over damageable entities and Jolt ragdolls. A dead ragdoll
+	// may have DAMAGE_NO, but it must still receive physical blast impulses.
 	while( ( pEntity = UTIL_FindEntityInSphere( pEntity, vecSrc, flRadius ) ) != NULL )
 	{
-		if( pEntity->pev->takedamage != DAMAGE_NO )
+#ifndef CLIENT_DLL
+		const BOOL isJoltRagdoll = NPCPhysics_IsRagdollEntity( pEntity->edict() );
+#else
+		const BOOL isJoltRagdoll = FALSE;
+#endif
+		if( pEntity->pev->takedamage != DAMAGE_NO || isJoltRagdoll )
 		{
 			// UNDONE: this should check a damage mask, not an ignore
 			if( iClassIgnore != CLASS_NONE && pEntity->Classify() == iClassIgnore )
@@ -1147,7 +1153,7 @@ void RadiusDamage( Vector vecSrc, entvars_t *pevInflictor, entvars_t *pevAttacke
 				continue;
 			}
 
-			// blast's don't tavel into or out of water
+			// Blast's don't travel into or out of water.
 			if( bInWater && pEntity->pev->waterlevel == 0 )
 				continue;
 			if( !bInWater && pEntity->pev->waterlevel == 3 )
@@ -1159,33 +1165,51 @@ void RadiusDamage( Vector vecSrc, entvars_t *pevInflictor, entvars_t *pevAttacke
 
 			if( tr.flFraction == 1.0f || tr.pHit == pEntity->edict() )
 			{
-				// the explosion can 'see' this entity, so hurt them!
+				// The explosion can 'see' this entity.
 				if( tr.fStartSolid )
 				{
-					// if we're stuck inside them, fixup the position and distance
+					// If we're stuck inside them, fix up the position and distance.
 					tr.vecEndPos = vecSrc;
 					tr.flFraction = 0.0f;
 				}
 
-				// decrease damage for an ent that's farther from the bomb.
+				// Decrease damage for an entity farther from the bomb.
 				flAdjustedDamage = ( vecSrc - tr.vecEndPos ).Length() * falloff;
 				flAdjustedDamage = flDamage - flAdjustedDamage;
 
 				if( flAdjustedDamage < 0.0f )
-				{
 					flAdjustedDamage = 0.0f;
-				}
 
-				// ALERT( at_console, "hit %s\n", STRING( pEntity->pev->classname ) );
-				if( tr.flFraction != 1.0f )
+#ifndef CLIENT_DLL
+				if( isJoltRagdoll && flRadius > 0.0f && flDamage > 0.0f )
 				{
-					ClearMultiDamage();
-					pEntity->TraceAttack( pevInflictor, flAdjustedDamage, ( tr.vecEndPos - vecSrc ).Normalize(), &tr, bitsDamageType );
-					ApplyMultiDamage( pevInflictor, pevAttacker );
+					const float blastScale = (std::max)(
+						0.0f, CVAR_GET_FLOAT( "sv_npc_vphysics_blast_scale" ) );
+					if( blastScale > 0.0f )
+					{
+						// Per-body falloff and BSP occlusion are evaluated by Jolt.
+						// Keep this independent from the legacy health-damage path.
+						NPCPhysics_ApplyBlastImpulse(
+							pEntity->edict(), &vecSrc[0], flRadius,
+							flDamage * 12.0f * blastScale
+						);
+					}
 				}
-				else
+#endif
+
+				// Preserve the original GoldSrc damage behavior exactly.
+				if( pEntity->pev->takedamage != DAMAGE_NO )
 				{
-					pEntity->TakeDamage ( pevInflictor, pevAttacker, flAdjustedDamage, bitsDamageType );
+					if( tr.flFraction != 1.0f )
+					{
+						ClearMultiDamage();
+						pEntity->TraceAttack( pevInflictor, flAdjustedDamage, ( tr.vecEndPos - vecSrc ).Normalize(), &tr, bitsDamageType );
+						ApplyMultiDamage( pevInflictor, pevAttacker );
+					}
+					else
+					{
+						pEntity->TakeDamage( pevInflictor, pevAttacker, flAdjustedDamage, bitsDamageType );
+					}
 				}
 			}
 		}
