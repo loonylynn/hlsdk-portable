@@ -730,6 +730,7 @@ namespace
 				RAGDOLL_OBJECT_LAYER
 			);
 			settings.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
+			settings.mInertiaMultiplier = NPC_ZOMBIE_RAGDOLL_INERTIA_MULTIPLIER;
 			settings.mMassPropertiesOverride.mMass = std::max( 0.25f, bodyMass );
 			settings.mCollisionGroup = CollisionGroup(
 				ragdoll.groupFilter.GetPtr(),
