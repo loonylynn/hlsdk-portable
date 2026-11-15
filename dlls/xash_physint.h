@@ -8,8 +8,10 @@
 #pragma once
 
 #include "extdll.h"
+#include <stdint.h>
 
 #define XASH_SERVER_PHYSICS_INTERFACE_VERSION 6
+#define XASH_WORLD_COLLISION_MESH_API_VERSION 1
 
 typedef int (*xash_sv_create_entity_fn)( edict_t *ent, const char *classname );
 typedef int (*xash_sv_physics_entity_fn)( edict_t *ent );
@@ -46,11 +48,11 @@ struct xash_physics_interface_s
 
 /*
  * server_physics_api_t begins with 21 pointer-sized callbacks/data fields,
- * followed by pfnTrace and pfnTraceNoEnts. The trace_t layout mirrors
- * common/const.h in Xash3D FWGS. The engine passes this table to
- * Server_GetPhysicsInterface before any server physics callbacks are run.
+ * followed by pfnTrace and pfnTraceNoEnts. The tail mirrors the remaining
+ * eight pointer slots and pfnGetNativeObject in engine/physint.h.
  */
 typedef void (*xash_server_api_reserved_fn)( void );
+typedef void *(*xash_get_native_object_fn)( const char *object );
 
 struct xash_trace_plane_s
 {
@@ -85,6 +87,20 @@ struct xash_server_physics_api_s
 	xash_server_api_reserved_fn reserved[21];
 	xash_trace_fn pfnTrace;
 	xash_trace_fn pfnTraceNoEnts;
+	xash_server_api_reserved_fn reservedTail[8];
+	xash_get_native_object_fn pfnGetNativeObject;
+};
+
+struct xash_world_collision_mesh_api_s
+{
+	int version;
+	int (*GetMeshInfo)( uint32_t *vertexCount, uint32_t *indexCount );
+	int (*GetMeshData)(
+		float *vertices,
+		uint32_t vertexCapacity,
+		uint32_t *indices,
+		uint32_t indexCapacity
+	);
 };
 
 #if defined(__cplusplus)
@@ -95,6 +111,10 @@ static_assert(
 static_assert(
 	offsetof( xash_server_physics_api_s, pfnTraceNoEnts ) == sizeof(void *) * 22,
 	"Xash server physics API trace-no-entities callback offset mismatch"
+);
+static_assert(
+	offsetof( xash_server_physics_api_s, pfnGetNativeObject ) == sizeof(void *) * 31,
+	"Xash server physics API native-object callback offset mismatch"
 );
 #endif
 
