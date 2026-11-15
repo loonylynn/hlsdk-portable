@@ -10,7 +10,8 @@
 static const int MAX_RAGDOLL_ENTITIES = 2048;
 static const int MAX_RAGDOLL_BONES = 128;
 static const float RAGDOLL_SNAPSHOT_INTERVAL = 0.05f;
-static const float RAGDOLL_STALE_TIMEOUT = 0.25f;
+static const float RAGDOLL_MAX_INTERPOLATION_INTERVAL = 0.25f;
+static const float RAGDOLL_STALE_TIMEOUT = 0.45f;
 
 // The custom snapshot stream, not an entity-state user field, identifies ragdolls.
 
@@ -21,6 +22,7 @@ struct ragdoll_bone_pose_t
 	float previousOrigin[3];
 	float previousRotation[4];
 	float poseTime;
+	float interpolationDuration;
 	bool valid;
 };
 
@@ -92,8 +94,13 @@ static void Ragdoll_GetInterpolatedBonePose(
 	float origin[3],
 	float rotation[4] )
 {
+	float interpolationDuration = bone.interpolationDuration;
+	if( interpolationDuration < RAGDOLL_SNAPSHOT_INTERVAL )
+		interpolationDuration = RAGDOLL_SNAPSHOT_INTERVAL;
+	if( interpolationDuration > RAGDOLL_MAX_INTERPOLATION_INTERVAL )
+		interpolationDuration = RAGDOLL_MAX_INTERPOLATION_INTERVAL;
 	const float fraction = Ragdoll_Clamp01(
-		( now - bone.poseTime ) / RAGDOLL_SNAPSHOT_INTERVAL
+		( now - bone.poseTime ) / interpolationDuration
 	);
 
 	for( int axis = 0; axis < 3; ++axis )
@@ -239,11 +246,18 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 
 			memcpy( bone.previousOrigin, interpolatedOrigin, sizeof( interpolatedOrigin ) );
 			memcpy( bone.previousRotation, interpolatedRotation, sizeof( interpolatedRotation ) );
+			float sampleInterval = now - bone.poseTime;
+			if( sampleInterval < RAGDOLL_SNAPSHOT_INTERVAL )
+				sampleInterval = RAGDOLL_SNAPSHOT_INTERVAL;
+			if( sampleInterval > RAGDOLL_MAX_INTERPOLATION_INTERVAL )
+				sampleInterval = RAGDOLL_MAX_INTERPOLATION_INTERVAL;
+			bone.interpolationDuration = sampleInterval;
 		}
 		else
 		{
 			memcpy( bone.previousOrigin, receivedOrigin, sizeof( receivedOrigin ) );
 			memcpy( bone.previousRotation, receivedRotation, sizeof( receivedRotation ) );
+			bone.interpolationDuration = RAGDOLL_SNAPSHOT_INTERVAL;
 			++entry.receivedBodyCount;
 		}
 
