@@ -83,7 +83,7 @@ install -Dm644 assets/valve/models/zombie.jrag "$GAME/models/zombie.jrag"
 
 The file is loaded from the engine's active game search paths. It does not require
 rebuilding the SDK when you edit physics values or hulls; restart the map/game so
-the runtime cache is rebuilt.
+the runtime cache is rebuilt. A map reset also discards the cached definitions.
 
 The current format is a runtime definition, not a parser for Valve QC/QCI source.
 The supplied zombie definition preserves the existing SMD/QCI-derived hulls,
