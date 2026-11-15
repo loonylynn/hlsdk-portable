@@ -1399,6 +1399,13 @@ void CStudioModelRenderer::StudioSetupBones( void )
 		ragdollMarker == 1;
 	float ragdollTransform[3][4];
 
+	if( ragdollEntityIndex > 0 )
+		Ragdoll_DebugRenderGate(
+			ragdollEntityIndex,
+			ragdollMarker,
+			IEngineStudio.IsHardware() ? 1 : 0
+		);
+
 	for( i = 0; i < m_pStudioHeader->numbones; i++ )
 	{
 		if( useRagdollPose &&
