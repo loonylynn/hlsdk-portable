@@ -1192,6 +1192,58 @@ subsequent frame only transforms the few source triangles touched by each
 mark and interpolates their cached barycentric decal vertices.
 ====================
 */
+static void StudioPrepareRagdollImpactMarks( CStudioModelRenderer *renderer )
+{
+	cl_entity_t *entity = renderer ? renderer->m_pCurrentEntity : NULL;
+	if( !renderer || !entity || entity->index <= 0 ||
+		!cl_ragdoll_bloodmarks || cl_ragdoll_bloodmarks->value <= 0.0f )
+		return;
+
+	// StudioSetupModel reads the engine's active studio header/entity state.
+	// Prepare projected fragments before RestoreRenderer tears that state down;
+	// the later TriAPI pass only consumes the cached fragments.
+	const int markCount = Ragdoll_GetImpactMarkCount( entity->index );
+	if( markCount <= 0 )
+	{
+		for( int i = 0; i < STUDIO_RAGDOLL_DECAL_CACHE_COUNT; ++i )
+			if( g_StudioRagdollDecalCache[i].entityIndex == entity->index )
+				g_StudioRagdollDecalCache[i].valid = false;
+		return;
+	}
+
+	for( int markIndex = 0; markIndex < markCount; ++markIndex )
+	{
+		int boneIndex = -1;
+		float rayStart[3];
+		float worldPosition[3];
+		float sourceRadius = 0.0f;
+		int bloodColor = 0;
+		if( !Ragdoll_GetImpactMark(
+				entity->index, markIndex, &boneIndex,
+				rayStart, worldPosition, &sourceRadius, &bloodColor ) )
+			continue;
+
+		studio_ragdoll_mark_cache_t *cache = StudioFindRagdollMarkCache(
+			entity->index, renderer->m_pRenderModel, boneIndex,
+			rayStart, worldPosition, sourceRadius, bloodColor );
+		if( !cache )
+		{
+			StudioBuildRagdollMarkCache(
+				renderer, entity->index, boneIndex,
+				rayStart, worldPosition, sourceRadius, bloodColor, 0 );
+		}
+		else if( cache->fragmentCount <= 0 && cache->retryTime > 0.0f &&
+			(float)gEngfuncs.GetClientTime() >= cache->retryTime )
+		{
+			const int nextAttempt = cache->projectionAttempts + 1;
+			cache->valid = false;
+			StudioBuildRagdollMarkCache(
+				renderer, entity->index, boneIndex,
+				rayStart, worldPosition, sourceRadius, bloodColor, nextAttempt );
+		}
+	}
+}
+
 static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 {
 	triangleapi_t *tri = gEngfuncs.pTriAPI;
@@ -1202,12 +1254,7 @@ static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 
 	const int markCount = Ragdoll_GetImpactMarkCount( entity->index );
 	if( markCount <= 0 )
-	{
-		for( int i = 0; i < STUDIO_RAGDOLL_DECAL_CACHE_COUNT; ++i )
-			if( g_StudioRagdollDecalCache[i].entityIndex == entity->index )
-				g_StudioRagdollDecalCache[i].valid = false;
 		return;
-	}
 
 	if( !cl_blobshadow_sprite )
 		cl_blobshadow_sprite = IEngineStudio.Mod_ForName( "sprites/glow01.spr", false );
@@ -1237,22 +1284,6 @@ static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 		studio_ragdoll_mark_cache_t *cache = StudioFindRagdollMarkCache(
 			entity->index, renderer->m_pRenderModel, boneIndex,
 			rayStart, worldPosition, sourceRadius, bloodColor );
-		if( !cache )
-		{
-			cache = StudioBuildRagdollMarkCache(
-				renderer, entity->index, boneIndex,
-				rayStart, worldPosition, sourceRadius, bloodColor, 0 );
-		}
-		else if( cache->fragmentCount <= 0 && cache->retryTime > 0.0f &&
-			(float)gEngfuncs.GetClientTime() >= cache->retryTime )
-		{
-			const int nextAttempt = cache->projectionAttempts + 1;
-			cache->valid = false;
-			cache = StudioBuildRagdollMarkCache(
-				renderer, entity->index, boneIndex,
-				rayStart, worldPosition, sourceRadius, bloodColor, nextAttempt );
-		}
-
 		if( cache && cache->fragmentCount > 0 )
 			StudioDrawCachedRagdollMark( renderer, tri, cache );
 	}
@@ -3202,6 +3233,11 @@ void CStudioModelRenderer::StudioRenderFinal_Software( void )
 	{
 		IEngineStudio.StudioDrawAbsBBox();
 	}
+
+	// Build studio decal fragments while the engine's active model/header state
+	// and bone transforms are still valid. Only rasterize them after restore.
+	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
+		StudioPrepareRagdollImpactMarks( this );
 
 	IEngineStudio.RestoreRenderer();
 
