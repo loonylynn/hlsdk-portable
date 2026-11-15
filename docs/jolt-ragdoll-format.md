@@ -152,7 +152,9 @@ rescanning the whole model. The fragments are drawn at the actual mesh surface
 with a minimal depth bias, rather than as a quad floating above the bone. This
 keeps marks attached to moving ragdolls without repeated full-model projection
 work or changes to the Xash3D engine. `cl_ragdoll_bloodmarks 0` disables
-these marks. The client retains up to 32 recent marks per ragdoll.
+these marks. Set `cl_ragdoll_bloodmarks_debug 1` to log, once per mark,
+how many studio triangles were parsed and how many decal fragments were
+created. The client retains up to 32 recent marks per ragdoll.
 
 This backports the core studio-decal projection and polygon-clipping behavior
 used by Source, not Source's entire `IVModelRender`/model-instance decal
