@@ -1866,26 +1866,24 @@ int NPCPhysics_ApplyBlastImpulse(
 		targetRagdoll->bodyMasses.size() != static_cast<size_t>( targetRagdoll->bodyCount ) )
 		return 0;
 
-	// Treat the authored ragdoll as a collection of physical body masses.
-	// A blast gives each exposed body a velocity change, rather than applying
-	// an arbitrary, mass-independent impulse to every limb.
-	struct NPCPhysicsBlastCandidate
-	{
-		BodyID bodyID;
-		Vec3 direction;
-		float impulseMagnitude;
-	};
-
-	const float desiredSpeed = (std::min)( blastDamage * 4.0f, 400.0f );
-	if( !std::isfinite( desiredSpeed ) || desiredSpeed <= 0.0f )
-		return 0;
-
-	std::vector<NPCPhysicsBlastCandidate> candidates;
-	candidates.reserve( targetRagdoll->bodyCount );
 	BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+	const RVec3 blastOrigin( origin[0], origin[1], origin[2] );
+
+	// First find every body the blast can actually see. The mass-weighted
+	// center of this exposed set supplies one coherent outward blast direction.
+	// We deliberately do not distribute the full blast budget over every limb:
+	// one exposed, substantial body receives the main impulse and Jolt's
+	// articulated constraints transmit the reaction through the ragdoll.
+	BodyID impulseBody;
+	RVec3 impulsePoint = blastOrigin;
+	float impulseBodyMass = 0.0f;
+	float impulseFalloff = 0.0f;
+	float bestBodyScore = 0.0f;
+	Vec3 exposedMassCenter( 0.0f, 0.0f, 0.0f );
 	float totalRagdollMass = 0.0f;
-	float visibleMass = 0.0f;
-	float requestedImpulse = 0.0f;
+	float exposedMass = 0.0f;
+	int exposedBodies = 0;
+	int impulseBodyIndex = -1;
 
 	for( int body = 0; body < targetRagdoll->bodyCount; ++body )
 	{
@@ -1895,51 +1893,57 @@ int NPCPhysics_ApplyBlastImpulse(
 		totalRagdollMass += bodyMass;
 
 		const BodyID bodyID = targetRagdoll->physicsRagdoll->GetBodyID( body );
-		const RVec3 position = bodyInterface.GetPosition( bodyID );
+		const RVec3 bodyPosition = bodyInterface.GetPosition( bodyID );
 		const Vec3 offset(
-			float( position.GetX() ) - origin[0],
-			float( position.GetY() ) - origin[1],
-			float( position.GetZ() ) - origin[2] );
+			float( bodyPosition.GetX() ) - origin[0],
+			float( bodyPosition.GetY() ) - origin[1],
+			float( bodyPosition.GetZ() ) - origin[2] );
 		const float distance = offset.Length();
 		if( !std::isfinite( distance ) || distance >= radius )
 			continue;
 
-		Vec3 direction;
+		RVec3 surfacePoint = bodyPosition;
 		if( distance > 0.001f )
 		{
-			direction = offset / distance;
-
-			// Keep the existing full-scene visibility test: world BSP and
-			// inline brush colliders can shield individual ragdoll bodies.
-			const RRayCast ray(
-				RVec3( origin[0], origin[1], origin[2] ),
-				offset );
+			// The ray must reach this body before any other Jolt collider.
+			// The scene includes the native BSP world and inline brush models.
+			const RRayCast ray( blastOrigin, offset );
 			RayCastResult hit;
 			hit.mFraction = 1.0f;
 			if( !g_npcPhysics.system.GetNarrowPhaseQuery().CastRay( ray, hit ) ||
 				hit.mBodyID != bodyID )
 				continue;
-		}
-		else
-		{
-			// A blast centered inside a body has no stable radial direction.
-			direction = Vec3( 0.0f, 0.0f, 1.0f );
+			surfacePoint = ray.GetPointOnRay( hit.mFraction );
 		}
 
 		const float falloff = 1.0f - distance / radius;
 		if( falloff <= 0.0f )
 			continue;
 
-		NPCPhysicsBlastCandidate candidate;
-		candidate.bodyID = bodyID;
-		candidate.direction = direction;
-		candidate.impulseMagnitude = bodyMass * desiredSpeed * falloff;
-		candidates.push_back( candidate );
-		visibleMass += bodyMass;
-		requestedImpulse += candidate.impulseMagnitude;
+		const Vec3 bodyCenter(
+			float( bodyPosition.GetX() ),
+			float( bodyPosition.GetY() ),
+			float( bodyPosition.GetZ() ) );
+		exposedMassCenter += bodyCenter * bodyMass;
+		exposedMass += bodyMass;
+		++exposedBodies;
+
+		// Prefer a substantial exposed body close to the blast. This avoids
+		// spending the main impulse on a hand, foot, or other low-mass extremity.
+		const float bodyScore = bodyMass * falloff;
+		if( bodyScore > bestBodyScore )
+		{
+			bestBodyScore = bodyScore;
+			impulseBody = bodyID;
+			impulsePoint = surfacePoint;
+			impulseBodyMass = bodyMass;
+			impulseFalloff = falloff;
+			impulseBodyIndex = body;
+		}
 	}
 
-	if( candidates.empty() || visibleMass <= 0.0f || requestedImpulse <= 0.0f )
+	if( exposedBodies == 0 || exposedMass <= 0.0f || bestBodyScore <= 0.0f ||
+		impulseBodyIndex < 0 )
 	{
 		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 			ALERT(
@@ -1950,42 +1954,47 @@ int NPCPhysics_ApplyBlastImpulse(
 		return 0;
 	}
 
-	// Bound the total momentum budget so large damage values cannot inject
-	// unbounded energy into a multi-body constraint system. The per-body share
-	// remains proportional to its physical mass and local distance falloff.
-	const float scaledRequestedImpulse = requestedImpulse * blastScale;
-	const float budgetScale = scaledRequestedImpulse > 30000.0f
-		? 30000.0f / scaledRequestedImpulse : 1.0f;
-	const float finalScale = blastScale * budgetScale;
+	const Vec3 exposedCenter = exposedMassCenter / exposedMass;
+	Vec3 blastDirection(
+		exposedCenter.GetX() - origin[0],
+		exposedCenter.GetY() - origin[1],
+		exposedCenter.GetZ() - origin[2] );
+	const float directionLength = blastDirection.Length();
+	if( !std::isfinite( directionLength ) || directionLength <= 0.001f )
+		blastDirection = Vec3( 0.0f, 0.0f, 1.0f );
+	else
+		blastDirection /= directionLength;
 
-	// Applying the impulse at the explosion location (not each body's center)
-	// creates a real lever arm. The articulated joints then transmit both
-	// translation and rotational response through the whole ragdoll.
-	const RVec3 applicationPoint( origin[0], origin[1], origin[2] );
-	for( size_t i = 0; i < candidates.size(); ++i )
-	{
-		const NPCPhysicsBlastCandidate &candidate = candidates[i];
-		const Vec3 impulse = candidate.direction *
-			( candidate.impulseMagnitude * finalScale );
-		bodyInterface.ActivateBody( candidate.bodyID );
-		bodyInterface.AddImpulse( candidate.bodyID, impulse, applicationPoint );
-	}
+	// A single-body impulse budget keeps the kick energetic enough to launch
+	// the articulated assembly. The body mass controls the resulting velocity;
+	// distance attenuation and the user scale remain independent adjustments.
+	const float baseImpulse = (std::min)( blastDamage * 300.0f, 30000.0f );
+	const float scaledImpulse = baseImpulse * impulseFalloff * blastScale;
+	if( !std::isfinite( scaledImpulse ) || scaledImpulse <= 0.0f )
+		return 0;
 
-	// Force the next end-frame snapshot to carry the blast response promptly.
+	const Vec3 impulse = blastDirection * scaledImpulse;
+	bodyInterface.ActivateBody( impulseBody );
+	// Apply at the exposed surface point, not at the body's center. Because
+	// direction follows the ragdoll's exposed mass center, an asymmetric hit
+	// produces a lever arm and angular response without an arbitrary spin.
+	bodyInterface.AddImpulse( impulseBody, impulse, impulsePoint );
+
 	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
 		targetRagdoll->nextPoseTime = gpGlobals->time;
 
 	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
-			"[NPC blast] Applied: ent=%d id=%d bodies=%d/%d visible-mass=%.1f/%.1f radius=%.1f speed=%.1f impulse=%.1f scale=%.2f.\n",
+			"[NPC blast] Applied focused impulse: ent=%d id=%d body=%d mass=%.1f exposed=%d/%d exposed-mass=%.1f/%.1f radius=%.1f falloff=%.2f impulse=%.1f scale=%.2f.\n",
 			ENTINDEX( targetEntity ), targetRagdoll->networkID,
-			(int)candidates.size(), targetRagdoll->bodyCount,
-			visibleMass, totalRagdollMass, radius, desiredSpeed,
-			scaledRequestedImpulse * budgetScale, finalScale
+			impulseBodyIndex, impulseBodyMass,
+			exposedBodies, targetRagdoll->bodyCount,
+			exposedMass, totalRagdollMass, radius,
+			impulseFalloff, scaledImpulse, blastScale
 		);
 
-	return (int)candidates.size();
+	return 1;
 }
 
 int NPCPhysics_TraceAndApplyImpact(
