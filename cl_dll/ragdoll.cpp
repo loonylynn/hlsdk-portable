@@ -60,6 +60,7 @@ struct ragdoll_entity_pose_t
 
 static ragdoll_entity_pose_t g_RagdollPoses[MAX_RAGDOLL_ENTITIES];
 static bool g_RagdollMessageHooked = false;
+static cvar_t *cl_ragdoll_bloodmarks_debug = NULL;
 
 static float Ragdoll_Clamp01( float value )
 {
@@ -153,6 +154,10 @@ void Ragdoll_ClearAll( void )
 
 void Ragdoll_Init( void )
 {
+	if( !cl_ragdoll_bloodmarks_debug )
+		cl_ragdoll_bloodmarks_debug = CVAR_CREATE(
+			"cl_ragdoll_bloodmarks_debug", "0", FCVAR_ARCHIVE );
+
 	if( g_RagdollMessageHooked )
 		return;
 
@@ -323,7 +328,13 @@ int Ragdoll_ImpactMessageHandler( const char *, int size, void *buffer )
 	// entity, ragdoll ID, studio bone, original world-space shot start,
 	// Jolt world-space contact point, radius (quarter units), and blood palette.
 	if( !buffer || size < 19 )
+	{
+		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f )
+			ConsolePrint( "[Ragdoll decals] Rejected short/empty RagdollImpact packet.\n" );
 		return 0;
+	}
+	if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f )
+		ConsolePrint( "[Ragdoll decals] Received RagdollImpact packet.\n" );
 
 	BEGIN_READ( buffer, size );
 	const int entityIndex = READ_SHORT();
@@ -348,7 +359,17 @@ int Ragdoll_ImpactMessageHandler( const char *, int size, void *buffer )
 		!( worldPosition[2] >= -4096.0f && worldPosition[2] <= 4096.0f ) ||
 		!( radius > 0.0f && radius <= 64.0f ) ||
 		bloodColor < 0 || bloodColor > 2 )
+	{
+		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f )
+		{
+			char message[192];
+			snprintf( message, sizeof( message ),
+				"[Ragdoll decals] Rejected invalid impact: ent=%d ragdoll=%d bone=%d radius=%.2f color=%d.\n",
+				entityIndex, ragdollID, boneIndex, radius, bloodColor );
+			ConsolePrint( message );
+		}
 		return 0;
+	}
 
 	const float rayX = worldPosition[0] - rayStart[0];
 	const float rayY = worldPosition[1] - rayStart[1];
@@ -360,7 +381,19 @@ int Ragdoll_ImpactMessageHandler( const char *, int size, void *buffer )
 	if( !entry.active || entry.ragdollID != ragdollID ||
 		boneIndex >= entry.studioBoneCount ||
 		!entry.initialSnapshotComplete )
+	{
+		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f )
+		{
+			char message[192];
+			snprintf( message, sizeof( message ),
+				"[Ragdoll decals] Impact arrived before matching pose: ent=%d ragdoll=%d bone=%d active=%d current-id=%d bones=%d complete=%d.\n",
+				entityIndex, ragdollID, boneIndex, entry.active ? 1 : 0,
+				entry.ragdollID, entry.studioBoneCount,
+				entry.initialSnapshotComplete ? 1 : 0 );
+			ConsolePrint( message );
+		}
 		return 0;
+	}
 
 	ragdoll_impact_mark_t mark;
 	mark.boneIndex = boneIndex;
@@ -383,6 +416,14 @@ int Ragdoll_ImpactMessageHandler( const char *, int size, void *buffer )
 		entry.impactMarks[MAX_RAGDOLL_IMPACT_MARKS - 1] = mark;
 	}
 
+	if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f )
+	{
+		char message[192];
+		snprintf( message, sizeof( message ),
+			"[Ragdoll decals] Stored mark: ent=%d id=%d bone=%d radius=%.2f color=%d marks=%d.\n",
+			entityIndex, ragdollID, boneIndex, radius, bloodColor, entry.impactMarkCount );
+		ConsolePrint( message );
+	}
 	return 1;
 }
 
