@@ -176,74 +176,6 @@ static qboolean StudioBindBlobShadowTexture( triangleapi_t *tri, int texture )
 
 /*
 ====================
-StudioGetRagdollBloodTexture
-
-Build a small irregular alpha mask for triangle-clipped studio impact decals.
-The renderer tints this white texture with the model's blood palette.
-====================
-*/
-static int StudioGetRagdollBloodTexture( void )
-{
-	static const char textureName[] = "cl_ragdoll_bloodmark_v1";
-	static byte pixels[64 * 64 * 4];
-	int texture;
-
-	if( !gXashRenderAPI || !gXashRenderAPI->GL_FindTexture ||
-		!gXashRenderAPI->GL_CreateTexture )
-		return 0;
-
-	texture = gXashRenderAPI->GL_FindTexture( textureName );
-	if( texture > 0 )
-		return texture;
-
-	for( int y = 0; y < 64; ++y )
-	{
-		for( int x = 0; x < 64; ++x )
-		{
-			const float nx = ( (float)x + 0.5f - 32.0f ) / 32.0f;
-			const float ny = ( (float)y + 0.5f - 32.0f ) / 32.0f;
-			const float radius = sqrtf( nx * nx + ny * ny );
-			const float angle = atan2f( ny, nx );
-			const float edge = 0.74f +
-				0.12f * sinf( angle * 5.0f ) +
-				0.06f * cosf( angle * 11.0f ) +
-				0.035f * sinf( angle * 17.0f );
-			float alpha = ( edge - radius ) * 15.0f;
-			if( alpha < 0.0f ) alpha = 0.0f;
-			if( alpha > 1.0f ) alpha = 1.0f;
-			alpha = alpha * alpha * ( 3.0f - 2.0f * alpha );
-
-			const int offset = ( y * 64 + x ) * 4;
-			pixels[offset + 0] = 255;
-			pixels[offset + 1] = 255;
-			pixels[offset + 2] = 255;
-			pixels[offset + 3] = (byte)( alpha * 230.0f + 0.5f );
-		}
-	}
-
-	// TF_CLAMP | TF_NOMIPMAP | TF_HAS_ALPHA from Xash render_api.h.
-	return gXashRenderAPI->GL_CreateTexture(
-		textureName, 64, 64, pixels, ( 1 << 11 ) | ( 1 << 12 ) | ( 1 << 16 )
-	);
-}
-
-/*
-====================
-StudioForEachRagdollModelTriangle
-
-Walk the active GoldSrc studio submodels and decode their triangle
-strip/fan command streams. Vertices are transformed with the exact bone
-matrices used by the studio renderer, including the replicated Jolt pose.
-====================
-*/
-/*
- * Ragdoll studio decals are clipped only once per impact. Each clipped
- * polygon stores barycentric coordinates inside its source studio triangle;
- * rendering then transforms only those triangles' three vertices, rather
- * than walking the entire model for every decal on every frame.
- */
-/*
-====================
 StudioPrepareRagdollImpactMarks
 
 The client DLL forwards authoritative Jolt impact data to the engine. The
@@ -2284,8 +2216,7 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 		IEngineStudio.StudioDrawAbsBBox();
 	}
 
-	// Build studio decal fragments while the engine's active model/header state
-	// and bone transforms are still valid. Only rasterize them after restore.
+	// Queue impacts for the renderer-owned studio decal pass.
 	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
 		StudioPrepareRagdollImpactMarks( this );
 
