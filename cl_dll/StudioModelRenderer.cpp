@@ -266,23 +266,31 @@ static qboolean StudioGetRagdollWorldVertex(
 	vec3_t worldPosition,
 	int *boneIndex )
 {
-	if( !renderer || !renderer->m_pStudioHeader || !renderer->m_pbonetransform ||
+	if( !renderer || !renderer->m_pStudioHeader ||
 		!renderer->m_pSubModel || !vertexBones || !vertices ||
 		vertexIndex < 0 || vertexIndex >= renderer->m_pSubModel->numverts )
 		return false;
 
 	const int index = vertexBones[vertexIndex];
-	if( index < 0 || index >= renderer->m_pStudioHeader->numbones )
+	if( index < 0 || index >= renderer->m_pStudioHeader->numbones ||
+		index >= renderer->m_nCachedBones )
 		return false;
 
 	if( localPosition )
 		VectorCopy( vertices[vertexIndex], localPosition );
 	if( worldPosition )
+	{
+		// StudioSaveBones copies the exact final pose immediately after
+		// StudioSetupBones. The engine's live transform buffer can be reused
+		// by RestoreRenderer before this late TriAPI decal pass; use the
+		// renderer-owned snapshot just as Source's modelrender receives its
+		// stable pBoneToWorld array for AddDecal.
 		VectorTransform(
 			vertices[vertexIndex],
-			(*renderer->m_pbonetransform)[index],
+			renderer->m_rgCachedBoneTransform[index],
 			worldPosition
 		);
+	}
 	if( boneIndex )
 		*boneIndex = index;
 	return true;
@@ -1087,7 +1095,8 @@ static void StudioDrawCachedRagdollMark(
 	triangleapi_t *tri,
 	const studio_ragdoll_mark_cache_t *cache )
 {
-	if( !renderer || !renderer->m_pbonetransform || !tri ||
+	if( !renderer || !tri || !renderer->m_pStudioHeader ||
+		renderer->m_nCachedBones < renderer->m_pStudioHeader->numbones ||
 		!cache || !cache->valid || cache->fragmentCount <= 0 )
 		return;
 
@@ -1126,7 +1135,7 @@ static void StudioDrawCachedRagdollMark(
 			}
 			VectorTransform(
 				fragment.local[corner],
-				(*renderer->m_pbonetransform)[fragment.bone[corner]],
+				renderer->m_rgCachedBoneTransform[fragment.bone[corner]],
 				worldTriangle[corner] );
 		}
 		if( !valid )
