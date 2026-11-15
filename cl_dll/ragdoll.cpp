@@ -12,17 +12,13 @@ static const int MAX_RAGDOLL_BONES = 128;
 static const float RAGDOLL_SNAPSHOT_INTERVAL = 0.05f;
 static const float RAGDOLL_STALE_TIMEOUT = 0.25f;
 
-// The server sends this small marker through entity_state_t::iuser4. The
-// unique ragdoll ID remains in the RagdollPose user message.
+// The server marks only the original zombie entity as a ragdoll carrier.
 static const int RAGDOLL_ENTITY_MARKER = 1;
 
 struct ragdoll_bone_pose_t
 {
-	// Latest network target.
 	float origin[3];
 	float rotation[4];
-
-	// Pose at which interpolation toward the latest target began.
 	float previousOrigin[3];
 	float previousRotation[4];
 	float poseTime;
@@ -32,9 +28,12 @@ struct ragdoll_bone_pose_t
 struct ragdoll_entity_pose_t
 {
 	int ragdollID;
-	int boneCount;
+	int studioBoneCount;
+	int bodyCount;
+	int receivedBodyCount;
 	float lastUpdateTime;
 	bool active;
+	bool initialSnapshotComplete;
 	bool renderReported;
 	ragdoll_bone_pose_t bones[MAX_RAGDOLL_BONES];
 };
@@ -51,9 +50,11 @@ static float Ragdoll_Clamp01( float value )
 	return value;
 }
 
-// Normalized linear interpolation is stable for the small angular changes
-// between 20 Hz snapshots and avoids quaternion sign-flip interpolation.
-static void Ragdoll_NlerpQuaternion( const float start[4], const float target[4], float fraction, float output[4] )
+static void Ragdoll_NlerpQuaternion(
+	const float start[4],
+	const float target[4],
+	float fraction,
+	float output[4] )
 {
 	float adjustedTarget[4];
 	float dot = 0.0f;
@@ -125,45 +126,61 @@ void Ragdoll_Init( void )
 
 int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 {
-	if( !buffer || size < 7 )
+	// Packet header:
+	// entity, ragdoll ID, studio bone count, physics body count,
+	// starting physics element, element count. Each element carries the
+	// studio bone index plus world position and quaternion.
+	if( !buffer || size < 8 )
 		return 0;
 
 	BEGIN_READ( buffer, size );
 
 	const int entityIndex = READ_SHORT();
 	const int ragdollID = READ_SHORT();
-	const int boneCount = READ_BYTE();
-	const int startBone = READ_BYTE();
+	const int studioBoneCount = READ_BYTE();
+	const int bodyCount = READ_BYTE();
+	const int startBody = READ_BYTE();
 	const int chunkCount = READ_BYTE();
 
 	if( entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES ||
 		ragdollID <= 0 ||
-		boneCount <= 0 || boneCount > MAX_RAGDOLL_BONES ||
-		startBone < 0 || chunkCount <= 0 ||
-		startBone + chunkCount > boneCount ||
-		size < 7 + chunkCount * 14 )
+		studioBoneCount <= 0 || studioBoneCount > MAX_RAGDOLL_BONES ||
+		bodyCount <= 0 || bodyCount > studioBoneCount ||
+		startBody < 0 || chunkCount <= 0 ||
+		startBody + chunkCount > bodyCount ||
+		size < 8 + chunkCount * 15 )
 		return 0;
 
 	const float now = (float)gEngfuncs.GetClientTime();
 	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
 
-	// Client time can restart with a level/demo reset. Never let an older
-	// cache survive that clock transition or a long gap in PVS updates.
 	if( entry.active &&
 		( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT ) )
 	{
 		memset( &entry, 0, sizeof( entry ) );
 	}
 
-	if( !entry.active || entry.ragdollID != ragdollID || entry.boneCount != boneCount )
+	if( !entry.active ||
+		entry.ragdollID != ragdollID ||
+		entry.studioBoneCount != studioBoneCount ||
+		entry.bodyCount != bodyCount )
 	{
 		memset( &entry, 0, sizeof( entry ) );
 		entry.active = true;
 		entry.ragdollID = ragdollID;
-		entry.boneCount = boneCount;
+		entry.studioBoneCount = studioBoneCount;
+		entry.bodyCount = bodyCount;
 
-		char message[128];
-		snprintf( message, sizeof( message ), "[NPC ragdoll] Receiving entity %d, ID %d (%d bones).\n", entityIndex, ragdollID, boneCount );
+		char message[144];
+		snprintf(
+			message,
+			sizeof( message ),
+			"[NPC ragdoll] Receiving entity %d, ID %d (%d/%d simulated bones).\n",
+			entityIndex,
+			ragdollID,
+			bodyCount,
+			studioBoneCount
+		);
 		ConsolePrint( message );
 	}
 
@@ -171,7 +188,11 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 
 	for( int i = 0; i < chunkCount; ++i )
 	{
-		ragdoll_bone_pose_t &bone = entry.bones[startBone + i];
+		const int boneIndex = READ_BYTE();
+		if( boneIndex < 0 || boneIndex >= studioBoneCount )
+			return 0;
+
+		ragdoll_bone_pose_t &bone = entry.bones[boneIndex];
 		float receivedOrigin[3];
 		float receivedRotation[4];
 
@@ -220,10 +241,9 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 		}
 		else
 		{
-			// The first complete snapshot initializes the pose without
-			// interpolating from uninitialized memory or GoldSrc animation.
 			memcpy( bone.previousOrigin, receivedOrigin, sizeof( receivedOrigin ) );
 			memcpy( bone.previousRotation, receivedRotation, sizeof( receivedRotation ) );
+			++entry.receivedBodyCount;
 		}
 
 		memcpy( bone.origin, receivedOrigin, sizeof( receivedOrigin ) );
@@ -232,43 +252,49 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 		bone.valid = true;
 	}
 
+	entry.initialSnapshotComplete = ( entry.receivedBodyCount >= entry.bodyCount );
 	return 1;
 }
 
-int Ragdoll_GetBoneTransform( int entityIndex, int ragdollMarker, int boneIndex, float transform[3][4] )
+int Ragdoll_GetBoneTransform(
+	int entityIndex,
+	int ragdollMarker,
+	int boneIndex,
+	float transform[3][4] )
 {
-	if( !transform || entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES ||
+	if( !transform ||
+		entityIndex <= 0 ||
+		entityIndex >= MAX_RAGDOLL_ENTITIES ||
 		ragdollMarker != RAGDOLL_ENTITY_MARKER ||
-		boneIndex < 0 || boneIndex >= MAX_RAGDOLL_BONES )
+		boneIndex < 0 ||
+		boneIndex >= MAX_RAGDOLL_BONES )
 		return 0;
 
 	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
-	if( !entry.active || entry.ragdollID <= 0 ||
-		boneIndex >= entry.boneCount || !entry.bones[boneIndex].valid )
+	if( !entry.active ||
+		entry.ragdollID <= 0 ||
+		boneIndex >= entry.studioBoneCount ||
+		!entry.initialSnapshotComplete ||
+		!entry.bones[boneIndex].valid )
 		return 0;
 
 	const float now = (float)gEngfuncs.GetClientTime();
-
-	// Clear, rather than merely ignoring, expired mappings. This also handles
-	// client-time rollback after a map restart or demo rewind.
 	if( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT )
 	{
 		memset( &entry, 0, sizeof( entry ) );
 		return 0;
 	}
 
-	// Wait for every chunk of the first snapshot. Otherwise the renderer
-	// would combine a partial ragdoll with the ordinary GoldSrc animation.
-	for( int i = 0; i < entry.boneCount; ++i )
-	{
-		if( !entry.bones[i].valid )
-			return 0;
-	}
-
 	if( !entry.renderReported )
 	{
 		char message[128];
-		snprintf( message, sizeof( message ), "[NPC ragdoll] Applying pose for entity %d, ID %d.\n", entityIndex, entry.ragdollID );
+		snprintf(
+			message,
+			sizeof( message ),
+			"[NPC ragdoll] Applying articulated pose for entity %d, ID %d.\n",
+			entityIndex,
+			entry.ragdollID
+		);
 		ConsolePrint( message );
 		entry.renderReported = true;
 	}
@@ -283,7 +309,6 @@ int Ragdoll_GetBoneTransform( int entityIndex, int ragdollMarker, int boneIndex,
 	const float z = rotation[2];
 	const float w = rotation[3];
 
-	// Same 3x4 quaternion matrix layout consumed by StudioModelRenderer.
 	transform[0][0] = 1.0f - 2.0f * ( y * y + z * z );
 	transform[0][1] = 2.0f * ( x * y - z * w );
 	transform[0][2] = 2.0f * ( x * z + y * w );
