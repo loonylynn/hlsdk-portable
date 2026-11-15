@@ -1386,8 +1386,29 @@ void CStudioModelRenderer::StudioSetupBones( void )
 	}
 
 
+	// Match Source's ragdoll BuildTransformations path: simulated bones are
+	// replaced as the hierarchy is traversed. Non-simulated bones continue
+	// using the frozen death animation, relative to their already-simulated
+	// parent when applicable. Applying all physics transforms after the loop
+	// leaves children composed against the old walking-pose parent matrix.
+	const int ragdollMarker = m_pCurrentEntity->curstate.iuser4;
+	const int ragdollEntityIndex = m_pCurrentEntity->index;
+	const qboolean useRagdollPose =
+		IEngineStudio.IsHardware() &&
+		ragdollEntityIndex > 0 &&
+		ragdollMarker == 1;
+	float ragdollTransform[3][4];
+
 	for( i = 0; i < m_pStudioHeader->numbones; i++ )
 	{
+		if( useRagdollPose &&
+			Ragdoll_GetBoneTransform( ragdollEntityIndex, ragdollMarker, i, ragdollTransform ) )
+		{
+			MatrixCopy( ragdollTransform, (*m_pbonetransform)[i] );
+			MatrixCopy( ragdollTransform, (*m_plighttransform)[i] );
+			continue;
+		}
+
 		QuaternionMatrix( q[i], bonematrix );
 
 		bonematrix[0][3] = pos[i][0];
@@ -1399,9 +1420,6 @@ void CStudioModelRenderer::StudioSetupBones( void )
 			if( IEngineStudio.IsHardware() )
 			{
 				ConcatTransforms( (*m_protationmatrix), bonematrix, (*m_pbonetransform)[i] );
-
-				// MatrixCopy should be faster...
-				//ConcatTransforms( (*m_protationmatrix), bonematrix, (*m_plighttransform)[i] );
 				MatrixCopy( (*m_pbonetransform)[i], (*m_plighttransform)[i] );
 			}
 			else
@@ -1410,33 +1428,12 @@ void CStudioModelRenderer::StudioSetupBones( void )
 				ConcatTransforms( (*m_protationmatrix), bonematrix, (*m_plighttransform)[i] );
 			}
 
-			// Apply client-side effects to the transformation matrix
 			StudioFxTransform( m_pCurrentEntity, (*m_pbonetransform)[i] );
-		} 
-		else 
+		}
+		else
 		{
 			ConcatTransforms( (*m_pbonetransform)[pbones[i].parent], bonematrix, (*m_pbonetransform)[i] );
 			ConcatTransforms( (*m_plighttransform)[pbones[i].parent], bonematrix, (*m_plighttransform)[i] );
-		}
-	}
-	// Only entities explicitly tagged by the server as Jolt ragdolls may
-	// consume the pose cache. This prevents a recycled entity index from
-	// applying an old corpse pose to a living zombie or another studio model.
-	const int ragdollMarker = m_pCurrentEntity->curstate.iuser4;
-	if( IEngineStudio.IsHardware() &&
-		m_pCurrentEntity->index > 0 &&
-		ragdollMarker == 1 )
-	{
-		float ragdollTransform[3][4];
-		const int entityIndex = m_pCurrentEntity->index;
-
-		for( i = 0; i < m_pStudioHeader->numbones; ++i )
-		{
-			if( Ragdoll_GetBoneTransform( entityIndex, ragdollMarker, i, ragdollTransform ) )
-			{
-				MatrixCopy( ragdollTransform, (*m_pbonetransform)[i] );
-				MatrixCopy( ragdollTransform, (*m_plighttransform)[i] );
-			}
 		}
 	}
 
