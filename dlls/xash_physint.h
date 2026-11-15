@@ -152,7 +152,7 @@ int NPCPhysics_ApplyBlastImpulse(
 	edict_t *targetEntity,
 	const float *origin,
 	float radius,
-	float impulseMagnitude
+	float blastDamage
 );
 int NPCPhysics_TraceAndApplyImpact(
 	const float *start,
