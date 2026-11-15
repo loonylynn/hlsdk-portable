@@ -905,8 +905,8 @@ namespace
 		if( !g_serverPhysicsAPI || !g_serverPhysicsAPI->pfnTraceNoEnts )
 			return;
 
-		const float zeroMins[3] = { 0.0f, 0.0f, 0.0f };
-		const float zeroMaxs[3] = { 0.0f, 0.0f, 0.0f };
+		float zeroMins[3] = { 0.0f, 0.0f, 0.0f };
+		float zeroMaxs[3] = { 0.0f, 0.0f, 0.0f };
 
 		for( int i = 0; i < ragdoll.bodyCount; ++i )
 		{
@@ -1024,8 +1024,8 @@ namespace
 			};
 			xash_trace_t supportTrace = g_serverPhysicsAPI->pfnTraceNoEnts(
 				supportStart,
-				const_cast<float *>( zeroMins ),
-				const_cast<float *>( zeroMaxs ),
+				zeroMins,
+				zeroMaxs,
 				supportEnd,
 				0,
 				ragdoll.entity
@@ -1048,9 +1048,9 @@ namespace
 					);
 
 					Vec3 velocity = bodyInterface.GetLinearVelocity( bone.bodyID );
-					if( velocity.GetY() == velocity.GetY() && velocity.GetZ() < 0.0f )
+					if( velocity.GetZ() < 0.0f )
 					{
-						velocity.SetZ( 0.0f );
+						velocity = Vec3( velocity.GetX(), velocity.GetY(), 0.0f );
 						bodyInterface.SetLinearVelocity( bone.bodyID, velocity );
 					}
 				}
