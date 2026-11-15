@@ -424,230 +424,6 @@ static void StudioNormalize3( float vector[3] )
 		vector[axis] *= inverseLength;
 }
 
-static void StudioClosestPointOnSegment(
-	const float point[3],
-	const float start[3],
-	const float end[3],
-	float closest[3] )
-{
-	float direction[3];
-	float toPoint[3];
-	for( int axis = 0; axis < 3; ++axis )
-	{
-		direction[axis] = end[axis] - start[axis];
-		toPoint[axis] = point[axis] - start[axis];
-	}
-
-	const float lengthSquared = StudioDot3( direction, direction );
-	float fraction = lengthSquared > 0.000001f
-		? StudioDot3( toPoint, direction ) / lengthSquared
-		: 0.0f;
-	if( fraction < 0.0f ) fraction = 0.0f;
-	if( fraction > 1.0f ) fraction = 1.0f;
-
-	for( int axis = 0; axis < 3; ++axis )
-		closest[axis] = start[axis] + direction[axis] * fraction;
-}
-
-static void StudioClosestPointOnTriangle(
-	const float point[3],
-	const float a[3],
-	const float b[3],
-	const float c[3],
-	float closest[3] )
-{
-	float ab[3], ac[3], normal[3], projected[3];
-	for( int axis = 0; axis < 3; ++axis )
-	{
-		ab[axis] = b[axis] - a[axis];
-		ac[axis] = c[axis] - a[axis];
-	}
-	normal[0] = ab[1] * ac[2] - ab[2] * ac[1];
-	normal[1] = ab[2] * ac[0] - ab[0] * ac[2];
-	normal[2] = ab[0] * ac[1] - ab[1] * ac[0];
-	StudioNormalize3( normal );
-
-	float pointFromA[3];
-	for( int axis = 0; axis < 3; ++axis )
-		pointFromA[axis] = point[axis] - a[axis];
-	const float planeDistance = StudioDot3( pointFromA, normal );
-	for( int axis = 0; axis < 3; ++axis )
-		projected[axis] = point[axis] - normal[axis] * planeDistance;
-
-	float ap[3];
-	for( int axis = 0; axis < 3; ++axis )
-		ap[axis] = projected[axis] - a[axis];
-	const float d00 = StudioDot3( ab, ab );
-	const float d01 = StudioDot3( ab, ac );
-	const float d11 = StudioDot3( ac, ac );
-	const float d20 = StudioDot3( ap, ab );
-	const float d21 = StudioDot3( ap, ac );
-	const float denominator = d00 * d11 - d01 * d01;
-
-	if( denominator > 0.000001f )
-	{
-		const float v = ( d11 * d20 - d01 * d21 ) / denominator;
-		const float w = ( d00 * d21 - d01 * d20 ) / denominator;
-		const float u = 1.0f - v - w;
-		if( u >= 0.0f && v >= 0.0f && w >= 0.0f )
-		{
-			for( int axis = 0; axis < 3; ++axis )
-				closest[axis] = a[axis] * u + b[axis] * v + c[axis] * w;
-			return;
-		}
-	}
-
-	float candidates[3][3];
-	StudioClosestPointOnSegment( point, a, b, candidates[0] );
-	StudioClosestPointOnSegment( point, b, c, candidates[1] );
-	StudioClosestPointOnSegment( point, c, a, candidates[2] );
-
-	float bestDistance = 1.0e30f;
-	for( int candidate = 0; candidate < 3; ++candidate )
-	{
-		float delta[3];
-		for( int axis = 0; axis < 3; ++axis )
-			delta[axis] = candidates[candidate][axis] - point[axis];
-		const float distance = StudioDot3( delta, delta );
-		if( distance < bestDistance )
-		{
-			bestDistance = distance;
-			for( int axis = 0; axis < 3; ++axis )
-				closest[axis] = candidates[candidate][axis];
-		}
-	}
-}
-
-typedef struct studio_ragdoll_surface_search_s
-{
-	float point[3];
-	float rayStart[3];
-	float rayDirection[3];
-	float rayLength;
-	float contactDistance;
-	float impactNormal[3];
-	float maxDistanceSquared;
-	float nearestDistanceSquared;
-	float nearestPoint[3];
-	float bestScore;
-	float surfacePoint[3];
-	float surfaceNormal[3];
-	float rayBestScore;
-	float raySurfacePoint[3];
-	float raySurfaceNormal[3];
-	int triangleCount;
-	qboolean found;
-	qboolean rayFound;
-} studio_ragdoll_surface_search_t;
-
-static void StudioFindRagdollImpactSurface(
-	const studio_ragdoll_triangle_t *triangle,
-	void *opaqueContext )
-{
-	studio_ragdoll_surface_search_t *context =
-		(studio_ragdoll_surface_search_t *)opaqueContext;
-	++context->triangleCount;
-
-	float edge1[3], edge2[3], normal[3];
-	for( int axis = 0; axis < 3; ++axis )
-	{
-		edge1[axis] = triangle->world[1][axis] - triangle->world[0][axis];
-		edge2[axis] = triangle->world[2][axis] - triangle->world[0][axis];
-	}
-	normal[0] = edge1[1] * edge2[2] - edge1[2] * edge2[1];
-	normal[1] = edge1[2] * edge2[0] - edge1[0] * edge2[2];
-	normal[2] = edge1[0] * edge2[1] - edge1[1] * edge2[0];
-	if( StudioDot3( normal, normal ) < 0.000001f )
-		return;
-	StudioNormalize3( normal );
-
-	const float alignment = fabsf( StudioDot3( normal, context->impactNormal ) );
-
-	// Source's AddStudioDecal projects its Ray_t into the studio model. Use
-	// the original shot ray against the actual skinned triangle, and extend
-	// it slightly beyond the Jolt convex-hull contact to account for the
-	// difference between the authored collision hull and visible skin.
-	float pvec[3] = {
-		context->rayDirection[1] * edge2[2] - context->rayDirection[2] * edge2[1],
-		context->rayDirection[2] * edge2[0] - context->rayDirection[0] * edge2[2],
-		context->rayDirection[0] * edge2[1] - context->rayDirection[1] * edge2[0]
-	};
-	const float determinant = StudioDot3( edge1, pvec );
-	if( fabsf( determinant ) > 0.000001f )
-	{
-		const float inverseDeterminant = 1.0f / determinant;
-		float tvec[3];
-		for( int axis = 0; axis < 3; ++axis )
-			tvec[axis] = context->rayStart[axis] - triangle->world[0][axis];
-		const float u = StudioDot3( tvec, pvec ) * inverseDeterminant;
-		float qvec[3] = {
-			tvec[1] * edge1[2] - tvec[2] * edge1[1],
-			tvec[2] * edge1[0] - tvec[0] * edge1[2],
-			tvec[0] * edge1[1] - tvec[1] * edge1[0]
-		};
-		const float v = StudioDot3( context->rayDirection, qvec ) * inverseDeterminant;
-		const float rayDistance = StudioDot3( edge2, qvec ) * inverseDeterminant;
-
-		if( u >= 0.0f && v >= 0.0f && u + v <= 1.0f &&
-			rayDistance >= 0.0f && rayDistance <= context->rayLength )
-		{
-			const float contactOffset = fabsf( rayDistance - context->contactDistance );
-			if( contactOffset <= 12.0f && alignment >= 0.05f )
-			{
-				const float rayScore = contactOffset + ( 1.0f - alignment ) * 12.0f;
-				if( !context->rayFound || rayScore < context->rayBestScore )
-				{
-					context->rayFound = true;
-					context->rayBestScore = rayScore;
-					if( StudioDot3( normal, context->impactNormal ) < 0.0f )
-						for( int axis = 0; axis < 3; ++axis )
-							normal[axis] = -normal[axis];
-					for( int axis = 0; axis < 3; ++axis )
-					{
-						context->raySurfacePoint[axis] =
-							context->rayStart[axis] + context->rayDirection[axis] * rayDistance;
-						context->raySurfaceNormal[axis] = normal[axis];
-					}
-				}
-			}
-		}
-	}
-
-	// Bounded fallback for a coarse collision hull whose surface doesn't
-	// intersect the original shot ray. Prefer faces facing the incoming ray.
-	float closest[3], delta[3];
-	StudioClosestPointOnTriangle(
-		context->point,
-		triangle->world[0], triangle->world[1], triangle->world[2],
-		closest );
-	for( int axis = 0; axis < 3; ++axis )
-		delta[axis] = closest[axis] - context->point[axis];
-	const float distanceSquared = StudioDot3( delta, delta );
-	if( distanceSquared < context->nearestDistanceSquared )
-	{
-		context->nearestDistanceSquared = distanceSquared;
-		for( int axis = 0; axis < 3; ++axis )
-			context->nearestPoint[axis] = closest[axis];
-	}
-	if( distanceSquared > context->maxDistanceSquared || alignment < 0.05f )
-		return;
-
-	const float score = distanceSquared + ( 1.0f - alignment ) * 36.0f;
-	if( context->found && score >= context->bestScore )
-		return;
-	if( StudioDot3( normal, context->impactNormal ) < 0.0f )
-		for( int axis = 0; axis < 3; ++axis )
-			normal[axis] = -normal[axis];
-
-	context->found = true;
-	context->bestScore = score;
-	for( int axis = 0; axis < 3; ++axis )
-	{
-		context->surfacePoint[axis] = closest[axis];
-		context->surfaceNormal[axis] = normal[axis];
-	}
-}
-
 typedef struct studio_ragdoll_decal_vertex_s
 {
 	float barycentric[3];
@@ -693,6 +469,7 @@ typedef struct studio_ragdoll_decal_build_s
 	float bitangent[3];
 	float radius;
 	float depthTolerance;
+	int triangleCount;
 } studio_ragdoll_decal_build_t;
 
 static float StudioRagdollDecalClipDistance(
@@ -773,6 +550,7 @@ static void StudioBuildRagdollImpactFragment(
 {
 	studio_ragdoll_decal_build_t *context =
 		(studio_ragdoll_decal_build_t *)opaqueContext;
+	++context->triangleCount;
 	if( context->cache->fragmentCount >= STUDIO_RAGDOLL_DECAL_MAX_FRAGMENTS )
 		return;
 
@@ -917,8 +695,12 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	int bloodColor,
 	int projectionAttempt )
 {
-	// Cache failed projections too: a malformed or unusual studio mesh must
-	// never trigger a full-model scan every frame.
+	// Source's CStudioRender::AddDecal projects a decal plane along the
+	// incoming ray. In particular, ordinary studio decals are not restricted
+	// to a thin depth slab around the physics contact: coarse collision hulls
+	// can place that contact well behind the visible skin along the same ray.
+	// Cache the clipped geometry in the source mesh triangles so it follows
+	// the current interpolated ragdoll pose.
 	studio_ragdoll_mark_cache_t *cache = StudioAllocateRagdollMarkCache();
 	memset( cache, 0, sizeof( *cache ) );
 	cache->valid = true;
@@ -936,74 +718,38 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 		cache->worldPosition[axis] = worldPosition[axis];
 	}
 
-	studio_ragdoll_surface_search_t search;
-	memset( &search, 0, sizeof( search ) );
-	float rayVector[3];
+	float rayDirection[3];
 	float rayLengthSquared = 0.0f;
 	for( int axis = 0; axis < 3; ++axis )
 	{
-		search.point[axis] = worldPosition[axis];
-		search.rayStart[axis] = rayStart[axis];
-		rayVector[axis] = worldPosition[axis] - rayStart[axis];
-		rayLengthSquared += rayVector[axis] * rayVector[axis];
+		rayDirection[axis] = worldPosition[axis] - rayStart[axis];
+		rayLengthSquared += rayDirection[axis] * rayDirection[axis];
 	}
 	if( rayLengthSquared < 0.0001f )
-		return NULL;
-	const float originalRayLength = sqrtf( rayLengthSquared );
-	for( int axis = 0; axis < 3; ++axis )
-	{
-		search.rayDirection[axis] = rayVector[axis] / originalRayLength;
-		search.impactNormal[axis] = -search.rayDirection[axis];
-	}
-	search.contactDistance = originalRayLength;
-	search.rayLength = originalRayLength + 12.0f;
-	search.rayBestScore = 1.0e30f;
-	search.rayFound = false;
-	search.maxDistanceSquared = 144.0f;
-	search.nearestDistanceSquared = 1.0e30f;
-	search.bestScore = 1.0e30f;
-	search.found = false;
-	StudioForEachRagdollModelTriangle(
-		renderer, StudioFindRagdollImpactSurface, &search );
-	if( search.rayFound )
-	{
-		search.found = true;
-		for( int axis = 0; axis < 3; ++axis )
-		{
-			search.surfacePoint[axis] = search.raySurfacePoint[axis];
-			search.surfaceNormal[axis] = search.raySurfaceNormal[axis];
-		}
-	}
-	if( !search.found )
 	{
 		cache->age = ++g_StudioRagdollDecalCacheClock;
-		// An impact message can arrive just before the pose snapshot caused by
-		// that same hit. The client interpolates incoming bones over the snapshot
-		// interval, so a first projection against the previous pose can miss by
-		// a large amount. Retry a few times at 5 Hz instead of caching failure
-		// forever or rescanning the full model every rendered frame.
-		if( projectionAttempt < 4 )
-			cache->retryTime = (float)gEngfuncs.GetClientTime() + 0.20f;
-		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
-			gEngfuncs.Con_Printf )
-			gEngfuncs.Con_Printf(
-				"[Ragdoll decals] entity %d bone %d: shot-ray attempt %d/5 parsed %d triangles, no ray hit or aligned surface within 12 units (nearest %.2f)\n",
-				entityIndex, boneIndex, projectionAttempt + 1, search.triangleCount,
-				sqrtf( search.nearestDistanceSquared ) );
 		return cache;
 	}
+	const float rayLength = sqrtf( rayLengthSquared );
+	for( int axis = 0; axis < 3; ++axis )
+		rayDirection[axis] /= rayLength;
 
 	studio_ragdoll_decal_build_t build;
 	memset( &build, 0, sizeof( build ) );
 	build.cache = cache;
 	build.radius = cache->radius;
-	build.depthTolerance = cache->radius * 0.55f + 0.75f;
+	// Source's default AddStudioDecal path uses noPokeThru=false, so it
+	// clips the planar footprint in U/V but does not reject vertices merely
+	// because they lie farther down the ray than the contact point.
+	build.depthTolerance = 1.0e6f;
 	for( int axis = 0; axis < 3; ++axis )
 	{
-		build.center[axis] = search.surfacePoint[axis];
-		build.normal[axis] = search.surfaceNormal[axis];
+		build.center[axis] = rayStart[axis];
+		build.normal[axis] = -rayDirection[axis];
 	}
 
+	// This is the same decal basis used by CStudioRender::ComputePoseToDecal:
+	// N = -ray direction, U = up x N, V = N x U.
 	float reference[3] = { 0.0f, 0.0f, 1.0f };
 	if( fabsf( build.normal[2] ) > 0.90f )
 	{
@@ -1022,12 +768,14 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	StudioForEachRagdollModelTriangle(
 		renderer, StudioBuildRagdollImpactFragment, &build );
 	cache->age = ++g_StudioRagdollDecalCacheClock;
+	if( cache->fragmentCount <= 0 && projectionAttempt < 4 )
+		cache->retryTime = (float)gEngfuncs.GetClientTime() + 0.20f;
 	if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
 		gEngfuncs.Con_Printf )
 		gEngfuncs.Con_Printf(
-			"[Ragdoll decals] entity %d bone %d: parsed %d triangles, clipped %d fragments, radius %.2f\n",
-			entityIndex, boneIndex, search.triangleCount,
-			cache->fragmentCount, cache->radius );
+			"[Ragdoll decals] entity %d bone %d: source-style planar projection scanned %d triangles, clipped %d fragments, radius %.2f, ray length %.1f\n",
+			entityIndex, boneIndex, build.triangleCount,
+			cache->fragmentCount, cache->radius, rayLength );
 	return cache;
 }
 
