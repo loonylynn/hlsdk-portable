@@ -496,6 +496,8 @@ typedef struct studio_ragdoll_mark_cache_s
 	int fragmentCount;
 	int projectionAttempts;
 	float retryTime;
+	qboolean quadValid;
+	float quadLocal[4][3];
 	studio_ragdoll_decal_fragment_t fragments[STUDIO_RAGDOLL_DECAL_MAX_FRAGMENTS];
 } studio_ragdoll_mark_cache_t;
 
@@ -542,6 +544,112 @@ static qboolean StudioVectorIsFinite3( const float vector[3] )
 			fabsf( vector[axis] ) > 1.0e20f )
 			return false;
 	}
+	return true;
+}
+
+
+/*
+ * The Jolt impact belongs to one articulated studio bone. Keep a compact
+ * wound sticker in that bone's local space as a robust fallback to the
+ * multi-triangle projection. This makes the mark follow the actual corpse
+ * even when the physics hull and rendered mesh do not overlap exactly.
+ */
+static qboolean StudioBuildRagdollBoneQuad(
+	CStudioModelRenderer *renderer,
+	studio_ragdoll_mark_cache_t *cache,
+	int boneIndex,
+	const float rayStart[3],
+	const float worldPosition[3] )
+{
+	if( !renderer || !cache || !renderer->m_pStudioHeader ||
+		boneIndex < 0 || boneIndex >= renderer->m_pStudioHeader->numbones ||
+		boneIndex >= renderer->m_nCachedBones )
+		return false;
+
+	float (*matrix)[4] = renderer->m_rgCachedBoneTransform[boneIndex];
+	for( int row = 0; row < 3; ++row )
+		for( int column = 0; column < 4; ++column )
+			if( matrix[row][column] != matrix[row][column] ||
+				fabsf( matrix[row][column] ) > 1.0e20f )
+				return false;
+
+	float normal[3];
+	for( int axis = 0; axis < 3; ++axis )
+		normal[axis] = rayStart[axis] - worldPosition[axis];
+	const float normalLengthSquared = StudioDot3( normal, normal );
+	if( normalLengthSquared < 0.0001f )
+		return false;
+	StudioNormalize3( normal );
+
+	float reference[3] = { 0.0f, 0.0f, 1.0f };
+	if( fabsf( normal[2] ) > 0.90f )
+	{
+		reference[0] = 0.0f;
+		reference[1] = 1.0f;
+		reference[2] = 0.0f;
+	}
+
+	float tangent[3] = {
+		reference[1] * normal[2] - reference[2] * normal[1],
+		reference[2] * normal[0] - reference[0] * normal[2],
+		reference[0] * normal[1] - reference[1] * normal[0]
+	};
+	StudioNormalize3( tangent );
+	float bitangent[3] = {
+		normal[1] * tangent[2] - normal[2] * tangent[1],
+		normal[2] * tangent[0] - normal[0] * tangent[2],
+		normal[0] * tangent[1] - normal[1] * tangent[0]
+	};
+
+	// Invert the rigid bone transform with R^T. Studio bone matrices are
+	// orthonormal 3x4 transforms, so no general matrix inversion is needed.
+	float delta[3] = {
+		worldPosition[0] - matrix[0][3],
+		worldPosition[1] - matrix[1][3],
+		worldPosition[2] - matrix[2][3]
+	};
+	float localCenter[3], localTangent[3], localBitangent[3], localNormal[3];
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		localCenter[axis] =
+			matrix[0][axis] * delta[0] +
+			matrix[1][axis] * delta[1] +
+			matrix[2][axis] * delta[2];
+		localTangent[axis] =
+			matrix[0][axis] * tangent[0] +
+			matrix[1][axis] * tangent[1] +
+			matrix[2][axis] * tangent[2];
+		localBitangent[axis] =
+			matrix[0][axis] * bitangent[0] +
+			matrix[1][axis] * bitangent[1] +
+			matrix[2][axis] * bitangent[2];
+		localNormal[axis] =
+			matrix[0][axis] * normal[0] +
+			matrix[1][axis] * normal[1] +
+			matrix[2][axis] * normal[2];
+	}
+
+	const float halfSize = cache->radius * 0.82f;
+	const float surfaceBias = 1.5f;
+	static const float cornerSigns[4][2] = {
+		{ -1.0f, -1.0f }, { 1.0f, -1.0f },
+		{ 1.0f, 1.0f }, { -1.0f, 1.0f }
+	};
+	for( int corner = 0; corner < 4; ++corner )
+	{
+		for( int axis = 0; axis < 3; ++axis )
+		{
+			cache->quadLocal[corner][axis] =
+				localCenter[axis] +
+				localTangent[axis] * cornerSigns[corner][0] * halfSize +
+				localBitangent[axis] * cornerSigns[corner][1] * halfSize +
+				localNormal[axis] * surfaceBias;
+		}
+		if( !StudioVectorIsFinite3( cache->quadLocal[corner] ) )
+			return false;
+	}
+
+	cache->quadValid = true;
 	return true;
 }
 
@@ -1020,6 +1128,12 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 		cache->worldPosition[axis] = worldPosition[axis];
 	}
 
+	// Build this fallback independently from mesh enumeration. The mark stays
+	// attached to the hit bone and remains drawable even when clipping yields
+	// no usable source triangles.
+	StudioBuildRagdollBoneQuad(
+		renderer, cache, boneIndex, rayStart, worldPosition );
+
 	float rayDirection[3];
 	float rayLengthSquared = 0.0f;
 	for( int axis = 0; axis < 3; ++axis )
@@ -1132,7 +1246,8 @@ static void StudioDrawCachedRagdollMark(
 {
 	if( !renderer || !tri || !renderer->m_pStudioHeader ||
 		renderer->m_nCachedBones < renderer->m_pStudioHeader->numbones ||
-		!cache || !cache->valid || cache->fragmentCount <= 0 )
+		!cache || !cache->valid ||
+		( !cache->quadValid && cache->fragmentCount <= 0 ) )
 		return;
 
 	float red = 0.30f, green = 0.012f, blue = 0.004f;
@@ -1149,9 +1264,34 @@ static void StudioDrawCachedRagdollMark(
 		blue = 0.012f;
 	}
 
-	tri->Color4f( red, green, blue, 0.88f );
+	tri->Color4f( red, green, blue, 0.94f );
 	tri->Begin( TRI_TRIANGLES );
 
+	if( cache->quadValid && cache->boneIndex >= 0 &&
+		cache->boneIndex < renderer->m_nCachedBones )
+	{
+		static const float quadUV[4][2] = {
+			{ 0.0f, 0.0f }, { 1.0f, 0.0f },
+			{ 1.0f, 1.0f }, { 0.0f, 1.0f }
+		};
+		static const int quadTriangles[6] = { 0, 1, 2, 0, 2, 3 };
+		float worldPosition[3];
+		for( int vertex = 0; vertex < 6; ++vertex )
+		{
+			const int corner = quadTriangles[vertex];
+			VectorTransform(
+				cache->quadLocal[corner],
+				renderer->m_rgCachedBoneTransform[cache->boneIndex],
+				worldPosition );
+			tri->TexCoord2f( quadUV[corner][0], quadUV[corner][1] );
+			tri->Vertex3fv( worldPosition );
+		}
+	}
+
+	// Keep the mesh-clipped projection as a fallback for models whose hit bone
+	// does not have a usable rigid transform. The normal ragdoll path uses the
+	// local-space quad above to avoid missing wounds on coarse physics contacts.
+	if( !cache->quadValid )
 	for( int fragmentIndex = 0;
 		fragmentIndex < cache->fragmentCount;
 		++fragmentIndex )
@@ -1333,7 +1473,7 @@ static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 		studio_ragdoll_mark_cache_t *cache = StudioFindRagdollMarkCache(
 			entity->index, renderer->m_pRenderModel, boneIndex,
 			rayStart, worldPosition, sourceRadius, bloodColor );
-		if( cache && cache->fragmentCount > 0 )
+		if( cache && ( cache->quadValid || cache->fragmentCount > 0 ) )
 			StudioDrawCachedRagdollMark( renderer, tri, cache );
 	}
 
