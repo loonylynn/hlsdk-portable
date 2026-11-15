@@ -42,6 +42,7 @@
 #include <cfloat>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 extern enginefuncs_t g_engfuncs;
@@ -555,7 +556,7 @@ namespace
 			ALERT(
 				at_console,
 				"[NPC physics] Jolt could not build the native BSP mesh: %s\n",
-				shapeResult.HasError() ? shapeResult.GetError().c_str() : "unknown error"
+				"mesh shape creation failed"
 			);
 			return false;
 		}
@@ -1252,6 +1253,7 @@ void NPCPhysics_ResetMap( void )
 	}
 
 	NPCPhysics_DestroyAllRagdolls();
+	NPCPhysics_DestroyWorldCollider();
 	for( size_t i = 0; i < g_livePoses.size(); ++i )
 	{
 		g_livePoses[i].serialNumber = -1;
