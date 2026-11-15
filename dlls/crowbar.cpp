@@ -21,6 +21,8 @@
 #include "nodes.h"
 #include "player.h"
 #include "gamerules.h"
+
+#include <algorithm>
 #ifndef CLIENT_DLL
 #include "xash_physint.h"
 #endif
