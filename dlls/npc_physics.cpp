@@ -96,6 +96,30 @@ namespace
 		Vec3 localShapeCenter;
 	};
 
+	struct NPCPhysicsBrushModelShape
+	{
+		int modelIndex;
+		Ref<Shape> shape;
+	};
+
+	struct NPCPhysicsBrushCollider
+	{
+		int entityIndex;
+		int modelIndex;
+		BodyID bodyID;
+		Vec3 position;
+		Quat rotation;
+
+		NPCPhysicsBrushCollider()
+			: entityIndex( -1 ),
+			  modelIndex( 0 ),
+			  bodyID(),
+			  position( 0.0f, 0.0f, 0.0f ),
+			  rotation( Quat::sIdentity() )
+		{
+		}
+	};
+
 	struct NPCPhysicsRagdoll
 	{
 		edict_t *entity;
@@ -156,6 +180,10 @@ namespace
 	static int g_msgRagdollPose = 0;
 	static xash_server_physics_api_s *g_serverPhysicsAPI = NULL;
 	static xash_world_collision_mesh_api_s *g_worldCollisionMeshAPI = NULL;
+	static xash_brush_collision_mesh_api_s *g_brushCollisionMeshAPI = NULL;
+	static std::vector<NPCPhysicsBrushModelShape> g_brushModelShapes;
+	static std::vector<NPCPhysicsBrushCollider> g_brushColliders;
+	static bool g_brushCollisionUnavailableLogged = false;
 	static BodyID g_worldCollisionBodyID;
 	static Ref<Shape> g_worldCollisionShape;
 	static bool g_worldCollisionReady = false;
@@ -501,6 +529,247 @@ namespace
 		return true;
 	}
 
+	static void NPCPhysics_DestroyBrushCollider( NPCPhysicsBrushCollider &collider )
+	{
+		if( !g_npcPhysics.initialized || collider.bodyID.IsInvalid() )
+			return;
+
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		if( bodyInterface.IsAdded( collider.bodyID ) )
+			bodyInterface.RemoveBody( collider.bodyID );
+		bodyInterface.DestroyBody( collider.bodyID );
+		collider.bodyID = BodyID();
+	}
+
+	static void NPCPhysics_DestroyBrushColliders()
+	{
+		for( size_t i = 0; i < g_brushColliders.size(); ++i )
+			NPCPhysics_DestroyBrushCollider( g_brushColliders[i] );
+		g_brushColliders.clear();
+		g_brushModelShapes.clear();
+	}
+
+	static int NPCPhysics_FindBrushCollider( int entityIndex )
+	{
+		for( size_t i = 0; i < g_brushColliders.size(); ++i )
+			if( g_brushColliders[i].entityIndex == entityIndex )
+				return static_cast<int>( i );
+		return -1;
+	}
+
+	static Ref<Shape> NPCPhysics_GetBrushModelShape( int modelIndex )
+	{
+		for( size_t i = 0; i < g_brushModelShapes.size(); ++i )
+			if( g_brushModelShapes[i].modelIndex == modelIndex )
+				return g_brushModelShapes[i].shape;
+
+		if( !g_brushCollisionMeshAPI || !g_brushCollisionMeshAPI->GetMeshInfo ||
+			!g_brushCollisionMeshAPI->GetMeshData )
+			return Ref<Shape>();
+
+		uint32_t vertexCount = 0;
+		uint32_t indexCount = 0;
+		if( !g_brushCollisionMeshAPI->GetMeshInfo( modelIndex, &vertexCount, &indexCount ) ||
+			vertexCount < 3 || indexCount < 3 || ( indexCount % 3 ) != 0 ||
+			vertexCount > 500000u || indexCount > 3000000u )
+			return Ref<Shape>();
+
+		std::vector<float> sourceVertices( static_cast<size_t>( vertexCount ) * 3 );
+		std::vector<uint32_t> sourceIndices( indexCount );
+		if( !g_brushCollisionMeshAPI->GetMeshData(
+			modelIndex,
+			sourceVertices.data(),
+			vertexCount,
+			sourceIndices.data(),
+			indexCount ) )
+			return Ref<Shape>();
+
+		VertexList vertices;
+		IndexedTriangleList triangles;
+		vertices.reserve( vertexCount );
+		triangles.reserve( indexCount / 3 );
+
+		for( uint32_t i = 0; i < vertexCount; ++i )
+		{
+			const float x = sourceVertices[i * 3 + 0];
+			const float y = sourceVertices[i * 3 + 1];
+			const float z = sourceVertices[i * 3 + 2];
+			if( !std::isfinite( x ) || !std::isfinite( y ) || !std::isfinite( z ) )
+				return Ref<Shape>();
+			vertices.emplace_back( x, y, z );
+		}
+
+		for( uint32_t i = 0; i < indexCount; i += 3 )
+		{
+			const uint32_t i0 = sourceIndices[i + 0];
+			const uint32_t i1 = sourceIndices[i + 1];
+			const uint32_t i2 = sourceIndices[i + 2];
+			if( i0 >= vertexCount || i1 >= vertexCount || i2 >= vertexCount )
+				return Ref<Shape>();
+			triangles.emplace_back( i0, i1, i2, 0 );
+		}
+
+		MeshShapeSettings meshSettings( std::move( vertices ), std::move( triangles ) );
+		meshSettings.mMaxTrianglesPerLeaf = 8;
+		meshSettings.mBuildQuality = MeshShapeSettings::EBuildQuality::FavorRuntimePerformance;
+
+		Shape::ShapeResult shapeResult = meshSettings.Create();
+		if( !shapeResult.IsValid() )
+		{
+			ALERT(
+				at_console,
+				"[NPC physics] Jolt could not build inline brush model %d collision mesh.\\n",
+				modelIndex
+			);
+			return Ref<Shape>();
+		}
+
+		NPCPhysicsBrushModelShape cachedShape;
+		cachedShape.modelIndex = modelIndex;
+		cachedShape.shape = shapeResult.Get();
+		g_brushModelShapes.push_back( cachedShape );
+
+		ALERT(
+			at_console,
+			"[NPC physics] Cached inline brush model %d: %u vertices, %u triangles.\\n",
+			modelIndex,
+			vertexCount,
+			indexCount / 3
+		);
+		return cachedShape.shape;
+	}
+
+	static bool NPCPhysics_QuaternionsDiffer( const Quat &a, const Quat &b )
+	{
+		const float epsilon = 0.0001f;
+		return fabsf( a.GetX() - b.GetX() ) > epsilon ||
+			fabsf( a.GetY() - b.GetY() ) > epsilon ||
+			fabsf( a.GetZ() - b.GetZ() ) > epsilon ||
+			fabsf( a.GetW() - b.GetW() ) > epsilon;
+	}
+
+	static void NPCPhysics_UpdateBrushColliders()
+	{
+		if( !g_npcPhysics.initialized || !g_brushCollisionMeshAPI ||
+			g_brushCollisionMeshAPI->version != XASH_BRUSH_COLLISION_MESH_API_VERSION ||
+			!g_brushCollisionMeshAPI->GetEntityCount ||
+			!g_brushCollisionMeshAPI->GetEntityInfo )
+		{
+			if( !g_brushCollisionUnavailableLogged )
+			{
+				ALERT(
+					at_console,
+					"[NPC physics] Inline BSP entity collision API is unavailable; func_wall and other brush entities will not collide.\\n"
+				);
+				g_brushCollisionUnavailableLogged = true;
+			}
+			return;
+		}
+
+		const int entityCount = g_brushCollisionMeshAPI->GetEntityCount();
+		if( entityCount < 0 || entityCount > 8192 )
+			return;
+
+		std::vector<int> presentEntities;
+		presentEntities.reserve( entityCount );
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		float deltaTime = gpGlobals ? gpGlobals->frametime : ( 1.0f / 60.0f );
+		if( deltaTime < 0.001f || deltaTime > 0.1f )
+			deltaTime = 1.0f / 60.0f;
+
+		for( int ordinal = 0; ordinal < entityCount; ++ordinal )
+		{
+			xash_brush_collision_entity_s entityInfo;
+			if( !g_brushCollisionMeshAPI->GetEntityInfo( ordinal, &entityInfo ) ||
+				entityInfo.entityIndex <= 0 || entityInfo.modelIndex <= 1 )
+				continue;
+
+			const Vec3 position(
+				entityInfo.origin[0], entityInfo.origin[1], entityInfo.origin[2] );
+			const Quat rotation = NPCPhysics_AnglesToQuaternion( ::Vector(
+				entityInfo.angles[0], entityInfo.angles[1], entityInfo.angles[2] ) );
+			if( !std::isfinite( position.GetX() ) ||
+				!std::isfinite( position.GetY() ) ||
+				!std::isfinite( position.GetZ() ) )
+				continue;
+
+			Ref<Shape> shape = NPCPhysics_GetBrushModelShape( entityInfo.modelIndex );
+			if( !shape.GetPtr() )
+				continue;
+
+			presentEntities.push_back( entityInfo.entityIndex );
+			int colliderIndex = NPCPhysics_FindBrushCollider( entityInfo.entityIndex );
+			if( colliderIndex >= 0 &&
+				g_brushColliders[colliderIndex].modelIndex != entityInfo.modelIndex )
+			{
+				NPCPhysics_DestroyBrushCollider( g_brushColliders[colliderIndex] );
+				g_brushColliders.erase( g_brushColliders.begin() + colliderIndex );
+				colliderIndex = -1;
+			}
+
+			if( colliderIndex < 0 )
+			{
+				BodyCreationSettings bodySettings(
+					shape.GetPtr(),
+					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
+					rotation,
+					EMotionType::Kinematic,
+					RAGDOLL_OBJECT_LAYER
+				);
+				bodySettings.mFriction = 0.9f;
+				bodySettings.mRestitution = 0.0f;
+
+				const BodyID bodyID = bodyInterface.CreateAndAddBody(
+					bodySettings,
+					EActivation::Activate
+				);
+				if( bodyID.IsInvalid() )
+				{
+					ALERT(
+						at_console,
+						"[NPC physics] Could not create inline brush collider for entity %d.\\n",
+						entityInfo.entityIndex
+					);
+					continue;
+				}
+
+				NPCPhysicsBrushCollider collider;
+				collider.entityIndex = entityInfo.entityIndex;
+				collider.modelIndex = entityInfo.modelIndex;
+				collider.bodyID = bodyID;
+				collider.position = position;
+				collider.rotation = rotation;
+				g_brushColliders.push_back( collider );
+				continue;
+			}
+
+			NPCPhysicsBrushCollider &collider = g_brushColliders[colliderIndex];
+			const Vec3 positionDelta = position - collider.position;
+			if( positionDelta.LengthSq() > 0.0001f ||
+				NPCPhysics_QuaternionsDiffer( rotation, collider.rotation ) )
+			{
+				bodyInterface.MoveKinematic(
+					collider.bodyID,
+					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
+					rotation,
+					deltaTime
+				);
+				collider.position = position;
+				collider.rotation = rotation;
+			}
+		}
+
+		for( size_t i = g_brushColliders.size(); i > 0; --i )
+		{
+			const int entityIndex = g_brushColliders[i - 1].entityIndex;
+			if( std::find( presentEntities.begin(), presentEntities.end(), entityIndex ) == presentEntities.end() )
+			{
+				NPCPhysics_DestroyBrushCollider( g_brushColliders[i - 1] );
+				g_brushColliders.erase( g_brushColliders.begin() + ( i - 1 ) );
+			}
+		}
+	}
+
 	static bool NPCPhysics_NameEquals( const char *a, const char *b )
 	{
 		if( !a || !b ) return false;
@@ -538,6 +807,7 @@ namespace
 			return NPCPhysics_RagdollSetupFailed( "engine bone-position callback is missing" );
 		if( !NPCPhysics_EnsureWorldCollider() )
 			return false;
+		NPCPhysics_UpdateBrushColliders();
 
 		studiohdr_t *header = NULL;
 		if( !NPCPhysics_GetStudioHeader( ent, &header, true ) )
@@ -1028,6 +1298,8 @@ namespace
 			gravity = 800.0f;
 		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -gravity ) );
 
+		NPCPhysics_UpdateBrushColliders();
+
 		float frameTime = gpGlobals->frametime;
 		if( frameTime < 0.0f )
 			frameTime = 0.0f;
@@ -1110,6 +1382,8 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
 	g_worldCollisionMeshAPI = NULL;
+	g_brushCollisionMeshAPI = NULL;
+	g_brushCollisionUnavailableLogged = false;
 	if( g_serverPhysicsAPI->pfnGetNativeObject )
 	{
 		g_worldCollisionMeshAPI = reinterpret_cast<xash_world_collision_mesh_api_s *>(
@@ -1119,6 +1393,17 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 			( g_worldCollisionMeshAPI->version != XASH_WORLD_COLLISION_MESH_API_VERSION ||
 			  !g_worldCollisionMeshAPI->GetMeshInfo || !g_worldCollisionMeshAPI->GetMeshData ) )
 			g_worldCollisionMeshAPI = NULL;
+
+		g_brushCollisionMeshAPI = reinterpret_cast<xash_brush_collision_mesh_api_s *>(
+			g_serverPhysicsAPI->pfnGetNativeObject( "xash_brush_collision_mesh_v1" )
+		);
+		if( g_brushCollisionMeshAPI &&
+			( g_brushCollisionMeshAPI->version != XASH_BRUSH_COLLISION_MESH_API_VERSION ||
+			  !g_brushCollisionMeshAPI->GetEntityCount ||
+			  !g_brushCollisionMeshAPI->GetEntityInfo ||
+			  !g_brushCollisionMeshAPI->GetMeshInfo ||
+			  !g_brushCollisionMeshAPI->GetMeshData ) )
+			g_brushCollisionMeshAPI = NULL;
 	}
 	if( gpGlobals )
 	{
@@ -1154,6 +1439,7 @@ void NPCPhysics_ResetMap( void )
 	}
 
 	NPCPhysics_DestroyAllRagdolls();
+	NPCPhysics_DestroyBrushColliders();
 	NPCPhysics_DestroyWorldCollider();
 	for( size_t i = 0; i < g_livePoses.size(); ++i )
 	{
@@ -1184,6 +1470,8 @@ void NPCPhysics_Shutdown( void )
 
 	g_serverPhysicsAPI = NULL;
 	g_worldCollisionMeshAPI = NULL;
+	g_brushCollisionMeshAPI = NULL;
+	g_brushCollisionUnavailableLogged = false;
 	g_livePoses.clear();
 	g_msgRagdollPose = 0;
 }
