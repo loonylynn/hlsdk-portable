@@ -1886,6 +1886,7 @@ void NPCPhysics_ResetMap( void )
 		g_livePoses[i].positions.clear();
 		g_livePoses[i].rotations.clear();
 	}
+	g_ragdollDefinitionCache.clear();
 	g_npcPhysics.fixedAccumulator = 0.0f;
 }
 
