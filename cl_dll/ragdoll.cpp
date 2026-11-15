@@ -261,7 +261,7 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 		snprintf(
 			message,
 			sizeof( message ),
-			"[NPC ragdoll] Snapshot complete for entity %d, ID %d (%d/%d bodies).\\n",
+			"[NPC ragdoll] Snapshot complete for entity %d, ID %d (%d/%d bodies).\n",
 			entityIndex,
 			ragdollID,
 			entry.receivedBodyCount,
@@ -286,7 +286,7 @@ void Ragdoll_DebugRenderGate( int entityIndex, int ragdollMarker, int hardwareRe
 	snprintf(
 		message,
 		sizeof( message ),
-		"[NPC ragdoll] Render gate entity %d, ID %d: marker=%d hardware=%d bodies=%d/%d complete=%d age=%.3f.\\n",
+		"[NPC ragdoll] Render gate entity %d, ID %d: marker=%d hardware=%d bodies=%d/%d complete=%d age=%.3f.\n",
 		entityIndex,
 		entry.ragdollID,
 		ragdollMarker,
