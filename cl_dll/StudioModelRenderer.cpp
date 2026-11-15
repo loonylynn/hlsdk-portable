@@ -1026,7 +1026,7 @@ static void StudioDrawCachedRagdollMark(
 						worldTriangle[0][axis] * bary[0] +
 						worldTriangle[1][axis] * bary[1] +
 						worldTriangle[2][axis] * bary[2] +
-						normal[axis] * 0.025f;
+						normal[axis] * 0.08f;
 				}
 				tri->TexCoord2f(
 					fragment.uv[polygonIndex][0],
