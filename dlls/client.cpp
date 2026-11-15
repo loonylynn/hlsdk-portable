@@ -1249,6 +1249,11 @@ int AddToFullPack( struct entity_state_s *state, int e, edict_t *ent, edict_t *h
 
 	state->modelindex = ent->v.modelindex;
 
+	// Carry the non-player user tag used to identify client-side Jolt ragdolls.
+	// The ragdoll pose itself remains in the RagdollPose user message.
+	if( !player )
+		state->iuser4 = ent->v.iuser4;
+
 	state->frame = ent->v.frame;
 
 	state->skin = ent->v.skin;
