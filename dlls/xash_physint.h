@@ -91,6 +91,31 @@ struct xash_server_physics_api_s
 	xash_get_native_object_fn pfnGetNativeObject;
 };
 
+#define XASH_BRUSH_COLLISION_MESH_API_VERSION 1
+
+struct xash_brush_collision_entity_s
+{
+	int entityIndex;
+	int modelIndex;
+	float origin[3];
+	float angles[3];
+};
+
+struct xash_brush_collision_mesh_api_s
+{
+	int version;
+	int (*GetEntityCount)( void );
+	int (*GetEntityInfo)( int ordinal, xash_brush_collision_entity_s *info );
+	int (*GetMeshInfo)( int modelIndex, uint32_t *vertexCount, uint32_t *indexCount );
+	int (*GetMeshData)(
+		int modelIndex,
+		float *vertices,
+		uint32_t vertexCapacity,
+		uint32_t *indices,
+		uint32_t indexCapacity
+	);
+};
+
 struct xash_world_collision_mesh_api_s
 {
 	int version;
