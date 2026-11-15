@@ -96,21 +96,21 @@ def parse_smd(path: Path) -> SMDData:
     nodes_end = next((i for i in range(nodes_start + 1, len(lines))
                       if lines[i].strip().lower() == "end"), None)
     if nodes_end is None:
-        raise ValueError("{}: unterminated nodes section".format(source_path))
+        raise ValueError("{}: unterminated nodes section".format(path))
 
     nodes: Dict[int, BoneNode] = {}
     folded_names: Dict[str, int] = {}
     for line_number, line in enumerate(lines[nodes_start + 1:nodes_end], nodes_start + 2):
         if not line.strip():
             continue
-        parts = _tokens(line, "{}:{}".format(source_path, line_number))
+        parts = _tokens(line, "{}:{}".format(path, line_number))
         if len(parts) != 3:
-            raise ValueError("{}:{}: expected '<index> \"<bone name>\" <parent>'".format(source_path, line_number))
+            raise ValueError("{}:{}: expected '<index> \"<bone name>\" <parent>'".format(path, line_number))
         try:
             index = int(parts[0], 10)
             parent = int(parts[2], 10)
         except ValueError as exc:
-            raise ValueError("{}:{}: invalid bone index/parent".format(source_path, line_number)) from exc
+            raise ValueError("{}:{}: invalid bone index/parent".format(path, line_number)) from exc
         name = parts[1]
         if index in nodes:
             raise ValueError("{}:{}: duplicate bone index {}".format(path, line_number, index))
@@ -121,7 +121,7 @@ def parse_smd(path: Path) -> SMDData:
         folded_names[folded] = index
 
     if not nodes:
-        raise ValueError("{}: nodes section is empty".format(source_path))
+        raise ValueError("{}: nodes section is empty".format(path))
     for node in nodes.values():
         if node.parent != -1 and node.parent not in nodes:
             raise ValueError("{}: bone {!r} refers to missing parent index {}".format(
@@ -130,7 +130,7 @@ def parse_smd(path: Path) -> SMDData:
     skeleton_start = section_index("skeleton")
     triangles_start = section_index("triangles")
     if triangles_start <= skeleton_start:
-        raise ValueError("{}: triangles section appears before skeleton".format(source_path))
+        raise ValueError("{}: triangles section appears before skeleton".format(path))
 
     frames: Dict[int, Dict[int, Tuple[float, float, float, float, float, float]]] = {}
     frame_index: Optional[int] = None
@@ -143,26 +143,26 @@ def parse_smd(path: Path) -> SMDData:
             try:
                 frame_index = int(parts[1], 10)
             except ValueError as exc:
-                raise ValueError("{}:{}: invalid skeleton frame".format(source_path, line_number)) from exc
+                raise ValueError("{}:{}: invalid skeleton frame".format(path, line_number)) from exc
             frames.setdefault(frame_index, {})
             continue
         if frame_index is None:
             continue
         if len(parts) != 7:
-            raise ValueError("{}:{}: expected bone index and six transform values".format(source_path, line_number))
+            raise ValueError("{}:{}: expected bone index and six transform values".format(path, line_number))
         try:
             bone_index = int(parts[0], 10)
         except ValueError as exc:
-            raise ValueError("{}:{}: invalid skeleton bone index".format(source_path, line_number)) from exc
+            raise ValueError("{}:{}: invalid skeleton bone index".format(path, line_number)) from exc
         if bone_index not in nodes:
             raise ValueError("{}:{}: skeleton references unknown bone {}".format(path, line_number, bone_index))
-        values = tuple(_finite_float(value, "{}:{}".format(source_path, line_number)) for value in parts[1:])
+        values = tuple(_finite_float(value, "{}:{}".format(path, line_number)) for value in parts[1:])
         if bone_index in frames[frame_index]:
             raise ValueError("{}:{}: duplicate transform for bone {}".format(path, line_number, bone_index))
         frames[frame_index][bone_index] = values  # type: ignore[assignment]
 
     if not frames:
-        raise ValueError("{}: skeleton contains no time frame".format(source_path))
+        raise ValueError("{}: skeleton contains no time frame".format(path))
     # Prefer the conventional reference frame 0. Some compiled ragdoll SMDs
     # contain only time 1; in that case use their first (lowest) frame.
     selected_frame = 0 if 0 in frames else min(frames)
@@ -181,7 +181,7 @@ def parse_smd(path: Path) -> SMDData:
             continue
         try:
             bone_index = int(parts[0], 10)
-            xyz = tuple(_finite_float(value, "{}:{}".format(source_path, line_number)) for value in parts[1:4])
+            xyz = tuple(_finite_float(value, "{}:{}".format(path, line_number)) for value in parts[1:4])
         except ValueError:
             continue
         if bone_index not in nodes:
@@ -190,7 +190,7 @@ def parse_smd(path: Path) -> SMDData:
         vertices.setdefault(bone_index, []).append(xyz)  # type: ignore[arg-type]
 
     if not vertices:
-        raise ValueError("{}: triangles section contains no valid SMD vertices".format(source_path))
+        raise ValueError("{}: triangles section contains no valid SMD vertices".format(path))
     return SMDData(nodes=nodes, pose=pose, vertices=vertices)
 
 
@@ -222,11 +222,11 @@ def _find_collisionjoints_sources(path: Path, visiting: Optional[set] = None):
         found = [(path, match) for match in matches]
 
         for line_number, line in enumerate(source.splitlines(), 1):
-            parts = _tokens(line, "{}:{}".format(source_path, line_number))
+            parts = _tokens(line, "{}:{}".format(path, line_number))
             if not parts or parts[0].lower() != "$include":
                 continue
             if len(parts) != 2:
-                raise ValueError("{}:{}: $include expects exactly one file path".format(source_path, line_number))
+                raise ValueError("{}:{}: $include expects exactly one file path".format(path, line_number))
             include_path = (path.parent / parts[1]).resolve()
             if not include_path.is_file():
                 raise ValueError("{}:{}: included file '{}' does not exist".format(
@@ -240,7 +240,7 @@ def _find_collisionjoints_sources(path: Path, visiting: Optional[set] = None):
 def parse_qci(path: Path) -> QCIData:
     sources = _find_collisionjoints_sources(path)
     if not sources:
-        raise ValueError("{}: could not find a '$collisionjoints name { ... }' block in this file or its $include files".format(source_path))
+        raise ValueError("{}: could not find a '$collisionjoints name { ... }' block in this file or its $include files".format(path))
     if len(sources) != 1:
         locations = ", ".join("{} ({})".format(source_path, match.start() + 1)
                               for source_path, match in sources)
@@ -281,7 +281,7 @@ def parse_qci(path: Path) -> QCIData:
         elif directive == "$jointconstrain":
             if len(parts) != 6 or parts[3].lower() != "limit":
                 raise ValueError("{}:{}: expected '$jointconstrain \"bone\" <x|y|z> limit <min> <max>'".format(
-                    path, line_number))
+                    source_path, line_number))
             bone_key = parts[1].casefold()
             axis = parts[2].lower()
             if axis not in ("x", "y", "z"):
