@@ -218,6 +218,7 @@ static const NPCZombieRagdollBodyDefinition g_npcZombieRagdollBodies[] = {
 };
 static const int NPC_ZOMBIE_RAGDOLL_BODY_COUNT = 15;
 static const float NPC_ZOMBIE_RAGDOLL_TOTAL_MASS = 115.0f;
+static const float NPC_ZOMBIE_RAGDOLL_INERTIA_MULTIPLIER = 10.0f;
 static const float NPC_ZOMBIE_RAGDOLL_LINEAR_DAMPING = 0.01f;
 static const float NPC_ZOMBIE_RAGDOLL_ANGULAR_DAMPING = 1.50f;
 #endif
