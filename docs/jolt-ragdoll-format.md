@@ -101,3 +101,15 @@ rather than assuming every snapshot is exactly 50 ms apart. Its stale-pose
 timeout allows for the slower sleeping heartbeat and occasional packet loss.
 This changes network traffic only; it does not lower the Jolt simulation rate
 or alter the physical behavior of the ragdoll.
+
+
+## Weapon impacts
+
+Player and monster hitscan bullets and the crowbar query the Jolt collision world
+against the articulated ragdoll bodies. A confirmed hit applies an impulse at the
+actual hit point on the contacted body, so off-center hits can rotate the limb or
+body as well as move it. The Jolt query is limited by the original GoldSrc trace
+fraction and also sees the Jolt BSP/brush colliders, preventing impacts through
+nearer world geometry. The hit position is returned to the weapon trace so bullet
+tracers and hit handling stop at the ragdoll. Living NPCs continue using the
+original GoldSrc damage and collision path.
