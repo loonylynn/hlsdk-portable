@@ -56,13 +56,3 @@ extern "C" void DLLEXPORT EXPORT2 GiveFnptrsToDll( enginefuncs_t *pengfuncsFromE
 	gpGlobals = pGlobals;
 }
 
-// Xash3D looks up this exact export when initializing the extended server
-// physics interface. Without it, the SDK's SV_PhysicsEntity/SV_EndFrame
-// callbacks are never installed, even though NPCPhysics_GetInterface exists.
-extern "C" int DLLEXPORT EXPORT2 Server_GetPhysicsInterface(
-	int version,
-	void *serverAPI,
-	void *callbacks )
-{
-	return NPCPhysics_GetInterface( version, serverAPI, callbacks );
-}
