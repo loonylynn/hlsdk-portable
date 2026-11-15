@@ -1,7 +1,7 @@
-# Authoring Jolt ragdolls from SMD/QCI
+# Authoring Jolt ragdolls from SMD/QC/QCI
 
 ```text
-SMD collision mesh + QC/QCI $collisionjoints block
+Model QC + recursive $include chain + collision SMD
                     |
                     v
              tools/smd2jrag.py
@@ -18,13 +18,27 @@ library; it does not need Blender, `studiomdl`, SciPy, or a rebuild of the SDK.
 
 ## Convert the existing zombie ragdoll
 
-The converter reads the collision mesh named by `$collisionjoints` in the QCI.
+The converter accepts either a model `.qc` or a standalone `.qci`.
+When given a model QC, it follows nested `$include "file.qci"` directives
+recursively until it finds the single `$collisionjoints` block. Include paths
+are resolved relative to the file containing each directive. The collision SMD
+is then resolved relative to the QC/QCI file containing that block.
+
 For the current source, `$collisionjoints ragdoll` resolves to `ragdoll.smd`
-beside `ragdoll.qci`, so `--smd` is optional:
+beside `ragdoll.qci`. A quoted SMD path such as
+`$collisionjoints "collision/ragdoll.smd"` is also accepted. The `.smd`
+extension is not appended twice, so `--smd` is optional:
 
 ```bash
 cd ~/hlsdk-portable
 
+python3 tools/smd2jrag.py /path/to/model/model.qc \
+    --output assets/valve/models/zombie.jrag
+```
+
+A standalone QCI invocation remains supported:
+
+```bash
 python3 tools/smd2jrag.py /path/to/private/ragdoll.qci \
     -o assets/valve/models/zombie.jrag
 ```
@@ -59,7 +73,7 @@ vertices grouped by their assigned bone. SMD Euler rotations are composed as
 `Rz * Ry * Rx`. Vertices are transformed from model space into each collision
 bone's local space before the center offset and hull points are written.
 
-From the QCI `$collisionjoints` block it reads:
+From the resolved QCI `$collisionjoints` block it reads:
 
 - `$mass`, `$inertia`, `$damping`, and `$rotdamping`
 - `$rootbone`
