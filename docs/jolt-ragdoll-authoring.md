@@ -65,6 +65,25 @@ install -Dm644 assets/valve/models/zombie.jrag "$GAME/models/zombie.jrag"
 
 Restart the map (or game) so the server's per-map definition cache is cleared.
 
+## Adding another NPC
+
+The runtime handoff is model-driven, not class-name-driven. For a monster using
+`models/creatures/headcrab.mdl`, place its definition at
+`models/creatures/headcrab.jrag`. The shared `CBaseMonster::Killed` path
+attempts Jolt handoff for non-gib monster deaths; it no longer checks for the
+`monster_zombie` classname.
+
+A valid definition must map every authored physical bone to the model's studio
+skeleton and preserve the nearest physical-ancestor hierarchy. If the sidecar is
+missing, malformed, or incompatible with that model, Jolt does not take over:
+the original GoldSrc death animation/corpse behavior remains in control.
+Living NPCs continue to use GoldSrc AI, movement, and collision. Jolt only owns
+the entity after a successful death-time handoff.
+
+For diagnosis, the server prints a `[NPC physics] Loaded '...'` message when a
+sidecar is first loaded. A missing or invalid definition is reported when that
+NPC dies, and the failure is cached for the rest of the map.
+
 ## What the converter reads
 
 From the SMD it reads the node hierarchy, the first reference skeleton frame
