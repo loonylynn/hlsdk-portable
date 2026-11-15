@@ -914,11 +914,14 @@ namespace
 			// rather than the old zero-width center ray.
 			if( trace.startsolid || trace.allsolid )
 			{
+				// Begin well above the current body. A small offset can still
+				// start inside the BSP when the first pose was already deeply
+				// embedded; the 64-unit margin lets the full hull find the floor.
 				const float recoveryStart[3] = {
-					end[0], end[1], end[2] + worldHalfExtents.GetZ() + 4.0f
+					end[0], end[1], end[2] + worldHalfExtents.GetZ() + 64.0f
 				};
 				const float recoveryEnd[3] = {
-					end[0], end[1], end[2] - worldHalfExtents.GetZ() - 4.0f
+					end[0], end[1], end[2] - worldHalfExtents.GetZ() - 64.0f
 				};
 				xash_trace_t recoveryTrace = g_serverPhysicsAPI->pfnTraceNoEnts(
 					recoveryStart, mins, maxs, recoveryEnd, 0, ragdoll.entity
