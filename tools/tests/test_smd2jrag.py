@@ -110,12 +110,24 @@ class SMDToJRAGTests(unittest.TestCase):
             smd2jrag.render_jrag(qci, bodies, restitution=1.1)
 
     def test_parent_mapping_uses_nearest_physical_ancestor(self):
-        # The basic test already has two intermediate bones between rootbone
-        # and physical body. Its root body correctly has no physical parent.
         smd = smd2jrag.parse_smd(self.smd)
         qci = smd2jrag.parse_qci(self.qci)
+
+        # Give the helper bone its own cube. Bone 2 is a child of bone 1 in
+        # the studio skeleton, so it must attach to physical body 0 rather
+        # than to the non-physical $rootbone or a studio-only intermediary.
+        local = [
+            (-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1),
+            (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1),
+        ]
+        smd.vertices[1] = [(-p[1] + 2, p[0], p[2]) for p in local]
+
         bodies = smd2jrag.build_bodies(smd, qci)
+        self.assertEqual(len(bodies), 2)
+        self.assertEqual(bodies[0].name, "Bip01 Helper")
         self.assertEqual(bodies[0].parent_index, -1)
+        self.assertEqual(bodies[1].name, "Bip01 L Leg")
+        self.assertEqual(bodies[1].parent_index, 0)
 
 
 if __name__ == "__main__":
