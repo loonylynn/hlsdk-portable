@@ -1393,10 +1393,13 @@ void CStudioModelRenderer::StudioSetupBones( void )
 	// leaves children composed against the old walking-pose parent matrix.
 	const int ragdollMarker = m_pCurrentEntity->curstate.iuser4;
 	const int ragdollEntityIndex = m_pCurrentEntity->index;
+	// The custom snapshot stream is authoritative. Entity-state user fields
+	// are not guaranteed to survive every save/protocol path, so do not gate
+	// the pose on curstate.iuser4. Ragdoll_GetBoneTransform verifies that this
+	// entity has a complete, fresh snapshot before overriding any bone.
 	const qboolean useRagdollPose =
 		IEngineStudio.IsHardware() &&
-		ragdollEntityIndex > 0 &&
-		ragdollMarker == 1;
+		ragdollEntityIndex > 0;
 	float ragdollTransform[3][4];
 
 	if( ragdollEntityIndex > 0 )
@@ -1409,7 +1412,7 @@ void CStudioModelRenderer::StudioSetupBones( void )
 	for( i = 0; i < m_pStudioHeader->numbones; i++ )
 	{
 		if( useRagdollPose &&
-			Ragdoll_GetBoneTransform( ragdollEntityIndex, ragdollMarker, i, ragdollTransform ) )
+			Ragdoll_GetBoneTransform( ragdollEntityIndex, i, ragdollTransform ) )
 		{
 			MatrixCopy( ragdollTransform, (*m_pbonetransform)[i] );
 			MatrixCopy( ragdollTransform, (*m_plighttransform)[i] );
