@@ -218,7 +218,7 @@ int CCrowbar::Swing( int fFirst )
 		0.0f, CVAR_GET_FLOAT( "sv_npc_vphysics_crowbar_scale" ) );
 	if( NPCPhysics_TraceAndApplyImpact(
 		&vecSrc[0], &vecEnd[0], tr.flFraction,
-		impactDamage * 65.0f * crowbarImpactScale,
+		impactDamage * 75.0f * 4.0f * crowbarImpactScale,
 		&hitFraction, hitPosition, &hitEntity ) )
 	{
 		tr.flFraction = hitFraction;
