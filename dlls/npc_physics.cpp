@@ -1175,7 +1175,10 @@ namespace
 	static bool NPCPhysics_CreateRagdoll( edict_t *ent )
 	{
 		if( !ent || ent->free )
-			return NPCPhysics_RagdollSetupFailed( "zombie entity is invalid" );
+			return NPCPhysics_RagdollSetupFailed( "NPC entity is invalid" );
+		const NPCPhysicsRagdollDefinition *physicsDefinition = NPCPhysics_GetRagdollDefinition( ent );
+		if( !physicsDefinition )
+			return false;
 		if( !NPCPhysics_Initialize() )
 			return NPCPhysics_RagdollSetupFailed( "Jolt initialization failed" );
 		if( g_msgRagdollPose <= 0 )
@@ -1215,88 +1218,104 @@ namespace
 			boneRotations[i] = NPCPhysics_AnglesToQuaternion( boneAngles[i] );
 		}
 
-		// Resolve the authored SMD rig by name rather than assuming compiled MDL indices.
-		std::vector<int> rigStudioBones( NPC_ZOMBIE_RAGDOLL_BODY_COUNT, -1 );
+		// Resolve the model-specific physical rig by bone name. The file's
+		// physical hierarchy is independent of compiled MDL bone indices.
+		ragdoll.bodyCount = static_cast<int>( physicsDefinition->bodies.size() );
+		if( ragdoll.bodyCount < 1 || ragdoll.bodyCount > RAGDOLL_DEFINITION_MAX_BODIES )
+			return NPCPhysics_RagdollSetupFailed( "loaded ragdoll definition has an invalid body count" );
+
+		std::vector<int> rigStudioBones( ragdoll.bodyCount, -1 );
 		std::vector<int> studioBoneToRig( ragdoll.studioBoneCount, -1 );
-		for( int body = 0; body < NPC_ZOMBIE_RAGDOLL_BODY_COUNT; ++body )
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
-			const char *requiredName = g_npcZombieRagdollBodies[body].boneName;
+			const NPCPhysicsRagdollBodyDefinition &bodyDefinition = physicsDefinition->bodies[body];
+			const char *requiredName = bodyDefinition.boneName.c_str();
 			for( int studio = 0; studio < ragdoll.studioBoneCount; ++studio )
 				if( NPCPhysics_NameEquals( studioBones[studio].name, requiredName ) )
 				{
 					if( rigStudioBones[body] >= 0 )
-						return NPCPhysics_RagdollSetupFailed( "duplicate names for an authored zombie physics bone" );
+						return NPCPhysics_RagdollSetupFailed( "model contains duplicate names for a physical bone" );
 					rigStudioBones[body] = studio;
 				}
 			if( rigStudioBones[body] < 0 )
 			{
-				ALERT( at_console, "[NPC physics] Ragdoll setup failed: authored physics bone '%s' is missing from the zombie MDL.\n", requiredName );
+				ALERT(
+					at_console,
+					"[NPC physics] Ragdoll setup failed: physics bone '%s' is missing from model '%s'.\n",
+					requiredName,
+					STRING( ent->v.model )
+				);
 				return false;
 			}
 			studioBoneToRig[rigStudioBones[body]] = body;
 		}
 
-		// Verify that the compiled studio hierarchy still has the SMD's physical ancestry.
-		for( int body = 0; body < NPC_ZOMBIE_RAGDOLL_BODY_COUNT; ++body )
+		// Confirm that the compiled MDL hierarchy agrees with the external rig.
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
-			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
-			if( definition.parentBody >= body || definition.parentBody < -1 )
-				return NPCPhysics_RagdollSetupFailed( "generated zombie rig has an invalid parent-body index" );
+			const NPCPhysicsRagdollBodyDefinition &bodyDefinition = physicsDefinition->bodies[body];
 			int ancestor = studioBones[rigStudioBones[body]].parent;
 			while( ancestor >= 0 && studioBoneToRig[ancestor] < 0 )
 				ancestor = studioBones[ancestor].parent;
 			const int actualParent = ancestor < 0 ? -1 : studioBoneToRig[ancestor];
-			if( actualParent != definition.parentBody )
+			if( actualParent != bodyDefinition.parentBody )
 			{
-				ALERT( at_console, "[NPC physics] Ragdoll setup failed: parent mismatch for authored bone '%s'.\n", definition.boneName );
+				ALERT(
+					at_console,
+					"[NPC physics] Ragdoll setup failed: parent mismatch for physics bone '%s'.\n",
+					bodyDefinition.boneName.c_str()
+				);
 				return false;
 			}
 		}
 
-		ragdoll.bodyCount = NPC_ZOMBIE_RAGDOLL_BODY_COUNT;
 		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
-			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
+			const NPCPhysicsRagdollBodyDefinition &bodyDefinition = physicsDefinition->bodies[body];
 			RagdollBone bone;
 			bone.studioBoneIndex = rigStudioBones[body];
-			bone.parentElementIndex = definition.parentBody;
-			bone.localShapeCenter = Vec3( definition.localShapeCenter.x, definition.localShapeCenter.y, definition.localShapeCenter.z );
+			bone.parentElementIndex = bodyDefinition.parentBody;
+			bone.localShapeCenter = Vec3(
+				bodyDefinition.localShapeCenter.x,
+				bodyDefinition.localShapeCenter.y,
+				bodyDefinition.localShapeCenter.z );
 			ragdoll.bones.push_back( bone );
 			if( bone.parentElementIndex < 0 )
 			{
 				if( ragdoll.rootElement >= 0 )
-					return NPCPhysics_RagdollSetupFailed( "authored zombie rig has multiple root bodies" );
+					return NPCPhysics_RagdollSetupFailed( "external rig has multiple root bodies" );
 				ragdoll.rootElement = body;
 			}
 		}
 		if( ragdoll.rootElement < 0 )
-			return NPCPhysics_RagdollSetupFailed( "authored zombie rig has no root body" );
+			return NPCPhysics_RagdollSetupFailed( "external rig has no root body" );
 
 		const int rootStudioBone = ragdoll.bones[ragdoll.rootElement].studioBoneIndex;
 		ragdoll.entityOriginOffset = ent->v.origin - bonePositions[rootStudioBone];
 
-		// Build Jolt convex hulls from the eight authored vertices for each SMD solid.
+		// Build Jolt convex hulls from the vertices in the runtime definition.
 		std::vector<Ref<Shape> > physicsShapes( ragdoll.bodyCount );
 		std::vector<float> massWeights( ragdoll.bodyCount, 0.0f );
 		float totalWeight = 0.0f;
 		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
-			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
-			if( !definition.points || definition.pointCount < 4 || definition.pointCount > 32 )
-				return NPCPhysics_RagdollSetupFailed( "authored zombie collision hull has an invalid point count" );
-			Vec3 points[32];
-			for( int point = 0; point < definition.pointCount; ++point )
+			const NPCPhysicsRagdollBodyDefinition &bodyDefinition = physicsDefinition->bodies[body];
+			if( bodyDefinition.points.size() < 4 ||
+				bodyDefinition.points.size() > RAGDOLL_DEFINITION_MAX_HULL_POINTS )
+				return NPCPhysics_RagdollSetupFailed( "external collision hull has an invalid point count" );
+			Vec3 points[RAGDOLL_DEFINITION_MAX_HULL_POINTS];
+			for( size_t point = 0; point < bodyDefinition.points.size(); ++point )
 			{
-				const NPCZombieRagdollPoint &p = definition.points[point];
-				if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) )
-					return NPCPhysics_RagdollSetupFailed( "authored zombie hull contains a non-finite vertex" );
+				const NPCPhysicsRagdollPoint &p = bodyDefinition.points[point];
 				points[point] = Vec3( p.x, p.y, p.z );
 			}
-			ConvexHullShapeSettings hullSettings( points, definition.pointCount, 0.05f );
+			ConvexHullShapeSettings hullSettings(
+				points, static_cast<int>( bodyDefinition.points.size() ), 0.05f );
 			Shape::ShapeResult result = hullSettings.Create();
 			if( !result.IsValid() )
 			{
-				ALERT( at_console, "[NPC physics] Ragdoll setup failed: Jolt could not build hull '%s'.\n", definition.boneName );
+				ALERT( at_console, "[NPC physics] Ragdoll setup failed: Jolt could not build hull '%s'.\n",
+					bodyDefinition.boneName.c_str() );
 				return false;
 			}
 			physicsShapes[body] = result.Get();
@@ -1308,19 +1327,17 @@ namespace
 		if( totalWeight <= 0.0001f || !std::isfinite( totalWeight ) )
 			return NPCPhysics_RagdollSetupFailed( "authored zombie hull set has zero combined volume" );
 
-		float totalMass = NPCPhysics_GetCvar( "sv_npc_vphysics_mass", NPC_ZOMBIE_RAGDOLL_TOTAL_MASS );
+		float totalMass = NPCPhysics_GetCvar( "sv_npc_vphysics_mass", 0.0f );
 		if( totalMass <= 0.0f )
-			totalMass = NPC_ZOMBIE_RAGDOLL_TOTAL_MASS;
+			totalMass = physicsDefinition->totalMass;
 		totalMass = std::max( 10.0f, std::min( totalMass, 300.0f ) );
 
 		// Build the reduced physical skeleton and complete compiled studio skeleton.
 		ragdoll.physicsSkeleton = new Skeleton();
 		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
-			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
-			if( definition.parentBody >= body || definition.parentBody < -1 )
-				return NPCPhysics_RagdollSetupFailed( "authored zombie physics skeleton is not parent-first" );
-			ragdoll.physicsSkeleton->AddJoint( definition.boneName, definition.parentBody );
+			const NPCPhysicsRagdollBodyDefinition &bodyDefinition = physicsDefinition->bodies[body];
+			ragdoll.physicsSkeleton->AddJoint( bodyDefinition.boneName.c_str(), bodyDefinition.parentBody );
 		}
 
 		ragdoll.studioSkeleton = new Skeleton();
@@ -1392,7 +1409,7 @@ namespace
 		settings->mParts.resize( ragdoll.bodyCount );
 		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
-			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
+			const NPCPhysicsRagdollBodyDefinition &bodyDefinition = physicsDefinition->bodies[body];
 			const RagdollBone &bone = ragdoll.bones[body];
 			const int studioBone = bone.studioBoneIndex;
 			const Quat rotation = boneRotations[studioBone];
@@ -1410,13 +1427,13 @@ namespace
 			part.mMotionType = EMotionType::Dynamic;
 			part.mObjectLayer = RAGDOLL_OBJECT_LAYER;
 			part.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
-			part.mInertiaMultiplier = NPC_ZOMBIE_RAGDOLL_INERTIA_MULTIPLIER;
+			part.mInertiaMultiplier = physicsDefinition->inertiaMultiplier;
 			part.mMassPropertiesOverride.mMass = std::max( 0.25f, bodyMass );
-			part.mFriction = 0.8f;
-			part.mRestitution = 0.0f;
-			part.mLinearDamping = NPC_ZOMBIE_RAGDOLL_LINEAR_DAMPING;
-			part.mAngularDamping = definition.angularDampingOverride > 0.0f
-				? definition.angularDampingOverride : NPC_ZOMBIE_RAGDOLL_ANGULAR_DAMPING;
+			part.mFriction = physicsDefinition->friction;
+			part.mRestitution = physicsDefinition->restitution;
+			part.mLinearDamping = physicsDefinition->linearDamping;
+			part.mAngularDamping = bodyDefinition.angularDampingOverride > 0.0f
+				? bodyDefinition.angularDampingOverride : physicsDefinition->angularDamping;
 			part.mMaxLinearVelocity = RAGDOLL_VELOCITY_LIMIT;
 			part.mMaxAngularVelocity = RAGDOLL_ANGULAR_VELOCITY_LIMIT;
 			part.mMotionQuality = EMotionQuality::LinearCast;
