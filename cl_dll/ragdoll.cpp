@@ -398,10 +398,11 @@ int Ragdoll_GetImpactMark(
 	float rayStart[3],
 	float worldPosition[3],
 	float *radius,
-	int *bloodColor )
+	int *bloodColor,
+	int *ragdollID )
 {
 	if( !boneIndex || !rayStart || !worldPosition || !radius || !bloodColor ||
-		entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES )
+		!ragdollID || entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES )
 		return 0;
 
 	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
@@ -422,6 +423,7 @@ int Ragdoll_GetImpactMark(
 	memcpy( worldPosition, mark.worldPosition, sizeof( mark.worldPosition ) );
 	*radius = mark.radius;
 	*bloodColor = mark.bloodColor;
+	*ragdollID = entry.ragdollID;
 	return 1;
 }
 
