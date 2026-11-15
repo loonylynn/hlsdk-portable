@@ -110,6 +110,11 @@ typedef struct engine_studio_api_s
 	void		( *StudioSetRenderamt )( int iRenderamt );
 	void		( *StudioSetCullState )( int iCull );
 	void		( *StudioRenderShadow )( int iSprite, float *p1, float *p2, float *p3, float *p4 );
+
+	// Queue a renderer-owned decal projected onto the current studio model.
+	int		( *StudioDecalShoot )( int entityIndex, int ragdollID, int boneIndex,
+					const float *rayStart, const float *impactPosition,
+					float radius, int bloodColor );
 } engine_studio_api_t;
 
 typedef struct server_studio_api_s
