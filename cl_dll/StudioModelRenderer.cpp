@@ -186,9 +186,16 @@ currently skinned mesh, so this code never reads MDL vertex arrays.
 static void StudioPrepareRagdollImpactMarks( CStudioModelRenderer *renderer )
 {
 	cl_entity_t *entity = renderer ? renderer->m_pCurrentEntity : NULL;
-	if( !entity || entity->index <= 0 ||
-		!cl_ragdoll_bloodmarks || cl_ragdoll_bloodmarks->value <= 0.0f ||
-		!IEngineStudio.StudioDecalShoot )
+	if( !entity || entity->index <= 0 )
+		return;
+
+	if( !cl_ragdoll_bloodmarks || cl_ragdoll_bloodmarks->value <= 0.0f )
+	{
+		if( IEngineStudio.StudioClearDecals )
+			IEngineStudio.StudioClearDecals( entity->index );
+		return;
+	}
+	if( !IEngineStudio.StudioDecalShoot )
 		return;
 
 	const int markCount = Ragdoll_GetImpactMarkCount( entity->index );
