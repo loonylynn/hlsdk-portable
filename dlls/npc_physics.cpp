@@ -280,7 +280,7 @@ namespace
 		return result;
 	}
 
-static void NPCPhysics_DestroyRagdoll( NPCPhysicsRagdoll &ragdoll )
+	static void NPCPhysics_DestroyRagdoll( NPCPhysicsRagdoll &ragdoll )
 	{
 		if( ragdoll.physicsRagdoll.GetPtr() )
 		{
@@ -720,9 +720,20 @@ static void NPCPhysics_DestroyRagdoll( NPCPhysicsRagdoll &ragdoll )
 			physicsNeutralModel[body] = studioNeutralModel[ragdoll.bones[body].studioBoneIndex];
 
 		ragdoll.skeletonMapper = new SkeletonMapper();
+		// GoldSrc model compilers can change the capitalization of bone names.
+		// Use the same case-insensitive match as the authored rig resolver.
+		SkeletonMapper::CanMapJoint canMapJoint =
+			[]( const Skeleton *source, int sourceIndex, const Skeleton *target, int targetIndex ) -> bool
+			{
+				return NPCPhysics_NameEquals(
+					source->GetJoint( sourceIndex ).mName.c_str(),
+					target->GetJoint( targetIndex ).mName.c_str() );
+			};
 		ragdoll.skeletonMapper->Initialize(
 			ragdoll.physicsSkeleton.GetPtr(), physicsNeutralModel.data(),
-			ragdoll.studioSkeleton.GetPtr(), studioNeutralModel.data() );
+			ragdoll.studioSkeleton.GetPtr(), studioNeutralModel.data(), canMapJoint );
+		if( ragdoll.skeletonMapper->GetMappings().size() != static_cast<size_t>( ragdoll.bodyCount ) )
+			return NPCPhysics_RagdollSetupFailed( "Jolt could not map every authored zombie body to its studio bone" );
 		ragdoll.skeletonMapper->LockAllTranslations(
 			ragdoll.studioSkeleton.GetPtr(), studioNeutralModel.data() );
 		ragdoll.physicsPoseModelSpace.resize( ragdoll.bodyCount );
@@ -988,6 +999,7 @@ static void NPCPhysics_DestroyRagdoll( NPCPhysicsRagdoll &ragdoll )
 			MESSAGE_END();
 		}
 	}
+
 	static int NPCPhysics_PhysicsEntity( edict_t *ent )
 	{
 		// Capture live animation transforms only. Return 0 so GoldSrc remains the
