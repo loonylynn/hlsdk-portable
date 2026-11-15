@@ -134,11 +134,21 @@ static void Ragdoll_GetInterpolatedBonePose(
 	);
 }
 
+static void Ragdoll_ClearEntity( int entityIndex )
+{
+	if( entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES )
+		return;
+
+	memset( &g_RagdollPoses[entityIndex], 0, sizeof( g_RagdollPoses[entityIndex] ));
+	if( IEngineStudio.StudioClearDecals )
+		IEngineStudio.StudioClearDecals( entityIndex );
+}
+
 void Ragdoll_ClearAll( void )
 {
 	memset( g_RagdollPoses, 0, sizeof( g_RagdollPoses ) );
 	if( IEngineStudio.StudioClearDecals )
-		IEngineStudio.StudioClearDecals();
+		IEngineStudio.StudioClearDecals( 0 );
 }
 
 void Ragdoll_Init( void )
@@ -185,7 +195,7 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 	if( entry.active &&
 		( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT ) )
 	{
-		memset( &entry, 0, sizeof( entry ) );
+		Ragdoll_ClearEntity( entityIndex );
 	}
 
 	if( !entry.active ||
@@ -193,6 +203,8 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 		entry.studioBoneCount != studioBoneCount ||
 		entry.bodyCount != bodyCount )
 	{
+		if( entry.active )
+			Ragdoll_ClearEntity( entityIndex );
 		memset( &entry, 0, sizeof( entry ) );
 		entry.active = true;
 		entry.ragdollID = ragdollID;
@@ -386,7 +398,7 @@ int Ragdoll_GetImpactMarkCount( int entityIndex )
 	const float now = (float)gEngfuncs.GetClientTime();
 	if( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT )
 	{
-		memset( &entry, 0, sizeof( entry ) );
+		Ragdoll_ClearEntity( entityIndex );
 		return 0;
 	}
 
