@@ -88,3 +88,16 @@ the runtime cache is rebuilt. A map reset also discards the cached definitions.
 The current format is a runtime definition, not a parser for Valve QC/QCI source.
 The supplied zombie definition preserves the existing SMD/QCI-derived hulls,
 bone hierarchy, joint limits and mass/damping values.
+
+## Pose replication
+
+Jolt simulation remains fixed-step at 120 Hz. Network pose snapshots are sent at
+20 Hz while any body in a ragdoll is active. Once all bodies have entered Jolt's
+sleeping state, the server sends a complete pose heartbeat at 5 Hz instead.
+If a sleeping ragdoll wakes after an impact, it returns to the 20 Hz update rate.
+
+The client interpolates using the actual interval between received samples,
+rather than assuming every snapshot is exactly 50 ms apart. Its stale-pose
+timeout allows for the slower sleeping heartbeat and occasional packet loss.
+This changes network traffic only; it does not lower the Jolt simulation rate
+or alter the physical behavior of the ragdoll.
