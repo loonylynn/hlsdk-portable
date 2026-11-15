@@ -178,7 +178,7 @@ static qboolean StudioBindBlobShadowTexture( triangleapi_t *tri, int texture )
 ====================
 StudioGetRagdollBloodTexture
 
-Build a small irregular alpha mask for bone-attached impact marks.
+Build a small irregular alpha mask for triangle-clipped studio impact decals.
 The renderer tints this white texture with the model's blood palette.
 ====================
 */
@@ -245,7 +245,7 @@ static qboolean StudioGetRagdollWorldVertex(
 	int vertexIndex,
 	vec3_t worldPosition )
 {
-	if( !renderer || !renderer->m_pStudioHeader || !renderer->m_plighttransform ||
+	if( !renderer || !renderer->m_pStudioHeader || !renderer->m_pbonetransform ||
 		!vertexBones || !vertices ||
 		vertexIndex < 0 || vertexIndex >= renderer->m_pSubModel->numverts )
 		return false;
@@ -256,7 +256,7 @@ static qboolean StudioGetRagdollWorldVertex(
 
 	VectorTransform(
 		vertices[vertexIndex],
-		(*renderer->m_plighttransform)[boneIndex],
+		(*renderer->m_pbonetransform)[boneIndex],
 		worldPosition
 	);
 	return true;
