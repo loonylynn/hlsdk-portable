@@ -585,7 +585,7 @@ namespace
 				}
 			if( rigStudioBones[body] < 0 )
 			{
-				ALERT( at_console, "[NPC physics] Ragdoll setup failed: authored physics bone '%s' is missing from the zombie MDL.\\n", requiredName );
+				ALERT( at_console, "[NPC physics] Ragdoll setup failed: authored physics bone '%s' is missing from the zombie MDL.\n", requiredName );
 				return false;
 			}
 			studioBoneToRig[rigStudioBones[body]] = body;
@@ -603,7 +603,7 @@ namespace
 			const int actualParent = ancestor < 0 ? -1 : studioBoneToRig[ancestor];
 			if( actualParent != definition.parentBody )
 			{
-				ALERT( at_console, "[NPC physics] Ragdoll setup failed: parent mismatch for authored bone '%s'.\\n", definition.boneName );
+				ALERT( at_console, "[NPC physics] Ragdoll setup failed: parent mismatch for authored bone '%s'.\n", definition.boneName );
 				return false;
 			}
 		}
@@ -653,7 +653,7 @@ namespace
 			Shape::ShapeResult result = hullSettings.Create();
 			if( !result.IsValid() )
 			{
-				ALERT( at_console, "[NPC physics] Ragdoll setup failed: Jolt could not build hull '%s'.\\n", definition.boneName );
+				ALERT( at_console, "[NPC physics] Ragdoll setup failed: Jolt could not build hull '%s'.\n", definition.boneName );
 				return false;
 			}
 			physicsShapes[body] = result.Get();
