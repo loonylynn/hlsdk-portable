@@ -344,7 +344,7 @@ int Ragdoll_ImpactMessageHandler( const char *, int size, void *buffer )
 	{
 		const float inverseLength = 1.0f / sqrtf( normalLengthSquared );
 		for( int axis = 0; axis < 3; ++axis )
-			localNormal[axis] *= inverseLength;
+			worldNormal[axis] *= inverseLength;
 	}
 
 	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
