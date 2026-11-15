@@ -280,7 +280,7 @@ static qboolean StudioGetRagdollWorldVertex(
 		VectorCopy( vertices[vertexIndex], localPosition );
 	if( worldPosition )
 	{
-		const float (*boneTransform)[4] = renderer->m_rgCachedBoneTransform[index];
+		float (*boneTransform)[4] = renderer->m_rgCachedBoneTransform[index];
 		VectorTransform( vertices[vertexIndex], boneTransform, worldPosition );
 
 		// One diagnostic sample per entity distinguishes bad model vertex data
