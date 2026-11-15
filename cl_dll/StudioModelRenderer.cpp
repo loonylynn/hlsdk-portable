@@ -280,16 +280,51 @@ static qboolean StudioGetRagdollWorldVertex(
 		VectorCopy( vertices[vertexIndex], localPosition );
 	if( worldPosition )
 	{
-		// StudioSaveBones copies the exact final pose immediately after
-		// StudioSetupBones. The engine's live transform buffer can be reused
-		// by RestoreRenderer before this late TriAPI decal pass; use the
-		// renderer-owned snapshot just as Source's modelrender receives its
-		// stable pBoneToWorld array for AddDecal.
-		VectorTransform(
-			vertices[vertexIndex],
-			renderer->m_rgCachedBoneTransform[index],
-			worldPosition
-		);
+		const float (*boneTransform)[4] = renderer->m_rgCachedBoneTransform[index];
+		VectorTransform( vertices[vertexIndex], boneTransform, worldPosition );
+
+		// One diagnostic sample per entity distinguishes bad model vertex data
+		// from bad cached/live studio matrices without flooding the console.
+		qboolean finite = true;
+		for( int axis = 0; axis < 3; ++axis )
+			if( worldPosition[axis] != worldPosition[axis] ||
+				fabsf( worldPosition[axis] ) > 1.0e20f )
+				finite = false;
+		static int diagnosedEntity = -1;
+		const int entityIndex = renderer->m_pCurrentEntity ?
+			renderer->m_pCurrentEntity->index : -1;
+		if( !finite && diagnosedEntity != entityIndex && gEngfuncs.Con_Printf )
+		{
+			float liveWorld[3] = { 0.0f, 0.0f, 0.0f };
+			float networkTransform[3][4];
+			const int hasNetworkTransform = Ragdoll_GetBoneTransform(
+				entityIndex, index, networkTransform );
+			if( renderer->m_pbonetransform )
+				VectorTransform(
+					vertices[vertexIndex],
+					(*renderer->m_pbonetransform)[index],
+					liveWorld
+				);
+			gEngfuncs.Con_Printf(
+				"[Ragdoll decal probe] ent %d model %s submodel %s vertex %d/%d bone %d/%d local [%.3f %.3f %.3f] saved row0 [%.3f %.3f %.3f %.3f] liveWorld [%.3f %.3f %.3f] network=%d row0 [%.3f %.3f %.3f %.3f] result [%.3f %.3f %.3f]\n",
+				entityIndex,
+				renderer->m_pStudioHeader ? renderer->m_pStudioHeader->name : "?",
+				renderer->m_pSubModel ? renderer->m_pSubModel->name : "?",
+				vertexIndex,
+				renderer->m_pSubModel ? renderer->m_pSubModel->numverts : -1,
+				index, renderer->m_nCachedBones,
+				vertices[vertexIndex][0], vertices[vertexIndex][1], vertices[vertexIndex][2],
+				boneTransform[0][0], boneTransform[0][1], boneTransform[0][2], boneTransform[0][3],
+				liveWorld[0], liveWorld[1], liveWorld[2],
+				hasNetworkTransform,
+				hasNetworkTransform ? networkTransform[0][0] : 0.0f,
+				hasNetworkTransform ? networkTransform[0][1] : 0.0f,
+				hasNetworkTransform ? networkTransform[0][2] : 0.0f,
+				hasNetworkTransform ? networkTransform[0][3] : 0.0f,
+				worldPosition[0], worldPosition[1], worldPosition[2]
+			);
+			diagnosedEntity = entityIndex;
+		}
 	}
 	if( boneIndex )
 		*boneIndex = index;
@@ -1198,6 +1233,20 @@ static void StudioPrepareRagdollImpactMarks( CStudioModelRenderer *renderer )
 	if( !renderer || !entity || entity->index <= 0 ||
 		!cl_ragdoll_bloodmarks || cl_ragdoll_bloodmarks->value <= 0.0f )
 		return;
+
+	// Refresh our stable snapshot from the engine's live pose at the last
+	// possible moment before RestoreRenderer. This also covers any engine-side
+	// studio work performed after StudioSaveBones.
+	if( !renderer->m_pbonetransform || !renderer->m_pStudioHeader ||
+		renderer->m_pStudioHeader->numbones <= 0 ||
+		renderer->m_pStudioHeader->numbones > MAXSTUDIOBONES )
+		return;
+	renderer->m_nCachedBones = renderer->m_pStudioHeader->numbones;
+	for( int bone = 0; bone < renderer->m_nCachedBones; ++bone )
+		MatrixCopy(
+			(*renderer->m_pbonetransform)[bone],
+			renderer->m_rgCachedBoneTransform[bone]
+		);
 
 	// StudioSetupModel reads the engine's active studio header/entity state.
 	// Prepare projected fragments before RestoreRenderer tears that state down;
