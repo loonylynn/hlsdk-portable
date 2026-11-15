@@ -1513,7 +1513,7 @@ static void NPCPhysics_ApplyBulletImpact(
 	const float configuredScale = CVAR_GET_FLOAT( "sv_npc_vphysics_bullet_scale" );
 	const float impulseMagnitude =
 		NPCPhysics_GetBulletImpactImpulse( bulletType, playerBullet ) *
-		std::max( 0.0f, configuredScale );
+		(std::max)( 0.0f, configuredScale );
 
 	float hitFraction = trace->flFraction;
 	float hitPosition[3];
