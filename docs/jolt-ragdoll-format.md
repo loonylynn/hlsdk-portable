@@ -142,14 +142,16 @@ the physics corpse to leave a decal on the floor or wall behind it. Blood
 particles still spawn at the impact point.
 
 The server sends the struck studio bone, mapped-bone-local hit point, and
-local impact normal to clients. The hardware studio renderer transforms the
-current GoldSrc studio triangle strips/fans with the same bone matrices used for
-the articulated corpse, finds the nearest surface triangle facing the impact,
-then projects and clips a small irregular decal patch against the skinned mesh
-triangles. The fragments are drawn at the actual mesh surface with a minimal
-depth bias, rather than as a quad floating above the bone. Since the projection
-is rebuilt from the current pose, marks follow the moving ragdoll without
-requiring changes to the Xash3D engine. `cl_ragdoll_bloodmarks 0` disables
+local impact normal to clients. The hardware studio renderer transforms the current GoldSrc studio
+triangle strips/fans with the same bone matrices used for the articulated
+corpse, finds the nearest surface at the impact point, then projects and clips
+a small irregular decal patch against the skinned mesh triangles. The clipped
+fragments are cached in per-triangle barycentric coordinates: subsequent frames
+only transform the small set of triangles touched by each mark, rather than
+rescanning the whole model. The fragments are drawn at the actual mesh surface
+with a minimal depth bias, rather than as a quad floating above the bone. This
+keeps marks attached to moving ragdolls without repeated full-model projection
+work or changes to the Xash3D engine. `cl_ragdoll_bloodmarks 0` disables
 these marks. The client retains up to 32 recent marks per ragdoll.
 
 This backports the core studio-decal projection and polygon-clipping behavior
