@@ -523,6 +523,8 @@ typedef struct studio_ragdoll_surface_search_s
 	float point[3];
 	float impactNormal[3];
 	float maxDistanceSquared;
+	float nearestDistanceSquared;
+	float nearestPoint[3];
 	float bestScore;
 	float surfacePoint[3];
 	float surfaceNormal[3];
@@ -560,6 +562,12 @@ static void StudioFindRagdollImpactSurface(
 	for( int axis = 0; axis < 3; ++axis )
 		delta[axis] = closest[axis] - context->point[axis];
 	const float distanceSquared = StudioDot3( delta, delta );
+	if( distanceSquared < context->nearestDistanceSquared )
+	{
+		context->nearestDistanceSquared = distanceSquared;
+		for( int axis = 0; axis < 3; ++axis )
+			context->nearestPoint[axis] = closest[axis];
+	}
 	if( distanceSquared > context->maxDistanceSquared )
 		return;
 
@@ -894,6 +902,7 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 		return NULL;
 
 	search.maxDistanceSquared = 144.0f; // allow for coarse .jrag hulls
+	search.nearestDistanceSquared = 1.0e30f;
 	search.bestScore = 1.0e30f;
 	search.found = false;
 	StudioForEachRagdollModelTriangle(
@@ -904,8 +913,11 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
 			gEngfuncs.Con_Printf )
 			gEngfuncs.Con_Printf(
-				"[Ragdoll decals] entity %d bone %d: parsed %d triangles, no surface within 12 units\n",
-				entityIndex, boneIndex, search.triangleCount );
+				"[Ragdoll decals] entity %d bone %d: parsed %d triangles, no surface within 12 units (nearest %.2f; mark %.1f %.1f %.1f; surface %.1f %.1f %.1f)\n",
+				entityIndex, boneIndex, search.triangleCount,
+				sqrtf( search.nearestDistanceSquared ),
+				search.point[0], search.point[1], search.point[2],
+				search.nearestPoint[0], search.nearestPoint[1], search.nearestPoint[2] );
 		return cache;
 	}
 
