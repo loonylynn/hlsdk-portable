@@ -131,7 +131,6 @@ namespace
 		int bodyCount;
 		int rootElement;
 		float nextPoseTime;
-		::Vector networkOrigin;
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
 		std::vector<Ref<TwoBodyConstraint> > constraints;
@@ -469,7 +468,6 @@ namespace
 		ragdoll.serialNumber = ent->serialnumber;
 		ragdoll.networkID = NPCPhysics_AllocateRagdollID();
 		ragdoll.studioBoneCount = header->numbones;
-		ragdoll.networkOrigin = ent->v.origin;
 		ragdoll.nextPoseTime = 0.0f;
 
 		std::vector<::Vector> bonePositions( ragdoll.studioBoneCount );
@@ -993,7 +991,9 @@ namespace
 				ragdoll.bodyCount - start
 			);
 
-			MESSAGE_BEGIN( MSG_PVS, g_msgRagdollPose, ragdoll.networkOrigin );
+			// The carrier edict follows the simulated root. Anchor snapshots to
+			// that live origin so clients entering the new PVS keep receiving poses.
+			MESSAGE_BEGIN( MSG_PVS, g_msgRagdollPose, ragdoll.entity->v.origin );
 				WRITE_SHORT( entityIndex );
 				WRITE_SHORT( ragdoll.networkID );
 				WRITE_BYTE( ragdoll.studioBoneCount );
