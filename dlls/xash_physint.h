@@ -147,6 +147,7 @@ typedef xash_trace_s xash_trace_t;
 
 int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks );
 int NPCPhysics_TryCreateRagdoll( edict_t *ent );
+int NPCPhysics_IsRagdollEntity( edict_t *ent );
 int NPCPhysics_TraceAndApplyImpact(
 	const float *start,
 	const float *end,
