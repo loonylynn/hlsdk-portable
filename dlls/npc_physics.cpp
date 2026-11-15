@@ -1969,6 +1969,7 @@ int NPCPhysics_TraceAndApplyImpact(
 					WRITE_BYTE( markColor );
 				MESSAGE_END();
 			}
+		}
 	}
 
 	*hitFraction = hit.mFraction;
