@@ -32,6 +32,7 @@
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Body/BodyLockMulti.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/GroupFilterTable.h>
 #include <Jolt/Physics/Collision/CollisionGroup.h>
 #include <Jolt/Physics/Constraints/SixDOFConstraint.h>
@@ -137,7 +138,6 @@ namespace
 		std::vector<RagdollBone> bones;
 		std::vector<Ref<TwoBodyConstraint> > constraints;
 		Ref<GroupFilterTable> groupFilter;
-		std::vector<Vec3> previousPositions;
 
 		NPCPhysicsRagdoll()
 			: entity( NULL ),
@@ -177,6 +177,10 @@ namespace
 	static int g_nextRagdollID = 1;
 	static int g_msgRagdollPose = 0;
 	static xash_server_physics_api_s *g_serverPhysicsAPI = NULL;
+	static xash_world_collision_mesh_api_s *g_worldCollisionMeshAPI = NULL;
+	static BodyID g_worldCollisionBodyID;
+	static Ref<Shape> g_worldCollisionShape;
+	static bool g_worldCollisionReady = false;
 
 	static cvar_t g_svNpcVPhysics = { "sv_npc_vphysics", "1", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "80", FCVAR_SERVER };
@@ -329,7 +333,6 @@ namespace
 		}
 
 		ragdoll.bones.clear();
-		ragdoll.previousPositions.clear();
 		ragdoll.groupFilter = Ref<GroupFilterTable>();
 		ragdoll.bodyCount = 0;
 	}
@@ -440,6 +443,157 @@ namespace
 		}
 	}
 
+
+	static void NPCPhysics_DestroyWorldCollider()
+	{
+		if( g_npcPhysics.initialized && !g_worldCollisionBodyID.IsInvalid() )
+		{
+			BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+			if( bodyInterface.IsAdded( g_worldCollisionBodyID ) )
+				bodyInterface.RemoveBody( g_worldCollisionBodyID );
+			bodyInterface.DestroyBody( g_worldCollisionBodyID );
+		}
+
+		g_worldCollisionBodyID = BodyID();
+		g_worldCollisionShape = Ref<Shape>();
+		g_worldCollisionReady = false;
+	}
+
+	static bool NPCPhysics_EnsureWorldCollider()
+	{
+		if( g_worldCollisionReady &&
+			g_npcPhysics.initialized &&
+			!g_worldCollisionBodyID.IsInvalid() &&
+			g_npcPhysics.system.GetBodyInterface().IsAdded( g_worldCollisionBodyID ) )
+			return true;
+
+		if( !g_npcPhysics.initialized ||
+			!g_worldCollisionMeshAPI ||
+			g_worldCollisionMeshAPI->version != XASH_WORLD_COLLISION_MESH_API_VERSION ||
+			!g_worldCollisionMeshAPI->GetMeshInfo ||
+			!g_worldCollisionMeshAPI->GetMeshData )
+		{
+			ALERT( at_console, "[NPC physics] Native Xash BSP collision mesh API is unavailable.\n" );
+			return false;
+		}
+
+		uint32_t vertexCount = 0;
+		uint32_t indexCount = 0;
+		if( !g_worldCollisionMeshAPI->GetMeshInfo( &vertexCount, &indexCount ) ||
+			vertexCount < 3 || indexCount < 3 || ( indexCount % 3 ) != 0 )
+		{
+			ALERT( at_console, "[NPC physics] Xash did not provide a valid solid BSP mesh.\n" );
+			return false;
+		}
+
+		// Bound temporary allocations on unusually large or malformed BSPs.
+		// Normal Half-Life maps are well below these limits.
+		if( vertexCount > 2000000u || indexCount > 12000000u )
+		{
+			ALERT(
+				at_console,
+				"[NPC physics] BSP collision mesh is too large (%u vertices, %u indices).\n",
+				vertexCount,
+				indexCount
+			);
+			return false;
+		}
+
+		std::vector<float> sourceVertices( static_cast<size_t>( vertexCount ) * 3 );
+		std::vector<uint32_t> sourceIndices( indexCount );
+		if( !g_worldCollisionMeshAPI->GetMeshData(
+			sourceVertices.data(),
+			vertexCount,
+			sourceIndices.data(),
+			indexCount ) )
+		{
+			ALERT( at_console, "[NPC physics] Failed to read native Xash BSP collision mesh.\n" );
+			return false;
+		}
+
+		VertexList vertices;
+		IndexedTriangleList triangles;
+		vertices.reserve( vertexCount );
+		triangles.reserve( indexCount / 3 );
+
+		for( uint32_t i = 0; i < vertexCount; ++i )
+		{
+			const float x = sourceVertices[i * 3 + 0];
+			const float y = sourceVertices[i * 3 + 1];
+			const float z = sourceVertices[i * 3 + 2];
+			if( !std::isfinite( x ) || !std::isfinite( y ) || !std::isfinite( z ) )
+			{
+				ALERT( at_console, "[NPC physics] BSP collision mesh contains a non-finite vertex.\n" );
+				return false;
+			}
+			vertices.emplace_back( x, y, z );
+		}
+
+		for( uint32_t i = 0; i < indexCount; i += 3 )
+		{
+			const uint32_t i0 = sourceIndices[i + 0];
+			const uint32_t i1 = sourceIndices[i + 1];
+			const uint32_t i2 = sourceIndices[i + 2];
+			if( i0 >= vertexCount || i1 >= vertexCount || i2 >= vertexCount )
+			{
+				ALERT( at_console, "[NPC physics] BSP collision mesh contains an invalid triangle index.\n" );
+				return false;
+			}
+			triangles.emplace_back( i0, i1, i2, 0 );
+		}
+
+		// The mesh is static and concave, so Jolt can use its BVH directly.
+		// Shared BSP vertex indices preserve adjacency for internal-edge
+		// handling instead of treating every triangle as a disconnected face.
+		MeshShapeSettings meshSettings( std::move( vertices ), std::move( triangles ) );
+		meshSettings.mMaxTrianglesPerLeaf = 8;
+		meshSettings.mBuildQuality = MeshShapeSettings::EBuildQuality::FavorRuntimePerformance;
+
+		Shape::ShapeResult shapeResult = meshSettings.Create();
+		if( !shapeResult.IsValid() )
+		{
+			ALERT(
+				at_console,
+				"[NPC physics] Jolt could not build the native BSP mesh: %s\n",
+				shapeResult.HasError() ? shapeResult.GetError().c_str() : "unknown error"
+			);
+			return false;
+		}
+
+		Ref<Shape> worldShape = shapeResult.Get();
+		BodyCreationSettings bodySettings(
+			worldShape.GetPtr(),
+			RVec3( 0.0f, 0.0f, 0.0f ),
+			Quat::sIdentity(),
+			EMotionType::Static,
+			RAGDOLL_OBJECT_LAYER
+		);
+		bodySettings.mFriction = 0.9f;
+		bodySettings.mRestitution = 0.0f;
+
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		const BodyID worldBody = bodyInterface.CreateAndAddBody(
+			bodySettings,
+			EActivation::DontActivate
+		);
+		if( worldBody.IsInvalid() )
+		{
+			ALERT( at_console, "[NPC physics] Jolt could not create the native BSP body.\n" );
+			return false;
+		}
+
+		g_worldCollisionShape = worldShape;
+		g_worldCollisionBodyID = worldBody;
+		g_worldCollisionReady = true;
+		ALERT(
+			at_console,
+			"[NPC physics] Native BSP collision loaded: %u vertices, %u triangles.\n",
+			vertexCount,
+			indexCount / 3
+		);
+		return true;
+	}
+
 	static Vec3 NPCPhysics_ClampVector( const Vec3 &value, float maxLength )
 	{
 		const float length = value.Length();
@@ -452,8 +606,8 @@ namespace
 	{
 		if( !ent || ent->free || !NPCPhysics_Initialize() ||
 			g_msgRagdollPose <= 0 ||
-			!g_serverPhysicsAPI || !g_serverPhysicsAPI->pfnTraceNoEnts ||
-			!g_engfuncs.pfnGetBonePosition )
+			!g_serverPhysicsAPI || !g_worldCollisionMeshAPI ||
+			!g_engfuncs.pfnGetBonePosition || !NPCPhysics_EnsureWorldCollider() )
 			return false;
 
 		studiohdr_t *header = NULL;
@@ -639,7 +793,6 @@ namespace
 			animationDeltaTime = 1.0f / 60.0f;
 
 		ragdoll.bones.shrink_to_fit();
-		ragdoll.previousPositions.resize( ragdoll.bodyCount );
 
 		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
 		for( int i = 0; i < ragdoll.bodyCount; ++i )
@@ -676,6 +829,7 @@ namespace
 			settings.mMaxLinearVelocity = RAGDOLL_VELOCITY_LIMIT;
 			settings.mMaxAngularVelocity = RAGDOLL_ANGULAR_VELOCITY_LIMIT;
 			settings.mMotionQuality = EMotionQuality::LinearCast;
+			settings.mEnhancedInternalEdgeRemoval = true;
 
 			const BodyID bodyID = bodyInterface.CreateAndAddBody( settings, EActivation::Activate );
 			if( bodyID.IsInvalid() )
@@ -685,7 +839,6 @@ namespace
 			}
 
 			bone.bodyID = bodyID;
-			ragdoll.previousPositions[i] = bodyCenter;
 
 			Vec3 linearVelocity(
 				ent->v.velocity[0],
@@ -876,187 +1029,6 @@ namespace
 		return true;
 	}
 
-	static void NPCPhysics_GetWorldHalfExtents(
-		const RagdollBone &bone,
-		const Quat &rotation,
-		Vec3 &worldHalfExtents )
-	{
-		const Vec3 axisX = rotation.RotateAxisX();
-		const Vec3 axisY = rotation.RotateAxisY();
-		const Vec3 axisZ = rotation.RotateAxisZ();
-
-		worldHalfExtents = Vec3(
-			fabsf( axisX.GetX() ) * bone.halfExtents.GetX() +
-				fabsf( axisY.GetX() ) * bone.halfExtents.GetY() +
-				fabsf( axisZ.GetX() ) * bone.halfExtents.GetZ(),
-			fabsf( axisX.GetY() ) * bone.halfExtents.GetX() +
-				fabsf( axisY.GetY() ) * bone.halfExtents.GetY() +
-				fabsf( axisZ.GetY() ) * bone.halfExtents.GetZ(),
-			fabsf( axisX.GetZ() ) * bone.halfExtents.GetX() +
-				fabsf( axisY.GetZ() ) * bone.halfExtents.GetY() +
-				fabsf( axisZ.GetZ() ) * bone.halfExtents.GetZ()
-		);
-	}
-
-	static void NPCPhysics_ClipRagdollToWorld(
-		NPCPhysicsRagdoll &ragdoll,
-		BodyInterface &bodyInterface )
-	{
-		if( !g_serverPhysicsAPI || !g_serverPhysicsAPI->pfnTraceNoEnts )
-			return;
-
-		float zeroMins[3] = { 0.0f, 0.0f, 0.0f };
-		float zeroMaxs[3] = { 0.0f, 0.0f, 0.0f };
-
-		for( int i = 0; i < ragdoll.bodyCount; ++i )
-		{
-			const RagdollBone &bone = ragdoll.bones[i];
-			const RVec3 currentPosition = bodyInterface.GetPosition( bone.bodyID );
-			const Quat rotation = bodyInterface.GetRotation( bone.bodyID );
-
-			const float start[3] = {
-				ragdoll.previousPositions[i].GetX(),
-				ragdoll.previousPositions[i].GetY(),
-				ragdoll.previousPositions[i].GetZ()
-			};
-			float resolvedPosition[3] = {
-				float( currentPosition.GetX() ),
-				float( currentPosition.GetY() ),
-				float( currentPosition.GetZ() )
-			};
-
-			Vec3 worldHalfExtents;
-			NPCPhysics_GetWorldHalfExtents( bone, rotation, worldHalfExtents );
-
-			float mins[3] = {
-				-worldHalfExtents.GetX(),
-				-worldHalfExtents.GetY(),
-				-worldHalfExtents.GetZ()
-			};
-			float maxs[3] = {
-				worldHalfExtents.GetX(),
-				worldHalfExtents.GetY(),
-				worldHalfExtents.GetZ()
-			};
-
-			// First resolve the complete movement segment with a conservative
-			// world-space AABB around the rotated studio hitbox.
-			xash_trace_t trace = g_serverPhysicsAPI->pfnTraceNoEnts(
-				start, mins, maxs, resolvedPosition, 0, ragdoll.entity
-			);
-
-			// A body can cross the BSP between two physics frames, leaving its
-			// starting and ending positions embedded. Search substantially
-			// farther above it, then sweep the same hull down through the world.
-			if( trace.startsolid || trace.allsolid )
-			{
-				const float recoveryDistance = std::min(
-					2048.0f,
-					std::max( 256.0f, worldHalfExtents.GetZ() * 8.0f + 64.0f )
-				);
-				const float recoveryStart[3] = {
-					resolvedPosition[0],
-					resolvedPosition[1],
-					resolvedPosition[2] + recoveryDistance
-				};
-				const float recoveryEnd[3] = {
-					resolvedPosition[0],
-					resolvedPosition[1],
-					resolvedPosition[2] - recoveryDistance
-				};
-				xash_trace_t recoveryTrace = g_serverPhysicsAPI->pfnTraceNoEnts(
-					recoveryStart, mins, maxs, recoveryEnd, 0, ragdoll.entity
-				);
-
-				if( !recoveryTrace.startsolid &&
-					!recoveryTrace.allsolid &&
-					recoveryTrace.fraction < 1.0f &&
-					recoveryTrace.plane.normal[2] > 0.5f )
-				{
-					trace = recoveryTrace;
-				}
-			}
-
-			if( !trace.startsolid && !trace.allsolid && trace.fraction < 1.0f )
-			{
-				Vec3 normal(
-					trace.plane.normal[0],
-					trace.plane.normal[1],
-					trace.plane.normal[2]
-				);
-				if( normal.LengthSq() > 0.01f )
-				{
-					normal = normal.Normalized();
-					resolvedPosition[0] = trace.endpos[0] + normal.GetX() * 0.05f;
-					resolvedPosition[1] = trace.endpos[1] + normal.GetY() * 0.05f;
-					resolvedPosition[2] = trace.endpos[2] + normal.GetZ() * 0.05f;
-					bodyInterface.SetPosition(
-						bone.bodyID,
-						RVec3( resolvedPosition[0], resolvedPosition[1], resolvedPosition[2] ),
-						EActivation::Activate
-					);
-
-					Vec3 velocity = bodyInterface.GetLinearVelocity( bone.bodyID );
-					const float intoSurface = velocity.Dot( normal );
-					if( intoSurface < 0.0f )
-					{
-						velocity -= normal * intoSurface;
-						velocity *= 0.82f;
-						bodyInterface.SetLinearVelocity( bone.bodyID, velocity );
-					}
-				}
-			}
-
-			// A short, independent vertical support probe prevents slow BSP
-			// penetration even if the horizontal/diagonal movement sweep misses
-			// a thin floor. It is a point trace through the body's vertical AABB;
-			// when it finds an upward-facing plane, place the body's bottom just
-			// above that plane and remove downward velocity.
-			const float supportStart[3] = {
-				resolvedPosition[0],
-				resolvedPosition[1],
-				resolvedPosition[2] + worldHalfExtents.GetZ() + 2.0f
-			};
-			const float supportEnd[3] = {
-				resolvedPosition[0],
-				resolvedPosition[1],
-				resolvedPosition[2] - worldHalfExtents.GetZ() - 2.0f
-			};
-			xash_trace_t supportTrace = g_serverPhysicsAPI->pfnTraceNoEnts(
-				supportStart,
-				zeroMins,
-				zeroMaxs,
-				supportEnd,
-				0,
-				ragdoll.entity
-			);
-
-			if( !supportTrace.startsolid &&
-				!supportTrace.allsolid &&
-				supportTrace.fraction < 1.0f &&
-				supportTrace.plane.normal[2] > 0.5f )
-			{
-				const float supportedCenterZ =
-					supportTrace.endpos[2] + worldHalfExtents.GetZ() + 0.05f;
-				if( resolvedPosition[2] < supportedCenterZ )
-				{
-					resolvedPosition[2] = supportedCenterZ;
-					bodyInterface.SetPosition(
-						bone.bodyID,
-						RVec3( resolvedPosition[0], resolvedPosition[1], resolvedPosition[2] ),
-						EActivation::Activate
-					);
-
-					Vec3 velocity = bodyInterface.GetLinearVelocity( bone.bodyID );
-					if( velocity.GetZ() < 0.0f )
-					{
-						velocity = Vec3( velocity.GetX(), velocity.GetY(), 0.0f );
-						bodyInterface.SetLinearVelocity( bone.bodyID, velocity );
-					}
-				}
-			}
-		}
-	}
 
 	static short NPCPhysics_QuantizeQuaternion( float value )
 	{
@@ -1162,29 +1134,12 @@ namespace
 		while( g_npcPhysics.fixedAccumulator >= RAGDOLL_FIXED_STEP &&
 			steps < RAGDOLL_MAX_STEPS_PER_FRAME )
 		{
-			for( size_t r = 0; r < g_ragdolls.size(); ++r )
-			{
-				NPCPhysicsRagdoll &ragdoll = g_ragdolls[r];
-				for( int i = 0; i < ragdoll.bodyCount; ++i )
-				{
-					const RVec3 position = bodyInterface.GetPosition( ragdoll.bones[i].bodyID );
-					ragdoll.previousPositions[i] = Vec3(
-						float( position.GetX() ),
-						float( position.GetY() ),
-						float( position.GetZ() )
-					);
-				}
-			}
-
 			g_npcPhysics.system.Update(
 				RAGDOLL_FIXED_STEP,
 				1,
 				g_npcPhysics.tempAllocator,
 				&g_npcPhysics.jobs
 			);
-
-			for( size_t r = 0; r < g_ragdolls.size(); ++r )
-				NPCPhysics_ClipRagdollToWorld( g_ragdolls[r], bodyInterface );
 
 			g_npcPhysics.fixedAccumulator -= RAGDOLL_FIXED_STEP;
 			++steps;
@@ -1252,6 +1207,17 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsMass );
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
+	g_worldCollisionMeshAPI = NULL;
+	if( g_serverPhysicsAPI->pfnGetNativeObject )
+	{
+		g_worldCollisionMeshAPI = reinterpret_cast<xash_world_collision_mesh_api_s *>(
+			g_serverPhysicsAPI->pfnGetNativeObject( "xash_world_collision_mesh_v1" )
+		);
+		if( g_worldCollisionMeshAPI &&
+			( g_worldCollisionMeshAPI->version != XASH_WORLD_COLLISION_MESH_API_VERSION ||
+			  !g_worldCollisionMeshAPI->GetMeshInfo || !g_worldCollisionMeshAPI->GetMeshData ) )
+			g_worldCollisionMeshAPI = NULL;
+	}
 	if( gpGlobals )
 	{
 		const int maxEntities = std::max( 2048, gpGlobals->maxEntities + 1 );
@@ -1300,6 +1266,7 @@ void NPCPhysics_ResetMap( void )
 void NPCPhysics_Shutdown( void )
 {
 	NPCPhysics_DestroyAllRagdolls();
+	NPCPhysics_DestroyWorldCollider();
 
 	if( g_npcPhysics.initialized )
 	{
@@ -1313,6 +1280,7 @@ void NPCPhysics_Shutdown( void )
 	}
 
 	g_serverPhysicsAPI = NULL;
+	g_worldCollisionMeshAPI = NULL;
 	g_livePoses.clear();
 	g_msgRagdollPose = 0;
 }
