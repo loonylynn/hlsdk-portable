@@ -1465,34 +1465,6 @@ This version is used by Monsters.
 */
 
 #ifndef CLIENT_DLL
-static float NPCPhysics_GetBulletImpactDamage( int bulletType, int damage, BOOL playerBullet )
-{
-	if( damage > 0 )
-		return (float)damage;
-
-	if( playerBullet )
-	{
-		switch( bulletType )
-		{
-		case BULLET_PLAYER_MP5: return gSkillData.plrDmgMP5;
-		case BULLET_PLAYER_BUCKSHOT: return gSkillData.plrDmgBuckshot;
-		case BULLET_PLAYER_357: return gSkillData.plrDmg357;
-		case BULLET_NONE: return 50.0f;
-		case BULLET_PLAYER_9MM:
-		default: return gSkillData.plrDmg9MM;
-		}
-	}
-
-	switch( bulletType )
-	{
-	case BULLET_MONSTER_MP5: return gSkillData.monDmgMP5;
-	case BULLET_MONSTER_12MM: return gSkillData.monDmg12MM;
-	case BULLET_NONE: return 50.0f;
-	case BULLET_MONSTER_9MM:
-	default: return gSkillData.monDmg9MM;
-	}
-}
-
 // Source's BULLET_IMPULSE formula: convert projectile mass from grains
 // to kilograms, muzzle velocity from ft/s to inches/s, then apply the
 // same 3.5 physics exaggeration factor used by HL2's ammo definitions.
@@ -1532,16 +1504,13 @@ static float NPCPhysics_GetBulletImpactImpulse( int bulletType, BOOL playerBulle
 }
 
 static void NPCPhysics_ApplyBulletImpact(
-	const Vector &start, const Vector &end, int bulletType, int damage,
+	const Vector &start, const Vector &end, int bulletType,
 	BOOL playerBullet, TraceResult *trace )
 {
 	if( !trace )
 		return;
 
-	const float impactDamage = NPCPhysics_GetBulletImpactDamage(
-		bulletType, damage, playerBullet );
 	const float configuredScale = CVAR_GET_FLOAT( "sv_npc_vphysics_bullet_scale" );
-	(void)impactDamage;
 	const float impulseMagnitude =
 		NPCPhysics_GetBulletImpactImpulse( bulletType, playerBullet ) *
 		std::max( 0.0f, configuredScale );
@@ -1592,7 +1561,7 @@ void CBaseEntity::FireBullets( ULONG cShots, Vector vecSrc, Vector vecDirShootin
 		vecEnd = vecSrc + vecDir * flDistance;
 		UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, ENT( pev )/*pentIgnore*/, &tr );
 #ifndef CLIENT_DLL
-		NPCPhysics_ApplyBulletImpact( vecSrc, vecEnd, iBulletType, iDamage, FALSE, &tr );
+		NPCPhysics_ApplyBulletImpact( vecSrc, vecEnd, iBulletType, FALSE, &tr );
 #endif
 
 		tracer = 0;
@@ -1725,7 +1694,7 @@ Vector CBaseEntity::FireBulletsPlayer( ULONG cShots, Vector vecSrc, Vector vecDi
 		vecEnd = vecSrc + vecDir * flDistance;
 		UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, ENT( pev )/*pentIgnore*/, &tr );
 #ifndef CLIENT_DLL
-		NPCPhysics_ApplyBulletImpact( vecSrc, vecEnd, iBulletType, iDamage, TRUE, &tr );
+		NPCPhysics_ApplyBulletImpact( vecSrc, vecEnd, iBulletType, TRUE, &tr );
 #endif
 
 		// do damage, paint decals
