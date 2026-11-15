@@ -199,6 +199,12 @@ namespace
 		return NPCPhysics_GetCvar( "sv_npc_vphysics", 1.0f ) >= 0.5f;
 	}
 
+	static bool NPCPhysics_RagdollSetupFailed( const char *reason )
+	{
+		ALERT( at_console, "[NPC physics] Ragdoll setup failed: %s.\n", reason );
+		return false;
+	}
+
 	static bool NPCPhysics_IsZombie( edict_t *ent )
 	{
 		return ent && !ent->free &&
@@ -259,40 +265,40 @@ namespace
 		return result.Normalized();
 	}
 
-	static bool NPCPhysics_GetStudioHeader( edict_t *ent, studiohdr_t **headerOut )
+	static bool NPCPhysics_GetStudioHeader( edict_t *ent, studiohdr_t **headerOut, bool reportErrors = false )
 	{
 		if( !ent || !headerOut || !g_engfuncs.pfnGetModelPtr )
-			return false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "studio model lookup is unavailable" ) : false;
 
 		studiohdr_t *header = reinterpret_cast<studiohdr_t *>( GET_MODEL_PTR( ent ) );
 		if( !header )
-			return false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie has no loaded studio model" ) : false;
 
 		if( header->ident != IDSTUDIOHEADER || header->version != STUDIO_VERSION )
-			return false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie studio model has an unsupported header or version" ) : false;
 
 		if( header->length < (int)sizeof( studiohdr_t ) ||
 			header->numbones < 1 ||
 			header->numbones > MAXSTUDIOBONES ||
 			header->boneindex < (int)sizeof( studiohdr_t ) )
-			return false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie studio bone table is invalid" ) : false;
 
 		const size_t length = static_cast<size_t>( header->length );
 		const size_t boneOffset = static_cast<size_t>( header->boneindex );
 		const size_t boneBytes = static_cast<size_t>( header->numbones ) * sizeof( mstudiobone_t );
 		if( boneOffset > length || boneBytes > length - boneOffset )
-			return false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie studio bone table exceeds model bounds" ) : false;
 
 		if( header->numhitboxes <= 0 || header->numhitboxes > 1024 )
-			return false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie model has no usable hitboxes" ) : false;
 
 		if( header->hitboxindex < (int)sizeof( studiohdr_t ) )
-			return false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie studio hitbox table offset is invalid" ) : false;
 
 		const size_t hitboxOffset = static_cast<size_t>( header->hitboxindex );
 		const size_t hitboxBytes = static_cast<size_t>( header->numhitboxes ) * sizeof( mstudiobbox_t );
 		if( hitboxOffset > length || hitboxBytes > length - hitboxOffset )
-			return false;
+			return reportErrors ? NPCPhysics_RagdollSetupFailed( "zombie studio hitbox table exceeds model bounds" ) : false;
 
 		*headerOut = header;
 		return true;
@@ -605,14 +611,23 @@ namespace
 
 	static bool NPCPhysics_CreateRagdoll( edict_t *ent )
 	{
-		if( !ent || ent->free || !NPCPhysics_Initialize() ||
-			g_msgRagdollPose <= 0 ||
-			!g_serverPhysicsAPI || !g_worldCollisionMeshAPI ||
-			!g_engfuncs.pfnGetBonePosition || !NPCPhysics_EnsureWorldCollider() )
+		if( !ent || ent->free )
+			return NPCPhysics_RagdollSetupFailed( "zombie entity is invalid" );
+		if( !NPCPhysics_Initialize() )
+			return NPCPhysics_RagdollSetupFailed( "Jolt initialization failed" );
+		if( g_msgRagdollPose <= 0 )
+			return NPCPhysics_RagdollSetupFailed( "RagdollPose network message was not registered" );
+		if( !g_serverPhysicsAPI )
+			return NPCPhysics_RagdollSetupFailed( "Xash server physics API was not received" );
+		if( !g_worldCollisionMeshAPI )
+			return NPCPhysics_RagdollSetupFailed( "native Xash BSP mesh API is missing (engine build may be outdated)" );
+		if( !g_engfuncs.pfnGetBonePosition )
+			return NPCPhysics_RagdollSetupFailed( "engine bone-position callback is missing" );
+		if( !NPCPhysics_EnsureWorldCollider() )
 			return false;
 
 		studiohdr_t *header = NULL;
-		if( !NPCPhysics_GetStudioHeader( ent, &header ) )
+		if( !NPCPhysics_GetStudioHeader( ent, &header, true ) )
 			return false;
 
 		mstudiobone_t *studioBones = reinterpret_cast<mstudiobone_t *>(
@@ -640,7 +655,7 @@ namespace
 			if( studioBones[i].parent < -1 ||
 				studioBones[i].parent >= ragdoll.studioBoneCount ||
 				studioBones[i].parent == i )
-				return false;
+				return NPCPhysics_RagdollSetupFailed( "zombie studio skeleton contains an invalid parent index" );
 
 			g_engfuncs.pfnGetBonePosition(
 				ent,
@@ -706,7 +721,7 @@ namespace
 
 		ragdoll.bodyCount = static_cast<int>( ragdoll.bones.size() );
 		if( ragdoll.bodyCount <= 0 || ragdoll.bodyCount > 128 )
-			return false;
+			return NPCPhysics_RagdollSetupFailed( "zombie model produced no valid hitbox bodies or too many bodies" );
 
 		// Match Source's hierarchy collapse: a physical element is connected to
 		// the nearest ancestor that also owns a physical element, not blindly to
@@ -731,7 +746,7 @@ namespace
 		}
 
 		if( ragdoll.rootElement < 0 )
-			return false;
+			return NPCPhysics_RagdollSetupFailed( "no hitbox body could be selected as the ragdoll root" );
 
 		// Keep the edict origin near the moving physics assembly so Xash's
 		// entity culling/PVS bounds follow the corpse. The custom bone matrices
@@ -836,6 +851,7 @@ namespace
 			if( bodyID.IsInvalid() )
 			{
 				NPCPhysics_DestroyRagdoll( ragdoll );
+				ALERT( at_console, "[NPC physics] Ragdoll setup failed: Jolt could not create body for studio bone %d.\n", boneIndex );
 				return false;
 			}
 
@@ -936,6 +952,7 @@ namespace
 			{
 				bodyLock.ReleaseLocks();
 				NPCPhysics_DestroyRagdoll( ragdoll );
+				ALERT( at_console, "[NPC physics] Ragdoll setup failed: could not lock parent/child bodies for joint %d.\n", i );
 				return false;
 			}
 
@@ -998,6 +1015,7 @@ namespace
 			{
 				bodyLock.ReleaseLocks();
 				NPCPhysics_DestroyRagdoll( ragdoll );
+				ALERT( at_console, "[NPC physics] Ragdoll setup failed: Jolt could not create joint for studio bone %d.\n", childStudioBone );
 				return false;
 			}
 
