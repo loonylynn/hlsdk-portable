@@ -3234,11 +3234,6 @@ void CStudioModelRenderer::StudioRenderFinal_Software( void )
 		IEngineStudio.StudioDrawAbsBBox();
 	}
 
-	// Build studio decal fragments while the engine's active model/header state
-	// and bone transforms are still valid. Only rasterize them after restore.
-	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
-		StudioPrepareRagdollImpactMarks( this );
-
 	IEngineStudio.RestoreRenderer();
 
 	// TriAPI vertices are world-space; draw only after the studio renderer
@@ -3303,6 +3298,11 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 	{
 		IEngineStudio.StudioDrawAbsBBox();
 	}
+
+	// Build studio decal fragments while the engine's active model/header state
+	// and bone transforms are still valid. Only rasterize them after restore.
+	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
+		StudioPrepareRagdollImpactMarks( this );
 
 	IEngineStudio.RestoreRenderer();
 
