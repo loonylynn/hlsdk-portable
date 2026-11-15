@@ -178,6 +178,9 @@ int __MsgFunc_ResetHUD( const char *pszName, int iSize, void *pbuf )
 
 int __MsgFunc_InitHUD( const char *pszName, int iSize, void *pbuf )
 {
+	// InitHUD is delivered when the client initializes a level. Drop pose
+	// entries from the previous map before entity indices can be reused.
+	Ragdoll_ClearAll();
 	gHUD.MsgFunc_InitHUD( pszName, iSize, pbuf );
 	return 1;
 }
