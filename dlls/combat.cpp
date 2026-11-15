@@ -1493,6 +1493,31 @@ static float NPCPhysics_GetBulletImpactDamage( int bulletType, int damage, BOOL 
 	}
 }
 
+static float NPCPhysics_GetBulletImpulsePerDamage( int bulletType, BOOL playerBullet )
+{
+	if( playerBullet )
+	{
+		switch( bulletType )
+		{
+		case BULLET_PLAYER_9MM: return 20.0f;
+		case BULLET_PLAYER_MP5: return 24.0f;
+		case BULLET_PLAYER_BUCKSHOT: return 19.0f;
+		case BULLET_PLAYER_357: return 36.0f;
+		case BULLET_NONE: return 45.0f;
+		default: return 20.0f;
+		}
+	}
+
+	switch( bulletType )
+	{
+	case BULLET_MONSTER_9MM: return 20.0f;
+	case BULLET_MONSTER_MP5: return 24.0f;
+	case BULLET_MONSTER_12MM: return 32.0f;
+	case BULLET_NONE: return 45.0f;
+	default: return 20.0f;
+	}
+}
+
 static void NPCPhysics_ApplyBulletImpact(
 	const Vector &start, const Vector &end, int bulletType, int damage,
 	BOOL playerBullet, TraceResult *trace )
@@ -1500,11 +1525,12 @@ static void NPCPhysics_ApplyBulletImpact(
 	if( !trace )
 		return;
 
-	float impactDamage = NPCPhysics_GetBulletImpactDamage(
+	const float impactDamage = NPCPhysics_GetBulletImpactDamage(
 		bulletType, damage, playerBullet );
-	float impulseMagnitude = impactDamage * 12.0f;
-	if( impulseMagnitude > 1500.0f )
-		impulseMagnitude = 1500.0f;
+	const float configuredScale = CVAR_GET_FLOAT( "sv_npc_vphysics_bullet_scale" );
+	const float impulseMagnitude =
+		impactDamage * NPCPhysics_GetBulletImpulsePerDamage( bulletType, playerBullet ) *
+		std::max( 0.0f, configuredScale );
 
 	float hitFraction = trace->flFraction;
 	float hitPosition[3];
@@ -1740,6 +1766,14 @@ Vector CBaseEntity::FireBulletsPlayer( ULONG cShots, Vector vecSrc, Vector vecDi
 
 void CBaseEntity::TraceBleed( float flDamage, Vector vecDir, TraceResult *ptr, int bitsDamageType )
 {
+#ifndef CLIENT_DLL
+	// Source keeps damage effects attached to the ragdoll physics object.
+	// GoldSrc's reverse blood trace ignores monsters, so it would otherwise
+	// pass through our Jolt corpse and decal the floor or wall behind it.
+	if( ptr && ptr->pHit && NPCPhysics_IsRagdollEntity( ptr->pHit ) )
+		return;
+#endif
+
 	if( BloodColor() == DONT_BLEED )
 		return;
 
