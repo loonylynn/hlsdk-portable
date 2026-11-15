@@ -9,11 +9,23 @@
 
 static const int MAX_RAGDOLL_ENTITIES = 2048;
 static const int MAX_RAGDOLL_BONES = 128;
+static const float RAGDOLL_SNAPSHOT_INTERVAL = 0.05f;
+static const float RAGDOLL_STALE_TIMEOUT = 0.25f;
+
+// The server sends this small marker through entity_state_t::iuser4. The
+// unique ragdoll ID remains in the RagdollPose user message.
+static const int RAGDOLL_ENTITY_MARKER = 1;
 
 struct ragdoll_bone_pose_t
 {
+	// Latest network target.
 	float origin[3];
 	float rotation[4];
+
+	// Pose at which interpolation toward the latest target began.
+	float previousOrigin[3];
+	float previousRotation[4];
+	float poseTime;
 	bool valid;
 };
 
@@ -29,6 +41,72 @@ struct ragdoll_entity_pose_t
 
 static ragdoll_entity_pose_t g_RagdollPoses[MAX_RAGDOLL_ENTITIES];
 static bool g_RagdollMessageHooked = false;
+
+static float Ragdoll_Clamp01( float value )
+{
+	if( value < 0.0f )
+		return 0.0f;
+	if( value > 1.0f )
+		return 1.0f;
+	return value;
+}
+
+// Normalized linear interpolation is stable for the small angular changes
+// between 20 Hz snapshots and avoids quaternion sign-flip interpolation.
+static void Ragdoll_NlerpQuaternion( const float start[4], const float target[4], float fraction, float output[4] )
+{
+	float adjustedTarget[4];
+	float dot = 0.0f;
+	float lengthSquared = 0.0f;
+
+	for( int i = 0; i < 4; ++i )
+		dot += start[i] * target[i];
+
+	const float sign = dot < 0.0f ? -1.0f : 1.0f;
+	for( int i = 0; i < 4; ++i )
+	{
+		adjustedTarget[i] = target[i] * sign;
+		output[i] = start[i] + ( adjustedTarget[i] - start[i] ) * fraction;
+		lengthSquared += output[i] * output[i];
+	}
+
+	if( lengthSquared < 0.0001f )
+	{
+		output[0] = 0.0f;
+		output[1] = 0.0f;
+		output[2] = 0.0f;
+		output[3] = 1.0f;
+		return;
+	}
+
+	const float inverseLength = 1.0f / sqrtf( lengthSquared );
+	for( int i = 0; i < 4; ++i )
+		output[i] *= inverseLength;
+}
+
+static void Ragdoll_GetInterpolatedBonePose(
+	const ragdoll_bone_pose_t &bone,
+	float now,
+	float origin[3],
+	float rotation[4] )
+{
+	const float fraction = Ragdoll_Clamp01(
+		( now - bone.poseTime ) / RAGDOLL_SNAPSHOT_INTERVAL
+	);
+
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		origin[axis] = bone.previousOrigin[axis] +
+			( bone.origin[axis] - bone.previousOrigin[axis] ) * fraction;
+	}
+
+	Ragdoll_NlerpQuaternion(
+		bone.previousRotation,
+		bone.rotation,
+		fraction,
+		rotation
+	);
+}
 
 void Ragdoll_ClearAll( void )
 {
@@ -66,62 +144,101 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 		size < 7 + chunkCount * 14 )
 		return 0;
 
+	const float now = (float)gEngfuncs.GetClientTime();
 	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
+
+	// Client time can restart with a level/demo reset. Never let an older
+	// cache survive that clock transition or a long gap in PVS updates.
+	if( entry.active &&
+		( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT ) )
+	{
+		memset( &entry, 0, sizeof( entry ) );
+	}
+
 	if( !entry.active || entry.ragdollID != ragdollID || entry.boneCount != boneCount )
 	{
 		memset( &entry, 0, sizeof( entry ) );
 		entry.active = true;
 		entry.ragdollID = ragdollID;
 		entry.boneCount = boneCount;
+
 		char message[128];
 		snprintf( message, sizeof( message ), "[NPC ragdoll] Receiving entity %d, ID %d (%d bones).\n", entityIndex, ragdollID, boneCount );
 		ConsolePrint( message );
 	}
 
-	entry.lastUpdateTime = gEngfuncs.GetClientTime();
+	entry.lastUpdateTime = now;
 
 	for( int i = 0; i < chunkCount; ++i )
 	{
 		ragdoll_bone_pose_t &bone = entry.bones[startBone + i];
+		float receivedOrigin[3];
+		float receivedRotation[4];
 
-		bone.origin[0] = READ_COORD();
-		bone.origin[1] = READ_COORD();
-		bone.origin[2] = READ_COORD();
+		receivedOrigin[0] = READ_COORD();
+		receivedOrigin[1] = READ_COORD();
+		receivedOrigin[2] = READ_COORD();
 
-		bone.rotation[0] = float( READ_SHORT() ) / 32767.0f;
-		bone.rotation[1] = float( READ_SHORT() ) / 32767.0f;
-		bone.rotation[2] = float( READ_SHORT() ) / 32767.0f;
-		bone.rotation[3] = float( READ_SHORT() ) / 32767.0f;
+		receivedRotation[0] = float( READ_SHORT() ) / 32767.0f;
+		receivedRotation[1] = float( READ_SHORT() ) / 32767.0f;
+		receivedRotation[2] = float( READ_SHORT() ) / 32767.0f;
+		receivedRotation[3] = float( READ_SHORT() ) / 32767.0f;
 
 		float lengthSquared =
-			bone.rotation[0] * bone.rotation[0] +
-			bone.rotation[1] * bone.rotation[1] +
-			bone.rotation[2] * bone.rotation[2] +
-			bone.rotation[3] * bone.rotation[3];
+			receivedRotation[0] * receivedRotation[0] +
+			receivedRotation[1] * receivedRotation[1] +
+			receivedRotation[2] * receivedRotation[2] +
+			receivedRotation[3] * receivedRotation[3];
 
 		if( lengthSquared < 0.0001f )
 		{
-			bone.rotation[0] = 0.0f;
-			bone.rotation[1] = 0.0f;
-			bone.rotation[2] = 0.0f;
-			bone.rotation[3] = 1.0f;
+			receivedRotation[0] = 0.0f;
+			receivedRotation[1] = 0.0f;
+			receivedRotation[2] = 0.0f;
+			receivedRotation[3] = 1.0f;
 		}
 		else
 		{
 			const float inverseLength = 1.0f / sqrtf( lengthSquared );
 			for( int axis = 0; axis < 4; ++axis )
-				bone.rotation[axis] *= inverseLength;
+				receivedRotation[axis] *= inverseLength;
 		}
 
+		if( bone.valid )
+		{
+			float interpolatedOrigin[3];
+			float interpolatedRotation[4];
+			Ragdoll_GetInterpolatedBonePose(
+				bone,
+				now,
+				interpolatedOrigin,
+				interpolatedRotation
+			);
+
+			memcpy( bone.previousOrigin, interpolatedOrigin, sizeof( interpolatedOrigin ) );
+			memcpy( bone.previousRotation, interpolatedRotation, sizeof( interpolatedRotation ) );
+		}
+		else
+		{
+			// The first complete snapshot initializes the pose without
+			// interpolating from uninitialized memory or GoldSrc animation.
+			memcpy( bone.previousOrigin, receivedOrigin, sizeof( receivedOrigin ) );
+			memcpy( bone.previousRotation, receivedRotation, sizeof( receivedRotation ) );
+		}
+
+		memcpy( bone.origin, receivedOrigin, sizeof( receivedOrigin ) );
+		memcpy( bone.rotation, receivedRotation, sizeof( receivedRotation ) );
+		bone.poseTime = now;
 		bone.valid = true;
 	}
 
 	return 1;
 }
 
-int Ragdoll_GetBoneTransform( int entityIndex, int boneIndex, float transform[3][4] )
+int Ragdoll_GetBoneTransform( int entityIndex, int ragdollMarker, int boneIndex, float transform[3][4] )
 {
 	if( !transform || entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES ||
+		ragdollMarker != RAGDOLL_ENTITY_MARKER ||
 		boneIndex < 0 || boneIndex >= MAX_RAGDOLL_BONES )
 		return 0;
 
@@ -130,13 +247,18 @@ int Ragdoll_GetBoneTransform( int entityIndex, int boneIndex, float transform[3]
 		boneIndex >= entry.boneCount || !entry.bones[boneIndex].valid )
 		return 0;
 
-	// Snapshots are sent at 20 Hz. Expire stale mappings so a recycled entity
-	// slot cannot inherit an old ragdoll pose indefinitely.
-	if( gEngfuncs.GetClientTime() - entry.lastUpdateTime > 0.25f )
-		return 0;
+	const float now = (float)gEngfuncs.GetClientTime();
 
-	// Do not mix a partial first network chunk with GoldSrc local animation
-	// matrices. Wait until the first complete skeletal snapshot has arrived.
+	// Clear, rather than merely ignoring, expired mappings. This also handles
+	// client-time rollback after a map restart or demo rewind.
+	if( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT )
+	{
+		memset( &entry, 0, sizeof( entry ) );
+		return 0;
+	}
+
+	// Wait for every chunk of the first snapshot. Otherwise the renderer
+	// would combine a partial ragdoll with the ordinary GoldSrc animation.
 	for( int i = 0; i < entry.boneCount; ++i )
 	{
 		if( !entry.bones[i].valid )
@@ -152,26 +274,30 @@ int Ragdoll_GetBoneTransform( int entityIndex, int boneIndex, float transform[3]
 	}
 
 	const ragdoll_bone_pose_t &bone = entry.bones[boneIndex];
-	const float x = bone.rotation[0];
-	const float y = bone.rotation[1];
-	const float z = bone.rotation[2];
-	const float w = bone.rotation[3];
+	float origin[3];
+	float rotation[4];
+	Ragdoll_GetInterpolatedBonePose( bone, now, origin, rotation );
+
+	const float x = rotation[0];
+	const float y = rotation[1];
+	const float z = rotation[2];
+	const float w = rotation[3];
 
 	// Same 3x4 quaternion matrix layout consumed by StudioModelRenderer.
 	transform[0][0] = 1.0f - 2.0f * ( y * y + z * z );
 	transform[0][1] = 2.0f * ( x * y - z * w );
 	transform[0][2] = 2.0f * ( x * z + y * w );
-	transform[0][3] = bone.origin[0];
+	transform[0][3] = origin[0];
 
 	transform[1][0] = 2.0f * ( x * y + z * w );
 	transform[1][1] = 1.0f - 2.0f * ( x * x + z * z );
 	transform[1][2] = 2.0f * ( y * z - x * w );
-	transform[1][3] = bone.origin[1];
+	transform[1][3] = origin[1];
 
 	transform[2][0] = 2.0f * ( x * z - y * w );
 	transform[2][1] = 2.0f * ( y * z + x * w );
 	transform[2][2] = 1.0f - 2.0f * ( x * x + y * y );
-	transform[2][3] = bone.origin[2];
+	transform[2][3] = origin[2];
 
 	return 1;
 }
