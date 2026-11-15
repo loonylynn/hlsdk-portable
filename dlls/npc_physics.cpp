@@ -1919,17 +1919,11 @@ int NPCPhysics_TraceAndApplyImpact(
 			if( bone.studioBoneIndex >= 0 &&
 				bone.studioBoneIndex < targetRagdoll->studioBoneCount )
 			{
-				// Source's C_BaseEntity::AddStudioDecal projects a world-space
-				// ray onto the studio model instance. Send the true Jolt contact
-				// point and world-space incoming normal; the client projects them
-				// onto its rendered triangles and then caches bone-attached fragments.
-				const Vec3 worldNormal = -( rayDirection / rayLength );
+				// Mirror Source's AddStudioDecal input: preserve the shot ray and
+				// Jolt contact so the client can intersect the actual skinned mesh.
 				const float markRadius = (std::max)(
-					0.85f, (std::min)( 1.9f, 0.85f + impulseMagnitude * 0.00035f ) );
+					3.0f, (std::min)( 6.0f, 3.0f + impulseMagnitude * 0.00045f ) );
 				const int encodedRadius = static_cast<int>( markRadius * 4.0f + 0.5f );
-				const int encodedNormalX = static_cast<int>( worldNormal.GetX() * 127.0f + 128.0f );
-				const int encodedNormalY = static_cast<int>( worldNormal.GetY() * 127.0f + 128.0f );
-				const int encodedNormalZ = static_cast<int>( worldNormal.GetZ() * 127.0f + 128.0f );
 				const int markColor = bloodColor == BLOOD_COLOR_GREEN ? 1 :
 					( bloodColor == BLOOD_COLOR_YELLOW ? 2 : 0 );
 				const float markOrigin[3] = {
@@ -1942,12 +1936,12 @@ int NPCPhysics_TraceAndApplyImpact(
 					WRITE_SHORT( ENTINDEX( targetEntity ) );
 					WRITE_SHORT( targetRagdoll->networkID );
 					WRITE_BYTE( bone.studioBoneIndex );
+					WRITE_COORD( start[0] );
+					WRITE_COORD( start[1] );
+					WRITE_COORD( start[2] );
 					WRITE_COORD( impactPoint.GetX() );
 					WRITE_COORD( impactPoint.GetY() );
 					WRITE_COORD( impactPoint.GetZ() );
-					WRITE_BYTE( (std::max)( 0, (std::min)( 255, encodedNormalX ) ) );
-					WRITE_BYTE( (std::max)( 0, (std::min)( 255, encodedNormalY ) ) );
-					WRITE_BYTE( (std::max)( 0, (std::min)( 255, encodedNormalZ ) ) );
 					WRITE_BYTE( (std::max)( 1, (std::min)( 255, encodedRadius ) ) );
 					WRITE_BYTE( markColor );
 				MESSAGE_END();
