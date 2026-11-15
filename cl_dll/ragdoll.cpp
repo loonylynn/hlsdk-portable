@@ -177,7 +177,7 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 		snprintf(
 			message,
 			sizeof( message ),
-			"[NPC ragdoll] Receiving entity %d, ID %d (%d/%d simulated bones).\n",
+			"[NPC ragdoll] Receiving entity %d, ID %d (%d/%d pose bones).\n",
 			entityIndex,
 			ragdollID,
 			bodyCount,
@@ -261,7 +261,7 @@ int Ragdoll_MessageHandler( const char *, int size, void *buffer )
 		snprintf(
 			message,
 			sizeof( message ),
-			"[NPC ragdoll] Snapshot complete for entity %d, ID %d (%d/%d bodies).\n",
+			"[NPC ragdoll] Snapshot complete for entity %d, ID %d (%d/%d pose bones).\n",
 			entityIndex,
 			ragdollID,
 			entry.receivedBodyCount,
@@ -282,11 +282,16 @@ void Ragdoll_DebugRenderGate( int entityIndex, int ragdollMarker, int hardwareRe
 	if( !entry.active || entry.renderGateReported )
 		return;
 
-	char message[192];
+	const float now = (float)gEngfuncs.GetClientTime();
+	const float age = now - entry.lastUpdateTime;
+	const bool fresh = now >= entry.lastUpdateTime && age <= RAGDOLL_STALE_TIMEOUT;
+	const bool renderReady = hardwareRenderer && entry.initialSnapshotComplete &&
+		entry.receivedBodyCount >= entry.bodyCount && fresh;
+	char message[224];
 	snprintf(
 		message,
 		sizeof( message ),
-		"[NPC ragdoll] Render gate entity %d, ID %d: marker=%d hardware=%d bodies=%d/%d complete=%d age=%.3f.\n",
+		"[NPC ragdoll] Pose state entity %d, ID %d: carrier-marker=%d (diagnostic) hardware=%d pose-bones=%d/%d complete=%d fresh=%d render-ready=%d age=%.3f.\n",
 		entityIndex,
 		entry.ragdollID,
 		ragdollMarker,
@@ -294,7 +299,9 @@ void Ragdoll_DebugRenderGate( int entityIndex, int ragdollMarker, int hardwareRe
 		entry.receivedBodyCount,
 		entry.bodyCount,
 		entry.initialSnapshotComplete ? 1 : 0,
-		(float)gEngfuncs.GetClientTime() - entry.lastUpdateTime
+		fresh ? 1 : 0,
+		renderReady ? 1 : 0,
+		age
 	);
 	ConsolePrint( message );
 	entry.renderGateReported = true;
@@ -302,14 +309,12 @@ void Ragdoll_DebugRenderGate( int entityIndex, int ragdollMarker, int hardwareRe
 
 int Ragdoll_GetBoneTransform(
 	int entityIndex,
-	int ragdollMarker,
 	int boneIndex,
 	float transform[3][4] )
 {
 	if( !transform ||
 		entityIndex <= 0 ||
 		entityIndex >= MAX_RAGDOLL_ENTITIES ||
-		ragdollMarker != RAGDOLL_ENTITY_MARKER ||
 		boneIndex < 0 ||
 		boneIndex >= MAX_RAGDOLL_BONES )
 		return 0;
