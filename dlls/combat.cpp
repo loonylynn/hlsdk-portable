@@ -40,6 +40,13 @@ extern DLL_GLOBAL int			g_iSkillLevel;
 extern Vector VecBModelOrigin( entvars_t *pevBModel );
 extern entvars_t *g_pevLastInflictor;
 
+#ifndef CLIENT_DLL
+#define NPCPHYSICS_RAGDOLL_HIT( trace ) \
+	((trace).pHit && NPCPhysics_IsRagdollEntity( (trace).pHit ))
+#else
+#define NPCPHYSICS_RAGDOLL_HIT( trace ) FALSE
+#endif
+
 #define GERMAN_GIB_COUNT		4
 #define	HUMAN_GIB_COUNT			6
 #define ALIEN_GIB_COUNT			4
@@ -1613,7 +1620,8 @@ void CBaseEntity::FireBullets( ULONG cShots, Vector vecSrc, Vector vecDirShootin
 				pEntity->TraceAttack( pevAttacker, iDamage, vecDir, &tr, DMG_BULLET | ( ( iDamage > 16 ) ? DMG_ALWAYSGIB : DMG_NEVERGIB ) );
 
 				TEXTURETYPE_PlaySound( &tr, vecSrc, vecEnd, iBulletType );
-				DecalGunshot( &tr, iBulletType );
+				if( !NPCPHYSICS_RAGDOLL_HIT( tr ) )
+					DecalGunshot( &tr, iBulletType );
 			} 
 			else switch( iBulletType )
 			{
@@ -1622,19 +1630,22 @@ void CBaseEntity::FireBullets( ULONG cShots, Vector vecSrc, Vector vecDirShootin
 				pEntity->TraceAttack( pevAttacker, gSkillData.monDmg9MM, vecDir, &tr, DMG_BULLET );
 
 				TEXTURETYPE_PlaySound( &tr, vecSrc, vecEnd, iBulletType );
-				DecalGunshot( &tr, iBulletType );
+				if( !NPCPHYSICS_RAGDOLL_HIT( tr ) )
+					DecalGunshot( &tr, iBulletType );
 				break;
 			case BULLET_MONSTER_MP5:
 				pEntity->TraceAttack( pevAttacker, gSkillData.monDmgMP5, vecDir, &tr, DMG_BULLET );
 
 				TEXTURETYPE_PlaySound( &tr, vecSrc, vecEnd, iBulletType );
-				DecalGunshot( &tr, iBulletType );
+				if( !NPCPHYSICS_RAGDOLL_HIT( tr ) )
+					DecalGunshot( &tr, iBulletType );
 				break;
 			case BULLET_MONSTER_12MM:
 				pEntity->TraceAttack( pevAttacker, gSkillData.monDmg12MM, vecDir, &tr, DMG_BULLET );
 				if( !tracer )
 				{
 					TEXTURETYPE_PlaySound( &tr, vecSrc, vecEnd, iBulletType );
+					if( !NPCPHYSICS_RAGDOLL_HIT( tr ) )
 					DecalGunshot( &tr, iBulletType );
 				}
 				break;
@@ -1644,6 +1655,7 @@ void CBaseEntity::FireBullets( ULONG cShots, Vector vecSrc, Vector vecDirShootin
 				// only decal glass
 				if( !FNullEnt( tr.pHit ) && VARS( tr.pHit )->rendermode != 0 )
 				{
+					if( !NPCPHYSICS_RAGDOLL_HIT( tr ) )
 					UTIL_DecalTrace( &tr, DECAL_GLASSBREAK1 + RANDOM_LONG( 0, 2 ) );
 				}
 
@@ -1711,7 +1723,8 @@ Vector CBaseEntity::FireBulletsPlayer( ULONG cShots, Vector vecSrc, Vector vecDi
 				pEntity->TraceAttack( pevAttacker, iDamage, vecDir, &tr, DMG_BULLET | ( ( iDamage > 16 ) ? DMG_ALWAYSGIB : DMG_NEVERGIB ) );
 
 				TEXTURETYPE_PlaySound( &tr, vecSrc, vecEnd, iBulletType );
-				DecalGunshot( &tr, iBulletType );
+				if( !NPCPHYSICS_RAGDOLL_HIT( tr ) )
+					DecalGunshot( &tr, iBulletType );
 			} 
 			else switch( iBulletType )
 			{
@@ -1735,6 +1748,7 @@ Vector CBaseEntity::FireBulletsPlayer( ULONG cShots, Vector vecSrc, Vector vecDi
 				// only decal glass
 				if( !FNullEnt( tr.pHit ) && VARS( tr.pHit )->rendermode != 0 )
 				{
+					if( !NPCPHYSICS_RAGDOLL_HIT( tr ) )
 					UTIL_DecalTrace( &tr, DECAL_GLASSBREAK1 + RANDOM_LONG( 0, 2 ) );
 				}
 

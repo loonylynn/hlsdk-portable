@@ -521,6 +521,10 @@ static void StudioClosestPointOnTriangle(
 typedef struct studio_ragdoll_surface_search_s
 {
 	float point[3];
+	float rayStart[3];
+	float rayDirection[3];
+	float rayLength;
+	float contactDistance;
 	float impactNormal[3];
 	float maxDistanceSquared;
 	float nearestDistanceSquared;
@@ -528,8 +532,12 @@ typedef struct studio_ragdoll_surface_search_s
 	float bestScore;
 	float surfacePoint[3];
 	float surfaceNormal[3];
+	float rayBestScore;
+	float raySurfacePoint[3];
+	float raySurfaceNormal[3];
 	int triangleCount;
 	qboolean found;
+	qboolean rayFound;
 } studio_ragdoll_surface_search_t;
 
 static void StudioFindRagdollImpactSurface(
@@ -539,13 +547,13 @@ static void StudioFindRagdollImpactSurface(
 	studio_ragdoll_surface_search_t *context =
 		(studio_ragdoll_surface_search_t *)opaqueContext;
 	++context->triangleCount;
+
 	float edge1[3], edge2[3], normal[3];
 	for( int axis = 0; axis < 3; ++axis )
 	{
 		edge1[axis] = triangle->world[1][axis] - triangle->world[0][axis];
 		edge2[axis] = triangle->world[2][axis] - triangle->world[0][axis];
 	}
-
 	normal[0] = edge1[1] * edge2[2] - edge1[2] * edge2[1];
 	normal[1] = edge1[2] * edge2[0] - edge1[0] * edge2[2];
 	normal[2] = edge1[0] * edge2[1] - edge1[1] * edge2[0];
@@ -554,6 +562,59 @@ static void StudioFindRagdollImpactSurface(
 	StudioNormalize3( normal );
 
 	const float alignment = fabsf( StudioDot3( normal, context->impactNormal ) );
+
+	// Source's AddStudioDecal projects its Ray_t into the studio model. Use
+	// the original shot ray against the actual skinned triangle, and extend
+	// it slightly beyond the Jolt convex-hull contact to account for the
+	// difference between the authored collision hull and visible skin.
+	float pvec[3] = {
+		context->rayDirection[1] * edge2[2] - context->rayDirection[2] * edge2[1],
+		context->rayDirection[2] * edge2[0] - context->rayDirection[0] * edge2[2],
+		context->rayDirection[0] * edge2[1] - context->rayDirection[1] * edge2[0]
+	};
+	const float determinant = StudioDot3( edge1, pvec );
+	if( fabsf( determinant ) > 0.000001f )
+	{
+		const float inverseDeterminant = 1.0f / determinant;
+		float tvec[3];
+		for( int axis = 0; axis < 3; ++axis )
+			tvec[axis] = context->rayStart[axis] - triangle->world[0][axis];
+		const float u = StudioDot3( tvec, pvec ) * inverseDeterminant;
+		float qvec[3] = {
+			tvec[1] * edge1[2] - tvec[2] * edge1[1],
+			tvec[2] * edge1[0] - tvec[0] * edge1[2],
+			tvec[0] * edge1[1] - tvec[1] * edge1[0]
+		};
+		const float v = StudioDot3( context->rayDirection, qvec ) * inverseDeterminant;
+		const float rayDistance = StudioDot3( edge2, qvec ) * inverseDeterminant;
+
+		if( u >= 0.0f && v >= 0.0f && u + v <= 1.0f &&
+			rayDistance >= 0.0f && rayDistance <= context->rayLength )
+		{
+			const float contactOffset = fabsf( rayDistance - context->contactDistance );
+			if( contactOffset <= 12.0f && alignment >= 0.05f )
+			{
+				const float rayScore = contactOffset + ( 1.0f - alignment ) * 12.0f;
+				if( !context->rayFound || rayScore < context->rayBestScore )
+				{
+					context->rayFound = true;
+					context->rayBestScore = rayScore;
+					if( StudioDot3( normal, context->impactNormal ) < 0.0f )
+						for( int axis = 0; axis < 3; ++axis )
+							normal[axis] = -normal[axis];
+					for( int axis = 0; axis < 3; ++axis )
+					{
+						context->raySurfacePoint[axis] =
+							context->rayStart[axis] + context->rayDirection[axis] * rayDistance;
+						context->raySurfaceNormal[axis] = normal[axis];
+					}
+				}
+			}
+		}
+	}
+
+	// Bounded fallback for a coarse collision hull whose surface doesn't
+	// intersect the original shot ray. Prefer faces facing the incoming ray.
 	float closest[3], delta[3];
 	StudioClosestPointOnTriangle(
 		context->point,
@@ -568,13 +629,12 @@ static void StudioFindRagdollImpactSurface(
 		for( int axis = 0; axis < 3; ++axis )
 			context->nearestPoint[axis] = closest[axis];
 	}
-	if( distanceSquared > context->maxDistanceSquared )
+	if( distanceSquared > context->maxDistanceSquared || alignment < 0.05f )
 		return;
 
-	const float score = distanceSquared + ( 1.0f - alignment ) * 2.0f;
+	const float score = distanceSquared + ( 1.0f - alignment ) * 36.0f;
 	if( context->found && score >= context->bestScore )
 		return;
-
 	if( StudioDot3( normal, context->impactNormal ) < 0.0f )
 		for( int axis = 0; axis < 3; ++axis )
 			normal[axis] = -normal[axis];
@@ -609,8 +669,8 @@ typedef struct studio_ragdoll_mark_cache_s
 	int entityIndex;
 	model_t *model;
 	int boneIndex;
+	float rayStart[3];
 	float worldPosition[3];
-	float worldNormal[3];
 	float radius;
 	int bloodColor;
 	unsigned int age;
@@ -790,8 +850,8 @@ static qboolean StudioSameRagdollMark(
 	int entityIndex,
 	model_t *model,
 	int boneIndex,
+	const float rayStart[3],
 	const float worldPosition[3],
-	const float worldNormal[3],
 	float radius,
 	int bloodColor )
 {
@@ -803,8 +863,8 @@ static qboolean StudioSameRagdollMark(
 
 	for( int axis = 0; axis < 3; ++axis )
 	{
-		if( fabsf( cache->worldPosition[axis] - worldPosition[axis] ) > 0.001f ||
-			fabsf( cache->worldNormal[axis] - worldNormal[axis] ) > 0.001f )
+		if( fabsf( cache->rayStart[axis] - rayStart[axis] ) > 0.001f ||
+			fabsf( cache->worldPosition[axis] - worldPosition[axis] ) > 0.001f )
 			return false;
 	}
 	return true;
@@ -814,8 +874,8 @@ static studio_ragdoll_mark_cache_t *StudioFindRagdollMarkCache(
 	int entityIndex,
 	model_t *model,
 	int boneIndex,
+	const float rayStart[3],
 	const float worldPosition[3],
-	const float worldNormal[3],
 	float radius,
 	int bloodColor )
 {
@@ -824,7 +884,7 @@ static studio_ragdoll_mark_cache_t *StudioFindRagdollMarkCache(
 		studio_ragdoll_mark_cache_t *cache = &g_StudioRagdollDecalCache[i];
 		if( StudioSameRagdollMark(
 				cache, entityIndex, model, boneIndex,
-				worldPosition, worldNormal, radius, bloodColor ) )
+				rayStart, worldPosition, radius, bloodColor ) )
 		{
 			cache->age = ++g_StudioRagdollDecalCacheClock;
 			return cache;
@@ -851,8 +911,8 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	CStudioModelRenderer *renderer,
 	int entityIndex,
 	int boneIndex,
+	const float rayStart[3],
 	const float worldPosition[3],
-	const float worldNormal[3],
 	float sourceRadius,
 	int bloodColor,
 	int projectionAttempt )
@@ -866,37 +926,54 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	cache->model = renderer->m_pRenderModel;
 	cache->boneIndex = boneIndex;
 	cache->radius = sourceRadius;
-	if( cache->radius < 1.0f ) cache->radius = 1.0f;
-	if( cache->radius > 2.5f ) cache->radius = 2.5f;
+	if( cache->radius < 3.0f ) cache->radius = 3.0f;
+	if( cache->radius > 6.0f ) cache->radius = 6.0f;
 	cache->bloodColor = bloodColor;
 	cache->projectionAttempts = projectionAttempt;
 	for( int axis = 0; axis < 3; ++axis )
 	{
+		cache->rayStart[axis] = rayStart[axis];
 		cache->worldPosition[axis] = worldPosition[axis];
-		cache->worldNormal[axis] = worldNormal[axis];
 	}
 
 	studio_ragdoll_surface_search_t search;
 	memset( &search, 0, sizeof( search ) );
-	// Match Source's AddStudioDecal contract: the impact is supplied in
-	// world space and projected against the rendered studio-model triangles.
-	// Do not reconstruct it through a per-bone transform; that round-trip was
-	// the source of large offsets between the Jolt hit and this skinned mesh.
+	float rayVector[3];
+	float rayLengthSquared = 0.0f;
 	for( int axis = 0; axis < 3; ++axis )
 	{
 		search.point[axis] = worldPosition[axis];
-		search.impactNormal[axis] = worldNormal[axis];
+		search.rayStart[axis] = rayStart[axis];
+		rayVector[axis] = worldPosition[axis] - rayStart[axis];
+		rayLengthSquared += rayVector[axis] * rayVector[axis];
 	}
-	StudioNormalize3( search.impactNormal );
-	if( StudioDot3( search.impactNormal, search.impactNormal ) < 0.5f )
+	if( rayLengthSquared < 0.0001f )
 		return NULL;
-
-	search.maxDistanceSquared = 144.0f; // allow for coarse .jrag hulls
+	const float originalRayLength = sqrtf( rayLengthSquared );
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		search.rayDirection[axis] = rayVector[axis] / originalRayLength;
+		search.impactNormal[axis] = -search.rayDirection[axis];
+	}
+	search.contactDistance = originalRayLength;
+	search.rayLength = originalRayLength + 12.0f;
+	search.rayBestScore = 1.0e30f;
+	search.rayFound = false;
+	search.maxDistanceSquared = 144.0f;
 	search.nearestDistanceSquared = 1.0e30f;
 	search.bestScore = 1.0e30f;
 	search.found = false;
 	StudioForEachRagdollModelTriangle(
 		renderer, StudioFindRagdollImpactSurface, &search );
+	if( search.rayFound )
+	{
+		search.found = true;
+		for( int axis = 0; axis < 3; ++axis )
+		{
+			search.surfacePoint[axis] = search.raySurfacePoint[axis];
+			search.surfaceNormal[axis] = search.raySurfaceNormal[axis];
+		}
+	}
 	if( !search.found )
 	{
 		cache->age = ++g_StudioRagdollDecalCacheClock;
@@ -910,11 +987,9 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
 			gEngfuncs.Con_Printf )
 			gEngfuncs.Con_Printf(
-				"[Ragdoll decals] entity %d bone %d: world hit attempt %d/5 parsed %d triangles, no surface within 12 units (nearest %.2f; mark %.1f %.1f %.1f; surface %.1f %.1f %.1f)\n",
+				"[Ragdoll decals] entity %d bone %d: shot-ray attempt %d/5 parsed %d triangles, no ray hit or aligned surface within 12 units (nearest %.2f)\n",
 				entityIndex, boneIndex, projectionAttempt + 1, search.triangleCount,
-				sqrtf( search.nearestDistanceSquared ),
-				search.point[0], search.point[1], search.point[2],
-				search.nearestPoint[0], search.nearestPoint[1], search.nearestPoint[2] );
+				sqrtf( search.nearestDistanceSquared ) );
 		return cache;
 	}
 
@@ -922,7 +997,7 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	memset( &build, 0, sizeof( build ) );
 	build.cache = cache;
 	build.radius = cache->radius;
-	build.depthTolerance = cache->radius * 0.30f + 0.10f;
+	build.depthTolerance = cache->radius * 0.55f + 0.75f;
 	for( int axis = 0; axis < 3; ++axis )
 	{
 		build.center[axis] = search.surfacePoint[axis];
@@ -1090,23 +1165,23 @@ static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 	for( int markIndex = 0; markIndex < markCount; ++markIndex )
 	{
 		int boneIndex = -1;
+		float rayStart[3];
 		float worldPosition[3];
-		float worldNormal[3];
 		float sourceRadius = 0.0f;
 		int bloodColor = 0;
 		if( !Ragdoll_GetImpactMark(
 				entity->index, markIndex, &boneIndex,
-				worldPosition, worldNormal, &sourceRadius, &bloodColor ) )
+				rayStart, worldPosition, &sourceRadius, &bloodColor ) )
 			continue;
 
 		studio_ragdoll_mark_cache_t *cache = StudioFindRagdollMarkCache(
 			entity->index, renderer->m_pRenderModel, boneIndex,
-			worldPosition, worldNormal, sourceRadius, bloodColor );
+			rayStart, worldPosition, sourceRadius, bloodColor );
 		if( !cache )
 		{
 			cache = StudioBuildRagdollMarkCache(
 				renderer, entity->index, boneIndex,
-				worldPosition, worldNormal, sourceRadius, bloodColor, 0 );
+				rayStart, worldPosition, sourceRadius, bloodColor, 0 );
 		}
 		else if( cache->fragmentCount <= 0 && cache->retryTime > 0.0f &&
 			(float)gEngfuncs.GetClientTime() >= cache->retryTime )
@@ -1115,7 +1190,7 @@ static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 			cache->valid = false;
 			cache = StudioBuildRagdollMarkCache(
 				renderer, entity->index, boneIndex,
-				worldPosition, worldNormal, sourceRadius, bloodColor, nextAttempt );
+				rayStart, worldPosition, sourceRadius, bloodColor, nextAttempt );
 		}
 
 		if( cache && cache->fragmentCount > 0 )
