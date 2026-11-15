@@ -388,7 +388,7 @@ namespace
 
 	static void NPCPhysics_CaptureLivePose( edict_t *ent )
 	{
-		if( !g_serverPhysicsAPI || !NPCPhysics_IsEligibleMonster( ent ) ||
+		if( !g_serverPhysicsAPI || !NPCPhysics_Enabled() || !NPCPhysics_IsEligibleMonster( ent ) ||
 			ent->v.deadflag != DEAD_NO || !gpGlobals ||
 			!g_engfuncs.pfnGetBonePosition )
 			return;
@@ -1430,7 +1430,7 @@ namespace
 			ragdoll.physicsSkeleton.GetPtr(), physicsNeutralModel.data(),
 			ragdoll.studioSkeleton.GetPtr(), studioNeutralModel.data(), canMapJoint );
 		if( ragdoll.skeletonMapper->GetMappings().size() != static_cast<size_t>( ragdoll.bodyCount ) )
-			return NPCPhysics_RagdollSetupFailed( "Jolt could not map every authored zombie body to its studio bone" );
+			return NPCPhysics_RagdollSetupFailed( "Jolt could not map every authored NPC body to its studio bone" );
 		ragdoll.skeletonMapper->LockAllTranslations(
 			ragdoll.studioSkeleton.GetPtr(), studioNeutralModel.data() );
 		ragdoll.physicsPoseModelSpace.resize( ragdoll.bodyCount );
