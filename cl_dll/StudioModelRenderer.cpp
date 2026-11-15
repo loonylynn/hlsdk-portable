@@ -236,29 +236,54 @@ strip/fan command streams. Vertices are transformed with the exact bone
 matrices used by the studio renderer, including the replicated Jolt pose.
 ====================
 */
-typedef void (*studio_ragdoll_triangle_callback_t)( const float triangle[3][3], void *context );
+/*
+ * Ragdoll studio decals are clipped only once per impact. Each clipped
+ * polygon stores barycentric coordinates inside its source studio triangle;
+ * rendering then transforms only those triangles' three vertices, rather
+ * than walking the entire model for every decal on every frame.
+ */
+#define STUDIO_RAGDOLL_DECAL_CACHE_COUNT 128
+#define STUDIO_RAGDOLL_DECAL_MAX_FRAGMENTS 32
+#define STUDIO_RAGDOLL_DECAL_MAX_POLY_VERTS 10
+
+typedef struct studio_ragdoll_triangle_s
+{
+	float world[3][3];
+	float local[3][3];
+	int bone[3];
+} studio_ragdoll_triangle_t;
+
+typedef void (*studio_ragdoll_triangle_callback_t)(
+	const studio_ragdoll_triangle_t *triangle, void *context );
 
 static qboolean StudioGetRagdollWorldVertex(
 	CStudioModelRenderer *renderer,
 	const byte *vertexBones,
 	const vec3_t *vertices,
 	int vertexIndex,
-	vec3_t worldPosition )
+	vec3_t localPosition,
+	vec3_t worldPosition,
+	int *boneIndex )
 {
 	if( !renderer || !renderer->m_pStudioHeader || !renderer->m_pbonetransform ||
-		!vertexBones || !vertices ||
+		!renderer->m_pSubModel || !vertexBones || !vertices ||
 		vertexIndex < 0 || vertexIndex >= renderer->m_pSubModel->numverts )
 		return false;
 
-	const int boneIndex = vertexBones[vertexIndex];
-	if( boneIndex < 0 || boneIndex >= renderer->m_pStudioHeader->numbones )
+	const int index = vertexBones[vertexIndex];
+	if( index < 0 || index >= renderer->m_pStudioHeader->numbones )
 		return false;
 
-	VectorTransform(
-		vertices[vertexIndex],
-		(*renderer->m_pbonetransform)[boneIndex],
-		worldPosition
-	);
+	if( localPosition )
+		VectorCopy( vertices[vertexIndex], localPosition );
+	if( worldPosition )
+		VectorTransform(
+			vertices[vertexIndex],
+			(*renderer->m_pbonetransform)[index],
+			worldPosition
+		);
+	if( boneIndex )
+		*boneIndex = index;
 	return true;
 }
 
@@ -290,7 +315,8 @@ static void StudioForEachRagdollModelTriangle(
 		if( !model || model->numverts <= 0 ||
 			model->numverts > MAXSTUDIOVERTS ||
 			model->nummesh <= 0 || model->nummesh > MAXSTUDIOMESHES ||
-			!model->vertinfoindex || !model->vertindex || !model->meshindex )
+			model->vertinfoindex <= 0 || model->vertindex <= 0 ||
+			model->meshindex <= 0 )
 			continue;
 
 		const byte *vertexBones =
@@ -311,9 +337,6 @@ static void StudioForEachRagdollModelTriangle(
 				(const short *)((const byte *)renderer->m_pStudioHeader + mesh->triindex);
 			int trianglesVisited = 0;
 
-			// Each command is a signed vertex count followed by that many
-			// mstudiotrivert_t records. Positive counts are strips; negative
-			// counts are fans, matching the GoldSrc studio mesh format.
 			for( int commandIndex = 0;
 				commandIndex <= mesh->numtris && trianglesVisited < mesh->numtris;
 				++commandIndex )
@@ -354,19 +377,24 @@ static void StudioForEachRagdollModelTriangle(
 						indices[2] = vertex;
 					}
 
-					float triangle[3][3];
-					if( StudioGetRagdollWorldVertex(
-							renderer, vertexBones, vertices,
-							commandVertices[indices[0]].vertindex, triangle[0] ) &&
-						StudioGetRagdollWorldVertex(
-							renderer, vertexBones, vertices,
-							commandVertices[indices[1]].vertindex, triangle[1] ) &&
-						StudioGetRagdollWorldVertex(
-							renderer, vertexBones, vertices,
-							commandVertices[indices[2]].vertindex, triangle[2] ) )
+					studio_ragdoll_triangle_t triangle;
+					qboolean valid = true;
+					for( int corner = 0; corner < 3; ++corner )
 					{
-						callback( triangle, context );
+						if( !StudioGetRagdollWorldVertex(
+								renderer, vertexBones, vertices,
+								commandVertices[indices[corner]].vertindex,
+								triangle.local[corner],
+								triangle.world[corner],
+								&triangle.bone[corner] ) )
+						{
+							valid = false;
+							break;
+						}
 					}
+
+					if( valid )
+						callback( &triangle, context );
 					++trianglesVisited;
 				}
 
@@ -489,7 +517,7 @@ static void StudioClosestPointOnTriangle(
 	}
 }
 
-struct studio_ragdoll_surface_search_s
+typedef struct studio_ragdoll_surface_search_s
 {
 	float point[3];
 	float impactNormal[3];
@@ -498,53 +526,47 @@ struct studio_ragdoll_surface_search_s
 	float surfacePoint[3];
 	float surfaceNormal[3];
 	qboolean found;
-};
+} studio_ragdoll_surface_search_t;
 
 static void StudioFindRagdollImpactSurface(
-	const float triangle[3][3],
+	const studio_ragdoll_triangle_t *triangle,
 	void *opaqueContext )
 {
-	studio_ragdoll_surface_search_s *context =
-		(studio_ragdoll_surface_search_s *)opaqueContext;
+	studio_ragdoll_surface_search_t *context =
+		(studio_ragdoll_surface_search_t *)opaqueContext;
 	float edge1[3], edge2[3], normal[3];
 	for( int axis = 0; axis < 3; ++axis )
 	{
-		edge1[axis] = triangle[1][axis] - triangle[0][axis];
-		edge2[axis] = triangle[2][axis] - triangle[0][axis];
+		edge1[axis] = triangle->world[1][axis] - triangle->world[0][axis];
+		edge2[axis] = triangle->world[2][axis] - triangle->world[0][axis];
 	}
 
 	normal[0] = edge1[1] * edge2[2] - edge1[2] * edge2[1];
 	normal[1] = edge1[2] * edge2[0] - edge1[0] * edge2[2];
 	normal[2] = edge1[0] * edge2[1] - edge1[1] * edge2[0];
-	const float normalLengthSquared = StudioDot3( normal, normal );
-	if( normalLengthSquared < 0.000001f )
+	if( StudioDot3( normal, normal ) < 0.000001f )
 		return;
 	StudioNormalize3( normal );
 
-	float alignment = StudioDot3( normal, context->impactNormal );
-	if( fabsf( alignment ) < 0.05f )
-		return;
-	if( alignment < 0.0f )
-	{
-		alignment = -alignment;
-		for( int axis = 0; axis < 3; ++axis )
-			normal[axis] = -normal[axis];
-	}
-
+	const float alignment = fabsf( StudioDot3( normal, context->impactNormal ) );
 	float closest[3], delta[3];
 	StudioClosestPointOnTriangle(
-		context->point, triangle[0], triangle[1], triangle[2], closest );
+		context->point,
+		triangle->world[0], triangle->world[1], triangle->world[2],
+		closest );
 	for( int axis = 0; axis < 3; ++axis )
 		delta[axis] = closest[axis] - context->point[axis];
 	const float distanceSquared = StudioDot3( delta, delta );
 	if( distanceSquared > context->maxDistanceSquared )
 		return;
 
-	// Prefer a nearby triangle facing the incoming impact direction, while
-	// still allowing for coarse convex-hull normals on the physics side.
-	const float score = distanceSquared + ( 1.0f - alignment ) * 0.5f;
+	const float score = distanceSquared + ( 1.0f - alignment ) * 2.0f;
 	if( context->found && score >= context->bestScore )
 		return;
+
+	if( StudioDot3( normal, context->impactNormal ) < 0.0f )
+		for( int axis = 0; axis < 3; ++axis )
+			normal[axis] = -normal[axis];
 
 	context->found = true;
 	context->bestScore = score;
@@ -557,20 +579,48 @@ static void StudioFindRagdollImpactSurface(
 
 typedef struct studio_ragdoll_decal_vertex_s
 {
-	float position[3];
+	float barycentric[3];
 	float u, v, depth;
 } studio_ragdoll_decal_vertex_t;
 
-typedef struct studio_ragdoll_decal_draw_s
+typedef struct studio_ragdoll_decal_fragment_s
 {
-	triangleapi_t *tri;
+	int bone[3];
+	float local[3][3];
+	int vertexCount;
+	float barycentric[STUDIO_RAGDOLL_DECAL_MAX_POLY_VERTS][3];
+	float uv[STUDIO_RAGDOLL_DECAL_MAX_POLY_VERTS][2];
+} studio_ragdoll_decal_fragment_t;
+
+typedef struct studio_ragdoll_mark_cache_s
+{
+	qboolean valid;
+	int entityIndex;
+	model_t *model;
+	int boneIndex;
+	float localPosition[3];
+	float localNormal[3];
+	float radius;
+	int bloodColor;
+	unsigned int age;
+	int fragmentCount;
+	studio_ragdoll_decal_fragment_t fragments[STUDIO_RAGDOLL_DECAL_MAX_FRAGMENTS];
+} studio_ragdoll_mark_cache_t;
+
+static studio_ragdoll_mark_cache_t
+	g_StudioRagdollDecalCache[STUDIO_RAGDOLL_DECAL_CACHE_COUNT];
+static unsigned int g_StudioRagdollDecalCacheClock;
+
+typedef struct studio_ragdoll_decal_build_s
+{
+	studio_ragdoll_mark_cache_t *cache;
 	float center[3];
 	float normal[3];
 	float tangent[3];
 	float bitangent[3];
 	float radius;
 	float depthTolerance;
-} studio_ragdoll_decal_draw_t;
+} studio_ragdoll_decal_build_t;
 
 static float StudioRagdollDecalClipDistance(
 	const studio_ragdoll_decal_vertex_t &vertex,
@@ -611,7 +661,8 @@ static int StudioClipRagdollDecalPolygon(
 			StudioRagdollDecalClipDistance( current, plane, depthTolerance );
 		const qboolean currentInside = currentDistance >= 0.0f;
 
-		if( previousInside != currentInside && outputCount < 16 )
+		if( previousInside != currentInside &&
+			outputCount < STUDIO_RAGDOLL_DECAL_MAX_POLY_VERTS )
 		{
 			const float denominator = previousDistance - currentDistance;
 			if( fabsf( denominator ) > 0.000001f )
@@ -619,8 +670,10 @@ static int StudioClipRagdollDecalPolygon(
 				const float fraction = previousDistance / denominator;
 				studio_ragdoll_decal_vertex_t intersection;
 				for( int axis = 0; axis < 3; ++axis )
-					intersection.position[axis] = previous.position[axis] +
-						( current.position[axis] - previous.position[axis] ) * fraction;
+					intersection.barycentric[axis] =
+						previous.barycentric[axis] +
+						( current.barycentric[axis] -
+						  previous.barycentric[axis] ) * fraction;
 				intersection.u = previous.u + ( current.u - previous.u ) * fraction;
 				intersection.v = previous.v + ( current.v - previous.v ) * fraction;
 				intersection.depth = previous.depth +
@@ -629,7 +682,8 @@ static int StudioClipRagdollDecalPolygon(
 			}
 		}
 
-		if( currentInside && outputCount < 16 )
+		if( currentInside &&
+			outputCount < STUDIO_RAGDOLL_DECAL_MAX_POLY_VERTS )
 			output[outputCount++] = current;
 
 		previous = current;
@@ -640,41 +694,48 @@ static int StudioClipRagdollDecalPolygon(
 	return outputCount;
 }
 
-static void StudioDrawRagdollImpactTriangle(
-	const float triangle[3][3],
+static void StudioBuildRagdollImpactFragment(
+	const studio_ragdoll_triangle_t *triangle,
 	void *opaqueContext )
 {
-	studio_ragdoll_decal_draw_t *context =
-		(studio_ragdoll_decal_draw_t *)opaqueContext;
+	studio_ragdoll_decal_build_t *context =
+		(studio_ragdoll_decal_build_t *)opaqueContext;
+	if( context->cache->fragmentCount >= STUDIO_RAGDOLL_DECAL_MAX_FRAGMENTS )
+		return;
+
 	float edge1[3], edge2[3], faceNormal[3];
 	for( int axis = 0; axis < 3; ++axis )
 	{
-		edge1[axis] = triangle[1][axis] - triangle[0][axis];
-		edge2[axis] = triangle[2][axis] - triangle[0][axis];
+		edge1[axis] = triangle->world[1][axis] - triangle->world[0][axis];
+		edge2[axis] = triangle->world[2][axis] - triangle->world[0][axis];
 	}
 	faceNormal[0] = edge1[1] * edge2[2] - edge1[2] * edge2[1];
 	faceNormal[1] = edge1[2] * edge2[0] - edge1[0] * edge2[2];
 	faceNormal[2] = edge1[0] * edge2[1] - edge1[1] * edge2[0];
-	const float faceLengthSquared = StudioDot3( faceNormal, faceNormal );
-	if( faceLengthSquared < 0.000001f )
+	if( StudioDot3( faceNormal, faceNormal ) < 0.000001f )
 		return;
 	StudioNormalize3( faceNormal );
 
-	// Project onto the visible side only; this prevents a mark from appearing
-	// on the opposite side of a thin limb or torso.
-	if( StudioDot3( faceNormal, context->normal ) < 0.12f )
+	// Studio triangle winding varies between models. Accept either winding,
+	// then orient the tiny polygon bias toward the impact-facing side.
+	const float facing = StudioDot3( faceNormal, context->normal );
+	if( fabsf( facing ) < 0.05f )
 		return;
+	if( facing < 0.0f )
+		for( int axis = 0; axis < 3; ++axis )
+			faceNormal[axis] = -faceNormal[axis];
 
-	studio_ragdoll_decal_vertex_t first[16];
-	studio_ragdoll_decal_vertex_t second[16];
+	studio_ragdoll_decal_vertex_t first[STUDIO_RAGDOLL_DECAL_MAX_POLY_VERTS];
+	studio_ragdoll_decal_vertex_t second[STUDIO_RAGDOLL_DECAL_MAX_POLY_VERTS];
 	for( int vertex = 0; vertex < 3; ++vertex )
 	{
 		float delta[3];
 		for( int axis = 0; axis < 3; ++axis )
-		{
-			first[vertex].position[axis] = triangle[vertex][axis];
-			delta[axis] = triangle[vertex][axis] - context->center[axis];
-		}
+			delta[axis] = triangle->world[vertex][axis] - context->center[axis];
+
+		first[vertex].barycentric[0] = vertex == 0 ? 1.0f : 0.0f;
+		first[vertex].barycentric[1] = vertex == 1 ? 1.0f : 0.0f;
+		first[vertex].barycentric[2] = vertex == 2 ? 1.0f : 0.0f;
 		first[vertex].u = StudioDot3( delta, context->tangent ) / context->radius;
 		first[vertex].v = StudioDot3( delta, context->bitangent ) / context->radius;
 		first[vertex].depth = StudioDot3( delta, context->normal );
@@ -694,30 +755,271 @@ static void StudioDrawRagdollImpactTriangle(
 		output = swap;
 	}
 
-	context->tri->Begin( TRI_TRIANGLE_FAN );
+	studio_ragdoll_decal_fragment_t &fragment =
+		context->cache->fragments[context->cache->fragmentCount++];
+	for( int corner = 0; corner < 3; ++corner )
+	{
+		fragment.bone[corner] = triangle->bone[corner];
+		VectorCopy( triangle->local[corner], fragment.local[corner] );
+	}
+	fragment.vertexCount = vertexCount;
 	for( int vertex = 0; vertex < vertexCount; ++vertex )
 	{
-		float biasedPosition[3];
 		for( int axis = 0; axis < 3; ++axis )
-			biasedPosition[axis] =
-				input[vertex].position[axis] + faceNormal[axis] * 0.025f;
-
-		context->tri->TexCoord2f(
-			input[vertex].u * 0.5f + 0.5f,
-			input[vertex].v * 0.5f + 0.5f );
-		context->tri->Vertex3fv( biasedPosition );
+			fragment.barycentric[vertex][axis] = input[vertex].barycentric[axis];
+		fragment.uv[vertex][0] = input[vertex].u * 0.5f + 0.5f;
+		fragment.uv[vertex][1] = input[vertex].v * 0.5f + 0.5f;
 	}
-	context->tri->End();
+}
+
+static qboolean StudioSameRagdollMark(
+	const studio_ragdoll_mark_cache_t *cache,
+	int entityIndex,
+	model_t *model,
+	int boneIndex,
+	const float localPosition[3],
+	const float localNormal[3],
+	float radius,
+	int bloodColor )
+{
+	if( !cache->valid || cache->entityIndex != entityIndex ||
+		cache->model != model || cache->boneIndex != boneIndex ||
+		cache->bloodColor != bloodColor ||
+		fabsf( cache->radius - radius ) > 0.001f )
+		return false;
+
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		if( fabsf( cache->localPosition[axis] - localPosition[axis] ) > 0.001f ||
+			fabsf( cache->localNormal[axis] - localNormal[axis] ) > 0.001f )
+			return false;
+	}
+	return true;
+}
+
+static studio_ragdoll_mark_cache_t *StudioFindRagdollMarkCache(
+	int entityIndex,
+	model_t *model,
+	int boneIndex,
+	const float localPosition[3],
+	const float localNormal[3],
+	float radius,
+	int bloodColor )
+{
+	for( int i = 0; i < STUDIO_RAGDOLL_DECAL_CACHE_COUNT; ++i )
+	{
+		studio_ragdoll_mark_cache_t *cache = &g_StudioRagdollDecalCache[i];
+		if( StudioSameRagdollMark(
+				cache, entityIndex, model, boneIndex,
+				localPosition, localNormal, radius, bloodColor ) )
+		{
+			cache->age = ++g_StudioRagdollDecalCacheClock;
+			return cache;
+		}
+	}
+	return NULL;
+}
+
+static studio_ragdoll_mark_cache_t *StudioAllocateRagdollMarkCache( void )
+{
+	studio_ragdoll_mark_cache_t *oldest = &g_StudioRagdollDecalCache[0];
+	for( int i = 0; i < STUDIO_RAGDOLL_DECAL_CACHE_COUNT; ++i )
+	{
+		studio_ragdoll_mark_cache_t *cache = &g_StudioRagdollDecalCache[i];
+		if( !cache->valid )
+			return cache;
+		if( cache->age < oldest->age )
+			oldest = cache;
+	}
+	return oldest;
+}
+
+static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
+	CStudioModelRenderer *renderer,
+	int entityIndex,
+	int boneIndex,
+	const float localPosition[3],
+	const float localNormal[3],
+	float sourceRadius,
+	int bloodColor )
+{
+	float boneTransform[3][4];
+	if( !Ragdoll_GetBoneTransform( entityIndex, boneIndex, boneTransform ) )
+		return NULL;
+
+	studio_ragdoll_surface_search_t search;
+	memset( &search, 0, sizeof( search ) );
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		search.point[axis] =
+			boneTransform[axis][0] * localPosition[0] +
+			boneTransform[axis][1] * localPosition[1] +
+			boneTransform[axis][2] * localPosition[2] +
+			boneTransform[axis][3];
+		search.impactNormal[axis] =
+			boneTransform[axis][0] * localNormal[0] +
+			boneTransform[axis][1] * localNormal[1] +
+			boneTransform[axis][2] * localNormal[2];
+	}
+	StudioNormalize3( search.impactNormal );
+	if( StudioDot3( search.impactNormal, search.impactNormal ) < 0.5f )
+		return NULL;
+
+	search.maxDistanceSquared = 144.0f; // allow for coarse .jrag hulls
+	search.bestScore = 1.0e30f;
+	search.found = false;
+	StudioForEachRagdollModelTriangle(
+		renderer, StudioFindRagdollImpactSurface, &search );
+	if( !search.found )
+		return NULL;
+
+	studio_ragdoll_mark_cache_t *cache = StudioAllocateRagdollMarkCache();
+	memset( cache, 0, sizeof( *cache ) );
+	cache->valid = true;
+	cache->entityIndex = entityIndex;
+	cache->model = renderer->m_pRenderModel;
+	cache->boneIndex = boneIndex;
+	cache->radius = sourceRadius;
+	if( cache->radius < 1.0f ) cache->radius = 1.0f;
+	if( cache->radius > 2.5f ) cache->radius = 2.5f;
+	cache->bloodColor = bloodColor;
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		cache->localPosition[axis] = localPosition[axis];
+		cache->localNormal[axis] = localNormal[axis];
+	}
+
+	studio_ragdoll_decal_build_t build;
+	memset( &build, 0, sizeof( build ) );
+	build.cache = cache;
+	build.radius = cache->radius;
+	build.depthTolerance = cache->radius * 0.30f + 0.10f;
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		build.center[axis] = search.surfacePoint[axis];
+		build.normal[axis] = search.surfaceNormal[axis];
+	}
+
+	float reference[3] = { 0.0f, 0.0f, 1.0f };
+	if( fabsf( build.normal[2] ) > 0.90f )
+	{
+		reference[0] = 0.0f;
+		reference[1] = 1.0f;
+		reference[2] = 0.0f;
+	}
+	build.tangent[0] = reference[1] * build.normal[2] - reference[2] * build.normal[1];
+	build.tangent[1] = reference[2] * build.normal[0] - reference[0] * build.normal[2];
+	build.tangent[2] = reference[0] * build.normal[1] - reference[1] * build.normal[0];
+	StudioNormalize3( build.tangent );
+	build.bitangent[0] = build.normal[1] * build.tangent[2] - build.normal[2] * build.tangent[1];
+	build.bitangent[1] = build.normal[2] * build.tangent[0] - build.normal[0] * build.tangent[2];
+	build.bitangent[2] = build.normal[0] * build.tangent[1] - build.normal[1] * build.tangent[0];
+
+	StudioForEachRagdollModelTriangle(
+		renderer, StudioBuildRagdollImpactFragment, &build );
+	cache->age = ++g_StudioRagdollDecalCacheClock;
+	return cache;
+}
+
+static void StudioDrawCachedRagdollMark(
+	CStudioModelRenderer *renderer,
+	triangleapi_t *tri,
+	const studio_ragdoll_mark_cache_t *cache )
+{
+	if( !renderer || !renderer->m_pbonetransform || !tri ||
+		!cache || !cache->valid || cache->fragmentCount <= 0 )
+		return;
+
+	float red = 0.30f, green = 0.012f, blue = 0.004f;
+	if( cache->bloodColor == 1 )
+	{
+		red = 0.025f;
+		green = 0.24f;
+		blue = 0.018f;
+	}
+	else if( cache->bloodColor == 2 )
+	{
+		red = 0.30f;
+		green = 0.22f;
+		blue = 0.012f;
+	}
+
+	tri->Color4f( red, green, blue, 0.88f );
+	tri->Begin( TRI_TRIANGLES );
+
+	for( int fragmentIndex = 0;
+		fragmentIndex < cache->fragmentCount;
+		++fragmentIndex )
+	{
+		const studio_ragdoll_decal_fragment_t &fragment =
+			cache->fragments[fragmentIndex];
+		float worldTriangle[3][3];
+		qboolean valid = true;
+		for( int corner = 0; corner < 3; ++corner )
+		{
+			if( fragment.bone[corner] < 0 ||
+				fragment.bone[corner] >= renderer->m_pStudioHeader->numbones )
+			{
+				valid = false;
+				break;
+			}
+			VectorTransform(
+				fragment.local[corner],
+				(*renderer->m_pbonetransform)[fragment.bone[corner]],
+				worldTriangle[corner] );
+		}
+		if( !valid )
+			continue;
+
+		float edge1[3], edge2[3], normal[3];
+		for( int axis = 0; axis < 3; ++axis )
+		{
+			edge1[axis] = worldTriangle[1][axis] - worldTriangle[0][axis];
+			edge2[axis] = worldTriangle[2][axis] - worldTriangle[0][axis];
+		}
+		normal[0] = edge1[1] * edge2[2] - edge1[2] * edge2[1];
+		normal[1] = edge1[2] * edge2[0] - edge1[0] * edge2[2];
+		normal[2] = edge1[0] * edge2[1] - edge1[1] * edge2[0];
+		if( StudioDot3( normal, normal ) < 0.000001f )
+			continue;
+		StudioNormalize3( normal );
+
+		for( int fanVertex = 1;
+			fanVertex + 1 < fragment.vertexCount;
+			++fanVertex )
+		{
+			const int triangleIndices[3] = { 0, fanVertex, fanVertex + 1 };
+			for( int corner = 0; corner < 3; ++corner )
+			{
+				const int polygonIndex = triangleIndices[corner];
+				const float *bary = fragment.barycentric[polygonIndex];
+				float position[3];
+				for( int axis = 0; axis < 3; ++axis )
+				{
+					position[axis] =
+						worldTriangle[0][axis] * bary[0] +
+						worldTriangle[1][axis] * bary[1] +
+						worldTriangle[2][axis] * bary[2] +
+						normal[axis] * 0.025f;
+				}
+				tri->TexCoord2f(
+					fragment.uv[polygonIndex][0],
+					fragment.uv[polygonIndex][1] );
+				tri->Vertex3fv( position );
+			}
+		}
+	}
+
+	tri->End();
 }
 
 /*
 ====================
 StudioDrawRagdollImpactMarks
 
-Backport the useful part of Source's studio decal projection: find the
-closest skinned model surface, project a small decal volume, and clip every
-affected studio triangle against it. The resulting polygons lie on the
-actual animated/Jolt-skinned mesh instead of floating bone-aligned quads.
+The expensive projection/clipping is cached per impact. Rendering each
+subsequent frame only transforms the few source triangles touched by each
+mark and interpolates their cached barycentric decal vertices.
 ====================
 */
 static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
@@ -730,7 +1032,12 @@ static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 
 	const int markCount = Ragdoll_GetImpactMarkCount( entity->index );
 	if( markCount <= 0 )
+	{
+		for( int i = 0; i < STUDIO_RAGDOLL_DECAL_CACHE_COUNT; ++i )
+			if( g_StudioRagdollDecalCache[i].entityIndex == entity->index )
+				g_StudioRagdollDecalCache[i].valid = false;
 		return;
+	}
 
 	if( !cl_blobshadow_sprite )
 		cl_blobshadow_sprite = IEngineStudio.Mod_ForName( "sprites/glow01.spr", false );
@@ -752,91 +1059,23 @@ static void StudioDrawRagdollImpactMarks( CStudioModelRenderer *renderer )
 		float localNormal[3];
 		float sourceRadius = 0.0f;
 		int bloodColor = 0;
-		float boneTransform[3][4];
-
 		if( !Ragdoll_GetImpactMark(
 				entity->index, markIndex, &boneIndex,
-				localPosition, localNormal, &sourceRadius, &bloodColor ) ||
-			!Ragdoll_GetBoneTransform( entity->index, boneIndex, boneTransform ) )
+				localPosition, localNormal, &sourceRadius, &bloodColor ) )
 			continue;
 
-		studio_ragdoll_surface_search_s search;
-		memset( &search, 0, sizeof( search ) );
-		for( int axis = 0; axis < 3; ++axis )
+		studio_ragdoll_mark_cache_t *cache = StudioFindRagdollMarkCache(
+			entity->index, renderer->m_pRenderModel, boneIndex,
+			localPosition, localNormal, sourceRadius, bloodColor );
+		if( !cache )
 		{
-			search.point[axis] =
-				boneTransform[axis][0] * localPosition[0] +
-				boneTransform[axis][1] * localPosition[1] +
-				boneTransform[axis][2] * localPosition[2] +
-				boneTransform[axis][3];
-			search.impactNormal[axis] =
-				boneTransform[axis][0] * localNormal[0] +
-				boneTransform[axis][1] * localNormal[1] +
-				boneTransform[axis][2] * localNormal[2];
-		}
-		StudioNormalize3( search.impactNormal );
-		if( StudioDot3( search.impactNormal, search.impactNormal ) < 0.5f )
-			continue;
-
-		float radius = sourceRadius;
-		if( radius < 0.75f ) radius = 0.75f;
-		if( radius > 2.50f ) radius = 2.50f;
-		const float searchRadius = radius * 2.5f + 1.0f;
-		search.maxDistanceSquared = searchRadius * searchRadius;
-		search.bestScore = 1.0e30f;
-		search.found = false;
-
-		StudioForEachRagdollModelTriangle(
-			renderer, StudioFindRagdollImpactSurface, &search );
-		if( !search.found )
-			continue;
-
-		studio_ragdoll_decal_draw_t draw;
-		memset( &draw, 0, sizeof( draw ) );
-		draw.tri = tri;
-		draw.radius = radius;
-		draw.depthTolerance = radius * 0.25f + 0.08f;
-		for( int axis = 0; axis < 3; ++axis )
-		{
-			draw.center[axis] = search.surfacePoint[axis];
-			draw.normal[axis] = search.surfaceNormal[axis];
+			cache = StudioBuildRagdollMarkCache(
+				renderer, entity->index, boneIndex,
+				localPosition, localNormal, sourceRadius, bloodColor );
 		}
 
-		float reference[3] = { 0.0f, 0.0f, 1.0f };
-		if( fabsf( draw.normal[2] ) > 0.90f )
-		{
-			reference[0] = 0.0f;
-			reference[1] = 1.0f;
-			reference[2] = 0.0f;
-		}
-
-		draw.tangent[0] = reference[1] * draw.normal[2] - reference[2] * draw.normal[1];
-		draw.tangent[1] = reference[2] * draw.normal[0] - reference[0] * draw.normal[2];
-		draw.tangent[2] = reference[0] * draw.normal[1] - reference[1] * draw.normal[0];
-		StudioNormalize3( draw.tangent );
-		draw.bitangent[0] = draw.normal[1] * draw.tangent[2] - draw.normal[2] * draw.tangent[1];
-		draw.bitangent[1] = draw.normal[2] * draw.tangent[0] - draw.normal[0] * draw.tangent[2];
-		draw.bitangent[2] = draw.normal[0] * draw.tangent[1] - draw.normal[1] * draw.tangent[0];
-
-		float red = 0.30f;
-		float green = 0.012f;
-		float blue = 0.004f;
-		if( bloodColor == 1 )
-		{
-			red = 0.025f;
-			green = 0.24f;
-			blue = 0.018f;
-		}
-		else if( bloodColor == 2 )
-		{
-			red = 0.30f;
-			green = 0.22f;
-			blue = 0.012f;
-		}
-
-		tri->Color4f( red, green, blue, 0.82f );
-		StudioForEachRagdollModelTriangle(
-			renderer, StudioDrawRagdollImpactTriangle, &draw );
+		if( cache && cache->fragmentCount > 0 )
+			StudioDrawCachedRagdollMark( renderer, tri, cache );
 	}
 
 	tri->Color4f( 1.0f, 1.0f, 1.0f, 1.0f );
