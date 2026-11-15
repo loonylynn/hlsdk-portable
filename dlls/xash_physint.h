@@ -1,10 +1,9 @@
 /*
  * Xash3D FWGS server physics callback ABI.
  *
- * Keep this table in lockstep with engine/physint.h:
- * SV_PHYSICS_INTERFACE_VERSION is frozen at 6, and new callbacks are appended.
- * Only the callbacks used by this module have concrete signatures here; all
- * other slots retain their pointer-sized ABI positions.
+ * Keep this table in lockstep with engine/physint.h. SV_PHYSICS_INTERFACE_VERSION
+ * is frozen at 6; the callback structure only uses pointer-sized slots except
+ * for its leading version integer.
  */
 #pragma once
 
@@ -45,7 +44,52 @@ struct xash_physics_interface_s
 	xash_physics_callback_fn pfnVoiceData;
 };
 
-int NPCPhysics_GetInterface( int version, void *callbacks );
+/*
+ * server_physics_api_t begins with 21 pointer-sized callbacks/data fields,
+ * followed by pfnTrace and pfnTraceNoEnts. The trace_t layout mirrors
+ * common/const.h in Xash3D FWGS. The engine passes this table to
+ * Server_GetPhysicsInterface before any server physics callbacks are run.
+ */
+typedef void (*xash_server_api_reserved_fn)( void );
+
+struct xash_trace_plane_s
+{
+	float normal[3];
+	float dist;
+};
+
+struct xash_trace_s
+{
+	int allsolid;
+	int startsolid;
+	int inopen;
+	int inwater;
+	float fraction;
+	float endpos[3];
+	xash_trace_plane_s plane;
+	edict_t *ent;
+	int hitgroup;
+};
+
+typedef xash_trace_s (*xash_trace_fn)(
+	const float *start,
+	float *mins,
+	float *maxs,
+	const float *end,
+	int traceType,
+	edict_t *ignore
+);
+
+struct xash_server_physics_api_s
+{
+	xash_server_api_reserved_fn reserved[21];
+	xash_trace_fn pfnTrace;
+	xash_trace_fn pfnTraceNoEnts;
+};
+
+typedef xash_trace_s xash_trace_t;
+
+int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks );
 int NPCPhysics_TryCreateRagdoll( edict_t *ent );
 void NPCPhysics_ResetMap( void );
 void NPCPhysics_Shutdown( void );
