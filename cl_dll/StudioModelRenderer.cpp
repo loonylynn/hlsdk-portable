@@ -553,6 +553,28 @@ typedef struct studio_ragdoll_decal_build_s
 	int triangleCount;
 } studio_ragdoll_decal_build_t;
 
+typedef struct studio_ragdoll_surface_anchor_s
+{
+	const float *point;
+	float closest[3];
+	float normal[3];
+	float distanceSquared;
+	int boneIndex;
+	int triangleCount;
+	qboolean found;
+} studio_ragdoll_surface_anchor_t;
+
+static qboolean StudioVectorIsFinite3( const float vector[3] )
+{
+	for( int axis = 0; axis < 3; ++axis )
+	{
+		if( !( vector[axis] == vector[axis] ) ||
+			fabsf( vector[axis] ) > 1.0e20f )
+			return false;
+	}
+	return true;
+}
+
 static double StudioDot3Double( const double *a, const double *b )
 {
 	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
