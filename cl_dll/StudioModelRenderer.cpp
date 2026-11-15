@@ -2384,12 +2384,14 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 	// TriAPI vertices are world-space; draw only after the studio renderer
 	// has restored the view transform and render state.
 	if( m_pCvarDrawEntities->value != 2 && m_pCvarDrawEntities->value != 3 )
+	{
 		StudioDrawBlobShadow(
 			m_pCurrentEntity,
 			g_BlobShadowStudioEntity == m_pCurrentEntity->index ?
 				g_BlobShadowStudioOrigin : m_pCurrentEntity->origin
 		);
 		StudioDrawRagdollImpactMarks( m_pCurrentEntity );
+	}
 }
 
 /*
