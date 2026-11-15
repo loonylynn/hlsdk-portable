@@ -501,7 +501,9 @@ namespace
 
 		// Only mutate the edict after every body and joint exists. Any earlier
 		// failure leaves the regular GoldSrc death animation path untouched.
-		ent->v.iuser4 = ragdoll.networkID;
+		// iuser4 is a small networked eligibility marker, not the ragdoll ID.
+		// This prevents cached poses from being applied to a recycled entity slot.
+		ent->v.iuser4 = 1;
 		ent->v.solid = SOLID_NOT;
 		ent->v.movetype = MOVETYPE_NONE;
 		ent->v.takedamage = DAMAGE_NO;
@@ -781,6 +783,22 @@ int NPCPhysics_GetInterface( int version, void *callbacks )
 
 void NPCPhysics_ResetMap( void )
 {
+	// These edicts are about to leave the level. Hide them before destroying
+	// their Jolt bodies so a transition/restart cannot leave frozen corpse
+	// models visible if the engine retains an entity snapshot briefly.
+	for( size_t i = 0; i < g_ragdolls.size(); ++i )
+	{
+		NPCPhysicsRagdoll &ragdoll = g_ragdolls[i];
+		if( ragdoll.entity && !ragdoll.entity->free &&
+			ragdoll.entity->serialnumber == ragdoll.serialNumber )
+		{
+			ragdoll.entity->v.effects |= EF_NODRAW;
+			ragdoll.entity->v.iuser4 = 0;
+			ragdoll.entity->v.solid = SOLID_NOT;
+			ragdoll.entity->v.movetype = MOVETYPE_NONE;
+		}
+	}
+
 	NPCPhysics_DestroyAllRagdolls();
 }
 
