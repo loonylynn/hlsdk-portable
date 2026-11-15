@@ -185,6 +185,7 @@ namespace
 		float nextPoseTime;
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
+		std::vector<float> bodyMasses;
 		Ref<Ragdoll> physicsRagdoll;
 		Ref<Skeleton> physicsSkeleton;
 		Ref<Skeleton> studioSkeleton;
@@ -1448,6 +1449,7 @@ namespace
 		ragdoll.studioPoseModelSpace.resize( ragdoll.studioBoneCount );
 
 
+		ragdoll.bodyMasses.resize( ragdoll.bodyCount, 0.0f );
 		Ref<RagdollSettings> settings = new RagdollSettings();
 		settings->mSkeleton = ragdoll.physicsSkeleton;
 		settings->mParts.resize( ragdoll.bodyCount );
@@ -1472,7 +1474,9 @@ namespace
 			part.mObjectLayer = RAGDOLL_OBJECT_LAYER;
 			part.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
 			part.mInertiaMultiplier = physicsDefinition->inertiaMultiplier;
-			part.mMassPropertiesOverride.mMass = (std::max)( 0.25f, bodyMass );
+			const float physicalBodyMass = (std::max)( 0.25f, bodyMass );
+			ragdoll.bodyMasses[body] = physicalBodyMass;
+			part.mMassPropertiesOverride.mMass = physicalBodyMass;
 			part.mFriction = physicsDefinition->friction;
 			part.mRestitution = physicsDefinition->restitution;
 			part.mLinearDamping = physicsDefinition->linearDamping;
@@ -1833,12 +1837,14 @@ int NPCPhysics_ApplyBlastImpulse(
 	edict_t *targetEntity,
 	const float *origin,
 	float radius,
-	float impulseMagnitude )
+	float blastDamage )
 {
+	const float blastScale = NPCPhysics_GetCvar( "sv_npc_vphysics_blast_scale", 1.0f );
 	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
 		!targetEntity || targetEntity->free || !origin ||
 		!std::isfinite( radius ) || radius <= 0.001f ||
-		!std::isfinite( impulseMagnitude ) || impulseMagnitude <= 0.0f ||
+		!std::isfinite( blastDamage ) || blastDamage <= 0.0f ||
+		!std::isfinite( blastScale ) || blastScale <= 0.0f ||
 		!std::isfinite( origin[0] ) || !std::isfinite( origin[1] ) ||
 		!std::isfinite( origin[2] ) )
 		return 0;
@@ -1856,23 +1862,40 @@ int NPCPhysics_ApplyBlastImpulse(
 		}
 	}
 
-	if( !targetRagdoll || targetRagdoll->bodyCount <= 0 )
+	if( !targetRagdoll || targetRagdoll->bodyCount <= 0 ||
+		targetRagdoll->bodyMasses.size() != static_cast<size_t>( targetRagdoll->bodyCount ) )
 		return 0;
 
+	// Treat the authored ragdoll as a collection of physical body masses.
+	// A blast gives each exposed body a velocity change, rather than applying
+	// an arbitrary, mass-independent impulse to every limb.
 	struct NPCPhysicsBlastCandidate
 	{
 		BodyID bodyID;
-		RVec3 position;
 		Vec3 direction;
-		float falloff;
+		float impulseMagnitude;
+		float distance;
+		float mass;
 	};
+
+	const float desiredSpeed = (std::min)( blastDamage * 4.0f, 400.0f );
+	if( !std::isfinite( desiredSpeed ) || desiredSpeed <= 0.0f )
+		return 0;
 
 	std::vector<NPCPhysicsBlastCandidate> candidates;
 	candidates.reserve( targetRagdoll->bodyCount );
 	BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+	float totalRagdollMass = 0.0f;
+	float visibleMass = 0.0f;
+	float requestedImpulse = 0.0f;
 
 	for( int body = 0; body < targetRagdoll->bodyCount; ++body )
 	{
+		const float bodyMass = targetRagdoll->bodyMasses[body];
+		if( !std::isfinite( bodyMass ) || bodyMass <= 0.0f )
+			continue;
+		totalRagdollMass += bodyMass;
+
 		const BodyID bodyID = targetRagdoll->physicsRagdoll->GetBodyID( body );
 		const RVec3 position = bodyInterface.GetPosition( bodyID );
 		const Vec3 offset(
@@ -1888,9 +1911,8 @@ int NPCPhysics_ApplyBlastImpulse(
 		{
 			direction = offset / distance;
 
-			// The nearest Jolt hit must be this body. The same query includes
-			// the native BSP world and inline brush colliders, so a wall or
-			// another ragdoll body can occlude this part of the blast.
+			// Keep the existing full-scene visibility test: world BSP and
+			// inline brush colliders can shield individual ragdoll bodies.
 			const RRayCast ray(
 				RVec3( origin[0], origin[1], origin[2] ),
 				offset );
@@ -1902,22 +1924,26 @@ int NPCPhysics_ApplyBlastImpulse(
 		}
 		else
 		{
-			// Avoid an undefined radial direction when an explosion is
-			// centered inside a body; use a small upward impulse instead.
+			// A blast centered inside a body has no stable radial direction.
 			direction = Vec3( 0.0f, 0.0f, 1.0f );
 		}
 
+		const float falloff = 1.0f - distance / radius;
+		if( falloff <= 0.0f )
+			continue;
+
 		NPCPhysicsBlastCandidate candidate;
 		candidate.bodyID = bodyID;
-		candidate.position = position;
 		candidate.direction = direction;
-		candidate.falloff = 1.0f - distance / radius;
-		if( candidate.falloff <= 0.0f )
-			continue;
+		candidate.mass = bodyMass;
+		candidate.distance = distance;
+		candidate.impulseMagnitude = bodyMass * desiredSpeed * falloff;
 		candidates.push_back( candidate );
+		visibleMass += bodyMass;
+		requestedImpulse += candidate.impulseMagnitude;
 	}
 
-	if( candidates.empty() )
+	if( candidates.empty() || visibleMass <= 0.0f || requestedImpulse <= 0.0f )
 	{
 		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 			ALERT(
@@ -1928,14 +1954,25 @@ int NPCPhysics_ApplyBlastImpulse(
 		return 0;
 	}
 
-	const float baseImpulse = (std::min)( impulseMagnitude, 3000.0f );
+	// Bound the total momentum budget so large damage values cannot inject
+	// unbounded energy into a multi-body constraint system. The per-body share
+	// remains proportional to its physical mass and local distance falloff.
+	const float scaledRequestedImpulse = requestedImpulse * blastScale;
+	const float budgetScale = scaledRequestedImpulse > 30000.0f
+		? 30000.0f / scaledRequestedImpulse : 1.0f;
+	const float finalScale = blastScale * budgetScale;
+
+	// Applying the impulse at the explosion location (not each body's center)
+	// creates a real lever arm. The articulated joints then transmit both
+	// translation and rotational response through the whole ragdoll.
+	const RVec3 applicationPoint( origin[0], origin[1], origin[2] );
 	for( size_t i = 0; i < candidates.size(); ++i )
 	{
 		const NPCPhysicsBlastCandidate &candidate = candidates[i];
-		Vec3 impulse = candidate.direction * ( baseImpulse * candidate.falloff );
-		impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
+		const Vec3 impulse = candidate.direction *
+			( candidate.impulseMagnitude * finalScale );
 		bodyInterface.ActivateBody( candidate.bodyID );
-		bodyInterface.AddImpulse( candidate.bodyID, impulse, candidate.position );
+		bodyInterface.AddImpulse( candidate.bodyID, impulse, applicationPoint );
 	}
 
 	// Force the next end-frame snapshot to carry the blast response promptly.
@@ -1945,10 +1982,11 @@ int NPCPhysics_ApplyBlastImpulse(
 	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
-			"[NPC blast] Applied ragdoll impulse: ent=%d id=%d bodies=%d/%d radius=%.1f base-impulse=%.1f.\n",
+			"[NPC blast] Applied: ent=%d id=%d bodies=%d/%d visible-mass=%.1f/%.1f radius=%.1f speed=%.1f impulse=%.1f scale=%.2f.\n",
 			ENTINDEX( targetEntity ), targetRagdoll->networkID,
 			(int)candidates.size(), targetRagdoll->bodyCount,
-			radius, baseImpulse
+			visibleMass, totalRagdollMass, radius, desiredSpeed,
+			scaledRequestedImpulse * budgetScale, finalScale
 		);
 
 	return (int)candidates.size();
