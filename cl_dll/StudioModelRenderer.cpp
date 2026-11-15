@@ -613,32 +613,78 @@ static qboolean StudioClosestPointOnRagdollTriangle(
 	return StudioVectorIsFinite3( closest );
 }
 
+typedef struct studio_ragdoll_anchor_diagnostics_s
+{
+	int invalidVertices;
+	int degenerateNormals;
+	int invalidClosestPoints;
+	int invalidDistances;
+	int usableTriangles;
+	float minimum[3];
+	float maximum[3];
+	qboolean haveBounds;
+} studio_ragdoll_anchor_diagnostics_t;
+
 static void StudioFindNearestRagdollSurface(
 	const studio_ragdoll_triangle_t *triangle,
 	void *opaqueContext )
 {
 	studio_ragdoll_surface_anchor_t *anchor =
 		(studio_ragdoll_surface_anchor_t *)opaqueContext;
+	studio_ragdoll_anchor_diagnostics_t *diagnostics =
+		(studio_ragdoll_anchor_diagnostics_t *)( anchor + 1 );
 	++anchor->triangleCount;
 
-	if( !StudioVectorIsFinite3( triangle->world[0] ) ||
-		!StudioVectorIsFinite3( triangle->world[1] ) ||
-		!StudioVectorIsFinite3( triangle->world[2] ) )
-		return;
+	for( int vertex = 0; vertex < 3; ++vertex )
+	{
+		if( !StudioVectorIsFinite3( triangle->world[vertex] ) )
+		{
+			++diagnostics->invalidVertices;
+			return;
+		}
+		if( !diagnostics->haveBounds )
+		{
+			for( int axis = 0; axis < 3; ++axis )
+			{
+				diagnostics->minimum[axis] = triangle->world[vertex][axis];
+				diagnostics->maximum[axis] = triangle->world[vertex][axis];
+			}
+			diagnostics->haveBounds = true;
+		}
+		else
+		{
+			for( int axis = 0; axis < 3; ++axis )
+			{
+				if( triangle->world[vertex][axis] < diagnostics->minimum[axis] )
+					diagnostics->minimum[axis] = triangle->world[vertex][axis];
+				if( triangle->world[vertex][axis] > diagnostics->maximum[axis] )
+					diagnostics->maximum[axis] = triangle->world[vertex][axis];
+			}
+		}
+	}
 
-	float edge1[3], edge2[3], faceNormal[3];
+	// Compute the surface normal and its magnitude in double precision.
+	// A float cross product can overflow while all of its source coordinates
+	// are still finite, preventing every triangle from becoming an anchor.
+	double edge1[3], edge2[3], faceNormalDouble[3];
 	for( int axis = 0; axis < 3; ++axis )
 	{
-		edge1[axis] = triangle->world[1][axis] - triangle->world[0][axis];
-		edge2[axis] = triangle->world[2][axis] - triangle->world[0][axis];
+		edge1[axis] =
+			(double)triangle->world[1][axis] - (double)triangle->world[0][axis];
+		edge2[axis] =
+			(double)triangle->world[2][axis] - (double)triangle->world[0][axis];
 	}
-	faceNormal[0] = edge1[1] * edge2[2] - edge1[2] * edge2[1];
-	faceNormal[1] = edge1[2] * edge2[0] - edge1[0] * edge2[2];
-	faceNormal[2] = edge1[0] * edge2[1] - edge1[1] * edge2[0];
-	const float normalLengthSquared = StudioDot3( faceNormal, faceNormal );
-	if( !( normalLengthSquared > 0.000001f ) ||
-		!( normalLengthSquared < 1.0e30f ) )
+	faceNormalDouble[0] = edge1[1] * edge2[2] - edge1[2] * edge2[1];
+	faceNormalDouble[1] = edge1[2] * edge2[0] - edge1[0] * edge2[2];
+	faceNormalDouble[2] = edge1[0] * edge2[1] - edge1[1] * edge2[0];
+	const double normalLengthSquared =
+		StudioDot3Double( faceNormalDouble, faceNormalDouble );
+	if( !( normalLengthSquared > 1.0e-12 ) ||
+		!( normalLengthSquared < 1.0e300 ) )
+	{
+		++diagnostics->degenerateNormals;
 		return;
+	}
 
 	float closest[3];
 	if( !StudioClosestPointOnRagdollTriangle(
@@ -647,22 +693,33 @@ static void StudioFindNearestRagdollSurface(
 			triangle->world[1],
 			triangle->world[2],
 			closest ) )
+	{
+		++diagnostics->invalidClosestPoints;
 		return;
+	}
 
 	double delta[3];
 	for( int axis = 0; axis < 3; ++axis )
 		delta[axis] = (double)closest[axis] - (double)anchor->point[axis];
 	const double distanceSquaredDouble = StudioDot3Double( delta, delta );
 	if( !( distanceSquaredDouble >= 0.0 ) ||
-		!( distanceSquaredDouble < 1.0e30 ) )
+		!( distanceSquaredDouble < 1.0e300 ) )
+	{
+		++diagnostics->invalidDistances;
 		return;
-	const float distanceSquared = (float)distanceSquaredDouble;
-	if( anchor->found && distanceSquared >= anchor->distanceSquared )
+	}
+	++diagnostics->usableTriangles;
+	if( anchor->found && distanceSquaredDouble >= (double)anchor->distanceSquared )
 		return;
 
-	StudioNormalize3( faceNormal );
+	const double inverseNormalLength = 1.0 / sqrt( normalLengthSquared );
+	float faceNormal[3] = {
+		(float)( faceNormalDouble[0] * inverseNormalLength ),
+		(float)( faceNormalDouble[1] * inverseNormalLength ),
+		(float)( faceNormalDouble[2] * inverseNormalLength )
+	};
 	anchor->found = true;
-	anchor->distanceSquared = distanceSquared;
+	anchor->distanceSquared = (float)distanceSquaredDouble;
 	anchor->boneIndex = triangle->bone[0];
 	VectorCopy( closest, anchor->closest );
 	VectorCopy( faceNormal, anchor->normal );
@@ -933,8 +990,13 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	// First locate the real render-surface point nearest the Jolt contact.
 	// The proxy hull and the skinned zombie mesh are not coincident, so the
 	// shot ray alone can pass outside the small decal footprint.
-	studio_ragdoll_surface_anchor_t anchor;
-	memset( &anchor, 0, sizeof( anchor ) );
+	struct studio_ragdoll_anchor_context_s
+	{
+		studio_ragdoll_surface_anchor_t anchor;
+		studio_ragdoll_anchor_diagnostics_t diagnostics;
+	} anchorContext;
+	memset( &anchorContext, 0, sizeof( anchorContext ) );
+	studio_ragdoll_surface_anchor_t &anchor = anchorContext.anchor;
 	anchor.point = worldPosition;
 	anchor.distanceSquared = 1.0e30f;
 	StudioForEachRagdollModelTriangle(
@@ -998,8 +1060,19 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
 		gEngfuncs.Con_Printf )
 		gEngfuncs.Con_Printf(
-			"[Ragdoll decals] entity %d bone %d: surface-anchored projection scanned %d triangles, anchor %s (%.2f units, bone %d), clipped %d fragments, radius %.2f, ray length %.1f\n",
+			"[Ragdoll decals] entity %d bone %d: scanned %d, usable %d, bad-vertices %d, degenerate %d, bad-closest %d, bad-distance %d, bounds [%.1f %.1f %.1f]-[%.1f %.1f %.1f], anchor %s (%.2f units, bone %d), fragments %d, radius %.2f, ray %.1f\n",
 			entityIndex, boneIndex, build.triangleCount,
+			anchorContext.diagnostics.usableTriangles,
+			anchorContext.diagnostics.invalidVertices,
+			anchorContext.diagnostics.degenerateNormals,
+			anchorContext.diagnostics.invalidClosestPoints,
+			anchorContext.diagnostics.invalidDistances,
+			anchorContext.diagnostics.haveBounds ? anchorContext.diagnostics.minimum[0] : 0.0f,
+			anchorContext.diagnostics.haveBounds ? anchorContext.diagnostics.minimum[1] : 0.0f,
+			anchorContext.diagnostics.haveBounds ? anchorContext.diagnostics.minimum[2] : 0.0f,
+			anchorContext.diagnostics.haveBounds ? anchorContext.diagnostics.maximum[0] : 0.0f,
+			anchorContext.diagnostics.haveBounds ? anchorContext.diagnostics.maximum[1] : 0.0f,
+			anchorContext.diagnostics.haveBounds ? anchorContext.diagnostics.maximum[2] : 0.0f,
 			anchor.found ? "found" : "missing",
 			anchor.found ? sqrtf( anchor.distanceSquared ) : -1.0f,
 			anchor.found ? anchor.boneIndex : -1,
