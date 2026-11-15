@@ -1,8 +1,8 @@
 /*
- * Source-authored zombie ragdolls using Jolt as the rigid-body backend.
- * Collision hulls, physical ancestry, mass and angular limits are generated
- * from the model's ragdoll.smd / ragdoll.qci. GoldSrc owns living NPCs; Jolt
- * owns the corpse only after a successful death handoff.
+ * File-authored NPC ragdolls using Jolt as the rigid-body backend.
+ * Each model supplies a sibling .jrag definition; this file contains only
+ * the generic loader, validation, Jolt construction and runtime simulation.
+ * GoldSrc owns living NPCs; Jolt owns a corpse only after successful handoff.
  */
 
 #include "extdll.h"
@@ -1912,5 +1912,6 @@ void NPCPhysics_Shutdown( void )
 	g_brushCollisionUnavailableLogged = false;
 	g_brushCollisionStatusLogged = false;
 	g_livePoses.clear();
+	g_ragdollDefinitionCache.clear();
 	g_msgRagdollPose = 0;
 }
