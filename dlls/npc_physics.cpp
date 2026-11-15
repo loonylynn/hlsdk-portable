@@ -21,12 +21,12 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
-#include <Jolt/Physics/Body/BodyLockMulti.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
-#include <Jolt/Physics/Collision/GroupFilterTable.h>
 #include <Jolt/Physics/Collision/CollisionGroup.h>
 #include <Jolt/Physics/Constraints/SixDOFConstraint.h>
+#include <Jolt/Physics/Ragdoll/Ragdoll.h>
+#include <Jolt/Skeleton/SkeletonMapper.h>
 
 #include <algorithm>
 #include <cmath>
@@ -91,11 +91,9 @@ namespace
 
 	struct RagdollBone
 	{
-		BodyID bodyID;
 		int studioBoneIndex;
 		int parentElementIndex;
 		Vec3 localShapeCenter;
-		Quat initialRotation;
 	};
 
 	struct NPCPhysicsRagdoll
@@ -109,8 +107,14 @@ namespace
 		float nextPoseTime;
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
-		std::vector<Ref<TwoBodyConstraint> > constraints;
-		Ref<GroupFilterTable> groupFilter;
+		Ref<Ragdoll> physicsRagdoll;
+		Ref<Skeleton> physicsSkeleton;
+		Ref<Skeleton> studioSkeleton;
+		Ref<SkeletonMapper> skeletonMapper;
+		std::vector<Mat44> studioDeathLocalPose;
+		std::vector<Mat44> physicsPoseModelSpace;
+		std::vector<Mat44> studioPoseModelSpace;
+		bool addedToPhysicsSystem;
 
 		NPCPhysicsRagdoll()
 			: entity( NULL ),
@@ -119,7 +123,8 @@ namespace
 			  studioBoneCount( 0 ),
 			  bodyCount( 0 ),
 			  rootElement( -1 ),
-			  nextPoseTime( 0.0f )
+			  nextPoseTime( 0.0f ),
+			  addedToPhysicsSystem( false )
 		{
 		}
 	};
@@ -275,33 +280,22 @@ namespace
 		return result;
 	}
 
-	static void NPCPhysics_DestroyRagdoll( NPCPhysicsRagdoll &ragdoll )
+static void NPCPhysics_DestroyRagdoll( NPCPhysicsRagdoll &ragdoll )
 	{
-		if( !g_npcPhysics.initialized )
-			return;
-
-		for( size_t i = 0; i < ragdoll.constraints.size(); ++i )
+		if( ragdoll.physicsRagdoll.GetPtr() )
 		{
-			if( ragdoll.constraints[i].GetPtr() )
-				g_npcPhysics.system.RemoveConstraint( ragdoll.constraints[i].GetPtr() );
+			if( ragdoll.addedToPhysicsSystem && g_npcPhysics.initialized )
+				ragdoll.physicsRagdoll->RemoveFromPhysicsSystem();
+			ragdoll.addedToPhysicsSystem = false;
+			ragdoll.physicsRagdoll = nullptr;
 		}
-		ragdoll.constraints.clear();
-
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
-		for( size_t i = 0; i < ragdoll.bones.size(); ++i )
-		{
-			const BodyID bodyID = ragdoll.bones[i].bodyID;
-			if( bodyID.IsInvalid() )
-				continue;
-
-			if( bodyInterface.IsAdded( bodyID ) )
-				bodyInterface.RemoveBody( bodyID );
-			bodyInterface.DestroyBody( bodyID );
-			ragdoll.bones[i].bodyID = BodyID();
-		}
-
+		ragdoll.skeletonMapper = nullptr;
+		ragdoll.physicsSkeleton = nullptr;
+		ragdoll.studioSkeleton = nullptr;
+		ragdoll.studioDeathLocalPose.clear();
+		ragdoll.physicsPoseModelSpace.clear();
+		ragdoll.studioPoseModelSpace.clear();
 		ragdoll.bones.clear();
-		ragdoll.groupFilter = Ref<GroupFilterTable>();
 		ragdoll.bodyCount = 0;
 	}
 
@@ -427,7 +421,7 @@ namespace
 		VertexList vertices;
 		IndexedTriangleList triangles;
 		vertices.reserve( vertexCount );
-		triangles.reserve( indexCount / 3 );
+		triangles.reserve( static_cast<size_t>( indexCount / 3 ) * 2 );
 
 		for( uint32_t i = 0; i < vertexCount; ++i )
 		{
@@ -453,6 +447,9 @@ namespace
 				return false;
 			}
 			triangles.emplace_back( i0, i1, i2, 0 );
+			// Jolt's simulation mesh is single-sided. Include reverse winding too,
+			// so a BSP plane orientation mismatch cannot create a collision hole.
+			triangles.emplace_back( i0, i2, i1, 0 );
 		}
 
 		// The mesh is static and concave, so Jolt can use its BVH directly.
@@ -500,9 +497,10 @@ namespace
 		g_worldCollisionReady = true;
 		ALERT(
 			at_console,
-			"[NPC physics] Native BSP collision loaded: %u vertices, %u triangles.\n",
+			"[NPC physics] Two-sided native BSP collision loaded: %u vertices, %u source triangles (%u Jolt triangles).\n",
 			vertexCount,
-			indexCount / 3
+			indexCount / 3,
+			( indexCount / 3 ) * 2
 		);
 		return true;
 	}
@@ -615,9 +613,7 @@ namespace
 			RagdollBone bone;
 			bone.studioBoneIndex = rigStudioBones[body];
 			bone.parentElementIndex = definition.parentBody;
-			bone.bodyID = BodyID();
 			bone.localShapeCenter = Vec3( definition.localShapeCenter.x, definition.localShapeCenter.y, definition.localShapeCenter.z );
-			bone.initialRotation = boneRotations[bone.studioBoneIndex];
 			ragdoll.bones.push_back( bone );
 			if( bone.parentElementIndex < 0 )
 			{
@@ -670,20 +666,196 @@ namespace
 			totalMass = NPC_ZOMBIE_RAGDOLL_TOTAL_MASS;
 		totalMass = std::max( 10.0f, std::min( totalMass, 300.0f ) );
 
-		ragdoll.groupFilter = new GroupFilterTable( static_cast<uint>( ragdoll.bodyCount ) );
-		for( int i = 0; i < ragdoll.bodyCount; ++i )
+		// Build the reduced physical skeleton and complete compiled studio skeleton.
+		ragdoll.physicsSkeleton = new Skeleton();
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
-			const int parent = ragdoll.bones[i].parentElementIndex;
-			if( parent >= 0 && parent < ragdoll.bodyCount )
+			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
+			if( definition.parentBody >= body || definition.parentBody < -1 )
+				return NPCPhysics_RagdollSetupFailed( "authored zombie physics skeleton is not parent-first" );
+			ragdoll.physicsSkeleton->AddJoint( definition.boneName, definition.parentBody );
+		}
+
+		ragdoll.studioSkeleton = new Skeleton();
+		for( int studio = 0; studio < ragdoll.studioBoneCount; ++studio )
+		{
+			const int parent = studioBones[studio].parent;
+			if( parent < -1 || parent >= studio )
+				return NPCPhysics_RagdollSetupFailed( "compiled zombie studio skeleton is not parent-first" );
+			if( !studioBones[studio].name[0] )
+				return NPCPhysics_RagdollSetupFailed( "compiled zombie studio skeleton contains an unnamed bone" );
+			ragdoll.studioSkeleton->AddJoint( studioBones[studio].name, parent );
+		}
+
+		const int rootStudioBone = ragdoll.bones[ragdoll.rootElement].studioBoneIndex;
+		const Vec3 bindRootOrigin(
+			bonePositions[rootStudioBone][0],
+			bonePositions[rootStudioBone][1],
+			bonePositions[rootStudioBone][2] );
+		ragdoll.entityOriginOffset = ent->v.origin - bonePositions[rootStudioBone];
+
+		// Both neutral poses use world-oriented matrices translated relative to
+		// the pelvis. SkeletonMapper corrects the reduced rig to the MDL rig.
+		std::vector<Mat44> studioNeutralModel( ragdoll.studioBoneCount );
+		for( int studio = 0; studio < ragdoll.studioBoneCount; ++studio )
+		{
+			const Vec3 position(
+				bonePositions[studio][0],
+				bonePositions[studio][1],
+				bonePositions[studio][2] );
+			studioNeutralModel[studio] = Mat44::sRotationTranslation(
+				boneRotations[studio], position - bindRootOrigin );
+		}
+
+		// Cache the local death-pose transforms for non-physics bones.
+		ragdoll.studioDeathLocalPose.resize( ragdoll.studioBoneCount );
+		for( int studio = 0; studio < ragdoll.studioBoneCount; ++studio )
+		{
+			const int parent = studioBones[studio].parent;
+			ragdoll.studioDeathLocalPose[studio] = parent >= 0
+				? studioNeutralModel[parent].Inversed() * studioNeutralModel[studio]
+				: studioNeutralModel[studio];
+		}
+
+		std::vector<Mat44> physicsNeutralModel( ragdoll.bodyCount );
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+			physicsNeutralModel[body] = studioNeutralModel[ragdoll.bones[body].studioBoneIndex];
+
+		ragdoll.skeletonMapper = new SkeletonMapper();
+		ragdoll.skeletonMapper->Initialize(
+			ragdoll.physicsSkeleton.GetPtr(), physicsNeutralModel.data(),
+			ragdoll.studioSkeleton.GetPtr(), studioNeutralModel.data() );
+		ragdoll.skeletonMapper->LockAllTranslations(
+			ragdoll.studioSkeleton.GetPtr(), studioNeutralModel.data() );
+		ragdoll.physicsPoseModelSpace.resize( ragdoll.bodyCount );
+		ragdoll.studioPoseModelSpace.resize( ragdoll.studioBoneCount );
+
+		// Create the convex hulls directly from the authored SMD collision solids.
+		std::vector<Ref<Shape> > physicsShapes( ragdoll.bodyCount );
+		std::vector<float> massWeights( ragdoll.bodyCount, 0.0f );
+		float totalWeight = 0.0f;
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+		{
+			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
+			if( !definition.points || definition.pointCount < 4 || definition.pointCount > 32 )
+				return NPCPhysics_RagdollSetupFailed( "authored zombie collision hull has an invalid point count" );
+			Vec3 points[32];
+			for( int point = 0; point < definition.pointCount; ++point )
 			{
-				// Source's default ragdoll collision set lets non-adjacent parts
-				// collide and suppresses collisions for constrained parent pairs.
-				ragdoll.groupFilter->DisableCollision(
-					static_cast<CollisionGroup::SubGroupID>( i ),
-					static_cast<CollisionGroup::SubGroupID>( parent )
-				);
+				const NPCZombieRagdollPoint &p = definition.points[point];
+				if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) )
+					return NPCPhysics_RagdollSetupFailed( "authored zombie hull contains a non-finite vertex" );
+				points[point] = Vec3( p.x, p.y, p.z );
+			}
+			ConvexHullShapeSettings hullSettings( points, definition.pointCount, 0.05f );
+			Shape::ShapeResult shapeResult = hullSettings.Create();
+			if( !shapeResult.IsValid() )
+			{
+				ALERT( at_console, "[NPC physics] Ragdoll setup failed: Jolt could not build hull '%s'.\n", definition.boneName );
+				return false;
+			}
+			physicsShapes[body] = shapeResult.Get();
+			massWeights[body] = physicsShapes[body]->GetVolume();
+			if( !std::isfinite( massWeights[body] ) || massWeights[body] <= 0.0001f )
+				return NPCPhysics_RagdollSetupFailed( "authored zombie collision hull has invalid volume" );
+			totalWeight += massWeights[body];
+		}
+		if( totalWeight <= 0.0001f || !std::isfinite( totalWeight ) )
+			return NPCPhysics_RagdollSetupFailed( "authored zombie hull set has zero combined volume" );
+
+		float totalMass = NPCPhysics_GetCvar( "sv_npc_vphysics_mass", NPC_ZOMBIE_RAGDOLL_TOTAL_MASS );
+		if( totalMass <= 0.0f )
+			totalMass = NPC_ZOMBIE_RAGDOLL_TOTAL_MASS;
+		totalMass = std::max( 10.0f, std::min( totalMass, 300.0f ) );
+
+		Ref<RagdollSettings> settings = new RagdollSettings();
+		settings->mSkeleton = ragdoll.physicsSkeleton;
+		settings->mParts.resize( ragdoll.bodyCount );
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+		{
+			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
+			const RagdollBone &bone = ragdoll.bones[body];
+			const int studioBone = bone.studioBoneIndex;
+			const Quat rotation = boneRotations[studioBone];
+			const Vec3 boneOrigin(
+				bonePositions[studioBone][0],
+				bonePositions[studioBone][1],
+				bonePositions[studioBone][2] );
+			const Vec3 bodyCenter = boneOrigin + rotation * bone.localShapeCenter;
+			const float bodyMass = totalMass * massWeights[body] / totalWeight;
+
+			RagdollSettings::Part &part = settings->mParts[body];
+			part.SetShape( physicsShapes[body].GetPtr() );
+			part.mPosition = RVec3( bodyCenter );
+			part.mRotation = rotation;
+			part.mMotionType = EMotionType::Dynamic;
+			part.mObjectLayer = RAGDOLL_OBJECT_LAYER;
+			part.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
+			part.mInertiaMultiplier = NPC_ZOMBIE_RAGDOLL_INERTIA_MULTIPLIER;
+			part.mMassPropertiesOverride.mMass = std::max( 0.25f, bodyMass );
+			part.mFriction = 0.8f;
+			part.mRestitution = 0.0f;
+			part.mLinearDamping = NPC_ZOMBIE_RAGDOLL_LINEAR_DAMPING;
+			part.mAngularDamping = definition.angularDampingOverride > 0.0f
+				? definition.angularDampingOverride : NPC_ZOMBIE_RAGDOLL_ANGULAR_DAMPING;
+			part.mMaxLinearVelocity = RAGDOLL_VELOCITY_LIMIT;
+			part.mMaxAngularVelocity = RAGDOLL_ANGULAR_VELOCITY_LIMIT;
+			part.mMotionQuality = EMotionQuality::LinearCast;
+			part.mEnhancedInternalEdgeRemoval = true;
+
+			if( bone.parentElementIndex >= 0 )
+			{
+				SixDOFConstraintSettings *constraint = new SixDOFConstraintSettings();
+				constraint->mSpace = EConstraintSpace::WorldSpace;
+				const Vec3 joint(
+					bonePositions[studioBone][0],
+					bonePositions[studioBone][1],
+					bonePositions[studioBone][2] );
+				constraint->mPosition1 = RVec3( joint );
+				constraint->mPosition2 = RVec3( joint );
+				const Vec3 axisX = rotation.RotateAxisX().Normalized();
+				const Vec3 axisY = rotation.RotateAxisY().Normalized();
+				constraint->mAxisX1 = axisX;
+				constraint->mAxisY1 = axisY;
+				constraint->mAxisX2 = axisX;
+				constraint->mAxisY2 = axisY;
+				constraint->MakeFixedAxis( SixDOFConstraintSettings::TranslationX );
+				constraint->MakeFixedAxis( SixDOFConstraintSettings::TranslationY );
+				constraint->MakeFixedAxis( SixDOFConstraintSettings::TranslationZ );
+				constraint->mSwingType = ESwingType::Pyramid;
+				const SixDOFConstraintSettings::EAxis axes[3] = {
+					SixDOFConstraintSettings::RotationX,
+					SixDOFConstraintSettings::RotationY,
+					SixDOFConstraintSettings::RotationZ };
+				for( int axis = 0; axis < 3; ++axis )
+				{
+					const float minDegrees = definition.jointMinDegrees[axis];
+					const float maxDegrees = definition.jointMaxDegrees[axis];
+					const float minRadians = minDegrees <= -1.0e20f
+						? -FLT_MAX : minDegrees * RAGDOLL_DEGREES_TO_RADIANS;
+					const float maxRadians = maxDegrees >= 1.0e20f
+						? FLT_MAX : maxDegrees * RAGDOLL_DEGREES_TO_RADIANS;
+					constraint->SetLimitedAxis( axes[axis], minRadians, maxRadians );
+				}
+				part.mToParent = constraint;
 			}
 		}
+
+		// Jolt's native articulated ragdoll owns body/constraint creation, collision
+		// filtering, stabilization and lifetime from this point onward.
+		if( !settings->Stabilize() )
+			return NPCPhysics_RagdollSetupFailed( "Jolt could not stabilize the authored ragdoll" );
+		settings->CalculateConstraintPriorities();
+		settings->DisableParentChildCollisions();
+		settings->CalculateBodyIndexToConstraintIndex();
+
+		ragdoll.physicsRagdoll = settings->CreateRagdoll(
+			static_cast<CollisionGroup::GroupID>( ragdoll.networkID ),
+			static_cast<uint64>( ragdoll.networkID ), &g_npcPhysics.system );
+		if( !ragdoll.physicsRagdoll.GetPtr() )
+			return NPCPhysics_RagdollSetupFailed( "Jolt could not allocate native ragdoll bodies" );
+		ragdoll.physicsRagdoll->AddToPhysicsSystem( EActivation::Activate );
+		ragdoll.addedToPhysicsSystem = true;
 
 		NPCPhysicsLivePose *livePose = NULL;
 		const int entityIndex = ENTINDEX( ent );
@@ -706,117 +878,41 @@ namespace
 		if( animationDeltaTime < 0.001f || animationDeltaTime > 0.15f )
 			animationDeltaTime = 1.0f / 60.0f;
 
-		ragdoll.bones.shrink_to_fit();
-
 		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
-		for( int i = 0; i < ragdoll.bodyCount; ++i )
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
-			RagdollBone &bone = ragdoll.bones[i];
+			const RagdollBone &bone = ragdoll.bones[body];
 			const int boneIndex = bone.studioBoneIndex;
+			const BodyID bodyID = ragdoll.physicsRagdoll->GetBodyID( body );
 			const Quat rotation = boneRotations[boneIndex];
 			const Vec3 boneOrigin(
-				bonePositions[boneIndex][0],
-				bonePositions[boneIndex][1],
-				bonePositions[boneIndex][2]
-			);
+				bonePositions[boneIndex][0], bonePositions[boneIndex][1], bonePositions[boneIndex][2] );
 			const Vec3 bodyCenter = boneOrigin + rotation * bone.localShapeCenter;
-			const float bodyMass = totalMass * massWeights[i] / totalWeight;
-
-			BodyCreationSettings settings(
-				physicsShapes[i].GetPtr(),
-				RVec3( bodyCenter ),
-				rotation,
-				EMotionType::Dynamic,
-				RAGDOLL_OBJECT_LAYER
-			);
-			settings.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
-			settings.mInertiaMultiplier = NPC_ZOMBIE_RAGDOLL_INERTIA_MULTIPLIER;
-			settings.mMassPropertiesOverride.mMass = std::max( 0.25f, bodyMass );
-			settings.mCollisionGroup = CollisionGroup(
-				ragdoll.groupFilter.GetPtr(),
-				static_cast<CollisionGroup::GroupID>( ragdoll.networkID ),
-				static_cast<CollisionGroup::SubGroupID>( i )
-			);
-			settings.mFriction = 0.8f;
-			settings.mRestitution = 0.0f;
-			settings.mLinearDamping = NPC_ZOMBIE_RAGDOLL_LINEAR_DAMPING;
-			const float angularDamping = g_npcZombieRagdollBodies[i].angularDampingOverride;
-			settings.mAngularDamping = angularDamping > 0.0f ? angularDamping : NPC_ZOMBIE_RAGDOLL_ANGULAR_DAMPING;
-			settings.mMaxLinearVelocity = RAGDOLL_VELOCITY_LIMIT;
-			settings.mMaxAngularVelocity = RAGDOLL_ANGULAR_VELOCITY_LIMIT;
-			settings.mMotionQuality = EMotionQuality::LinearCast;
-			settings.mEnhancedInternalEdgeRemoval = true;
-
-			const BodyID bodyID = bodyInterface.CreateAndAddBody( settings, EActivation::Activate );
-			if( bodyID.IsInvalid() )
-			{
-				NPCPhysics_DestroyRagdoll( ragdoll );
-				ALERT( at_console, "[NPC physics] Ragdoll setup failed: Jolt could not create body for studio bone %d.\n", boneIndex );
-				return false;
-			}
-
-			bone.bodyID = bodyID;
-
 			Vec3 linearVelocity(
-				ent->v.velocity[0],
-				ent->v.velocity[1],
-				ent->v.velocity[2]
-			);
+				ent->v.velocity[0], ent->v.velocity[1], ent->v.velocity[2] );
 			Vec3 angularVelocity(
 				ent->v.avelocity[0] * RAGDOLL_DEGREES_TO_RADIANS,
 				ent->v.avelocity[1] * RAGDOLL_DEGREES_TO_RADIANS,
-				ent->v.avelocity[2] * RAGDOLL_DEGREES_TO_RADIANS
-			);
+				ent->v.avelocity[2] * RAGDOLL_DEGREES_TO_RADIANS );
 
-			// Source's RagdollApplyAnimationAsVelocity seeds each physics object
-			// from the previous/current animation bone transforms. The GoldSrc
-			// hook stores the latest live pose while the zombie is still alive.
 			if( livePose && boneIndex < (int)livePose->positions.size() &&
 				boneIndex < (int)livePose->rotations.size() )
 			{
 				const Vec3 previousCenter =
-					livePose->positions[boneIndex] +
-					livePose->rotations[boneIndex] * bone.localShapeCenter;
-
-				// The animation derivative is an absolute world-space velocity,
-				// as in Source's CalcBoneDerivatives. Add only the bone-local part
-				// to the entity's current velocity; otherwise locomotion gets
-				// counted twice. This also preserves a death impulse already put
-				// into pev->velocity by GoldSrc.
+					livePose->positions[boneIndex] + livePose->rotations[boneIndex] * bone.localShapeCenter;
 				const Vec3 entityLinearVelocity(
 					( ent->v.origin[0] - livePose->entityOrigin[0] ) / animationDeltaTime,
 					( ent->v.origin[1] - livePose->entityOrigin[1] ) / animationDeltaTime,
-					( ent->v.origin[2] - livePose->entityOrigin[2] ) / animationDeltaTime
-				);
-				linearVelocity +=
-					( bodyCenter - previousCenter ) / animationDeltaTime -
-					entityLinearVelocity;
-
-				Quat deltaRotation = rotation * livePose->rotations[boneIndex].Conjugated();
-				deltaRotation = deltaRotation.Normalized();
+					( ent->v.origin[2] - livePose->entityOrigin[2] ) / animationDeltaTime );
+				linearVelocity += ( bodyCenter - previousCenter ) / animationDeltaTime - entityLinearVelocity;
+				Quat deltaRotation = ( rotation * livePose->rotations[boneIndex].Conjugated() ).Normalized();
 				if( deltaRotation.GetW() < 0.0f )
-				{
-					deltaRotation = Quat(
-						-deltaRotation.GetX(),
-						-deltaRotation.GetY(),
-						-deltaRotation.GetZ(),
-						-deltaRotation.GetW()
-					);
-				}
-
-				Quat entityDeltaRotation =
+					deltaRotation = Quat( -deltaRotation.GetX(), -deltaRotation.GetY(), -deltaRotation.GetZ(), -deltaRotation.GetW() );
+				Quat entityDeltaRotation = (
 					NPCPhysics_AnglesToQuaternion( ent->v.angles ) *
-					NPCPhysics_AnglesToQuaternion( livePose->entityAngles ).Conjugated();
-				entityDeltaRotation = entityDeltaRotation.Normalized();
+					NPCPhysics_AnglesToQuaternion( livePose->entityAngles ).Conjugated() ).Normalized();
 				if( entityDeltaRotation.GetW() < 0.0f )
-				{
-					entityDeltaRotation = Quat(
-						-entityDeltaRotation.GetX(),
-						-entityDeltaRotation.GetY(),
-						-entityDeltaRotation.GetZ(),
-						-entityDeltaRotation.GetW()
-					);
-				}
+					entityDeltaRotation = Quat( -entityDeltaRotation.GetX(), -entityDeltaRotation.GetY(), -entityDeltaRotation.GetZ(), -entityDeltaRotation.GetW() );
 				angularVelocity +=
 					deltaRotation.GetAngularVelocity( animationDeltaTime ) -
 					entityDeltaRotation.GetAngularVelocity( animationDeltaTime );
@@ -827,91 +923,6 @@ namespace
 			bodyInterface.SetLinearVelocity( bodyID, linearVelocity );
 			bodyInterface.SetAngularVelocity( bodyID, angularVelocity );
 		}
-
-		// Create articulated 6-DOF joints. Translation is locked at the joint;
-		// angular motion is limited and damped instead of allowing the free
-		// pivot swing produced by the old point constraints.
-		for( int i = 0; i < ragdoll.bodyCount; ++i )
-		{
-			const int parentIndex = ragdoll.bones[i].parentElementIndex;
-			if( parentIndex < 0 || parentIndex >= ragdoll.bodyCount )
-				continue;
-
-			RagdollBone &childBone = ragdoll.bones[i];
-			RagdollBone &parentBone = ragdoll.bones[parentIndex];
-			const BodyID bodyIDs[2] = { parentBone.bodyID, childBone.bodyID };
-
-			BodyLockMultiWrite bodyLock(
-				g_npcPhysics.system.GetBodyLockInterface(),
-				bodyIDs,
-				2
-			);
-			Body *parentBody = bodyLock.GetBody( 0 );
-			Body *childBody = bodyLock.GetBody( 1 );
-			if( !parentBody || !childBody )
-			{
-				bodyLock.ReleaseLocks();
-				NPCPhysics_DestroyRagdoll( ragdoll );
-				ALERT( at_console, "[NPC physics] Ragdoll setup failed: could not lock parent/child bodies for joint %d.\n", i );
-				return false;
-			}
-
-			const int childStudioBone = childBone.studioBoneIndex;
-			const Vec3 joint(
-				bonePositions[childStudioBone][0],
-				bonePositions[childStudioBone][1],
-				bonePositions[childStudioBone][2]
-			);
-
-			SixDOFConstraintSettings constraintSettings;
-			constraintSettings.mSpace = EConstraintSpace::WorldSpace;
-			constraintSettings.mPosition1 = RVec3( joint );
-			constraintSettings.mPosition2 = RVec3( joint );
-
-			// The two constraint frames are aligned in world space at creation,
-			// preserving the animation's initial relative bone orientation.
-			const Vec3 axisX = childBone.initialRotation.RotateAxisX().Normalized();
-			const Vec3 axisY = childBone.initialRotation.RotateAxisY().Normalized();
-			constraintSettings.mAxisX1 = axisX;
-			constraintSettings.mAxisY1 = axisY;
-			constraintSettings.mAxisX2 = axisX;
-			constraintSettings.mAxisY2 = axisY;
-
-			constraintSettings.MakeFixedAxis( SixDOFConstraintSettings::TranslationX );
-			constraintSettings.MakeFixedAxis( SixDOFConstraintSettings::TranslationY );
-			constraintSettings.MakeFixedAxis( SixDOFConstraintSettings::TranslationZ );
-
-			const NPCZombieRagdollBodyDefinition &jointDefinition = g_npcZombieRagdollBodies[i];
-			constraintSettings.mSwingType = ESwingType::Pyramid;
-			const SixDOFConstraintSettings::EAxis rotationAxes[3] = {
-				SixDOFConstraintSettings::RotationX,
-				SixDOFConstraintSettings::RotationY,
-				SixDOFConstraintSettings::RotationZ
-			};
-			for( int axis = 0; axis < 3; ++axis )
-			{
-				const float minDegrees = jointDefinition.jointMinDegrees[axis];
-				const float maxDegrees = jointDefinition.jointMaxDegrees[axis];
-				const float minRadians = minDegrees <= -1.0e20f ? -FLT_MAX : minDegrees * RAGDOLL_DEGREES_TO_RADIANS;
-				const float maxRadians = maxDegrees >= 1.0e20f ? FLT_MAX : maxDegrees * RAGDOLL_DEGREES_TO_RADIANS;
-				constraintSettings.SetLimitedAxis( rotationAxes[axis], minRadians, maxRadians );
-			}
-			// No joint-friction value is authored in the QC, so no artificial torque cap is added.
-
-			Ref<TwoBodyConstraint> constraint = constraintSettings.Create( *parentBody, *childBody );
-			if( constraint.GetPtr() == NULL )
-			{
-				bodyLock.ReleaseLocks();
-				NPCPhysics_DestroyRagdoll( ragdoll );
-				ALERT( at_console, "[NPC physics] Ragdoll setup failed: Jolt could not create joint for studio bone %d.\n", childStudioBone );
-				return false;
-			}
-
-			g_npcPhysics.system.AddConstraint( constraint.GetPtr() );
-			ragdoll.constraints.push_back( constraint );
-			bodyLock.ReleaseLocks();
-		}
-
 		// Only replace the animated corpse after all physics bodies and joints
 		// were built successfully. Freeze the death frame so non-physics bones
 		// remain a stable fallback and inherit from simulated parents.
@@ -937,6 +948,38 @@ namespace
 	}
 
 
+	static Vec3 NPCPhysics_GetRootBoneOrigin(
+		NPCPhysicsRagdoll &ragdoll, BodyInterface &bodyInterface )
+	{
+		const BodyID bodyID = ragdoll.physicsRagdoll->GetBodyID( ragdoll.rootElement );
+		const RVec3 position = bodyInterface.GetPosition( bodyID );
+		const Quat rotation = bodyInterface.GetRotation( bodyID ).Normalized();
+		return Vec3(
+			float( position.GetX() ), float( position.GetY() ), float( position.GetZ() )
+		) - rotation * ragdoll.bones[ragdoll.rootElement].localShapeCenter;
+	}
+
+	static void NPCPhysics_UpdateMappedStudioPose(
+		NPCPhysicsRagdoll &ragdoll, BodyInterface &bodyInterface, const Vec3 &rootBoneOrigin )
+	{
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+		{
+			const RagdollBone &bone = ragdoll.bones[body];
+			const BodyID bodyID = ragdoll.physicsRagdoll->GetBodyID( body );
+			const RVec3 position = bodyInterface.GetPosition( bodyID );
+			const Quat rotation = bodyInterface.GetRotation( bodyID ).Normalized();
+			const Vec3 bodyPosition(
+				float( position.GetX() ), float( position.GetY() ), float( position.GetZ() ) );
+			const Vec3 boneOrigin = bodyPosition - rotation * bone.localShapeCenter;
+			ragdoll.physicsPoseModelSpace[body] = Mat44::sRotationTranslation(
+				rotation, boneOrigin - rootBoneOrigin );
+		}
+		ragdoll.skeletonMapper->Map(
+			ragdoll.physicsPoseModelSpace.data(),
+			ragdoll.studioDeathLocalPose.data(),
+			ragdoll.studioPoseModelSpace.data() );
+	}
+
 	static short NPCPhysics_QuantizeQuaternion( float value )
 	{
 		value = std::max( -1.0f, std::min( 1.0f, value ) );
@@ -944,43 +987,35 @@ namespace
 	}
 
 	static void NPCPhysics_SendRagdollPose(
-		NPCPhysicsRagdoll &ragdoll,
-		BodyInterface &bodyInterface )
+		NPCPhysicsRagdoll &ragdoll, BodyInterface &bodyInterface )
 	{
-		if( g_msgRagdollPose <= 0 || !ragdoll.entity || ragdoll.entity->free )
+		if( g_msgRagdollPose <= 0 || !ragdoll.entity || ragdoll.entity->free ||
+			!ragdoll.physicsRagdoll.GetPtr() || !ragdoll.skeletonMapper.GetPtr() )
 			return;
 
+		const Vec3 rootBoneOrigin = NPCPhysics_GetRootBoneOrigin( ragdoll, bodyInterface );
+		NPCPhysics_UpdateMappedStudioPose( ragdoll, bodyInterface, rootBoneOrigin );
 		const int entityIndex = ENTINDEX( ragdoll.entity );
-		for( int start = 0; start < ragdoll.bodyCount; start += RAGDOLL_NETWORK_BODIES_PER_CHUNK )
+		const int snapshotBoneCount = ragdoll.studioBoneCount;
+
+		for( int start = 0; start < snapshotBoneCount; start += RAGDOLL_NETWORK_BODIES_PER_CHUNK )
 		{
 			const int count = std::min(
-				RAGDOLL_NETWORK_BODIES_PER_CHUNK,
-				ragdoll.bodyCount - start
-			);
-
-			// The carrier edict follows the simulated root. Anchor snapshots to
-			// that live origin so clients entering the new PVS keep receiving poses.
+				RAGDOLL_NETWORK_BODIES_PER_CHUNK, snapshotBoneCount - start );
 			MESSAGE_BEGIN( MSG_PVS, g_msgRagdollPose, ragdoll.entity->v.origin );
 				WRITE_SHORT( entityIndex );
 				WRITE_SHORT( ragdoll.networkID );
 				WRITE_BYTE( ragdoll.studioBoneCount );
-				WRITE_BYTE( ragdoll.bodyCount );
+				WRITE_BYTE( snapshotBoneCount );
 				WRITE_BYTE( start );
 				WRITE_BYTE( count );
-
 				for( int i = 0; i < count; ++i )
 				{
-					const RagdollBone &bone = ragdoll.bones[start + i];
-					const RVec3 bodyPosition = bodyInterface.GetPosition( bone.bodyID );
-					const Quat rotation = bodyInterface.GetRotation( bone.bodyID ).Normalized();
-					const Vec3 bonePosition =
-						Vec3(
-							float( bodyPosition.GetX() ),
-							float( bodyPosition.GetY() ),
-							float( bodyPosition.GetZ() )
-						) - rotation * bone.localShapeCenter;
-
-					WRITE_BYTE( bone.studioBoneIndex );
+					const int studioBone = start + i;
+					const Mat44 &transform = ragdoll.studioPoseModelSpace[studioBone];
+					const Vec3 bonePosition = rootBoneOrigin + transform.GetTranslation();
+					const Quat rotation = transform.GetQuaternion().Normalized();
+					WRITE_BYTE( studioBone );
 					WRITE_COORD( bonePosition.GetX() );
 					WRITE_COORD( bonePosition.GetY() );
 					WRITE_COORD( bonePosition.GetZ() );
@@ -992,7 +1027,6 @@ namespace
 			MESSAGE_END();
 		}
 	}
-
 	static int NPCPhysics_PhysicsEntity( edict_t *ent )
 	{
 		// Capture live animation transforms only. Return 0 so GoldSrc remains the
@@ -1063,15 +1097,7 @@ namespace
 				ragdoll.rootElement < ragdoll.bodyCount &&
 				g_engfuncs.pfnSetOrigin )
 			{
-				const RagdollBone &rootBone = ragdoll.bones[ragdoll.rootElement];
-				const RVec3 rootBodyPosition = bodyInterface.GetPosition( rootBone.bodyID );
-				const Quat rootRotation = bodyInterface.GetRotation( rootBone.bodyID );
-				const Vec3 rootBoneOrigin =
-					Vec3(
-						float( rootBodyPosition.GetX() ),
-						float( rootBodyPosition.GetY() ),
-						float( rootBodyPosition.GetZ() )
-					) - rootRotation * rootBone.localShapeCenter;
+				const Vec3 rootBoneOrigin = NPCPhysics_GetRootBoneOrigin( ragdoll, bodyInterface );
 
 				const float entityOrigin[3] = {
 					rootBoneOrigin.GetX() + ragdoll.entityOriginOffset[0],
