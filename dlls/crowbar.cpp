@@ -214,8 +214,11 @@ int CCrowbar::Swing( int fFirst )
 	float hitFraction = tr.flFraction;
 	float hitPosition[3];
 	edict_t *hitEntity = NULL;
+	const float crowbarImpactScale = std::max(
+		0.0f, CVAR_GET_FLOAT( "sv_npc_vphysics_crowbar_scale" ) );
 	if( NPCPhysics_TraceAndApplyImpact(
-		&vecSrc[0], &vecEnd[0], tr.flFraction, impactDamage * 45.0f,
+		&vecSrc[0], &vecEnd[0], tr.flFraction,
+		impactDamage * 65.0f * crowbarImpactScale,
 		&hitFraction, hitPosition, &hitEntity ) )
 	{
 		tr.flFraction = hitFraction;
