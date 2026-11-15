@@ -713,7 +713,7 @@ namespace
 					shape.GetPtr(),
 					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
 					rotation,
-					EMotionType::Kinematic,
+					EMotionType::Static,
 					RAGDOLL_OBJECT_LAYER
 				);
 				bodySettings.mFriction = 0.9f;
@@ -748,11 +748,11 @@ namespace
 			if( positionDelta.LengthSq() > 0.0001f ||
 				NPCPhysics_QuaternionsDiffer( rotation, collider.rotation ) )
 			{
-				bodyInterface.MoveKinematic(
+				bodyInterface.SetPositionAndRotation(
 					collider.bodyID,
 					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
 					rotation,
-					deltaTime
+					EActivation::DontActivate
 				);
 				collider.position = position;
 				collider.rotation = rotation;
