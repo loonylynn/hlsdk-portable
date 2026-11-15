@@ -12,8 +12,7 @@ static const int MAX_RAGDOLL_BONES = 128;
 static const float RAGDOLL_SNAPSHOT_INTERVAL = 0.05f;
 static const float RAGDOLL_STALE_TIMEOUT = 0.25f;
 
-// The server marks only the original zombie entity as a ragdoll carrier.
-static const int RAGDOLL_ENTITY_MARKER = 1;
+// The custom snapshot stream, not an entity-state user field, identifies ragdolls.
 
 struct ragdoll_bone_pose_t
 {
