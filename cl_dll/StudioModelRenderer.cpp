@@ -1419,17 +1419,20 @@ void CStudioModelRenderer::StudioSetupBones( void )
 			ConcatTransforms( (*m_plighttransform)[pbones[i].parent], bonematrix, (*m_plighttransform)[i] );
 		}
 	}
-	// A Jolt ragdoll snapshot is keyed by the network entity index. Do not
-	// depend on entvars::iuser4 being propagated by every engine build.
-	// Until a complete, fresh snapshot exists, keep the ordinary GoldSrc pose.
-	if( IEngineStudio.IsHardware() && m_pCurrentEntity->index > 0 )
+	// Only entities explicitly tagged by the server as Jolt ragdolls may
+	// consume the pose cache. This prevents a recycled entity index from
+	// applying an old corpse pose to a living zombie or another studio model.
+	const int ragdollMarker = m_pCurrentEntity->curstate.iuser4;
+	if( IEngineStudio.IsHardware() &&
+		m_pCurrentEntity->index > 0 &&
+		ragdollMarker == 1 )
 	{
 		float ragdollTransform[3][4];
 		const int entityIndex = m_pCurrentEntity->index;
 
 		for( i = 0; i < m_pStudioHeader->numbones; ++i )
 		{
-			if( Ragdoll_GetBoneTransform( entityIndex, i, ragdollTransform ) )
+			if( Ragdoll_GetBoneTransform( entityIndex, ragdollMarker, i, ragdollTransform ) )
 			{
 				MatrixCopy( ragdollTransform, (*m_pbonetransform)[i] );
 				MatrixCopy( ragdollTransform, (*m_plighttransform)[i] );
