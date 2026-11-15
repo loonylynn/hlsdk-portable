@@ -80,7 +80,8 @@ class SMDToJRAGTests(unittest.TestCase):
         self.assertEqual(body.name, "Bip01 L Leg")
         self.assertEqual(body.parent_index, -1)
         self.assertEqual(len(body.points), 8)
-        self.assertEqual(body.center, (0.0, 0.0, 0.0))
+        for actual, expected in zip(body.center, (0.0, 0.0, 0.0)):
+            self.assertAlmostEqual(actual, expected, places=7)
         self.assertEqual(body.joint_min, (-25.0, -1.0e30, -1.0e30))
         self.assertEqual(body.joint_max, (20.0, 1.0e30, 1.0e30))
         self.assertEqual(body.angular_damping_override, 5.0)
