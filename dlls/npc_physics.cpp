@@ -11,7 +11,7 @@
 #include "enginecallback.h"
 #include "xash_physint.h"
 #include "studio.h"
-#include "npc_zombie_ragdoll_data.h"
+
 
 #include <Jolt/Jolt.h>
 #include <Jolt/RegisterTypes.h>
@@ -31,6 +31,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cfloat>
+#include <iomanip>
+#include <sstream>
+#include <string>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -53,6 +56,10 @@ namespace
 	static constexpr float RAGDOLL_DEGREES_TO_RADIANS = 0.01745329251994329577f;
 	static constexpr float RAGDOLL_VELOCITY_LIMIT = 2000.0f;
 	static constexpr float RAGDOLL_ANGULAR_VELOCITY_LIMIT = 35.0f;
+	static constexpr int RAGDOLL_DEFINITION_VERSION = 1;
+	static constexpr int RAGDOLL_DEFINITION_MAX_BODIES = 64;
+	static constexpr int RAGDOLL_DEFINITION_MAX_HULL_POINTS = 32;
+	static constexpr int RAGDOLL_DEFINITION_MAX_FILE_BYTES = 1024 * 1024;
 
 	class RagdollBroadPhaseLayers final : public BroadPhaseLayerInterface
 	{
@@ -94,6 +101,39 @@ namespace
 		int studioBoneIndex;
 		int parentElementIndex;
 		Vec3 localShapeCenter;
+	};
+
+	struct NPCPhysicsRagdollPoint
+	{
+		float x, y, z;
+	};
+
+	struct NPCPhysicsRagdollBodyDefinition
+	{
+		std::string boneName;
+		int parentBody;
+		NPCPhysicsRagdollPoint localShapeCenter;
+		std::vector<NPCPhysicsRagdollPoint> points;
+		float jointMinDegrees[3];
+		float jointMaxDegrees[3];
+		float angularDampingOverride;
+	};
+
+	struct NPCPhysicsRagdollDefinition
+	{
+		float totalMass;
+		float inertiaMultiplier;
+		float linearDamping;
+		float angularDamping;
+		float friction;
+		float restitution;
+		std::vector<NPCPhysicsRagdollBodyDefinition> bodies;
+	};
+
+	struct NPCPhysicsCachedRagdollDefinition
+	{
+		std::string path;
+		NPCPhysicsRagdollDefinition definition;
 	};
 
 	struct NPCPhysicsBrushModelShape
@@ -175,6 +215,7 @@ namespace
 
 	static NPCPhysicsWorld g_npcPhysics;
 	static std::vector<NPCPhysicsRagdoll> g_ragdolls;
+	static std::vector<NPCPhysicsCachedRagdollDefinition> g_ragdollDefinitionCache;
 	static std::vector<NPCPhysicsLivePose> g_livePoses;
 	static int g_nextRagdollID = 1;
 	static int g_msgRagdollPose = 0;
@@ -190,7 +231,7 @@ namespace
 	static bool g_worldCollisionReady = false;
 
 	static cvar_t g_svNpcVPhysics = { "sv_npc_vphysics", "1", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "115", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "0", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
 	{
@@ -789,6 +830,338 @@ namespace
 			if( ca != cb ) return false;
 		}
 		return *a == *b;
+	}
+
+	static bool NPCPhysics_NextJragLine(
+		std::istringstream &input,
+		std::istringstream &line,
+		std::string &storage )
+	{
+		while( std::getline( input, storage ) )
+		{
+			const size_t comment = storage.find( '#' );
+			if( comment != std::string::npos )
+				storage.erase( comment );
+			line.clear();
+			line.str( storage );
+			line >> std::ws;
+			if( !line.eof() )
+				return true;
+		}
+		return false;
+	}
+
+	static bool NPCPhysics_JragLineFinished( std::istringstream &line )
+	{
+		line >> std::ws;
+		return line.eof();
+	}
+
+	static bool NPCPhysics_ParseJragDefinition(
+		const char *contents,
+		int length,
+		NPCPhysicsRagdollDefinition &definition,
+		std::string &error )
+	{
+		if( !contents || length <= 0 || length > RAGDOLL_DEFINITION_MAX_FILE_BYTES )
+		{
+			error = "file is empty or exceeds the 1 MiB limit";
+			return false;
+		}
+
+		std::istringstream input( std::string( contents, static_cast<size_t>( length ) ) );
+		std::istringstream line;
+		std::string storage;
+		std::string command;
+		int version = 0;
+
+		if( !NPCPhysics_NextJragLine( input, line, storage ) ||
+			!( line >> command >> version ) ||
+			command != "JOLT_RAGDOLL" ||
+			version != RAGDOLL_DEFINITION_VERSION ||
+			!NPCPhysics_JragLineFinished( line ) )
+		{
+			error = "expected JOLT_RAGDOLL 1 header";
+			return false;
+		}
+
+		auto readFloat = [&]( const char *expected, float &value ) -> bool
+		{
+			if( !NPCPhysics_NextJragLine( input, line, storage ) ||
+				!( line >> command >> value ) ||
+				command != expected ||
+				!NPCPhysics_JragLineFinished( line ) ||
+				!std::isfinite( value ) )
+				return false;
+			return true;
+		};
+
+		auto readVector = [&]( const char *expected, float value[3] ) -> bool
+		{
+			if( !NPCPhysics_NextJragLine( input, line, storage ) ||
+				!( line >> command >> value[0] >> value[1] >> value[2] ) ||
+				command != expected ||
+				!NPCPhysics_JragLineFinished( line ) ||
+				!std::isfinite( value[0] ) ||
+				!std::isfinite( value[1] ) ||
+				!std::isfinite( value[2] ) )
+				return false;
+			return true;
+		};
+
+		if( !readFloat( "mass", definition.totalMass ) ||
+			!readFloat( "inertia_multiplier", definition.inertiaMultiplier ) ||
+			!readFloat( "linear_damping", definition.linearDamping ) ||
+			!readFloat( "angular_damping", definition.angularDamping ) ||
+			!readFloat( "friction", definition.friction ) ||
+			!readFloat( "restitution", definition.restitution ) )
+		{
+			error = "missing or invalid global physics property";
+			return false;
+		}
+
+		if( definition.totalMass <= 0.0f ||
+			definition.inertiaMultiplier <= 0.0f ||
+			definition.linearDamping < 0.0f ||
+			definition.angularDamping < 0.0f ||
+			definition.friction < 0.0f ||
+			definition.restitution < 0.0f ||
+			definition.restitution > 1.0f )
+		{
+			error = "global mass, damping, friction or restitution is outside its valid range";
+			return false;
+		}
+
+		int bodyCount = 0;
+		if( !NPCPhysics_NextJragLine( input, line, storage ) ||
+			!( line >> command >> bodyCount ) ||
+			command != "body_count" ||
+			!NPCPhysics_JragLineFinished( line ) ||
+			bodyCount < 1 ||
+			bodyCount > RAGDOLL_DEFINITION_MAX_BODIES )
+		{
+			error = "body_count must be between 1 and 64";
+			return false;
+		}
+
+		definition.bodies.clear();
+		definition.bodies.reserve( bodyCount );
+		int rootCount = 0;
+
+		for( int bodyIndex = 0; bodyIndex < bodyCount; ++bodyIndex )
+		{
+			NPCPhysicsRagdollBodyDefinition body;
+			if( !NPCPhysics_NextJragLine( input, line, storage ) ||
+				!( line >> command >> std::quoted( body.boneName ) >> body.parentBody ) ||
+				command != "body" ||
+				!NPCPhysics_JragLineFinished( line ) ||
+				body.boneName.empty() ||
+				body.boneName.size() > 64 ||
+				body.parentBody < -1 ||
+				body.parentBody >= bodyIndex )
+			{
+				error = "invalid body name or parent index";
+				return false;
+			}
+
+			for( size_t previous = 0; previous < definition.bodies.size(); ++previous )
+				if( NPCPhysics_NameEquals(
+					definition.bodies[previous].boneName.c_str(), body.boneName.c_str() ) )
+				{
+					error = "duplicate physical bone name";
+					return false;
+				}
+
+			if( body.parentBody < 0 )
+				++rootCount;
+
+			float center[3];
+			if( !readVector( "center", center ) )
+			{
+				error = "invalid body center";
+				return false;
+			}
+			body.localShapeCenter.x = center[0];
+			body.localShapeCenter.y = center[1];
+			body.localShapeCenter.z = center[2];
+
+			if( !readVector( "joint_min", body.jointMinDegrees ) ||
+				!readVector( "joint_max", body.jointMaxDegrees ) ||
+				!readFloat( "angular_damping_override", body.angularDampingOverride ) )
+			{
+				error = "invalid joint limits or angular damping override";
+				return false;
+			}
+			if( body.angularDampingOverride < 0.0f )
+			{
+				error = "angular damping override cannot be negative";
+				return false;
+			}
+			for( int axis = 0; axis < 3; ++axis )
+				if( body.jointMinDegrees[axis] > body.jointMaxDegrees[axis] )
+				{
+					error = "joint minimum exceeds joint maximum";
+					return false;
+				}
+
+			int pointCount = 0;
+			if( !NPCPhysics_NextJragLine( input, line, storage ) ||
+				!( line >> command >> pointCount ) ||
+				command != "hull" ||
+				!NPCPhysics_JragLineFinished( line ) ||
+				pointCount < 4 ||
+				pointCount > RAGDOLL_DEFINITION_MAX_HULL_POINTS )
+			{
+				error = "hull point count must be between 4 and 32";
+				return false;
+			}
+
+			body.points.reserve( pointCount );
+			for( int pointIndex = 0; pointIndex < pointCount; ++pointIndex )
+			{
+				NPCPhysicsRagdollPoint point;
+				if( !NPCPhysics_NextJragLine( input, line, storage ) ||
+					!( line >> command >> point.x >> point.y >> point.z ) ||
+					command != "point" ||
+					!NPCPhysics_JragLineFinished( line ) ||
+					!std::isfinite( point.x ) ||
+					!std::isfinite( point.y ) ||
+					!std::isfinite( point.z ) )
+				{
+					error = "invalid or non-finite hull point";
+					return false;
+				}
+				body.points.push_back( point );
+			}
+
+			if( !NPCPhysics_NextJragLine( input, line, storage ) ||
+				!( line >> command ) ||
+				command != "end_body" ||
+				!NPCPhysics_JragLineFinished( line ) )
+			{
+				error = "expected end_body";
+				return false;
+			}
+			definition.bodies.push_back( body );
+		}
+
+		if( rootCount != 1 )
+		{
+			error = "the physical hierarchy must have exactly one root body";
+			return false;
+		}
+		if( !NPCPhysics_NextJragLine( input, line, storage ) ||
+			!( line >> command ) ||
+			command != "end" ||
+			!NPCPhysics_JragLineFinished( line ) )
+		{
+			error = "expected end after all body definitions";
+			return false;
+		}
+		if( NPCPhysics_NextJragLine( input, line, storage ) )
+		{
+			error = "unexpected data after end";
+			return false;
+		}
+
+		return true;
+	}
+
+	static bool NPCPhysics_GetRagdollDefinitionPath( edict_t *ent, std::string &path )
+	{
+		if( !ent || !ent->v.model )
+			return false;
+
+		const char *modelName = STRING( ent->v.model );
+		if( !modelName || !modelName[0] )
+			return false;
+
+		std::string modelPath( modelName );
+		if( modelPath.size() < 11 ||
+			modelPath.compare( 0, 7, "models/" ) != 0 ||
+			!NPCPhysics_NameEquals( modelPath.c_str() + modelPath.size() - 4, ".mdl" ) ||
+			modelPath.find( '\\' ) != std::string::npos ||
+			modelPath.find( ".." ) != std::string::npos ||
+			modelPath.size() >= MAX_PATH )
+			return false;
+
+		modelPath.replace( modelPath.size() - 4, 4, ".jrag" );
+		path.swap( modelPath );
+		return true;
+	}
+
+	static bool NPCPhysics_LoadRagdollDefinition(
+		const std::string &path,
+		NPCPhysicsRagdollDefinition &definition,
+		std::string &error )
+	{
+		if( !g_engfuncs.pfnLoadFileForMe || !g_engfuncs.pfnFreeFile )
+		{
+			error = "engine file-loading callbacks are unavailable";
+			return false;
+		}
+
+		int fileLength = 0;
+		byte *fileData = LOAD_FILE_FOR_ME( const_cast<char *>( path.c_str() ), &fileLength );
+		if( !fileData )
+		{
+			error = "file was not found in the game search paths";
+			return false;
+		}
+		if( fileLength <= 0 || fileLength > RAGDOLL_DEFINITION_MAX_FILE_BYTES )
+		{
+			FREE_FILE( fileData );
+			error = "file is empty or exceeds the 1 MiB limit";
+			return false;
+		}
+
+		const bool parsed = NPCPhysics_ParseJragDefinition(
+			reinterpret_cast<const char *>( fileData ), fileLength, definition, error );
+		FREE_FILE( fileData );
+		return parsed;
+	}
+
+	static const NPCPhysicsRagdollDefinition *NPCPhysics_GetRagdollDefinition( edict_t *ent )
+	{
+		std::string path;
+		if( !NPCPhysics_GetRagdollDefinitionPath( ent, path ) )
+		{
+			ALERT(
+				at_console,
+				"[NPC physics] No .jrag path could be derived from model '%s'.\n",
+				ent && ent->v.model ? STRING( ent->v.model ) : "<none>"
+			);
+			return NULL;
+		}
+
+		for( size_t i = 0; i < g_ragdollDefinitionCache.size(); ++i )
+			if( g_ragdollDefinitionCache[i].path == path )
+				return &g_ragdollDefinitionCache[i].definition;
+
+		NPCPhysicsCachedRagdollDefinition cached;
+		cached.path = path;
+		std::string error;
+		if( !NPCPhysics_LoadRagdollDefinition( path, cached.definition, error ) )
+		{
+			ALERT(
+				at_console,
+				"[NPC physics] Could not load ragdoll definition '%s': %s.\n",
+				path.c_str(),
+				error.c_str()
+			);
+			return NULL;
+		}
+
+		g_ragdollDefinitionCache.push_back( std::move( cached ) );
+		const NPCPhysicsRagdollDefinition *loaded = &g_ragdollDefinitionCache.back().definition;
+		ALERT(
+			at_console,
+			"[NPC physics] Loaded '%s': %u rigid bodies, mass %.1f.\n",
+			path.c_str(),
+			static_cast<unsigned int>( loaded->bodies.size() ),
+			loaded->totalMass
+		);
+		return loaded;
 	}
 
 	static Vec3 NPCPhysics_ClampVector( const Vec3 &value, float maxLength )
