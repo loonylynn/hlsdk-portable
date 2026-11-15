@@ -687,12 +687,10 @@ static void NPCPhysics_DestroyRagdoll( NPCPhysicsRagdoll &ragdoll )
 			ragdoll.studioSkeleton->AddJoint( studioBones[studio].name, parent );
 		}
 
-		const int rootStudioBone = ragdoll.bones[ragdoll.rootElement].studioBoneIndex;
 		const Vec3 bindRootOrigin(
 			bonePositions[rootStudioBone][0],
 			bonePositions[rootStudioBone][1],
 			bonePositions[rootStudioBone][2] );
-		ragdoll.entityOriginOffset = ent->v.origin - bonePositions[rootStudioBone];
 
 		// Both neutral poses use world-oriented matrices translated relative to
 		// the pelvis. SkeletonMapper corrects the reduced rig to the MDL rig.
@@ -730,43 +728,6 @@ static void NPCPhysics_DestroyRagdoll( NPCPhysicsRagdoll &ragdoll )
 		ragdoll.physicsPoseModelSpace.resize( ragdoll.bodyCount );
 		ragdoll.studioPoseModelSpace.resize( ragdoll.studioBoneCount );
 
-		// Create the convex hulls directly from the authored SMD collision solids.
-		std::vector<Ref<Shape> > physicsShapes( ragdoll.bodyCount );
-		std::vector<float> massWeights( ragdoll.bodyCount, 0.0f );
-		float totalWeight = 0.0f;
-		for( int body = 0; body < ragdoll.bodyCount; ++body )
-		{
-			const NPCZombieRagdollBodyDefinition &definition = g_npcZombieRagdollBodies[body];
-			if( !definition.points || definition.pointCount < 4 || definition.pointCount > 32 )
-				return NPCPhysics_RagdollSetupFailed( "authored zombie collision hull has an invalid point count" );
-			Vec3 points[32];
-			for( int point = 0; point < definition.pointCount; ++point )
-			{
-				const NPCZombieRagdollPoint &p = definition.points[point];
-				if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) )
-					return NPCPhysics_RagdollSetupFailed( "authored zombie hull contains a non-finite vertex" );
-				points[point] = Vec3( p.x, p.y, p.z );
-			}
-			ConvexHullShapeSettings hullSettings( points, definition.pointCount, 0.05f );
-			Shape::ShapeResult shapeResult = hullSettings.Create();
-			if( !shapeResult.IsValid() )
-			{
-				ALERT( at_console, "[NPC physics] Ragdoll setup failed: Jolt could not build hull '%s'.\n", definition.boneName );
-				return false;
-			}
-			physicsShapes[body] = shapeResult.Get();
-			massWeights[body] = physicsShapes[body]->GetVolume();
-			if( !std::isfinite( massWeights[body] ) || massWeights[body] <= 0.0001f )
-				return NPCPhysics_RagdollSetupFailed( "authored zombie collision hull has invalid volume" );
-			totalWeight += massWeights[body];
-		}
-		if( totalWeight <= 0.0001f || !std::isfinite( totalWeight ) )
-			return NPCPhysics_RagdollSetupFailed( "authored zombie hull set has zero combined volume" );
-
-		float totalMass = NPCPhysics_GetCvar( "sv_npc_vphysics_mass", NPC_ZOMBIE_RAGDOLL_TOTAL_MASS );
-		if( totalMass <= 0.0f )
-			totalMass = NPC_ZOMBIE_RAGDOLL_TOTAL_MASS;
-		totalMass = std::max( 10.0f, std::min( totalMass, 300.0f ) );
 
 		Ref<RagdollSettings> settings = new RagdollSettings();
 		settings->mSkeleton = ragdoll.physicsSkeleton;
