@@ -87,6 +87,17 @@ struct xash_server_physics_api_s
 	xash_trace_fn pfnTraceNoEnts;
 };
 
+#if defined(__cplusplus)
+static_assert(
+	offsetof( xash_server_physics_api_s, pfnTrace ) == sizeof(void *) * 21,
+	"Xash server physics API trace callback offset mismatch"
+);
+static_assert(
+	offsetof( xash_server_physics_api_s, pfnTraceNoEnts ) == sizeof(void *) * 22,
+	"Xash server physics API trace-no-entities callback offset mismatch"
+);
+#endif
+
 typedef xash_trace_s xash_trace_t;
 
 int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks );
