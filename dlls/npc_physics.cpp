@@ -249,6 +249,7 @@ namespace
 	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsBulletScale = { "sv_npc_vphysics_bullet_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsCrowbarScale = { "sv_npc_vphysics_crowbar_scale", "1.0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
 	{
@@ -1856,8 +1857,20 @@ int NPCPhysics_TraceAndApplyImpact(
 		rayDirection );
 	JPH::RayCastResult hit;
 	hit.mFraction = maxFraction;
+	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT(
+			at_console,
+			"[NPC decals] Bullet trace: start=(%.1f %.1f %.1f) end=(%.1f %.1f %.1f) base-fraction=%.3f jolt-length=%.1f.\n",
+			start[0], start[1], start[2], end[0], end[1], end[2],
+			maxFraction, rayLength
+		);
+
 	if( !g_npcPhysics.system.GetNarrowPhaseQuery().CastRay( ray, hit ) )
+	{
+		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT( at_console, "[NPC decals] Jolt ray did not hit any physics body.\n" );
 		return FALSE;
+	}
 
 	// The Jolt world and brush colliders participate in the ray test too.
 	// Only accept a body that belongs to one of our articulated NPC ragdolls.
@@ -1889,7 +1902,15 @@ int NPCPhysics_TraceAndApplyImpact(
 	}
 
 	if( !foundRagdollBody || !targetEntity )
+	{
+		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT(
+				at_console,
+				"[NPC decals] Jolt ray hit a non-ragdoll body (fraction %.4f).\n",
+				hit.mFraction
+			);
 		return FALSE;
+	}
 
 	const JPH::RVec3 impactPoint = ray.GetPointOnRay( hit.mFraction );
 	JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
@@ -1913,6 +1934,14 @@ int NPCPhysics_TraceAndApplyImpact(
 	{
 		CBaseEntity *hitObject = CBaseEntity::Instance( targetEntity );
 		const int bloodColor = hitObject ? hitObject->BloodColor() : DONT_BLEED;
+		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT(
+				at_console,
+				"[NPC decals] Hit ragdoll ent=%d id=%d body=%d fraction=%.4f blood=%d msg=%d.\n",
+				ENTINDEX( targetEntity ), targetRagdoll->networkID,
+				targetBodyIndex, hit.mFraction, bloodColor, g_msgRagdollImpact
+			);
+
 		if( bloodColor != DONT_BLEED )
 		{
 			const RagdollBone &bone = targetRagdoll->bones[targetBodyIndex];
@@ -1945,9 +1974,23 @@ int NPCPhysics_TraceAndApplyImpact(
 					WRITE_BYTE( (std::max)( 1, (std::min)( 255, encodedRadius ) ) );
 					WRITE_BYTE( markColor );
 				MESSAGE_END();
+
+				if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+					ALERT(
+						at_console,
+						"[NPC decals] Sent RagdollImpact: ent=%d id=%d studio-bone=%d radius=%.2f color=%d.\n",
+						ENTINDEX( targetEntity ), targetRagdoll->networkID,
+						bone.studioBoneIndex, markRadius, markColor
+					);
 			}
+			else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+				ALERT( at_console, "[NPC decals] Hit body has invalid studio bone %d.\n", bone.studioBoneIndex );
 		}
+		else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT( at_console, "[NPC decals] Ragdoll blood color is DONT_BLEED; no mark sent.\n" );
 	}
+	else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT( at_console, "[NPC decals] Impact usermessage is not registered or body index is invalid.\n" );
 
 	*hitFraction = hit.mFraction;
 	hitPosition[0] = float( impactPoint.GetX() );
@@ -1981,6 +2024,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsMass );
 	CVAR_REGISTER( &g_svNpcVPhysicsBulletScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsCrowbarScale );
+	CVAR_REGISTER( &g_svNpcVPhysicsDebug );
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
 	g_worldCollisionMeshAPI = NULL;
