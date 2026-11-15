@@ -743,9 +743,9 @@ int Ragdoll_GetBoneTransform(
 		return 0;
 
 	const float now = (float)gEngfuncs.GetClientTime();
-	if( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT )
+ 	if( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT )
 	{
-		memset( &entry, 0, sizeof( entry ) );
+		Ragdoll_ClearEntity( entityIndex );
 		return 0;
 	}
 
