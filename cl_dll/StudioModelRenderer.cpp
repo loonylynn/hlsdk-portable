@@ -551,6 +551,7 @@ typedef struct studio_ragdoll_decal_build_s
 	float radius;
 	float depthTolerance;
 	int triangleCount;
+	int invalidTriangles;
 } studio_ragdoll_decal_build_t;
 
 typedef struct studio_ragdoll_surface_anchor_s
@@ -696,6 +697,10 @@ typedef struct studio_ragdoll_anchor_diagnostics_s
 	float minimum[3];
 	float maximum[3];
 	qboolean haveBounds;
+	qboolean haveInvalidSample;
+	int invalidBone;
+	float invalidLocal[3];
+	float invalidWorld[3];
 } studio_ragdoll_anchor_diagnostics_t;
 
 typedef struct studio_ragdoll_anchor_context_s
@@ -719,6 +724,13 @@ static void StudioFindNearestRagdollSurface(
 		if( !StudioVectorIsFinite3( triangle->world[vertex] ) )
 		{
 			++diagnostics->invalidVertices;
+			if( !diagnostics->haveInvalidSample )
+			{
+				diagnostics->haveInvalidSample = true;
+				diagnostics->invalidBone = triangle->bone[vertex];
+				VectorCopy( triangle->local[vertex], diagnostics->invalidLocal );
+				VectorCopy( triangle->world[vertex], diagnostics->invalidWorld );
+			}
 			return;
 		}
 		if( !diagnostics->haveBounds )
@@ -885,6 +897,19 @@ static void StudioBuildRagdollImpactFragment(
 	++context->triangleCount;
 	if( context->cache->fragmentCount >= STUDIO_RAGDOLL_DECAL_MAX_FRAGMENTS )
 		return;
+
+	// Never cache geometry generated from NaN/Inf model vertices. Previously
+	// such polygons could reach the 32-fragment cap but produce no drawable
+	// pixels, which made the fragment count misleading.
+	for( int vertex = 0; vertex < 3; ++vertex )
+	{
+		if( !StudioVectorIsFinite3( triangle->world[vertex] ) ||
+			!StudioVectorIsFinite3( triangle->local[vertex] ) )
+		{
+			++context->invalidTriangles;
+			return;
+		}
+	}
 
 	float edge1[3], edge2[3], faceNormal[3];
 	for( int axis = 0; axis < 3; ++axis )
@@ -1152,6 +1177,36 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 			anchor.found ? sqrtf( anchor.distanceSquared ) : -1.0f,
 			anchor.found ? anchor.boneIndex : -1,
 			cache->fragmentCount, cache->radius, rayLength );
+	if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
+		anchorContext.diagnostics.haveInvalidSample && gEngfuncs.Con_Printf )
+	{
+		float sampleTransform[3][4];
+		const int hasTransform = StudioGetRagdollBoneToWorld(
+			renderer, anchorContext.diagnostics.invalidBone, sampleTransform );
+		gEngfuncs.Con_Printf(
+			"[Ragdoll decal invalid vertex] entity %d model %s submodel %s bone %d transform=%d local [%.3f %.3f %.3f] world [%.3f %.3f %.3f] matrix-row0 [%.3f %.3f %.3f %.3f] header-flags 0x%x blend-vertices %d\n",
+			entityIndex,
+			renderer->m_pStudioHeader ? renderer->m_pStudioHeader->name : "?",
+			renderer->m_pSubModel ? renderer->m_pSubModel->name : "?",
+			anchorContext.diagnostics.invalidBone, hasTransform,
+			anchorContext.diagnostics.invalidLocal[0],
+			anchorContext.diagnostics.invalidLocal[1],
+			anchorContext.diagnostics.invalidLocal[2],
+			anchorContext.diagnostics.invalidWorld[0],
+			anchorContext.diagnostics.invalidWorld[1],
+			anchorContext.diagnostics.invalidWorld[2],
+			hasTransform ? sampleTransform[0][0] : 0.0f,
+			hasTransform ? sampleTransform[0][1] : 0.0f,
+			hasTransform ? sampleTransform[0][2] : 0.0f,
+			hasTransform ? sampleTransform[0][3] : 0.0f,
+			renderer->m_pStudioHeader ? renderer->m_pStudioHeader->flags : 0,
+			renderer->m_pSubModel ? renderer->m_pSubModel->blendvertinfoindex : 0 );
+	}
+	if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
+		gEngfuncs.Con_Printf )
+		gEngfuncs.Con_Printf(
+			"[Ragdoll decal build] entity %d: finite-fragments %d, invalid-triangles %d\n",
+			entityIndex, cache->fragmentCount, build.invalidTriangles );
 	return cache;
 }
 
@@ -1205,6 +1260,11 @@ static void StudioDrawCachedRagdollMark(
 				fragment.local[corner],
 				renderer->m_rgCachedBoneTransform[fragment.bone[corner]],
 				worldTriangle[corner] );
+			if( !StudioVectorIsFinite3( worldTriangle[corner] ) )
+			{
+				valid = false;
+				break;
+			}
 		}
 		if( !valid )
 			continue;
