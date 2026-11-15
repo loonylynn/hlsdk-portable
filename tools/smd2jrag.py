@@ -248,7 +248,6 @@ def parse_qci(path: Path) -> QCIData:
             path, locations))
 
     source_path, match = sources[0]
-    source_text = _strip_qci_comments(source_path.read_text(encoding="utf-8-sig"))
     collision_name = match.group(1) or match.group(2)
 
     mass = inertia = linear_damping = angular_damping = None
@@ -259,14 +258,14 @@ def parse_qci(path: Path) -> QCIData:
     for line_number, line in enumerate(match.group(3).splitlines(), 1):
         if not line.strip():
             continue
-        parts = _tokens(line, "{}:{}".format(path, line_number))
+        parts = _tokens(line, "{}:{}".format(source_path, line_number))
         if not parts:
             continue
         directive = parts[0].lower()
         if directive in ("$mass", "$inertia", "$damping", "$rotdamping"):
             if len(parts) != 2:
-                raise ValueError("{}:{}: {} expects one value".format(path, line_number, directive))
-            value = _finite_float(parts[1], "{}:{}".format(path, line_number))
+                raise ValueError("{}:{}: {} expects one value".format(source_path, line_number, directive))
+            value = _finite_float(parts[1], "{}:{}".format(source_path, line_number))
             if directive == "$mass":
                 mass = value
             elif directive == "$inertia":
@@ -277,7 +276,7 @@ def parse_qci(path: Path) -> QCIData:
                 angular_damping = value
         elif directive == "$rootbone":
             if len(parts) != 2:
-                raise ValueError("{}:{}: $rootbone expects one bone name".format(path, line_number))
+                raise ValueError("{}:{}: $rootbone expects one bone name".format(source_path, line_number))
             rootbone = parts[1]
         elif directive == "$jointconstrain":
             if len(parts) != 6 or parts[3].lower() != "limit":
@@ -286,11 +285,11 @@ def parse_qci(path: Path) -> QCIData:
             bone_key = parts[1].casefold()
             axis = parts[2].lower()
             if axis not in ("x", "y", "z"):
-                raise ValueError("{}:{}: unsupported joint axis {!r}".format(path, line_number, axis))
-            low = _finite_float(parts[4], "{}:{}".format(path, line_number))
-            high = _finite_float(parts[5], "{}:{}".format(path, line_number))
+                raise ValueError("{}:{}: unsupported joint axis {!r}".format(source_path, line_number, axis))
+            low = _finite_float(parts[4], "{}:{}".format(source_path, line_number))
+            high = _finite_float(parts[5], "{}:{}".format(source_path, line_number))
             if low > high:
-                raise ValueError("{}:{}: joint minimum exceeds maximum".format(path, line_number))
+                raise ValueError("{}:{}: joint minimum exceeds maximum".format(source_path, line_number))
             if bone_key not in limits:
                 limits[bone_key] = ([-UNLIMITED] * 3, [UNLIMITED] * 3)
             axis_index = ("x", "y", "z").index(axis)
@@ -300,9 +299,9 @@ def parse_qci(path: Path) -> QCIData:
             if len(parts) != 3:
                 raise ValueError("{}:{}: $jointrotdamping expects a bone name and value".format(
                     path, line_number))
-            value = _finite_float(parts[2], "{}:{}".format(path, line_number))
+            value = _finite_float(parts[2], "{}:{}".format(source_path, line_number))
             if value < 0:
-                raise ValueError("{}:{}: joint rotational damping cannot be negative".format(path, line_number))
+                raise ValueError("{}:{}: joint rotational damping cannot be negative".format(source_path, line_number))
             damping_overrides[parts[1].casefold()] = value
 
     required = {
@@ -314,7 +313,7 @@ def parse_qci(path: Path) -> QCIData:
     }
     missing = [name for name, value in required.items() if value is None]
     if missing:
-        raise ValueError("{}: collisionjoints block is missing {}".format(path, ", ".join(missing)))
+        raise ValueError("{}: collisionjoints block is missing {}".format(source_path, ", ".join(missing)))
     if mass <= 0 or inertia <= 0 or linear_damping < 0 or angular_damping < 0:
         raise ValueError("{}: mass/inertia must be positive and damping values non-negative".format(path))
 
