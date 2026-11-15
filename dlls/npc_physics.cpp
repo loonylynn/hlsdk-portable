@@ -11,6 +11,8 @@
 #include "enginecallback.h"
 #include "xash_physint.h"
 #include "studio.h"
+#include "cbase.h"
+#include "monsters.h"
 
 
 #include <Jolt/Jolt.h>
@@ -231,6 +233,7 @@ namespace
 	static std::vector<NPCPhysicsLivePose> g_livePoses;
 	static int g_nextRagdollID = 1;
 	static int g_msgRagdollPose = 0;
+	static int g_msgRagdollImpact = 0;
 	static xash_server_physics_api_s *g_serverPhysicsAPI = NULL;
 	static xash_world_collision_mesh_api_s *g_worldCollisionMeshAPI = NULL;
 	static xash_brush_collision_mesh_api_s *g_brushCollisionMeshAPI = NULL;
@@ -244,6 +247,8 @@ namespace
 
 	static cvar_t g_svNpcVPhysics = { "sv_npc_vphysics", "1", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsBulletScale = { "sv_npc_vphysics_bullet_scale", "1.5", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsCrowbarScale = { "sv_npc_vphysics_crowbar_scale", "1.5", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
 	{
@@ -1806,6 +1811,22 @@ namespace
 	}
 }
 
+int NPCPhysics_IsRagdollEntity( edict_t *ent )
+{
+	if( !ent || ent->free )
+		return FALSE;
+
+	for( size_t i = 0; i < g_ragdolls.size(); ++i )
+	{
+		const NPCPhysicsRagdoll &ragdoll = g_ragdolls[i];
+		if( ragdoll.entity == ent && ragdoll.serialNumber == ent->serialnumber &&
+			ragdoll.physicsRagdoll.GetPtr() && ragdoll.addedToPhysicsSystem )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
 int NPCPhysics_TraceAndApplyImpact(
 	const float *start,
 	const float *end,
@@ -1842,6 +1863,7 @@ int NPCPhysics_TraceAndApplyImpact(
 	// Only accept a body that belongs to one of our articulated NPC ragdolls.
 	edict_t *targetEntity = NULL;
 	NPCPhysicsRagdoll *targetRagdoll = NULL;
+	int targetBodyIndex = -1;
 	bool foundRagdollBody = false;
 	for( size_t ragdollIndex = 0; ragdollIndex < g_ragdolls.size(); ++ragdollIndex )
 	{
@@ -1857,6 +1879,7 @@ int NPCPhysics_TraceAndApplyImpact(
 			{
 				targetEntity = ragdoll.entity;
 				targetRagdoll = &ragdoll;
+				targetBodyIndex = body;
 				foundRagdollBody = true;
 				break;
 			}
@@ -1870,14 +1893,76 @@ int NPCPhysics_TraceAndApplyImpact(
 
 	const JPH::RVec3 impactPoint = ray.GetPointOnRay( hit.mFraction );
 	JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
-	impulse = NPCPhysics_ClampVector( impulse, 1500.0f );
-	g_npcPhysics.system.GetBodyInterface().AddImpulse(
-		hit.mBodyID, impulse, impactPoint );
+	impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
+
+	JPH::BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+	// Source's client ragdoll applies a localized force to the struck physics
+	// object. Explicit activation guarantees that a sleeping Jolt limb wakes.
+	bodyInterface.ActivateBody( hit.mBodyID );
+	bodyInterface.AddImpulse( hit.mBodyID, impulse, impactPoint );
 
 	// A sleeping corpse normally sends only a 5 Hz heartbeat. A weapon strike
 	// should be visible on the next end-frame snapshot, not after that interval.
 	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
 		targetRagdoll->nextPoseTime = gpGlobals->time;
+
+	// Send a bone-local blood mark. The client transforms it with the same
+	// interpolated bone pose used to render the articulated corpse.
+	if( g_msgRagdollImpact > 0 && targetBodyIndex >= 0 &&
+		targetBodyIndex < targetRagdoll->bodyCount )
+	{
+		CBaseEntity *hitObject = CBaseEntity::Instance( targetEntity );
+		const int bloodColor = hitObject ? hitObject->BloodColor() : DONT_BLEED;
+		if( bloodColor != DONT_BLEED )
+		{
+			const RagdollBone &bone = targetRagdoll->bones[targetBodyIndex];
+			const JPH::Quat bodyRotation = bodyInterface.GetRotation( hit.mBodyID );
+			const JPH::RVec3 bodyPosition = bodyInterface.GetPosition( hit.mBodyID );
+			const JPH::Vec3 bodyOrigin(
+				float( bodyPosition.GetX() ),
+				float( bodyPosition.GetY() ),
+				float( bodyPosition.GetZ() ) );
+			const JPH::Vec3 boneOrigin =
+				bodyOrigin - bodyRotation * bone.localShapeCenter;
+			const JPH::Vec3 hitPoint(
+				float( impactPoint.GetX() ),
+				float( impactPoint.GetY() ),
+				float( impactPoint.GetZ() ) );
+			const JPH::Quat inverseRotation = bodyRotation.Conjugated();
+			const JPH::Vec3 localPosition =
+				inverseRotation * ( hitPoint - boneOrigin );
+			const JPH::Vec3 worldNormal = -( rayDirection / rayLength );
+			const JPH::Vec3 localNormal =
+				( inverseRotation * worldNormal ).Normalized();
+			const float markRadius = std::max(
+				2.5f, std::min( 6.0f, 2.5f + impulseMagnitude * 0.001f ) );
+			const int encodedRadius = static_cast<int>( markRadius * 4.0f + 0.5f );
+			const int encodedNormalX = static_cast<int>( localNormal.GetX() * 127.0f + 128.0f );
+			const int encodedNormalY = static_cast<int>( localNormal.GetY() * 127.0f + 128.0f );
+			const int encodedNormalZ = static_cast<int>( localNormal.GetZ() * 127.0f + 128.0f );
+			const int markColor = bloodColor == BLOOD_COLOR_GREEN ? 1 :
+				( bloodColor == BLOOD_COLOR_YELLOW ? 2 : 0 );
+			const float markOrigin[3] = {
+				float( impactPoint.GetX() ),
+				float( impactPoint.GetY() ),
+				float( impactPoint.GetZ() )
+			};
+
+			MESSAGE_BEGIN( MSG_PVS, g_msgRagdollImpact, markOrigin );
+				WRITE_SHORT( ENTINDEX( targetEntity ) );
+				WRITE_SHORT( targetRagdoll->networkID );
+				WRITE_BYTE( bone.studioBoneIndex );
+				WRITE_COORD( localPosition.GetX() );
+				WRITE_COORD( localPosition.GetY() );
+				WRITE_COORD( localPosition.GetZ() );
+				WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalX ) ) );
+				WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalY ) ) );
+				WRITE_BYTE( std::max( 0, std::min( 255, encodedNormalZ ) ) );
+				WRITE_BYTE( std::max( 1, std::min( 255, encodedRadius ) ) );
+				WRITE_BYTE( markColor );
+			MESSAGE_END();
+		}
+	}
 
 	*hitFraction = hit.mFraction;
 	hitPosition[0] = float( impactPoint.GetX() );
@@ -1909,6 +1994,8 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 
 	CVAR_REGISTER( &g_svNpcVPhysics );
 	CVAR_REGISTER( &g_svNpcVPhysicsMass );
+	CVAR_REGISTER( &g_svNpcVPhysicsBulletScale );
+	CVAR_REGISTER( &g_svNpcVPhysicsCrowbarScale );
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
 	g_worldCollisionMeshAPI = NULL;
@@ -1982,6 +2069,8 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 
 	if( !g_msgRagdollPose && g_engfuncs.pfnRegUserMsg )
 		g_msgRagdollPose = g_engfuncs.pfnRegUserMsg( "RagdollPose", -1 );
+	if( !g_msgRagdollImpact && g_engfuncs.pfnRegUserMsg )
+		g_msgRagdollImpact = g_engfuncs.pfnRegUserMsg( "RagdollImpact", -1 );
 
 	xash_physics_interface_s *physics =
 		reinterpret_cast<xash_physics_interface_s *>( callbacks );
@@ -2047,4 +2136,5 @@ void NPCPhysics_Shutdown( void )
 	g_livePoses.clear();
 	g_ragdollDefinitionCache.clear();
 	g_msgRagdollPose = 0;
+	g_msgRagdollImpact = 0;
 }
