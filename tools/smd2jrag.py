@@ -466,6 +466,8 @@ def build_bodies(smd: SMDData, qci: QCIData) -> List[OutputBody]:
     output: List[OutputBody] = []
     for bone_index in order:
         node = smd.nodes[bone_index]
+        if len(node.name.encode("utf-8")) > 64:
+            raise ValueError("bone name {!r} exceeds the .jrag runtime limit of 64 UTF-8 bytes".format(node.name))
         rotation, translation = transforms[bone_index]
         inverse_rotation = _transpose(rotation)
         local_points = []
