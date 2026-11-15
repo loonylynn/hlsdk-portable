@@ -115,6 +115,8 @@ typedef struct engine_studio_api_s
 	int		( *StudioDecalShoot )( int entityIndex, int ragdollID, int boneIndex,
 					const float *rayStart, const float *impactPosition,
 					float radius, int bloodColor );
+	// Drop renderer-owned studio decals when the client clears ragdoll state.
+	void		( *StudioClearDecals )( void );
 } engine_studio_api_t;
 
 typedef struct server_studio_api_s
