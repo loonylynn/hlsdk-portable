@@ -1933,8 +1933,6 @@ int NPCPhysics_ApplyBlastImpulse(
 		NPCPhysicsBlastCandidate candidate;
 		candidate.bodyID = bodyID;
 		candidate.direction = direction;
-		candidate.mass = bodyMass;
-		candidate.distance = distance;
 		candidate.impulseMagnitude = bodyMass * desiredSpeed * falloff;
 		candidates.push_back( candidate );
 		visibleMass += bodyMass;
