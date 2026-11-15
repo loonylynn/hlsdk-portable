@@ -42,6 +42,7 @@ static int g_BlobShadowStudioEntity = -1;
 
 static cvar_t *cl_blobshadows = NULL;
 static cvar_t *cl_blobshadows_opacity = NULL;
+static cvar_t *cl_ragdoll_bloodmarks = NULL;
 static model_t *cl_blobshadow_sprite = NULL;
 
 // Minimal Xash sprite metadata mirrors. We temporarily substitute the frame's
@@ -171,6 +172,207 @@ static qboolean StudioBindBlobShadowTexture( triangleapi_t *tri, int texture )
 	frame->gl_texturenum = originalTexture;
 
 	return result ? true : false;
+}
+
+/*
+====================
+StudioGetRagdollBloodTexture
+
+Build a small irregular alpha mask for bone-attached impact marks.
+The renderer tints this white texture with the model's blood palette.
+====================
+*/
+static int StudioGetRagdollBloodTexture( void )
+{
+	static const char textureName[] = "cl_ragdoll_bloodmark_v1";
+	static byte pixels[64 * 64 * 4];
+	int texture;
+
+	if( !gXashRenderAPI || !gXashRenderAPI->GL_FindTexture ||
+		!gXashRenderAPI->GL_CreateTexture )
+		return 0;
+
+	texture = gXashRenderAPI->GL_FindTexture( textureName );
+	if( texture > 0 )
+		return texture;
+
+	for( int y = 0; y < 64; ++y )
+	{
+		for( int x = 0; x < 64; ++x )
+		{
+			const float nx = ( (float)x + 0.5f - 32.0f ) / 32.0f;
+			const float ny = ( (float)y + 0.5f - 32.0f ) / 32.0f;
+			const float radius = sqrtf( nx * nx + ny * ny );
+			const float angle = atan2f( ny, nx );
+			const float edge = 0.74f +
+				0.12f * sinf( angle * 5.0f ) +
+				0.06f * cosf( angle * 11.0f ) +
+				0.035f * sinf( angle * 17.0f );
+			float alpha = ( edge - radius ) * 15.0f;
+			if( alpha < 0.0f ) alpha = 0.0f;
+			if( alpha > 1.0f ) alpha = 1.0f;
+			alpha = alpha * alpha * ( 3.0f - 2.0f * alpha );
+
+			const int offset = ( y * 64 + x ) * 4;
+			pixels[offset + 0] = 255;
+			pixels[offset + 1] = 255;
+			pixels[offset + 2] = 255;
+			pixels[offset + 3] = (byte)( alpha * 230.0f + 0.5f );
+		}
+	}
+
+	// TF_CLAMP | TF_NOMIPMAP | TF_HAS_ALPHA from Xash render_api.h.
+	return gXashRenderAPI->GL_CreateTexture(
+		textureName, 64, 64, pixels, ( 1 << 11 ) | ( 1 << 12 ) | ( 1 << 16 )
+	);
+}
+
+/*
+====================
+StudioDrawRagdollImpactMarks
+
+Render small blood patches from the struck bone's local coordinates. The
+studio bone matrix is sampled from the same interpolated Jolt pose used for
+the corpse mesh, so marks travel with the articulated limb.
+====================
+*/
+static void StudioDrawRagdollImpactMarks( cl_entity_t *entity )
+{
+	triangleapi_t *tri = gEngfuncs.pTriAPI;
+	if( !entity || entity->index <= 0 || !tri ||
+		!cl_ragdoll_bloodmarks || cl_ragdoll_bloodmarks->value <= 0.0f )
+		return;
+
+	const int markCount = Ragdoll_GetImpactMarkCount( entity->index );
+	if( markCount <= 0 )
+		return;
+
+	if( !cl_blobshadow_sprite )
+		cl_blobshadow_sprite = IEngineStudio.Mod_ForName( "sprites/glow01.spr", false );
+	if( !cl_blobshadow_sprite || cl_blobshadow_sprite->type != mod_sprite ||
+		!cl_blobshadow_sprite->cache.data || !tri->SpriteTexture )
+		return;
+
+	const int texture = StudioGetRagdollBloodTexture();
+	if( texture <= 0 || !StudioBindBlobShadowTexture( tri, texture ) )
+		return;
+
+	tri->CullFace( TRI_NONE );
+	tri->RenderMode( kRenderTransAlpha );
+
+	for( int markIndex = 0; markIndex < markCount; ++markIndex )
+	{
+		int boneIndex = -1;
+		float localPosition[3];
+		float localNormal[3];
+		float radius = 0.0f;
+		int bloodColor = 0;
+		float boneTransform[3][4];
+
+		if( !Ragdoll_GetImpactMark(
+			entity->index, markIndex, &boneIndex,
+			localPosition, localNormal, &radius, &bloodColor ) ||
+			!Ragdoll_GetBoneTransform( entity->index, boneIndex, boneTransform ) )
+			continue;
+
+		vec3_t center;
+		vec3_t normal;
+		for( int axis = 0; axis < 3; ++axis )
+		{
+			center[axis] =
+				boneTransform[axis][0] * localPosition[0] +
+				boneTransform[axis][1] * localPosition[1] +
+				boneTransform[axis][2] * localPosition[2] +
+				boneTransform[axis][3];
+			normal[axis] =
+				boneTransform[axis][0] * localNormal[0] +
+				boneTransform[axis][1] * localNormal[1] +
+				boneTransform[axis][2] * localNormal[2];
+		}
+
+		float normalLength = sqrtf(
+			normal[0] * normal[0] +
+			normal[1] * normal[1] +
+			normal[2] * normal[2] );
+		if( normalLength < 0.001f )
+			continue;
+		for( int axis = 0; axis < 3; ++axis )
+			normal[axis] /= normalLength;
+
+		vec3_t reference = { 0.0f, 0.0f, 1.0f };
+		if( fabsf( normal[2] ) > 0.90f )
+		{
+			reference[0] = 0.0f;
+			reference[1] = 1.0f;
+			reference[2] = 0.0f;
+		}
+
+		vec3_t tangent;
+		vec3_t bitangent;
+		tangent[0] = reference[1] * normal[2] - reference[2] * normal[1];
+		tangent[1] = reference[2] * normal[0] - reference[0] * normal[2];
+		tangent[2] = reference[0] * normal[1] - reference[1] * normal[0];
+		float tangentLength = sqrtf(
+			tangent[0] * tangent[0] +
+			tangent[1] * tangent[1] +
+			tangent[2] * tangent[2] );
+		if( tangentLength < 0.001f )
+			continue;
+		for( int axis = 0; axis < 3; ++axis )
+			tangent[axis] /= tangentLength;
+
+		bitangent[0] = normal[1] * tangent[2] - normal[2] * tangent[1];
+		bitangent[1] = normal[2] * tangent[0] - normal[0] * tangent[2];
+		bitangent[2] = normal[0] * tangent[1] - normal[1] * tangent[0];
+
+		// Slight surface bias avoids z-fighting with the studio mesh.
+		for( int axis = 0; axis < 3; ++axis )
+			center[axis] += normal[axis] * 0.45f;
+
+		float red = 0.34f;
+		float green = 0.015f;
+		float blue = 0.005f;
+		if( bloodColor == 1 )
+		{
+			red = 0.025f;
+			green = 0.30f;
+			blue = 0.025f;
+		}
+		else if( bloodColor == 2 )
+		{
+			red = 0.35f;
+			green = 0.27f;
+			blue = 0.015f;
+		}
+
+		const float halfSize = radius * 0.82f;
+		vec3_t vertices[4];
+		const float signs[4][2] = {
+			{ -1.0f, -1.0f }, { 1.0f, -1.0f },
+			{ 1.0f, 1.0f }, { -1.0f, 1.0f }
+		};
+		for( int vertex = 0; vertex < 4; ++vertex )
+		{
+			for( int axis = 0; axis < 3; ++axis )
+			{
+				vertices[vertex][axis] = center[axis] +
+					( tangent[axis] * signs[vertex][0] +
+					  bitangent[axis] * signs[vertex][1] ) * halfSize;
+			}
+		}
+
+		tri->Color4f( red, green, blue, 0.92f );
+		tri->Begin( TRI_QUADS );
+		tri->TexCoord2f( 0.0f, 0.0f ); tri->Vertex3fv( vertices[0] );
+		tri->TexCoord2f( 1.0f, 0.0f ); tri->Vertex3fv( vertices[1] );
+		tri->TexCoord2f( 1.0f, 1.0f ); tri->Vertex3fv( vertices[2] );
+		tri->TexCoord2f( 0.0f, 1.0f ); tri->Vertex3fv( vertices[3] );
+		tri->End();
+	}
+
+	tri->Color4f( 1.0f, 1.0f, 1.0f, 1.0f );
+	tri->RenderMode( kRenderNormal );
+	tri->CullFace( TRI_FRONT );
 }
 
 /*
@@ -521,6 +723,8 @@ void CStudioModelRenderer::Init( void )
 		cl_blobshadows = CVAR_CREATE( "cl_blobshadows", "1", FCVAR_ARCHIVE );
 	if( !cl_blobshadows_opacity )
 		cl_blobshadows_opacity = CVAR_CREATE( "cl_blobshadows_opacity", "0.53", FCVAR_ARCHIVE );
+	if( !cl_ragdoll_bloodmarks )
+		cl_ragdoll_bloodmarks = CVAR_CREATE( "cl_ragdoll_bloodmarks", "1", FCVAR_ARCHIVE );
 
 	m_pChromeSprite			= IEngineStudio.GetChromeSprite();
 
@@ -2185,6 +2389,7 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 			g_BlobShadowStudioEntity == m_pCurrentEntity->index ?
 				g_BlobShadowStudioOrigin : m_pCurrentEntity->origin
 		);
+		StudioDrawRagdollImpactMarks( m_pCurrentEntity );
 }
 
 /*
