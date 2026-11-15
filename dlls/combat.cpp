@@ -32,6 +32,8 @@
 #include "game.h"
 #include "xash_physint.h"
 
+#include <algorithm>
+
 extern DLL_GLOBAL Vector		g_vecAttackDir;
 extern DLL_GLOBAL int			g_iSkillLevel;
 
