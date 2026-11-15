@@ -43,6 +43,7 @@ static int g_BlobShadowStudioEntity = -1;
 static cvar_t *cl_blobshadows = NULL;
 static cvar_t *cl_blobshadows_opacity = NULL;
 static cvar_t *cl_ragdoll_bloodmarks = NULL;
+static cvar_t *cl_ragdoll_bloodmarks_debug = NULL;
 static model_t *cl_blobshadow_sprite = NULL;
 
 // Minimal Xash sprite metadata mirrors. We temporarily substitute the frame's
@@ -525,6 +526,7 @@ typedef struct studio_ragdoll_surface_search_s
 	float bestScore;
 	float surfacePoint[3];
 	float surfaceNormal[3];
+	int triangleCount;
 	qboolean found;
 } studio_ragdoll_surface_search_t;
 
@@ -534,6 +536,7 @@ static void StudioFindRagdollImpactSurface(
 {
 	studio_ragdoll_surface_search_t *context =
 		(studio_ragdoll_surface_search_t *)opaqueContext;
+	++context->triangleCount;
 	float edge1[3], edge2[3], normal[3];
 	for( int axis = 0; axis < 3; ++axis )
 	{
@@ -845,7 +848,14 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 {
 	float boneTransform[3][4];
 	if( !Ragdoll_GetBoneTransform( entityIndex, boneIndex, boneTransform ) )
+	{
+		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
+			gEngfuncs.Con_Printf )
+			gEngfuncs.Con_Printf(
+				"[Ragdoll decals] entity %d bone %d: no client bone transform yet\n",
+				entityIndex, boneIndex );
 		return NULL;
+	}
 
 	// Cache failed projections too: a malformed or unusual studio mesh must
 	// never trigger a full-model scan every frame.
@@ -891,6 +901,11 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	if( !search.found )
 	{
 		cache->age = ++g_StudioRagdollDecalCacheClock;
+		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
+			gEngfuncs.Con_Printf )
+			gEngfuncs.Con_Printf(
+				"[Ragdoll decals] entity %d bone %d: parsed %d triangles, no surface within 12 units\n",
+				entityIndex, boneIndex, search.triangleCount );
 		return cache;
 	}
 
@@ -923,6 +938,12 @@ static studio_ragdoll_mark_cache_t *StudioBuildRagdollMarkCache(
 	StudioForEachRagdollModelTriangle(
 		renderer, StudioBuildRagdollImpactFragment, &build );
 	cache->age = ++g_StudioRagdollDecalCacheClock;
+	if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
+		gEngfuncs.Con_Printf )
+		gEngfuncs.Con_Printf(
+			"[Ragdoll decals] entity %d bone %d: parsed %d triangles, clipped %d fragments, radius %.2f\n",
+			entityIndex, boneIndex, search.triangleCount,
+			cache->fragmentCount, cache->radius );
 	return cache;
 }
 
@@ -1438,6 +1459,8 @@ void CStudioModelRenderer::Init( void )
 		cl_blobshadows_opacity = CVAR_CREATE( "cl_blobshadows_opacity", "0.53", FCVAR_ARCHIVE );
 	if( !cl_ragdoll_bloodmarks )
 		cl_ragdoll_bloodmarks = CVAR_CREATE( "cl_ragdoll_bloodmarks", "1", FCVAR_ARCHIVE );
+	if( !cl_ragdoll_bloodmarks_debug )
+		cl_ragdoll_bloodmarks_debug = CVAR_CREATE( "cl_ragdoll_bloodmarks_debug", "0", FCVAR_ARCHIVE );
 
 	m_pChromeSprite			= IEngineStudio.GetChromeSprite();
 
