@@ -1465,8 +1465,8 @@ namespace
 					SixDOFConstraintSettings::RotationZ };
 				for( int axis = 0; axis < 3; ++axis )
 				{
-					const float minDegrees = definition.jointMinDegrees[axis];
-					const float maxDegrees = definition.jointMaxDegrees[axis];
+					const float minDegrees = bodyDefinition.jointMinDegrees[axis];
+					const float maxDegrees = bodyDefinition.jointMaxDegrees[axis];
 					const float minRadians = minDegrees <= -1.0e20f
 						? -FLT_MAX : minDegrees * RAGDOLL_DEGREES_TO_RADIANS;
 					const float maxRadians = maxDegrees >= 1.0e20f
