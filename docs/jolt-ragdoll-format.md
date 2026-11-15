@@ -141,14 +141,19 @@ When a bullet or crowbar hits a bleeding Jolt ragdoll, the old GoldSrc reverse
 the physics corpse to leave a decal on the floor or wall behind it. Blood
 particles still spawn at the impact point.
 
-The server also sends the struck studio bone, local hit point, and local surface
-normal to clients. The hardware studio renderer draws an irregular alpha blood
-patch using that bone's interpolated pose, so the mark follows the moving limb.
-`cl_ragdoll_bloodmarks 0` disables these marks. The client retains up to 32
-recent marks per ragdoll.
+The server sends the struck studio bone, mapped-bone-local hit point, and
+local impact normal to clients. The hardware studio renderer transforms the
+current GoldSrc studio triangle strips/fans with the same bone matrices used for
+the articulated corpse, finds the nearest surface triangle facing the impact,
+then projects and clips a small irregular decal patch against the skinned mesh
+triangles. The fragments are drawn at the actual mesh surface with a minimal
+depth bias, rather than as a quad floating above the bone. Since the projection
+is rebuilt from the current pose, marks follow the moving ragdoll without
+requiring changes to the Xash3D engine. `cl_ragdoll_bloodmarks 0` disables
+these marks. The client retains up to 32 recent marks per ragdoll.
 
-These first-pass marks are bone-attached overlays, not triangle-clipped Source
-studio decals. They follow the articulated bone but are not yet clipped to the
-exact skinned mesh surface. The current impact integration covers hitscan bullets
-and the crowbar; projectiles and explosive radius impulses are not yet wired into
-the Jolt ragdoll path.
+This backports the core studio-decal projection and polygon-clipping behavior
+used by Source, not Source's entire `IVModelRender`/model-instance decal
+subsystem. Decals are currently limited to the hardware studio renderer and
+the existing hitscan bullet/crowbar impact hooks; projectiles and explosive
+radius impacts are not yet wired into the Jolt ragdoll path.
