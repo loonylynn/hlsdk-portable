@@ -125,6 +125,19 @@ TYPEDESCRIPTION	CBaseMonster::m_SaveData[] =
 
 //IMPLEMENT_SAVERESTORE( CBaseMonster, CBaseToggle )
 
+int CBaseMonster::ObjectCaps( void )
+{
+	int caps = CBaseToggle::ObjectCaps();
+
+	// Dead Jolt ragdolls are portable physics entities. They must survive
+	// landmark transitions even when their carrier is outside a trigger_transition
+	// brush. FCAP_FORCE_TRANSITION still obeys the engine's PVS visibility rule.
+	if( NPCPhysics_IsRagdollEntity( ENT( pev ) ) )
+		caps |= FCAP_ACROSS_TRANSITION | FCAP_FORCE_TRANSITION;
+
+	return caps;
+}
+
 int CBaseMonster::Save( CSave &save )
 {
 	// Refresh the portable state while the live Jolt bodies are still valid.
