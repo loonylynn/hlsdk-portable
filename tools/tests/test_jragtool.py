@@ -96,6 +96,20 @@ class JRAGToolTests(unittest.TestCase):
         self.assertIn("Root bone: Bip01", output)
         self.assertIn("Generated physical hierarchy: 1 bodies", output)
 
+    def test_inspect_reports_repeated_smd_node_declarations(self):
+        source = self.smd.read_text(encoding="utf-8")
+        source = source.replace(
+            '1 "Bip01 Helper" 0\\n',
+            '1 "Bip01 Helper" 0\\n1 "Bip01 Helper" -1\\n',
+            1,
+        )
+        self.smd.write_text(source, encoding="utf-8")
+
+        result, output = self._run(["inspect", str(self.smd)])
+        self.assertEqual(result, 0, output)
+        self.assertIn("repeated node index 1", output)
+        self.assertIn("using final parent -1 instead of 0", output)
+
     def test_generate_runs_validation_and_writes_runtime_definition(self):
         output = self._generate()
         self.assertIn("Generated and validated", output)
