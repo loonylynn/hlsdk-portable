@@ -2006,15 +2006,41 @@ int NPCPhysics_ApplyBlastImpulse(
 	}
 
 	const Vec3 exposedCenter = exposedMassCenter / exposedMass;
+
+	// Aim the blast toward the upper bound of the corpse, not its mass center.
+	// The latter can sit below the explosion even when the upper torso/head is
+	// above it, which sends a grounded ragdoll straight into the floor.
+	const Vec3 entityBoundsCenter(
+		( targetEntity->v.absmin[0] + targetEntity->v.absmax[0] ) * 0.5f,
+		( targetEntity->v.absmin[1] + targetEntity->v.absmax[1] ) * 0.5f,
+		targetEntity->v.absmax[2] );
+	Vec3 blastAimPoint = entityBoundsCenter;
+	const bool validEntityBounds =
+		std::isfinite( entityBoundsCenter.GetX() ) &&
+		std::isfinite( entityBoundsCenter.GetY() ) &&
+		std::isfinite( entityBoundsCenter.GetZ() ) &&
+		targetEntity->v.absmax[2] > targetEntity->v.absmin[2] + 8.0f;
+	if( !validEntityBounds )
+		blastAimPoint = exposedCenter + Vec3( 0.0f, 0.0f, 16.0f );
+
 	Vec3 blastDirection(
-		exposedCenter.GetX() - origin[0],
-		exposedCenter.GetY() - origin[1],
-		exposedCenter.GetZ() - origin[2] );
+		blastAimPoint.GetX() - origin[0],
+		blastAimPoint.GetY() - origin[1],
+		blastAimPoint.GetZ() - origin[2] );
 	const float directionLength = blastDirection.Length();
 	if( !std::isfinite( directionLength ) || directionLength <= 0.001f )
 		blastDirection = Vec3( 0.0f, 0.0f, 1.0f );
 	else
 		blastDirection /= directionLength;
+
+	// Add a modest upward bias when the radial direction already has an
+	// upward component. This compensates for gravity without reversing a blast
+	// that genuinely originates above the target.
+	if( blastDirection.GetZ() > 0.0f )
+	{
+		blastDirection.SetZ( blastDirection.GetZ() * 1.15f );
+		blastDirection = blastDirection.Normalized();
+	}
 
 	// A single-body impulse budget keeps the kick energetic enough to launch
 	// the articulated assembly. The body mass controls the resulting velocity;
@@ -2065,12 +2091,15 @@ int NPCPhysics_ApplyBlastImpulse(
 	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
-			"[NPC blast] Applied focused impulse: ent=%d id=%d body=%d mass=%.1f exposed=%d/%d exposed-mass=%.1f/%.1f radius=%.1f falloff=%.2f impulse=%.1f scale=%.2f.\n",
+			"[NPC blast] Applied focused impulse: ent=%d id=%d body=%d mass=%.1f exposed=%d/%d exposed-mass=%.1f/%.1f radius=%.1f falloff=%.2f impulse=%.1f scale=%.2f origin=(%.1f %.1f %.1f) aim=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\n",
 			ENTINDEX( targetEntity ), targetRagdoll->networkID,
 			impulseBodyIndex, impulseBodyMass,
 			exposedBodies, targetRagdoll->bodyCount,
 			exposedMass, totalRagdollMass, radius,
-			impulseFalloff, scaledImpulse, blastScale
+			impulseFalloff, scaledImpulse, blastScale,
+			origin[0], origin[1], origin[2],
+			blastAimPoint.GetX(), blastAimPoint.GetY(), blastAimPoint.GetZ(),
+			blastDirection.GetX(), blastDirection.GetY(), blastDirection.GetZ()
 		);
 
 	return 1;
