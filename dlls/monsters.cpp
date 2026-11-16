@@ -140,6 +140,13 @@ int CBaseMonster::Restore( CRestore &restore )
 {
 	if( !CBaseToggle::Restore( restore ) )
 		return 0;
+
+	// Older saves do not contain these fields; start from a safe empty state
+	// before reading any snapshot values that may be present.
+	m_iNpcRagdollPersistVersion = 0;
+	m_iNpcRagdollPersistBoneCount = 0;
+	m_iNpcRagdollPersistBodyCount = 0;
+
 	int status = restore.ReadFields( "CBaseMonster", this, m_SaveData, ARRAYSIZE( m_SaveData ) );
 
 	// We don't save/restore routes yet
