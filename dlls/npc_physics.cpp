@@ -52,6 +52,8 @@ namespace
 	using namespace JPH;
 
 	static constexpr ObjectLayer RAGDOLL_OBJECT_LAYER = 0;
+	static constexpr ObjectLayer WORLD_STATIC_OBJECT_LAYER = 1;
+	static constexpr ObjectLayer BRUSH_KINEMATIC_OBJECT_LAYER = 2;
 	static constexpr uint32_t RAGDOLL_MAX_BODIES = 4096;
 	static constexpr uint32_t RAGDOLL_MAX_BODY_PAIRS = 8192;
 	static constexpr uint32_t RAGDOLL_MAX_CONTACT_CONSTRAINTS = 8192;
@@ -78,7 +80,14 @@ namespace
 	class RagdollObjectLayerFilter final : public ObjectLayerPairFilter
 	{
 	public:
-		bool ShouldCollide( ObjectLayer, ObjectLayer ) const override { return true; }
+		bool ShouldCollide( ObjectLayer layer1, ObjectLayer layer2 ) const override
+		{
+			// The world BSP and inline brush models are triangle meshes. Jolt
+			// does not support mesh-vs-mesh contacts when one mesh is kinematic.
+			// Only the convex articulated ragdoll bodies need contacts with either
+			// class of environment geometry.
+			return layer1 == RAGDOLL_OBJECT_LAYER || layer2 == RAGDOLL_OBJECT_LAYER;
+		}
 	};
 
 	class RagdollBroadPhaseFilter final : public ObjectVsBroadPhaseLayerFilter
@@ -164,13 +173,15 @@ namespace
 		BodyID bodyID;
 		Vec3 position;
 		Quat rotation;
+		bool wasMoving;
 
 		NPCPhysicsBrushCollider()
 			: entityIndex( -1 ),
 			  modelIndex( 0 ),
 			  bodyID(),
 			  position( 0.0f, 0.0f, 0.0f ),
-			  rotation( Quat::sIdentity() )
+			  rotation( Quat::sIdentity() ),
+			  wasMoving( false )
 		{
 		}
 	};
@@ -591,7 +602,7 @@ namespace
 			RVec3( 0.0f, 0.0f, 0.0f ),
 			Quat::sIdentity(),
 			EMotionType::Static,
-			RAGDOLL_OBJECT_LAYER
+			WORLD_STATIC_OBJECT_LAYER
 		);
 		bodySettings.mFriction = 0.9f;
 		bodySettings.mRestitution = 0.0f;
@@ -804,9 +815,15 @@ namespace
 					shape.GetPtr(),
 					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
 					rotation,
-					EMotionType::Static,
-					RAGDOLL_OBJECT_LAYER
+					EMotionType::Kinematic,
+					BRUSH_KINEMATIC_OBJECT_LAYER
 				);
+				// Mesh shapes do not have a closed volume from which to derive
+				// mass properties. Kinematic bodies still need valid motion
+				// properties so MoveKinematic can provide their surface velocity.
+				bodySettings.mOverrideMassProperties = EOverrideMassProperties::MassAndInertiaProvided;
+				bodySettings.mMassPropertiesOverride.mMass = 1.0f;
+				bodySettings.mMassPropertiesOverride.mInertia = Mat44::sIdentity();
 				bodySettings.mFriction = 0.9f;
 				bodySettings.mRestitution = 0.0f;
 
@@ -833,7 +850,7 @@ namespace
 				g_brushColliders.push_back( collider );
 				ALERT(
 					at_console,
-					"[NPC physics] Added inline BSP collider: entity %d, model %d.\n",
+					"[NPC physics] Added kinematic inline BSP collider: entity %d, model %d.\n",
 					entityInfo.entityIndex,
 					entityInfo.modelIndex
 				);
@@ -842,17 +859,31 @@ namespace
 
 			NPCPhysicsBrushCollider &collider = g_brushColliders[colliderIndex];
 			const Vec3 positionDelta = position - collider.position;
-			if( positionDelta.LengthSq() > 0.0001f ||
-				NPCPhysics_QuaternionsDiffer( rotation, collider.rotation ) )
+			const bool transformChanged = positionDelta.LengthSq() > 0.0001f ||
+				NPCPhysics_QuaternionsDiffer( rotation, collider.rotation );
+
+			float frameTime = gpGlobals ? gpGlobals->frametime : 0.0f;
+			if( frameTime < 0.0f )
+				frameTime = 0.0f;
+			if( frameTime > 0.1f )
+				frameTime = 0.1f;
+
+			// MoveKinematic derives linear/angular velocity from the transform
+			// delta. This lets a closing door or moving platform push the
+			// articulated ragdoll instead of teleporting a static collider into it.
+			// Send one final unchanged target after movement stops to clear the
+			// kinematic velocity, then leave stationary bodies asleep.
+			if( frameTime > 0.0001f && ( transformChanged || collider.wasMoving ) )
 			{
-				bodyInterface.SetPositionAndRotation(
+				bodyInterface.MoveKinematic(
 					collider.bodyID,
 					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
 					rotation,
-					EActivation::DontActivate
+					frameTime
 				);
 				collider.position = position;
 				collider.rotation = rotation;
+				collider.wasMoving = transformChanged;
 			}
 		}
 
