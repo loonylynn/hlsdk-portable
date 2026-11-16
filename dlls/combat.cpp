@@ -597,7 +597,13 @@ void CBaseMonster::Killed( entvars_t *pevAttacker, int iGib )
 		pOwner->DeathNotice( pev );
 	}
 
-	if( ShouldGibMonster( iGib ) )
+	// An authored Jolt rig should get the chance to take over a normal
+	// lethal death before GoldSrc's overkill threshold turns it into gibs.
+	// Explicit GIB_ALWAYS requests still retain the original gib behavior.
+	const BOOL hasJoltRagdoll = ( pev->flags & FL_MONSTER ) &&
+		iGib != GIB_ALWAYS && NPCPhysics_HasRagdollDefinition( ENT( pev ) );
+
+	if( ShouldGibMonster( iGib ) && !hasJoltRagdoll )
 	{
 		CallGibMonster();
 		return;
@@ -607,14 +613,19 @@ void CBaseMonster::Killed( entvars_t *pevAttacker, int iGib )
 		SetTouch( NULL );
 		BecomeDead();
 
-		// A successful Jolt ragdoll takes over immediately after death.
-		// If model pose capture or ragdoll construction fails, preserve the
-		// normal GoldSrc corpse/death-animation path below.
-		if( NPCPhysics_TryCreateRagdoll( ENT( pev ) ) )
+		// If construction fails, preserve the original GoldSrc fallback.
+		if( hasJoltRagdoll && NPCPhysics_TryCreateRagdoll( ENT( pev ) ) )
 		{
 			m_IdealMonsterState = MONSTERSTATE_DEAD;
 			return;
 		}
+	}
+
+	// If the Jolt handoff was unavailable or failed, retain ordinary gibbing.
+	if( ShouldGibMonster( iGib ) )
+	{
+		CallGibMonster();
+		return;
 	}
 
 	// don't let the status bar glitch for players.with <0 health.
@@ -1180,18 +1191,6 @@ void RadiusDamage( Vector vecSrc, entvars_t *pevInflictor, entvars_t *pevAttacke
 				if( flAdjustedDamage < 0.0f )
 					flAdjustedDamage = 0.0f;
 
-#ifndef CLIENT_DLL
-				if( isJoltRagdoll && flRadius > 0.0f && flDamage > 0.0f )
-				{
-					// Mirror Source's character-level explosive force: BodyTarget
-					// supplies the direction, RadiusDamage supplies entity-level
-					// visibility/falloff, and Jolt applies the force at vecSrc.
-					NPCPhysics_ApplyBlastImpulse(
-						pEntity->edict(), &vecSrc[0], &vecSpot[0], flRadius, flDamage
-					);
-				}
-#endif
-
 				// Preserve the original GoldSrc damage behavior exactly.
 				if( pEntity->pev->takedamage != DAMAGE_NO )
 				{
@@ -1206,18 +1205,26 @@ void RadiusDamage( Vector vecSrc, entvars_t *pevInflictor, entvars_t *pevAttacke
 						pEntity->TakeDamage( pevInflictor, pevAttacker, flAdjustedDamage, bitsDamageType );
 					}
 				}
+
 #ifndef CLIENT_DLL
-			else if( isJoltRagdoll && CVAR_GET_FLOAT( "sv_npc_vphysics_debug" ) >= 0.5f )
-			{
-				const int blockerEntity = tr.pHit ? ENTINDEX( tr.pHit ) : 0;
-				const int blockerModel = tr.pHit ? tr.pHit->v.modelindex : 0;
-				ALERT(
-					at_console,
-					"[NPC blast] RadiusDamage LOS blocked: target=%d blocker=%d model=%d fraction=%.3f end=(%.1f %.1f %.1f).\n",
-					ENTINDEX( pEntity->edict() ), blockerEntity, blockerModel,
-					tr.flFraction, tr.vecEndPos.x, tr.vecEndPos.y, tr.vecEndPos.z
-				);
-			}
+				// Lethal damage may just have transferred a living monster to Jolt.
+				// Apply the blast after TakeDamage so new and existing ragdolls
+				// receive the same explosion impulse.
+				if( flRadius > 0.0f && flAdjustedDamage > 0.0f &&
+					NPCPhysics_IsRagdollEntity( pEntity->edict() ) )
+				{
+					NPCPhysics_ApplyBlastImpulse(
+						pEntity->edict(), &vecSrc[0], &vecSpot[0], flRadius, flAdjustedDamage
+					);
+				}
+				else if( isJoltRagdoll && CVAR_GET_FLOAT( "sv_npc_vphysics_debug" ) >= 0.5f )
+				{
+					ALERT(
+						at_console,
+						"[NPC blast] Visible non-damageable ragdoll: target=%d fraction=%.3f.\\n",
+						ENTINDEX( pEntity->edict() ), tr.flFraction
+					);
+				}
 #endif
 			}
 		}
