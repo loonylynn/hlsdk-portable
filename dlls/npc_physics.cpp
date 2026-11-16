@@ -1860,7 +1860,7 @@ namespace
 
 		ALERT(
 			at_console,
-			"[NPC physics] %s ragdoll velocities: entity=%d root-body=%d root-v=(%.1f %.1f %.1f) root-w=(%.2f %.2f %.2f) fastest-body=%d speed=%.1f v=(%.1f %.1f %.1f) w=(%.2f %.2f %.2f).\\n",
+			"[NPC physics] %s ragdoll velocities: entity=%d root-body=%d root-v=(%.1f %.1f %.1f) root-w=(%.2f %.2f %.2f) fastest-body=%d speed=%.1f v=(%.1f %.1f %.1f) w=(%.2f %.2f %.2f).\n",
 			stage, ENTINDEX( ent ), rootBodyIndex,
 			rootLinear.GetX(), rootLinear.GetY(), rootLinear.GetZ(),
 			rootAngular.GetX(), rootAngular.GetY(), rootAngular.GetZ(),
