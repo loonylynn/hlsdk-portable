@@ -25,6 +25,8 @@
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
+#include <Jolt/Physics/Collision/EstimateCollisionResponse.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
@@ -39,6 +41,7 @@
 #include <cmath>
 #include <cfloat>
 #include <iomanip>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <cstdint>
@@ -220,6 +223,7 @@ namespace
 		int bodyCount;
 		int rootElement;
 		float nextPoseTime;
+		float nextCollisionDamageTime;
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
 		std::vector<float> bodyMasses;
@@ -246,6 +250,7 @@ namespace
 			  bodyCount( 0 ),
 			  rootElement( -1 ),
 			  nextPoseTime( 0.0f ),
+			  nextCollisionDamageTime( 0.0f ),
 			  blastDebugBodyID(),
 			  blastDebugBodyIndex( -1 ),
 			  blastDebugBodyStartPosition( 0.0f, 0.0f, 0.0f ),
@@ -255,6 +260,129 @@ namespace
 			  addedToPhysicsSystem( false )
 		{
 		}
+	};
+
+	struct NPCPhysicsPendingCollisionDamage
+	{
+		uint64_t ragdollID;
+		BodyID ragdollBodyID;
+		int otherEntityIndex;
+		float velocityLoss;
+		Vec3 contactPoint;
+
+		NPCPhysicsPendingCollisionDamage()
+			: ragdollID( 0 ),
+			  ragdollBodyID(),
+			  otherEntityIndex( 0 ),
+			  velocityLoss( 0.0f ),
+			  contactPoint( 0.0f, 0.0f, 0.0f )
+		{
+		}
+	};
+
+	class NPCPhysicsContactListener final : public ContactListener
+	{
+	public:
+		void OnContactAdded(
+			const Body &body1,
+			const Body &body2,
+			const ContactManifold &manifold,
+			ContactSettings &settings ) override
+		{
+			const ObjectLayer layer1 = body1.GetObjectLayer();
+			const ObjectLayer layer2 = body2.GetObjectLayer();
+			const bool body1IsRagdoll = layer1 == RAGDOLL_OBJECT_LAYER;
+			const bool body2IsRagdoll = layer2 == RAGDOLL_OBJECT_LAYER;
+
+			// This pass models Source's ragdoll-vs-world/brush/actor impact path.
+			// Ragdoll-vs-ragdoll damage is deliberately left out for now.
+			if( body1IsRagdoll == body2IsRagdoll )
+				return;
+
+			const Body &ragdollBody = body1IsRagdoll ? body1 : body2;
+			const Body &otherBody = body1IsRagdoll ? body2 : body1;
+			const ObjectLayer otherLayer = body1IsRagdoll ? layer2 : layer1;
+			if( otherLayer != WORLD_STATIC_OBJECT_LAYER &&
+				otherLayer != BRUSH_KINEMATIC_OBJECT_LAYER )
+				return;
+			if( ragdollBody.GetMotionType() != EMotionType::Dynamic ||
+				manifold.mPenetrationDepth < 0.0f ||
+				manifold.mRelativeContactPointsOn1.size() == 0 )
+				return;
+
+			const uint64_t ragdollID = ragdollBody.GetUserData();
+			if( ragdollID == 0 )
+				return;
+
+			const RVec3 contact = manifold.GetWorldSpaceContactPointOn1( 0 );
+			const Vec3 normal = manifold.mWorldSpaceNormal;
+			const Vec3 relativeVelocityBefore =
+				body2.GetPointVelocity( contact ) - body1.GetPointVelocity( contact );
+			const float closingSpeedBefore =
+				(std::max)( 0.0f, -relativeVelocityBefore.Dot( normal ) );
+			if( closingSpeedBefore < 1.0f )
+				return;
+
+			CollisionEstimationResult estimate;
+			EstimateCollisionResponse(
+				body1, body2, manifold, estimate,
+				settings.mCombinedFriction, settings.mCombinedRestitution,
+				1.0f, 2 );
+
+			const RVec3 center1 = body1.GetCenterOfMassPosition();
+			const RVec3 center2 = body2.GetCenterOfMassPosition();
+			const Vec3 offset1(
+				float( contact.GetX() - center1.GetX() ),
+				float( contact.GetY() - center1.GetY() ),
+				float( contact.GetZ() - center1.GetZ() ) );
+			const Vec3 offset2(
+				float( contact.GetX() - center2.GetX() ),
+				float( contact.GetY() - center2.GetY() ),
+				float( contact.GetZ() - center2.GetZ() ) );
+
+			const Vec3 velocity1After = estimate.mLinearVelocity1 +
+				estimate.mAngularVelocity1.Cross( offset1 );
+			const Vec3 velocity2After = estimate.mLinearVelocity2 +
+				estimate.mAngularVelocity2.Cross( offset2 );
+			const Vec3 relativeVelocityAfter = velocity2After - velocity1After;
+			const float closingSpeedAfter =
+				(std::max)( 0.0f, -relativeVelocityAfter.Dot( normal ) );
+			const float velocityLoss = closingSpeedBefore - closingSpeedAfter;
+			if( !std::isfinite( velocityLoss ) || velocityLoss < 1.0f )
+				return;
+
+			NPCPhysicsPendingCollisionDamage event;
+			event.ragdollID = ragdollID;
+			event.ragdollBodyID = ragdollBody.GetID();
+			event.otherEntityIndex = otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER
+				? static_cast<int>( otherBody.GetUserData() ) : 0;
+			event.velocityLoss = velocityLoss;
+			event.contactPoint = Vec3(
+				float( contact.GetX() ),
+				float( contact.GetY() ),
+				float( contact.GetZ() ) );
+
+			std::lock_guard<std::mutex> lock( m_mutex );
+			m_pending.push_back( event );
+		}
+
+		std::vector<NPCPhysicsPendingCollisionDamage> Drain()
+		{
+			std::lock_guard<std::mutex> lock( m_mutex );
+			std::vector<NPCPhysicsPendingCollisionDamage> result;
+			result.swap( m_pending );
+			return result;
+		}
+
+		void Clear()
+		{
+			std::lock_guard<std::mutex> lock( m_mutex );
+			m_pending.clear();
+		}
+
+	private:
+		std::mutex m_mutex;
+		std::vector<NPCPhysicsPendingCollisionDamage> m_pending;
 	};
 
 	// The creation path logs restored velocities before the diagnostic helper's
@@ -269,6 +397,7 @@ namespace
 		RagdollBroadPhaseLayers broadPhaseLayers;
 		RagdollObjectLayerFilter objectLayerFilter;
 		RagdollBroadPhaseFilter broadPhaseFilter;
+		NPCPhysicsContactListener contactListener;
 		PhysicsSystem system;
 		JobSystemSingleThreaded jobs;
 		TempAllocatorImpl *tempAllocator;
@@ -309,6 +438,7 @@ namespace
 	static cvar_t g_svNpcVPhysicsCrowbarScale = { "sv_npc_vphysics_crowbar_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsCrossbowScale = { "sv_npc_vphysics_crossbow_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsBlastScale = { "sv_npc_vphysics_blast_scale", "1.0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsImpactDamageScale = { "sv_npc_vphysics_impact_damage_scale", "0.25", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
@@ -322,6 +452,31 @@ namespace
 	static bool NPCPhysics_Enabled()
 	{
 		return NPCPhysics_GetCvar( "sv_npc_vphysics", 1.0f ) >= 0.5f;
+	}
+
+	// Source's default NPC physics impact table is keyed by squared velocity
+	// lost during contact. Keep its thresholds with a conservative scale so
+	// ordinary corpse settling does not repeatedly cause damage.
+	static float NPCPhysics_CalculateCollisionDamage( float velocityLoss )
+	{
+		const float scale = NPCPhysics_GetCvar(
+			"sv_npc_vphysics_impact_damage_scale", 0.25f );
+		if( !std::isfinite( velocityLoss ) || velocityLoss <= 0.0f ||
+			!std::isfinite( scale ) || scale <= 0.0f )
+			return 0.0f;
+
+		const float impactEnergy = velocityLoss * velocityLoss * scale;
+		if( impactEnergy < 150.0f * 150.0f )
+			return 0.0f;
+		if( impactEnergy < 250.0f * 250.0f )
+			return 5.0f;
+		if( impactEnergy < 350.0f * 350.0f )
+			return 10.0f;
+		if( impactEnergy < 500.0f * 500.0f )
+			return 50.0f;
+		if( impactEnergy < 1000.0f * 1000.0f )
+			return 100.0f;
+		return 500.0f;
 	}
 
 	static bool NPCPhysics_RagdollSetupFailed( const char *reason )
@@ -362,6 +517,7 @@ namespace
 			g_npcPhysics.broadPhaseFilter,
 			g_npcPhysics.objectLayerFilter
 		);
+		g_npcPhysics.system.SetContactListener( &g_npcPhysics.contactListener );
 
 		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -800.0f ) );
 		g_npcPhysics.fixedAccumulator = 0.0f;
@@ -850,6 +1006,7 @@ namespace
 				bodySettings.mOverrideMassProperties = EOverrideMassProperties::MassAndInertiaProvided;
 				bodySettings.mMassPropertiesOverride.mMass = 1.0f;
 				bodySettings.mMassPropertiesOverride.mInertia = Mat44::sIdentity();
+				bodySettings.mUserData = static_cast<uint64_t>( entityInfo.entityIndex );
 				bodySettings.mFriction = 0.9f;
 				bodySettings.mRestitution = 0.0f;
 
@@ -1044,6 +1201,7 @@ namespace
 					EMotionType::Kinematic,
 					BRUSH_KINEMATIC_OBJECT_LAYER
 				);
+				bodySettings.mUserData = static_cast<uint64_t>( entityIndex );
 				bodySettings.mFriction = 0.65f;
 				bodySettings.mRestitution = 0.0f;
 
@@ -1980,7 +2138,9 @@ namespace
 		ent->v.effects &= ~EF_NODRAW;
 		ent->v.solid = SOLID_NOT;
 		ent->v.movetype = MOVETYPE_NONE;
-		ent->v.takedamage = DAMAGE_NO;
+		// Keep the corpse damageable so deferred Jolt impacts use the normal
+		// CBaseMonster::DeadTakeDamage corpse-gib rules.
+		ent->v.takedamage = DAMAGE_YES;
 		ent->v.deadflag = DEAD_DEAD;
 		ent->v.nextthink = -1.0f;
 		ent->v.framerate = 0.0f;
@@ -2238,24 +2398,109 @@ namespace
 		return 0;
 	}
 
-	static void NPCPhysics_EndFrame( void )
+	static void NPCPhysics_ProcessCollisionDamage()
 	{
-		if( !g_npcPhysics.initialized || g_ragdolls.empty() || !gpGlobals )
+		std::vector<NPCPhysicsPendingCollisionDamage> pending =
+			g_npcPhysics.contactListener.Drain();
+		if( pending.empty() || !NPCPhysics_Enabled() )
 			return;
 
+		// One strongest impact per corpse per server frame. This collapses
+		// multi-point manifolds and prevents a single landing from multiplying
+		// damage by the number of contact points and articulated bones.
+		std::vector<NPCPhysicsPendingCollisionDamage> strongest;
+		for( size_t i = 0; i < pending.size(); ++i )
+		{
+			NPCPhysicsPendingCollisionDamage &event = pending[i];
+			size_t existing = strongest.size();
+			for( size_t j = 0; j < strongest.size(); ++j )
+				if( strongest[j].ragdollID == event.ragdollID )
+				{
+					existing = j;
+					break;
+				}
+			if( existing == strongest.size() )
+				strongest.push_back( event );
+			else if( event.velocityLoss > strongest[existing].velocityLoss )
+				strongest[existing] = event;
+		}
+
+		for( size_t i = 0; i < strongest.size(); ++i )
+		{
+			const NPCPhysicsPendingCollisionDamage &event = strongest[i];
+			NPCPhysicsRagdoll *ragdoll = NULL;
+			for( size_t r = 0; r < g_ragdolls.size(); ++r )
+				if( g_ragdolls[r].networkID == static_cast<int>( event.ragdollID ) &&
+					g_ragdolls[r].addedToPhysicsSystem &&
+					g_ragdolls[r].physicsRagdoll.GetPtr() )
+				{
+					ragdoll = &g_ragdolls[r];
+					break;
+				}
+			if( !ragdoll || !ragdoll->entity || ragdoll->entity->free ||
+				ragdoll->entity->serialnumber != ragdoll->serialNumber ||
+				gpGlobals->time < ragdoll->nextCollisionDamageTime )
+				continue;
+
+			const float damage = NPCPhysics_CalculateCollisionDamage( event.velocityLoss );
+			if( damage <= 0.0f || ragdoll->entity->v.takedamage == DAMAGE_NO )
+				continue;
+
+			int attackerIndex = event.otherEntityIndex;
+			edict_t *attacker = NULL;
+			if( attackerIndex > 0 && attackerIndex < gpGlobals->maxEntities )
+			{
+				edict_t *candidate = INDEXENT( attackerIndex );
+				if( !FNullEnt( candidate ) && !candidate->free )
+					attacker = candidate;
+			}
+			entvars_t *attackerVars = attacker ? &attacker->v : NULL;
+			CBaseEntity *victim = CBaseEntity::Instance( ragdoll->entity );
+			if( !victim )
+				continue;
+
+			// DeadTakeDamage accumulates DMG_GIB_CORPSE damage and invokes the
+			// normal monster gib path only after the corpse's remaining health
+			// has been exhausted.
+			ragdoll->nextCollisionDamageTime = gpGlobals->time + 0.25f;
+			victim->TakeDamage( attackerVars, attackerVars, damage, DMG_GIB_CORPSE );
+
+			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+				ALERT(
+					at_console,
+					"[NPC physics] Collision impact damage: entity=%d id=%d jolt-body=%u other=%d delta-v=%.1f damage=%.1f health=%.1f.\n",
+					ENTINDEX( ragdoll->entity ), ragdoll->networkID,
+					event.ragdollBodyID.GetIndex(), attackerIndex,
+					event.velocityLoss, damage, ragdoll->entity->v.health
+				);
+		}
+	}
+
+	static void NPCPhysics_RemoveGibbedRagdolls()
+	{
 		for( size_t i = g_ragdolls.size(); i > 0; --i )
 		{
 			NPCPhysicsRagdoll &ragdoll = g_ragdolls[i - 1];
 			if( !ragdoll.entity || ragdoll.entity->free ||
-				ragdoll.entity->serialnumber != ragdoll.serialNumber )
+				ragdoll.entity->serialnumber != ragdoll.serialNumber ||
+				ragdoll.entity->v.solid == SOLID_NOT ||
+				( ragdoll.entity->v.effects & EF_NODRAW ) )
 			{
 				NPCPhysics_DestroyRagdoll( ragdoll );
 				g_ragdolls.erase( g_ragdolls.begin() + ( i - 1 ) );
 			}
 		}
+	}
 
+	static void NPCPhysics_EndFrame( void )
+	{
+		if( !g_npcPhysics.initialized || !gpGlobals )
+			return;
+
+		NPCPhysics_RemoveGibbedRagdolls();
 		if( g_ragdolls.empty() )
 		{
+			g_npcPhysics.contactListener.Clear();
 			NPCPhysics_DestroyActorColliders();
 			return;
 		}
@@ -2293,6 +2538,14 @@ namespace
 
 			g_npcPhysics.fixedAccumulator -= RAGDOLL_FIXED_STEP;
 			++steps;
+		}
+
+		NPCPhysics_ProcessCollisionDamage();
+		NPCPhysics_RemoveGibbedRagdolls();
+		if( g_ragdolls.empty() )
+		{
+			NPCPhysics_DestroyActorColliders();
+			return;
 		}
 
 		for( size_t r = 0; r < g_ragdolls.size(); ++r )
@@ -2957,6 +3210,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsCrowbarScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsCrossbowScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsBlastScale );
+	CVAR_REGISTER( &g_svNpcVPhysicsImpactDamageScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsDebug );
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
@@ -3049,6 +3303,7 @@ void NPCPhysics_ResetMap( void )
 	NPCPhysics_DestroyActorColliders();
 	NPCPhysics_DestroyBrushColliders();
 	NPCPhysics_DestroyWorldCollider();
+	g_npcPhysics.contactListener.Clear();
 	for( size_t i = 0; i < g_livePoses.size(); ++i )
 	{
 		g_livePoses[i].serialNumber = -1;
@@ -3063,6 +3318,9 @@ void NPCPhysics_ResetMap( void )
 
 void NPCPhysics_Shutdown( void )
 {
+	if( g_npcPhysics.initialized )
+		g_npcPhysics.system.SetContactListener( NULL );
+	g_npcPhysics.contactListener.Clear();
 	NPCPhysics_DestroyAllRagdolls();
 	NPCPhysics_DestroyActorColliders();
 	NPCPhysics_DestroyBrushColliders();
