@@ -1183,11 +1183,11 @@ void RadiusDamage( Vector vecSrc, entvars_t *pevInflictor, entvars_t *pevAttacke
 #ifndef CLIENT_DLL
 				if( isJoltRagdoll && flRadius > 0.0f && flDamage > 0.0f )
 				{
-					// Jolt derives per-body momentum from mass, local exposure and
-					// the explosion's distance falloff. Keep this separate from
-					// GoldSrc health damage.
+					// Mirror Source's character-level explosive force: BodyTarget
+					// supplies the direction, RadiusDamage supplies entity-level
+					// visibility/falloff, and Jolt applies the force at vecSrc.
 					NPCPhysics_ApplyBlastImpulse(
-						pEntity->edict(), &vecSrc[0], flRadius, flDamage
+						pEntity->edict(), &vecSrc[0], &vecSpot[0], flRadius, flDamage
 					);
 				}
 #endif
