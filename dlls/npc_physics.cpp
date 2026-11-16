@@ -3008,14 +3008,33 @@ namespace
 				continue;
 
 			int attackerIndex = event.otherEntityIndex;
-			edict_t *attacker = NULL;
+
+			// World contacts use entity index 0. CBaseEntity::TakeDamage reads
+			// both inflictor and attacker entvars when deriving the attack
+			// direction, so passing NULL for a world impact can dereference a
+			// null pointer. Use worldspawn as the safe fallback, then prefer a
+			// live brush/actor entity when the contact supplied one.
+			edict_t *attacker = INDEXENT( 0 );
+			if( FNullEnt( attacker ) || attacker->free )
+				attacker = NULL;
 			if( attackerIndex > 0 && attackerIndex < gpGlobals->maxEntities )
 			{
 				edict_t *candidate = INDEXENT( attackerIndex );
 				if( !FNullEnt( candidate ) && !candidate->free )
 					attacker = candidate;
 			}
-			entvars_t *attackerVars = attacker ? &attacker->v : NULL;
+			if( !attacker )
+			{
+				if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+					ALERT(
+						at_console,
+						"[NPC physics] Skipped collision damage: no valid world or contact attacker (entity=%d id=%d other=%d).\\n",
+						ENTINDEX( ragdoll->entity ), ragdoll->networkID, attackerIndex
+					);
+				continue;
+			}
+
+			entvars_t *attackerVars = &attacker->v;
 			CBaseEntity *victim = CBaseEntity::Instance( ragdoll->entity );
 			if( !victim )
 				continue;
@@ -3024,14 +3043,23 @@ namespace
 			// normal monster gib path only after the corpse's remaining health
 			// has been exhausted.
 			ragdoll->nextCollisionDamageTime = gpGlobals->time + 0.25f;
+			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+				ALERT(
+					at_console,
+					"[NPC physics] Applying collision damage: entity=%d id=%d jolt-body=%u inflictor=%d attacker=%d delta-v=%.1f damage=%.1f health=%.1f.\\n",
+					ENTINDEX( ragdoll->entity ), ragdoll->networkID,
+					event.ragdollBodyID.GetIndex(), ENTINDEX( attacker ),
+					ENTINDEX( attacker ), event.velocityLoss, damage,
+					ragdoll->entity->v.health
+				);
 			victim->TakeDamage( attackerVars, attackerVars, damage, DMG_GIB_CORPSE );
 
 			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 				ALERT(
 					at_console,
-					"[NPC physics] Collision impact damage: entity=%d id=%d jolt-body=%u other=%d delta-v=%.1f damage=%.1f health=%.1f.\n",
+					"[NPC physics] Collision impact damage applied: entity=%d id=%d jolt-body=%u attacker=%d delta-v=%.1f damage=%.1f health=%.1f.\\n",
 					ENTINDEX( ragdoll->entity ), ragdoll->networkID,
-					event.ragdollBodyID.GetIndex(), attackerIndex,
+					event.ragdollBodyID.GetIndex(), ENTINDEX( attacker ),
 					event.velocityLoss, damage, ragdoll->entity->v.health
 				);
 		}
