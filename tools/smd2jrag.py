@@ -101,7 +101,7 @@ def parse_smd(path: Path) -> SMDData:
 
     nodes: Dict[int, BoneNode] = {}
     folded_names: Dict[str, int] = {}
-    duplicate_node_indices = set()
+    node_occurrences: Dict[int, int] = {}
     node_warnings: List[str] = []
     for line_number, line in enumerate(lines[nodes_start + 1:nodes_end], nodes_start + 2):
         if not line.strip():
@@ -117,8 +117,8 @@ def parse_smd(path: Path) -> SMDData:
         name = parts[1]
         folded = name.casefold()
         previous = nodes.get(index)
+        node_occurrences[index] = node_occurrences.get(index, 0) + 1
         if previous is not None:
-            duplicate_node_indices.add(index)
             # Some decompiled/hand-edited ragdoll SMDs repeat a node index
             # and name with a corrected parent later in the nodes table.
             # Collapse those declarations to one canonical node here. Matching
@@ -153,6 +153,7 @@ def parse_smd(path: Path) -> SMDData:
         raise ValueError("{}: triangles section appears before skeleton".format(path))
 
     frames: Dict[int, Dict[int, Tuple[float, float, float, float, float, float]]] = {}
+    frame_transform_counts: Dict[int, Dict[int, int]] = {}
     frame_index: Optional[int] = None
     for line_number, line in enumerate(lines[skeleton_start + 1:triangles_start], skeleton_start + 2):
         stripped = line.strip()
@@ -165,6 +166,7 @@ def parse_smd(path: Path) -> SMDData:
             except ValueError as exc:
                 raise ValueError("{}:{}: invalid skeleton frame".format(path, line_number)) from exc
             frames.setdefault(frame_index, {})
+            frame_transform_counts.setdefault(frame_index, {})
             continue
         if frame_index is None:
             continue
@@ -177,12 +179,14 @@ def parse_smd(path: Path) -> SMDData:
         if bone_index not in nodes:
             raise ValueError("{}:{}: skeleton references unknown bone {}".format(path, line_number, bone_index))
         values = tuple(_finite_float(value, "{}:{}".format(path, line_number)) for value in parts[1:])
-        if bone_index in frames[frame_index]:
-            if bone_index not in duplicate_node_indices:
+        transform_count = frame_transform_counts[frame_index].get(bone_index, 0)
+        if transform_count:
+            if transform_count >= node_occurrences.get(bone_index, 1):
                 raise ValueError("{}:{}: duplicate transform for bone {}".format(path, line_number, bone_index))
             node_warnings.append(
                 "{}:{}: repeated transform for duplicate node index {}; using final "
                 "transform in frame {}".format(path, line_number, bone_index, frame_index))
+        frame_transform_counts[frame_index][bone_index] = transform_count + 1
         frames[frame_index][bone_index] = values  # type: ignore[assignment]
 
     if not frames:
