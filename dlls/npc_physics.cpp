@@ -236,6 +236,7 @@ namespace
 		float nextCollisionDamageTime;
 		float nextWorldContactDebugTime;
 		float nextKinematicContactDebugTime;
+		float nextPlayerPushDebugTime;
 		bool firstPoseSendReported;
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
@@ -266,6 +267,7 @@ namespace
 			  nextCollisionDamageTime( 0.0f ),
 			  nextWorldContactDebugTime( 0.0f ),
 			  nextKinematicContactDebugTime( 0.0f ),
+			  nextPlayerPushDebugTime( 0.0f ),
 			  firstPoseSendReported( false ),
 			  blastDebugBodyID(),
 			  blastDebugBodyIndex( -1 ),
@@ -320,6 +322,28 @@ namespace
 		}
 	};
 
+	struct NPCPhysicsPendingPlayerPush
+	{
+		uint64_t ragdollID;
+		BodyID ragdollBodyID;
+		int playerEntityIndex;
+		Vec3 pushDirection;
+		Vec3 contactPoint;
+		Vec3 ragdollPointVelocityBefore;
+		Vec3 playerPointVelocityBefore;
+
+		NPCPhysicsPendingPlayerPush()
+			: ragdollID( 0 ),
+			  ragdollBodyID(),
+			  playerEntityIndex( 0 ),
+			  pushDirection( 0.0f, 0.0f, 0.0f ),
+			  contactPoint( 0.0f, 0.0f, 0.0f ),
+			  ragdollPointVelocityBefore( 0.0f, 0.0f, 0.0f ),
+			  playerPointVelocityBefore( 0.0f, 0.0f, 0.0f )
+		{
+		}
+	};
+
 	class NPCPhysicsContactListener final : public ContactListener
 	{
 	public:
@@ -352,6 +376,8 @@ namespace
 			const uint64_t ragdollID = ragdollBody.GetUserData();
 			if( ragdollID == 0 )
 				return;
+
+			QueuePlayerPushLimit( body1, body2, manifold );
 
 			const RVec3 contact = manifold.GetWorldSpaceContactPointOn1( 0 );
 			const Vec3 normal = manifold.mWorldSpaceNormal;
@@ -430,6 +456,23 @@ namespace
 			m_pending.push_back( event );
 		}
 
+		void OnContactPersisted(
+			const Body &body1,
+			const Body &body2,
+			const ContactManifold &manifold,
+			ContactSettings & ) override
+		{
+			QueuePlayerPushLimit( body1, body2, manifold );
+		}
+
+		std::vector<NPCPhysicsPendingPlayerPush> DrainPlayerPushLimits()
+		{
+			std::lock_guard<std::mutex> lock( m_mutex );
+			std::vector<NPCPhysicsPendingPlayerPush> result;
+			result.swap( m_playerPushLimits );
+			return result;
+		}
+
 		std::vector<NPCPhysicsPendingCollisionDamage> Drain()
 		{
 			std::lock_guard<std::mutex> lock( m_mutex );
@@ -451,12 +494,75 @@ namespace
 			std::lock_guard<std::mutex> lock( m_mutex );
 			m_pending.clear();
 			m_contactDiagnostics.clear();
+			m_playerPushLimits.clear();
 		}
 
 	private:
+		void QueuePlayerPushLimit(
+			const Body &body1,
+			const Body &body2,
+			const ContactManifold &manifold )
+		{
+			const ObjectLayer layer1 = body1.GetObjectLayer();
+			const ObjectLayer layer2 = body2.GetObjectLayer();
+			const bool body1IsRagdoll = layer1 == RAGDOLL_OBJECT_LAYER;
+			const bool body2IsRagdoll = layer2 == RAGDOLL_OBJECT_LAYER;
+			if( body1IsRagdoll == body2IsRagdoll )
+				return;
+
+			const Body &ragdollBody = body1IsRagdoll ? body1 : body2;
+			const Body &playerBody = body1IsRagdoll ? body2 : body1;
+			if( playerBody.GetObjectLayer() != BRUSH_KINEMATIC_OBJECT_LAYER ||
+				ragdollBody.GetMotionType() != EMotionType::Dynamic ||
+				manifold.mRelativeContactPointsOn1.size() == 0 ||
+				!gpGlobals )
+				return;
+
+			const int playerEntityIndex = static_cast<int>( playerBody.GetUserData() );
+			if( playerEntityIndex <= 0 || playerEntityIndex >= gpGlobals->maxEntities )
+				return;
+
+			edict_t *player = INDEXENT( playerEntityIndex );
+			if( !player || player->free || !( player->v.flags & FL_CLIENT ) )
+				return;
+
+			const RVec3 contact = body1IsRagdoll
+				? manifold.GetWorldSpaceContactPointOn1( 0 )
+				: manifold.GetWorldSpaceContactPointOn2( 0 );
+			// Jolt's manifold normal points from body 1 toward body 2.
+			// Convert it into the direction from the player into the ragdoll.
+			const Vec3 pushDirection = body1IsRagdoll
+				? -manifold.mWorldSpaceNormal
+				: manifold.mWorldSpaceNormal;
+			const Vec3 ragdollPointVelocity =
+				ragdollBody.GetPointVelocity( contact );
+			const Vec3 playerPointVelocity =
+				playerBody.GetPointVelocity( contact );
+			const float approachSpeed =
+				( playerPointVelocity - ragdollPointVelocity ).Dot( pushDirection );
+			if( !std::isfinite( approachSpeed ) || approachSpeed < 1.0f )
+				return;
+
+			NPCPhysicsPendingPlayerPush event;
+			event.ragdollID = ragdollBody.GetUserData();
+			event.ragdollBodyID = ragdollBody.GetID();
+			event.playerEntityIndex = playerEntityIndex;
+			event.pushDirection = pushDirection;
+			event.contactPoint = Vec3(
+				float( contact.GetX() ),
+				float( contact.GetY() ),
+				float( contact.GetZ() ) );
+			event.ragdollPointVelocityBefore = ragdollPointVelocity;
+			event.playerPointVelocityBefore = playerPointVelocity;
+
+			std::lock_guard<std::mutex> lock( m_mutex );
+			m_playerPushLimits.push_back( event );
+		}
+
 		std::mutex m_mutex;
 		std::vector<NPCPhysicsPendingCollisionDamage> m_pending;
 		std::vector<NPCPhysicsPendingContactDiagnostic> m_contactDiagnostics;
+		std::vector<NPCPhysicsPendingPlayerPush> m_playerPushLimits;
 	};
 
 	// The creation path logs restored velocities before the diagnostic helper's
@@ -513,6 +619,8 @@ namespace
 	static cvar_t g_svNpcVPhysicsCrossbowScale = { "sv_npc_vphysics_crossbow_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsBlastScale = { "sv_npc_vphysics_blast_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsImpactDamageScale = { "sv_npc_vphysics_impact_damage_scale", "0.25", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsPlayerPushMass = { "sv_npc_vphysics_player_push_mass", "350", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsPlayerPushSpeed = { "sv_npc_vphysics_player_push_speed", "50", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
@@ -2642,6 +2750,109 @@ namespace
 		}
 	}
 
+	static void NPCPhysics_ProcessPlayerPushLimits( BodyInterface &bodyInterface )
+	{
+		std::vector<NPCPhysicsPendingPlayerPush> pending =
+			g_npcPhysics.contactListener.DrainPlayerPushLimits();
+		if( pending.empty() || g_ragdolls.empty() )
+			return;
+
+		float massLimit = NPCPhysics_GetCvar( "sv_npc_vphysics_player_push_mass", 350.0f );
+		float speedLimit = NPCPhysics_GetCvar( "sv_npc_vphysics_player_push_speed", 50.0f );
+		if( !std::isfinite( massLimit ) )
+			massLimit = 350.0f;
+		if( !std::isfinite( speedLimit ) )
+			speedLimit = 50.0f;
+		massLimit = (std::max)( 0.0f, massLimit );
+		speedLimit = (std::max)( 0.0f, speedLimit );
+
+		for( size_t i = 0; i < pending.size(); ++i )
+		{
+			const NPCPhysicsPendingPlayerPush &event = pending[i];
+			if( event.ragdollBodyID.IsInvalid() ||
+				!bodyInterface.IsAdded( event.ragdollBodyID ) )
+				continue;
+
+			NPCPhysicsRagdoll *ragdoll = NULL;
+			for( size_t r = 0; r < g_ragdolls.size(); ++r )
+			{
+				if( g_ragdolls[r].networkID == static_cast<int>( event.ragdollID ) &&
+					g_ragdolls[r].addedToPhysicsSystem &&
+					g_ragdolls[r].physicsRagdoll.GetPtr() )
+				{
+					ragdoll = &g_ragdolls[r];
+					break;
+				}
+			}
+			if( !ragdoll || ragdoll->bodyMasses.size() !=
+				static_cast<size_t>( ragdoll->bodyCount ) )
+				continue;
+
+			float totalMass = 0.0f;
+			for( size_t body = 0; body < ragdoll->bodyMasses.size(); ++body )
+			{
+				const float mass = ragdoll->bodyMasses[body];
+				if( !std::isfinite( mass ) || mass <= 0.0f )
+				{
+					totalMass = 0.0f;
+					break;
+				}
+				totalMass += mass;
+			}
+			if( !std::isfinite( totalMass ) || totalMass <= 0.0f )
+				continue;
+
+			const float initialPushSpeed =
+				event.ragdollPointVelocityBefore.Dot( event.pushDirection );
+			const float playerPushSpeed =
+				event.playerPointVelocityBefore.Dot( event.pushDirection );
+			if( playerPushSpeed <= initialPushSpeed + 0.5f )
+				continue;
+
+			const RVec3 contactPoint(
+				event.contactPoint.GetX(),
+				event.contactPoint.GetY(),
+				event.contactPoint.GetZ() );
+			const Vec3 currentPointVelocity =
+				bodyInterface.GetPointVelocity( event.ragdollBodyID, contactPoint );
+			const float currentPushSpeed =
+				currentPointVelocity.Dot( event.pushDirection );
+
+			// Source's player controller refuses to push objects over its mass
+			// threshold and limits the push response to a normal speed. The Jolt
+			// actor is still kinematic, so apply that limit to the velocity gained
+			// by the contacted ragdoll body rather than feeding movement back into
+			// GoldSrc's player movement code.
+			const bool exceedsMassLimit = totalMass > massLimit;
+			const float maxAllowedPushSpeed = exceedsMassLimit
+				? initialPushSpeed
+				: ( initialPushSpeed < speedLimit ? speedLimit : initialPushSpeed );
+			if( currentPushSpeed <= maxAllowedPushSpeed + 0.01f )
+				continue;
+
+			const Vec3 currentLinearVelocity =
+				bodyInterface.GetLinearVelocity( event.ragdollBodyID );
+			const Vec3 correctedLinearVelocity = currentLinearVelocity +
+				event.pushDirection * ( maxAllowedPushSpeed - currentPushSpeed );
+			bodyInterface.SetLinearVelocity(
+				event.ragdollBodyID, correctedLinearVelocity );
+
+			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f &&
+				gpGlobals && gpGlobals->time >= ragdoll->nextPlayerPushDebugTime )
+			{
+				ALERT(
+					at_console,
+					"[NPC physics] Player push limited: ragdoll=%d id=%d body=%u player=%d mass=%.1f push-speed=%.1f->%.1f limit=%.1f%s.\n",
+					ENTINDEX( ragdoll->entity ), ragdoll->networkID,
+					event.ragdollBodyID.GetIndex(), event.playerEntityIndex,
+					totalMass, currentPushSpeed, maxAllowedPushSpeed,
+					speedLimit, exceedsMassLimit ? " (mass limit)" : ""
+				);
+				ragdoll->nextPlayerPushDebugTime = gpGlobals->time + 0.5f;
+			}
+		}
+	}
+
 	static void NPCPhysics_ProcessCollisionDamage()
 	{
 		std::vector<NPCPhysicsPendingCollisionDamage> pending =
@@ -2782,6 +2993,7 @@ namespace
 				&g_npcPhysics.jobs
 			);
 
+			NPCPhysics_ProcessPlayerPushLimits( bodyInterface );
 			g_npcPhysics.fixedAccumulator -= RAGDOLL_FIXED_STEP;
 			++steps;
 		}
@@ -3458,6 +3670,8 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsCrossbowScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsBlastScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsImpactDamageScale );
+	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushMass );
+	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushSpeed );
 	CVAR_REGISTER( &g_svNpcVPhysicsDebug );
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
