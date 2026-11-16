@@ -31,6 +31,7 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Geometry/AABox.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/CollisionGroup.h>
@@ -235,10 +236,7 @@ namespace
 		int rootElement;
 		float nextPoseTime;
 		float nextCollisionDamageTime;
-		float nextWorldContactAddedDebugTime;
-		float nextWorldContactPersistedDebugTime;
-		float nextKinematicContactAddedDebugTime;
-		float nextKinematicContactPersistedDebugTime;
+		std::vector<float> nextContactDebugTimes;
 		float nextPlayerPushDebugTime;
 		bool firstPoseSendReported;
 		::Vector entityOriginOffset;
@@ -268,10 +266,6 @@ namespace
 			  rootElement( -1 ),
 			  nextPoseTime( 0.0f ),
 			  nextCollisionDamageTime( 0.0f ),
-			  nextWorldContactAddedDebugTime( 0.0f ),
-			  nextWorldContactPersistedDebugTime( 0.0f ),
-			  nextKinematicContactAddedDebugTime( 0.0f ),
-			  nextKinematicContactPersistedDebugTime( 0.0f ),
 			  nextPlayerPushDebugTime( 0.0f ),
 			  firstPoseSendReported( false ),
 			  blastDebugBodyID(),
@@ -315,6 +309,16 @@ namespace
 		bool persisted;
 		Vec3 contactPoint;
 		Vec3 normal;
+		Vec3 ragdollCenterOfMass;
+		Quat ragdollRotation;
+		Vec3 ragdollBoundsMin;
+		Vec3 ragdollBoundsMax;
+		int ragdollShapeSubType;
+		Vec3 otherCenterOfMass;
+		Quat otherRotation;
+		Vec3 otherBoundsMin;
+		Vec3 otherBoundsMax;
+		int otherShapeSubType;
 
 		NPCPhysicsPendingContactDiagnostic()
 			: ragdollID( 0 ),
@@ -326,10 +330,65 @@ namespace
 			  sampleCount( 0 ),
 			  persisted( false ),
 			  contactPoint( 0.0f, 0.0f, 0.0f ),
-			  normal( 0.0f, 0.0f, 0.0f )
+			  normal( 0.0f, 0.0f, 0.0f ),
+			  ragdollCenterOfMass( 0.0f, 0.0f, 0.0f ),
+			  ragdollRotation( Quat::sIdentity() ),
+			  ragdollBoundsMin( 0.0f, 0.0f, 0.0f ),
+			  ragdollBoundsMax( 0.0f, 0.0f, 0.0f ),
+			  ragdollShapeSubType( -1 ),
+			  otherCenterOfMass( 0.0f, 0.0f, 0.0f ),
+			  otherRotation( Quat::sIdentity() ),
+			  otherBoundsMin( 0.0f, 0.0f, 0.0f ),
+			  otherBoundsMax( 0.0f, 0.0f, 0.0f ),
+			  otherShapeSubType( -1 )
 		{
 		}
 	};
+
+	static const char *NPCPhysics_ShapeSubTypeName( int shapeSubType )
+	{
+		switch( static_cast<EShapeSubType>( shapeSubType ) )
+		{
+		case EShapeSubType::Sphere: return "sphere";
+		case EShapeSubType::Box: return "box";
+		case EShapeSubType::Triangle: return "triangle";
+		case EShapeSubType::Capsule: return "capsule";
+		case EShapeSubType::TaperedCapsule: return "tapered-capsule";
+		case EShapeSubType::Cylinder: return "cylinder";
+		case EShapeSubType::ConvexHull: return "convex-hull";
+		case EShapeSubType::StaticCompound: return "static-compound";
+		case EShapeSubType::MutableCompound: return "mutable-compound";
+		case EShapeSubType::RotatedTranslated: return "rotated-translated";
+		case EShapeSubType::Scaled: return "scaled";
+		case EShapeSubType::OffsetCenterOfMass: return "offset-center-of-mass";
+		case EShapeSubType::Mesh: return "mesh";
+		case EShapeSubType::HeightField: return "heightfield";
+		case EShapeSubType::SoftBody: return "soft-body";
+		default: return "other";
+		}
+	}
+
+	static void NPCPhysics_CaptureContactShapeData(
+		const Body &body, Vec3 &centerOfMass, Quat &rotation,
+		Vec3 &boundsMin, Vec3 &boundsMax, int &shapeSubType )
+	{
+		const RVec3 position = body.GetCenterOfMassPosition();
+		centerOfMass = Vec3( float(position.GetX()), float(position.GetY()), float(position.GetZ()) );
+		rotation = body.GetRotation();
+		const Shape *shape = body.GetShape();
+		if( !shape )
+		{
+			boundsMin = Vec3::sZero();
+			boundsMax = Vec3::sZero();
+			shapeSubType = -1;
+			return;
+		}
+		shapeSubType = static_cast<int>( shape->GetSubType() );
+		// Jolt local bounds are expressed relative to the shape's center of mass.
+		const AABox bounds = shape->GetLocalBounds();
+		boundsMin = bounds.mMin;
+		boundsMax = bounds.mMax;
+	}
 
 	struct NPCPhysicsPendingPlayerPush
 	{
@@ -553,16 +612,30 @@ namespace
 				float( contact.GetZ() ) );
 			diagnostic.normal = normal;
 
-			// Keep only the deepest contact for each ragdoll/layer/callback
-			// stage between diagnostic drains. The hard cap protects against
-			// pathological contact counts without changing the solver.
+			// Source's player shadow update checks the penetrating state and
+			// inspects intersecting entities before reconciling movement.
+			// Capture both Jolt bodies so we can diagnose overlap without
+			// changing collision response.
+			NPCPhysics_CaptureContactShapeData(
+				ragdollBody, diagnostic.ragdollCenterOfMass, diagnostic.ragdollRotation,
+				diagnostic.ragdollBoundsMin, diagnostic.ragdollBoundsMax,
+				diagnostic.ragdollShapeSubType );
+			NPCPhysics_CaptureContactShapeData(
+				otherBody, diagnostic.otherCenterOfMass, diagnostic.otherRotation,
+				diagnostic.otherBoundsMin, diagnostic.otherBoundsMax,
+				diagnostic.otherShapeSubType );
+
+			// Retain the deepest contact per ragdoll body, opposing entity/layer
+			// and callback stage; aggregating by ragdoll alone hid individual limbs.
 			const size_t maxContactDiagnostics = 256;
 			std::lock_guard<std::mutex> lock( m_mutex );
 			for( size_t i = 0; i < m_contactDiagnostics.size(); ++i )
 			{
 				NPCPhysicsPendingContactDiagnostic &existing = m_contactDiagnostics[i];
 				if( existing.ragdollID != diagnostic.ragdollID ||
+					existing.ragdollBodyID != diagnostic.ragdollBodyID ||
 					existing.otherLayer != diagnostic.otherLayer ||
+					existing.otherEntityIndex != diagnostic.otherEntityIndex ||
 					existing.persisted != diagnostic.persisted )
 					continue;
 
@@ -2114,6 +2187,9 @@ namespace
 		ragdoll.bodyCount = static_cast<int>( physicsDefinition->bodies.size() );
 		if( ragdoll.bodyCount < 1 || ragdoll.bodyCount > RAGDOLL_DEFINITION_MAX_BODIES )
 			return NPCPhysics_RagdollSetupFailed( "loaded ragdoll definition has an invalid body count" );
+		// Four contact channels per body: world/brush x added/persisted.
+		ragdoll.nextContactDebugTimes.assign(
+			static_cast<size_t>( ragdoll.bodyCount ) * 4, 0.0f );
 
 		std::vector<int> rigStudioBones( ragdoll.bodyCount, -1 );
 		std::vector<int> studioBoneToRig( ragdoll.studioBoneCount, -1 );
