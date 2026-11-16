@@ -27,6 +27,9 @@
 #include "saverestore.h"
 #include "trains.h"			// trigger_camera has train functionality
 #include "gamerules.h"
+#ifndef CLIENT_DLL
+#include "xash_physint.h"
+#endif
 
 #define	SF_TRIGGER_PUSH_START_OFF	2//spawnflag that makes trigger_push spawn turned OFF
 #define SF_TRIGGER_HURT_TARGETONCE	1// Only fire hurt target once
@@ -1672,6 +1675,46 @@ int CChangeLevel::ChangeList( LEVELLIST *pLevelList, int maxList )
 				//else
 				//	ALERT( at_console, "Screened out %s\n", STRING( pEntList[j]->pev->classname ) );
 			}
+
+#ifndef CLIENT_DLL
+			// UTIL_EntitiesInPVS() is the first filter in the stock transition
+			// builder. FCAP_FORCE_TRANSITION only bypasses trigger_transition
+			// volume checks after that filter, so an off-PVS corpse is never
+			// considered. Explicitly add registered Jolt ragdolls to the same
+			// entity table, while keeping the normal save and volume checks.
+			for( int edictIndex = 1; edictIndex < gpGlobals->maxEntities; ++edictIndex )
+			{
+				edict_t *candidate = INDEXENT( edictIndex );
+				if( FNullEnt( candidate ) || candidate->free ||
+					!NPCPhysics_IsRagdollEntity( candidate ) )
+					continue;
+
+				CBaseEntity *ragdollEntity = CBaseEntity::Instance( candidate );
+				if( !ragdollEntity )
+					continue;
+
+				const int caps = ragdollEntity->ObjectCaps();
+				if( ( caps & FCAP_DONT_SAVE ) || !( caps & FCAP_ACROSS_TRANSITION ) ||
+					!InTransitionVolume( ragdollEntity, pLevelList[i].landmarkName ) )
+					continue;
+
+				const int tableIndex = saveHelper.EntityIndex( ragdollEntity );
+				if( tableIndex < 0 )
+					continue;
+
+				const int levelBit = 1 << i;
+				const int existingFlags = saveHelper.EntityFlags( tableIndex, 0 );
+				if( !( existingFlags & levelBit ) )
+				{
+					saveHelper.EntityFlagsSet( tableIndex, FENTTABLE_MOVEABLE | levelBit );
+					ALERT(
+						at_console,
+						"[NPC physics] Added off-PVS ragdoll to transition: entity=%d map=%s landmark=%s.\n",
+						edictIndex, pLevelList[i].mapName, pLevelList[i].landmarkName
+					);
+				}
+			}
+#endif
 		}
 	}
 
