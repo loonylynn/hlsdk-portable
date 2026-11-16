@@ -141,6 +141,26 @@ class SMDToJRAGTests(unittest.TestCase):
         self.assertTrue(any("repeated transform for duplicate node index 1" in warning
                             for warning in parsed.warnings))
 
+    def test_excess_transforms_for_duplicate_node_are_rejected(self):
+        source = self.smd.read_text(encoding="utf-8")
+        source = source.replace(
+            '1 "Bip01 Helper" 0\\n',
+            '1 "Bip01 Helper" 0\\n1 "Bip01 Helper" -1\\n',
+            1,
+        )
+        source = source.replace(
+            '1 2 0 0 0 0 1.5707963267948966\\n',
+            '1 2 0 0 0 0 1.5707963267948966\\n'
+            '1 3 0 0 0 0 0\\n'
+            '1 4 0 0 0 0 0\\n',
+            1,
+        )
+        duplicate_smd = self.root / "excess_duplicate_transforms.smd"
+        duplicate_smd.write_text(source, encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "duplicate transform for bone 1"):
+            smd2jrag.parse_smd(duplicate_smd)
+
     def test_duplicate_transform_without_duplicate_node_is_rejected(self):
         source = self.smd.read_text(encoding="utf-8")
         source = source.replace(
