@@ -144,15 +144,15 @@ class SMDToJRAGTests(unittest.TestCase):
     def test_excess_transforms_for_duplicate_node_are_rejected(self):
         source = self.smd.read_text(encoding="utf-8")
         source = source.replace(
-            '1 "Bip01 Helper" 0\\n',
-            '1 "Bip01 Helper" 0\\n1 "Bip01 Helper" -1\\n',
+            '1 "Bip01 Helper" 0\n',
+            '1 "Bip01 Helper" 0\n1 "Bip01 Helper" -1\n',
             1,
         )
         source = source.replace(
-            '1 2 0 0 0 0 1.5707963267948966\\n',
-            '1 2 0 0 0 0 1.5707963267948966\\n'
-            '1 3 0 0 0 0 0\\n'
-            '1 4 0 0 0 0 0\\n',
+            '1 2 0 0 0 0 1.5707963267948966\n',
+            '1 2 0 0 0 0 1.5707963267948966\n'
+            '1 3 0 0 0 0 0\n'
+            '1 4 0 0 0 0 0\n',
             1,
         )
         duplicate_smd = self.root / "excess_duplicate_transforms.smd"
