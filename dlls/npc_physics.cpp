@@ -603,16 +603,22 @@ namespace
 		sourceUnitSettings.mBodyPairCacheMaxDeltaPositionSq *= sourceScaleSquared;
 		sourceUnitSettings.mContactPointPreserveLambdaMaxDistSq *= sourceScaleSquared;
 		sourceUnitSettings.mInternalEdgeRemovalVertexToleranceSq *= sourceScaleSquared;
+
+		// Articulated ragdolls can be wedged between the player hull and BSP
+		// surfaces. Give the contact/joint island more position-solver passes
+		// so deep transient contacts are corrected more completely per step.
+		sourceUnitSettings.mNumPositionSteps = 4;
 		g_npcPhysics.system.SetPhysicsSettings( sourceUnitSettings );
 		g_npcPhysics.system.SetContactListener( &g_npcPhysics.contactListener );
 
 		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -800.0f ) );
 		ALERT(
 			at_console,
-			"[NPC physics] Jolt GoldSrc-unit scaling: units/m=%.3f max-penetration-correction=%.2f speculative-distance=%.2f.\n",
+			"[NPC physics] Jolt GoldSrc-unit scaling: units/m=%.3f max-penetration-correction=%.2f speculative-distance=%.2f position-steps=%u.\n",
 			sourceScale,
 			sourceUnitSettings.mMaxPenetrationDistance,
-			sourceUnitSettings.mSpeculativeContactDistance
+			sourceUnitSettings.mSpeculativeContactDistance,
+			sourceUnitSettings.mNumPositionSteps
 		);
 		g_npcPhysics.fixedAccumulator = 0.0f;
 		g_npcPhysics.initialized = true;
@@ -1940,11 +1946,11 @@ namespace
 				const NPCPhysicsRagdollPoint &p = bodyDefinition.points[point];
 				points[point] = Vec3( p.x, p.y, p.z );
 			}
-			// Match Jolt's 5 cm convex padding after converting it to the
-			// GoldSrc inch coordinate system (about 1.97 map units).
+			// The hull vertices are already in GoldSrc units, so keep this
+			// padding in the same unit space. Do not convert the SI default:
+			// Jolt subtracts the convex radius before rounding the hull.
 			ConvexHullShapeSettings hullSettings(
-				points, static_cast<int>( bodyDefinition.points.size() ),
-				0.05f * RAGDOLL_SOURCE_UNITS_PER_METER );
+				points, static_cast<int>( bodyDefinition.points.size() ), 0.05f );
 			Shape::ShapeResult result = hullSettings.Create();
 			if( !result.IsValid() )
 			{
