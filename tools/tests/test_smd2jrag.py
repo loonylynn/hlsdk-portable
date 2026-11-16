@@ -123,14 +123,14 @@ class SMDToJRAGTests(unittest.TestCase):
     def test_repeated_transform_for_duplicate_node_uses_final_pose(self):
         source = self.smd.read_text(encoding="utf-8")
         source = source.replace(
-            '1 "Bip01 Helper" 0\\n',
-            '1 "Bip01 Helper" 0\\n1 "Bip01 Helper" -1\\n',
+            '1 "Bip01 Helper" 0\n',
+            '1 "Bip01 Helper" 0\n1 "Bip01 Helper" -1\n',
             1,
         )
         source = source.replace(
-            '1 2 0 0 0 0 1.5707963267948966\\n',
-            '1 2 0 0 0 0 1.5707963267948966\\n'
-            '1 4 0 0 0 0 0\\n',
+            '1 2 0 0 0 0 1.5707963267948966\n',
+            '1 2 0 0 0 0 1.5707963267948966\n'
+            '1 4 0 0 0 0 0\n',
             1,
         )
         duplicate_smd = self.root / "duplicate_node_transforms.smd"
@@ -144,9 +144,9 @@ class SMDToJRAGTests(unittest.TestCase):
     def test_duplicate_transform_without_duplicate_node_is_rejected(self):
         source = self.smd.read_text(encoding="utf-8")
         source = source.replace(
-            '1 2 0 0 0 0 1.5707963267948966\\n',
-            '1 2 0 0 0 0 1.5707963267948966\\n'
-            '1 4 0 0 0 0 0\\n',
+            '1 2 0 0 0 0 1.5707963267948966\n',
+            '1 2 0 0 0 0 1.5707963267948966\n'
+            '1 4 0 0 0 0 0\n',
             1,
         )
         duplicate_smd = self.root / "duplicate_transform.smd"
