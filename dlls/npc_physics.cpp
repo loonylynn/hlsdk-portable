@@ -1887,17 +1887,20 @@ int NPCPhysics_IsRagdollEntity( edict_t *ent )
 int NPCPhysics_ApplyBlastImpulse(
 	edict_t *targetEntity,
 	const float *origin,
+	const float *targetPoint,
 	float radius,
 	float blastDamage )
 {
 	const float blastScale = NPCPhysics_GetCvar( "sv_npc_vphysics_blast_scale", 1.0f );
 	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
-		!targetEntity || targetEntity->free || !origin ||
+		!targetEntity || targetEntity->free || !origin || !targetPoint ||
 		!std::isfinite( radius ) || radius <= 0.001f ||
 		!std::isfinite( blastDamage ) || blastDamage <= 0.0f ||
 		!std::isfinite( blastScale ) || blastScale <= 0.0f ||
 		!std::isfinite( origin[0] ) || !std::isfinite( origin[1] ) ||
-		!std::isfinite( origin[2] ) )
+		!std::isfinite( origin[2] ) ||
+		!std::isfinite( targetPoint[0] ) || !std::isfinite( targetPoint[1] ) ||
+		!std::isfinite( targetPoint[2] ) )
 		return 0;
 
 	NPCPhysicsRagdoll *targetRagdoll = NULL;
@@ -1914,150 +1917,60 @@ int NPCPhysics_ApplyBlastImpulse(
 	}
 
 	if( !targetRagdoll || targetRagdoll->bodyCount <= 0 ||
-		targetRagdoll->bodyMasses.size() != static_cast<size_t>( targetRagdoll->bodyCount ) )
+		targetRagdoll->bodyMasses.size() != static_cast<size_t>( targetRagdoll->bodyCount ) ||
+		targetRagdoll->rootElement < 0 ||
+		targetRagdoll->rootElement >= targetRagdoll->bodyCount )
 		return 0;
 
 	BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
-	const RVec3 blastOrigin( origin[0], origin[1], origin[2] );
-
-	// First find every body the blast can actually see. The mass-weighted
-	// center of this exposed set supplies one coherent outward blast direction.
-	// We deliberately do not distribute the full blast budget over every limb:
-	// one exposed, substantial body receives the main impulse and Jolt's
-	// articulated constraints transmit the reaction through the ragdoll.
-	BodyID impulseBody;
-	RVec3 impulsePoint = blastOrigin;
-	float impulseBodyMass = 0.0f;
-	float impulseFalloff = 0.0f;
-	float bestBodyScore = 0.0f;
-	Vec3 exposedMassCenter( 0.0f, 0.0f, 0.0f );
-	float totalRagdollMass = 0.0f;
-	float exposedMass = 0.0f;
-	int exposedBodies = 0;
-	int impulseBodyIndex = -1;
-
-	for( int body = 0; body < targetRagdoll->bodyCount; ++body )
-	{
-		const float bodyMass = targetRagdoll->bodyMasses[body];
-		if( !std::isfinite( bodyMass ) || bodyMass <= 0.0f )
-			continue;
-		totalRagdollMass += bodyMass;
-
-		const BodyID bodyID = targetRagdoll->physicsRagdoll->GetBodyID( body );
-		const RVec3 bodyPosition = bodyInterface.GetPosition( bodyID );
-		const Vec3 offset(
-			float( bodyPosition.GetX() ) - origin[0],
-			float( bodyPosition.GetY() ) - origin[1],
-			float( bodyPosition.GetZ() ) - origin[2] );
-		const float distance = offset.Length();
-		if( !std::isfinite( distance ) || distance >= radius )
-			continue;
-
-		RVec3 surfacePoint = bodyPosition;
-		if( distance > 0.001f )
-		{
-			// The ray must reach this body before any other Jolt collider.
-			// The scene includes the native BSP world and inline brush models.
-			const RRayCast ray( blastOrigin, offset );
-			RayCastResult hit;
-			hit.mFraction = 1.0f;
-			if( !g_npcPhysics.system.GetNarrowPhaseQuery().CastRay( ray, hit ) ||
-				hit.mBodyID != bodyID )
-				continue;
-			surfacePoint = ray.GetPointOnRay( hit.mFraction );
-		}
-
-		const float falloff = 1.0f - distance / radius;
-		if( falloff <= 0.0f )
-			continue;
-
-		const Vec3 bodyCenter(
-			float( bodyPosition.GetX() ),
-			float( bodyPosition.GetY() ),
-			float( bodyPosition.GetZ() ) );
-		exposedMassCenter += bodyCenter * bodyMass;
-		exposedMass += bodyMass;
-		++exposedBodies;
-
-		// Prefer a substantial exposed body close to the blast. This avoids
-		// spending the main impulse on a hand, foot, or other low-mass extremity.
-		const float bodyScore = bodyMass * falloff;
-		if( bodyScore > bestBodyScore )
-		{
-			bestBodyScore = bodyScore;
-			impulseBody = bodyID;
-			impulsePoint = surfacePoint;
-			impulseBodyMass = bodyMass;
-			impulseFalloff = falloff;
-			impulseBodyIndex = body;
-		}
-	}
-
-	if( exposedBodies == 0 || exposedMass <= 0.0f || bestBodyScore <= 0.0f ||
-		impulseBodyIndex < 0 )
-	{
-		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
-			ALERT(
-				at_console,
-				"[NPC blast] No visible ragdoll bodies in range: ent=%d id=%d radius=%.1f.\n",
-				ENTINDEX( targetEntity ), targetRagdoll->networkID, radius
-			);
+	const BodyID impulseBody = targetRagdoll->physicsRagdoll->GetBodyID( targetRagdoll->rootElement );
+	const float impulseBodyMass = targetRagdoll->bodyMasses[targetRagdoll->rootElement];
+	if( !std::isfinite( impulseBodyMass ) || impulseBodyMass <= 0.0f || impulseBody.IsInvalid() )
 		return 0;
+
+	float totalRagdollMass = 0.0f;
+	for( size_t i = 0; i < targetRagdoll->bodyMasses.size(); ++i )
+	{
+		const float mass = targetRagdoll->bodyMasses[i];
+		if( std::isfinite( mass ) && mass > 0.0f )
+			totalRagdollMass += mass;
 	}
 
-	const Vec3 exposedCenter = exposedMassCenter / exposedMass;
-
-	// Aim the blast toward the upper bound of the corpse, not its mass center.
-	// The latter can sit below the explosion even when the upper torso/head is
-	// above it, which sends a grounded ragdoll straight into the floor.
-	const Vec3 entityBoundsCenter(
-		( targetEntity->v.absmin[0] + targetEntity->v.absmax[0] ) * 0.5f,
-		( targetEntity->v.absmin[1] + targetEntity->v.absmax[1] ) * 0.5f,
-		targetEntity->v.absmax[2] );
-	Vec3 blastAimPoint = entityBoundsCenter;
-	const bool validEntityBounds =
-		std::isfinite( entityBoundsCenter.GetX() ) &&
-		std::isfinite( entityBoundsCenter.GetY() ) &&
-		std::isfinite( entityBoundsCenter.GetZ() ) &&
-		targetEntity->v.absmax[2] > targetEntity->v.absmin[2] + 8.0f;
-	if( !validEntityBounds )
-		blastAimPoint = exposedCenter + Vec3( 0.0f, 0.0f, 16.0f );
-
+	// Match the nillerusr Source HL1 radius-damage model: aim from the
+	// explosion to the entity's BodyTarget, calculate one character-level
+	// blast impulse, and apply it to the ragdoll's main physics body at the
+	// explosion origin. RadiusDamage has already performed the entity-level
+	// brush/solid visibility test and damage-distance calculation.
 	Vec3 blastDirection(
-		blastAimPoint.GetX() - origin[0],
-		blastAimPoint.GetY() - origin[1],
-		blastAimPoint.GetZ() - origin[2] );
+		targetPoint[0] - origin[0],
+		targetPoint[1] - origin[1],
+		targetPoint[2] - origin[2] );
 	const float directionLength = blastDirection.Length();
 	if( !std::isfinite( directionLength ) || directionLength <= 0.001f )
 		blastDirection = Vec3( 0.0f, 0.0f, 1.0f );
 	else
 		blastDirection /= directionLength;
 
-	// Add a modest upward bias when the radial direction already has an
-	// upward component. This compensates for gravity without reversing a blast
-	// that genuinely originates above the target.
-	if( blastDirection.GetZ() > 0.0f )
-	{
-		blastDirection.SetZ( blastDirection.GetZ() * 1.15f );
-		blastDirection = blastDirection.Normalized();
-	}
-
-	// A single-body impulse budget keeps the kick energetic enough to launch
-	// the articulated assembly. The body mass controls the resulting velocity;
-	// distance attenuation and the user scale remain independent adjustments.
+	// Source's explosive force uses a 75 kg reference character at
+	// 4 units/sec per damage point, capped at a 400 units/sec reference
+	// speed. Apply its small per-victim variation after the cap.
 	const float baseImpulse = (std::min)( blastDamage * 300.0f, 30000.0f );
-	const float scaledImpulse = baseImpulse * impulseFalloff * blastScale;
+	const float randomScale = RANDOM_FLOAT( 0.85f, 1.15f );
+	const float scaledImpulse = baseImpulse * randomScale * blastScale;
 	if( !std::isfinite( scaledImpulse ) || scaledImpulse <= 0.0f )
 		return 0;
 
 	const Vec3 impulse = blastDirection * scaledImpulse;
+	const RVec3 applicationPoint( origin[0], origin[1], origin[2] );
 	const Vec3 velocityBefore = bodyInterface.GetLinearVelocity( impulseBody );
 	const Vec3 angularBefore = bodyInterface.GetAngularVelocity( impulseBody );
+
 	bodyInterface.ActivateBody( impulseBody );
-	// Apply at the exposed surface point, not at the body's center. The
-	// upper-body blast direction and off-center application point produce a
-	// directional launch plus angular response without arbitrary spin.
-	bodyInterface.AddImpulse( impulseBody, impulse, impulsePoint );
+	// ApplyForceOffset in Source applies the damage force at the explosion's
+	// world position. Jolt AddImpulse takes the corresponding world-space point.
+	// Keeping this lever arm is important: applying at a body surface or center
+	// removes the broad rotational response that the Source path produces.
+	bodyInterface.AddImpulse( impulseBody, impulse, applicationPoint );
 
 	const Vec3 velocityAfter = bodyInterface.GetLinearVelocity( impulseBody );
 	const Vec3 angularAfter = bodyInterface.GetAngularVelocity( impulseBody );
@@ -2065,7 +1978,7 @@ int NPCPhysics_ApplyBlastImpulse(
 	const BodyID rootBody = targetRagdoll->physicsRagdoll->GetBodyID( targetRagdoll->rootElement );
 	const RVec3 rootPosition = bodyInterface.GetPosition( rootBody );
 	targetRagdoll->blastDebugBodyID = impulseBody;
-	targetRagdoll->blastDebugBodyIndex = impulseBodyIndex;
+	targetRagdoll->blastDebugBodyIndex = targetRagdoll->rootElement;
 	targetRagdoll->blastDebugBodyStartPosition = Vec3(
 		float( bodyPosition.GetX() ), float( bodyPosition.GetY() ), float( bodyPosition.GetZ() ) );
 	targetRagdoll->blastDebugRootStartPosition = Vec3(
@@ -2076,8 +1989,9 @@ int NPCPhysics_ApplyBlastImpulse(
 	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
-			"[NPC blast] Immediate velocity: ent=%d body=%d impulse=(%.1f %.1f %.1f) v-before=(%.1f %.1f %.1f) v-after=(%.1f %.1f %.1f) w-before=(%.1f %.1f %.1f) w-after=(%.1f %.1f %.1f).\n",
-			ENTINDEX( targetEntity ), impulseBodyIndex,
+			"[NPC blast] Immediate velocity: ent=%d body=%d impulse=(%.1f %.1f %.1f) v-before=(%.1f %.1f %.1f) v-after=(%.1f %.1f %.1f) w-before=(%.1f %.1f %.1f) w-after=(%.1f %.1f %.1f).
+",
+			ENTINDEX( targetEntity ), targetRagdoll->rootElement,
 			impulse.GetX(), impulse.GetY(), impulse.GetZ(),
 			velocityBefore.GetX(), velocityBefore.GetY(), velocityBefore.GetZ(),
 			velocityAfter.GetX(), velocityAfter.GetY(), velocityAfter.GetZ(),
@@ -2091,14 +2005,13 @@ int NPCPhysics_ApplyBlastImpulse(
 	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
-			"[NPC blast] Applied focused impulse: ent=%d id=%d body=%d mass=%.1f exposed=%d/%d exposed-mass=%.1f/%.1f radius=%.1f falloff=%.2f impulse=%.1f scale=%.2f origin=(%.1f %.1f %.1f) aim=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\n",
+			"[NPC blast] Applied Source-style impulse: ent=%d id=%d body=%d mass=%.1f total-mass=%.1f damage=%.1f radius=%.1f impulse=%.1f random=%.2f scale=%.2f origin=(%.1f %.1f %.1f) target=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).
+",
 			ENTINDEX( targetEntity ), targetRagdoll->networkID,
-			impulseBodyIndex, impulseBodyMass,
-			exposedBodies, targetRagdoll->bodyCount,
-			exposedMass, totalRagdollMass, radius,
-			impulseFalloff, scaledImpulse, blastScale,
+			targetRagdoll->rootElement, impulseBodyMass, totalRagdollMass,
+			blastDamage, radius, scaledImpulse, randomScale, blastScale,
 			origin[0], origin[1], origin[2],
-			blastAimPoint.GetX(), blastAimPoint.GetY(), blastAimPoint.GetZ(),
+			targetPoint[0], targetPoint[1], targetPoint[2],
 			blastDirection.GetX(), blastDirection.GetY(), blastDirection.GetZ()
 		);
 
