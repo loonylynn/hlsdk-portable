@@ -745,6 +745,10 @@ void ServerActivate( edict_t *pEdictList, int edictCount, int clientMax )
 		if( pClass && !( pClass->pev->flags & FL_DORMANT ) )
 		{
 			pClass->Activate();
+
+			// Recreate map-local Jolt bodies from the portable pose saved with
+			// a transferred CBaseMonster, after the destination BSP is available.
+			NPCPhysics_RestorePersistentRagdoll( &pEdictList[i] );
 		}
 		else
 		{
