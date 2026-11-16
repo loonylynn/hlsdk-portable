@@ -1317,6 +1317,10 @@ namespace
 			}
 		}
 
+		if( restorePersistentState && !hasPersistentPose )
+			return NPCPhysics_RagdollSetupFailed(
+				"saved ragdoll snapshot is incompatible with this model or contains invalid data" );
+
 		if( hasPersistentPose )
 		{
 			const ::Vector carrierOrigin = ent->v.origin;
