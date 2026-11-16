@@ -450,6 +450,30 @@ def _find_bone(nodes: Dict[int, BoneNode], name: str) -> int:
     return matches[0]
 
 
+def unbound_qci_directives(smd: SMDData, qci: QCIData) -> List[str]:
+    """Return QCI joint directives that target skeleton bones without hulls.
+
+    Valve authoring files can retain constraints for helper bones that have no
+    collision body in the SMD. Such directives cannot constrain a Jolt joint;
+    report them explicitly rather than silently remapping them to another bone.
+    Unknown bone names remain hard errors.
+    """
+    collider_ids = set(smd.vertices)
+    warnings: List[str] = []
+    for directive, names in (
+        ("$jointconstrain", qci.limits),
+        ("$jointrotdamping", qci.angular_damping_overrides),
+    ):
+        for name in sorted(names):
+            bone_index = _find_bone(smd.nodes, name)
+            if bone_index not in collider_ids:
+                warnings.append(
+                    "{} targets non-physical skeleton bone {!r}; no collision mesh "
+                    "is assigned to it, so the directive is ignored".format(
+                        directive, smd.nodes[bone_index].name))
+    return warnings
+
+
 def build_bodies(smd: SMDData, qci: QCIData) -> List[OutputBody]:
     root_id = _find_bone(smd.nodes, qci.rootbone)
     transforms = world_transforms(smd)
@@ -457,15 +481,13 @@ def build_bodies(smd: SMDData, qci: QCIData) -> List[OutputBody]:
     if not collider_ids:
         raise ValueError("SMD has no collision geometry")
 
-    # Every constrained body must have a corresponding collision mesh.
-    body_names = {smd.nodes[index].name.casefold(): index for index in collider_ids}
+    # QCI directives for skeleton-only bones are ignored with an explicit
+    # authoring warning. A joint limit is never transferred to a different
+    # physical body because its local axes and joint frame may differ.
     for name in qci.limits:
-        if name not in body_names:
-            raise ValueError("QCI constrains bone {!r}, but that bone has no SMD collision mesh".format(name))
+        _find_bone(smd.nodes, name)
     for name in qci.angular_damping_overrides:
-        if name not in body_names:
-            raise ValueError("QCI assigns rotational damping to {!r}, but that bone has no SMD collision mesh".format(
-                name))
+        _find_bone(smd.nodes, name)
 
     parent_body: Dict[int, Optional[int]] = {}
     for index in collider_ids:
@@ -621,10 +643,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     output_path = args.output or args.qci.with_suffix(".jrag")
     try:
+        qci = parse_qci(args.qci)
+        smd_path = args.smd
+        if smd_path is None:
+            collision_file = qci.collision_name
+            if Path(collision_file).suffix.lower() != ".smd":
+                collision_file += ".smd"
+            smd_path = qci.source_path.parent / collision_file
+        smd = parse_smd(smd_path)
         bodies = convert(args.qci, args.smd, output_path, args.friction, args.restitution)
     except (OSError, ValueError) as exc:
         print("smd2jrag: error: {}".format(exc), file=sys.stderr)
         return 2
+
+    for warning in unbound_qci_directives(smd, qci):
+        print("Warning: {}".format(warning), file=sys.stderr)
 
     print("Wrote {} ({} rigid bodies)".format(output_path, len(bodies)))
     for body in bodies:
