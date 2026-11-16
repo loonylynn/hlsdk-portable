@@ -1710,6 +1710,7 @@ namespace
 				bodyInterface.SetAngularVelocity( bodyID, angularVelocity );
 				bodyInterface.ActivateBody( bodyID );
 			}
+			NPCPhysics_LogRagdollVelocitySummary( "Restored", ent, ragdoll );
 		}
 
 		// Only replace the animated corpse after all physics bodies and joints
@@ -1820,6 +1821,55 @@ namespace
 		}
 	}
 
+	static void NPCPhysics_LogRagdollVelocitySummary(
+		const char *stage,
+		edict_t *ent,
+		const NPCPhysicsRagdoll &ragdoll )
+	{
+		if( !ent || !ragdoll.physicsRagdoll.GetPtr() || ragdoll.bodyCount <= 0 ||
+			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) < 0.5f )
+			return;
+
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		const int rootBodyIndex = ragdoll.rootElement >= 0 && ragdoll.rootElement < ragdoll.bodyCount
+			? ragdoll.rootElement : 0;
+		const BodyID rootBodyID = ragdoll.physicsRagdoll->GetBodyID( rootBodyIndex );
+		const Vec3 rootLinear = bodyInterface.GetLinearVelocity( rootBodyID );
+		const Vec3 rootAngular = bodyInterface.GetAngularVelocity( rootBodyID );
+
+		int fastestBodyIndex = rootBodyIndex;
+		float fastestSpeedSquared = -1.0f;
+		Vec3 fastestLinear( 0.0f, 0.0f, 0.0f );
+		Vec3 fastestAngular( 0.0f, 0.0f, 0.0f );
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+		{
+			const BodyID bodyID = ragdoll.physicsRagdoll->GetBodyID( body );
+			const Vec3 linear = bodyInterface.GetLinearVelocity( bodyID );
+			const float speedSquared =
+				linear.GetX() * linear.GetX() +
+				linear.GetY() * linear.GetY() +
+				linear.GetZ() * linear.GetZ();
+			if( speedSquared > fastestSpeedSquared )
+			{
+				fastestSpeedSquared = speedSquared;
+				fastestBodyIndex = body;
+				fastestLinear = linear;
+				fastestAngular = bodyInterface.GetAngularVelocity( bodyID );
+			}
+		}
+
+		ALERT(
+			at_console,
+			"[NPC physics] %s ragdoll velocities: entity=%d root-body=%d root-v=(%.1f %.1f %.1f) root-w=(%.2f %.2f %.2f) fastest-body=%d speed=%.1f v=(%.1f %.1f %.1f) w=(%.2f %.2f %.2f).\\n",
+			stage, ENTINDEX( ent ), rootBodyIndex,
+			rootLinear.GetX(), rootLinear.GetY(), rootLinear.GetZ(),
+			rootAngular.GetX(), rootAngular.GetY(), rootAngular.GetZ(),
+			fastestBodyIndex, std::sqrt( (std::max)( 0.0f, fastestSpeedSquared ) ),
+			fastestLinear.GetX(), fastestLinear.GetY(), fastestLinear.GetZ(),
+			fastestAngular.GetX(), fastestAngular.GetY(), fastestAngular.GetZ()
+		);
+	}
+
 	static void NPCPhysics_SaveRagdollStateInternal( edict_t *ent )
 	{
 		if( !ent || ent->free )
@@ -1829,13 +1879,16 @@ namespace
 		if( !monster )
 			return;
 
-		const bool isRagdollCarrier = ent->v.iuser4 == 1;
+		const bool hasPriorRagdollSnapshot =
+			monster->m_iNpcRagdollPersistVersion != 0 ||
+			monster->m_iNpcRagdollPersistBoneCount != 0 ||
+			monster->m_iNpcRagdollPersistBodyCount != 0;
 		const bool debug = NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f;
 		if( !g_npcPhysics.initialized || g_ragdolls.empty() )
 		{
-			if( isRagdollCarrier && debug )
+			if( hasPriorRagdollSnapshot && debug )
 				ALERT( at_console,
-					"[NPC physics] Save callback reached ragdoll carrier %d, but the Jolt world has no active ragdolls.\n",
+					"[NPC physics] Existing ragdoll snapshot for entity %d could not be refreshed: Jolt world has no active ragdolls.\n",
 					ENTINDEX( ent ) );
 			return;
 		}
@@ -1853,9 +1906,9 @@ namespace
 
 		if( !ragdoll )
 		{
-			if( isRagdollCarrier && debug )
+			if( hasPriorRagdollSnapshot && debug )
 				ALERT( at_console,
-					"[NPC physics] Save callback reached ragdoll carrier %d, but its live Jolt state was not registered.\n",
+					"[NPC physics] Existing ragdoll snapshot for entity %d could not be refreshed: live Jolt state is not registered.\n",
 					ENTINDEX( ent ) );
 			return;
 		}
@@ -1905,6 +1958,7 @@ namespace
 			saved[4] = angular.GetY();
 			saved[5] = angular.GetZ();
 		}
+		NPCPhysics_LogRagdollVelocitySummary( "Saved", ent, *ragdoll );
 
 		monster->m_iNpcRagdollPersistVersion = NPC_RAGDOLL_PERSIST_VERSION;
 		monster->m_iNpcRagdollPersistBoneCount = ragdoll->studioBoneCount;
@@ -2458,16 +2512,20 @@ int NPCPhysics_RestorePersistentRagdoll( edict_t *ent )
 	if( !monster )
 		return FALSE;
 
+	const bool hasAnyPersistentRagdollData =
+		monster->m_iNpcRagdollPersistVersion != 0 ||
+		monster->m_iNpcRagdollPersistBoneCount != 0 ||
+		monster->m_iNpcRagdollPersistBodyCount != 0;
 	if( monster->m_iNpcRagdollPersistVersion != NPC_RAGDOLL_PERSIST_VERSION ||
 		monster->m_iNpcRagdollPersistBoneCount <= 0 ||
 		monster->m_iNpcRagdollPersistBoneCount > NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES ||
 		monster->m_iNpcRagdollPersistBodyCount <= 0 ||
 		monster->m_iNpcRagdollPersistBodyCount > NPC_RAGDOLL_PERSIST_MAX_BODIES )
 	{
-		if( ent->v.iuser4 == 1 &&
+		if( hasAnyPersistentRagdollData &&
 			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 			ALERT( at_console,
-				"[NPC physics] Transitioned ragdoll carrier %d has no valid saved pose (version=%d bones=%d bodies=%d).\n",
+				"[NPC physics] Entity %d has incomplete ragdoll snapshot data (version=%d bones=%d bodies=%d).\n",
 				ENTINDEX( ent ), monster->m_iNpcRagdollPersistVersion,
 				monster->m_iNpcRagdollPersistBoneCount, monster->m_iNpcRagdollPersistBodyCount );
 		return FALSE;
