@@ -234,8 +234,10 @@ namespace
 		int rootElement;
 		float nextPoseTime;
 		float nextCollisionDamageTime;
-		float nextWorldContactDebugTime;
-		float nextKinematicContactDebugTime;
+		float nextWorldContactAddedDebugTime;
+		float nextWorldContactPersistedDebugTime;
+		float nextKinematicContactAddedDebugTime;
+		float nextKinematicContactPersistedDebugTime;
 		float nextPlayerPushDebugTime;
 		bool firstPoseSendReported;
 		::Vector entityOriginOffset;
@@ -265,8 +267,10 @@ namespace
 			  rootElement( -1 ),
 			  nextPoseTime( 0.0f ),
 			  nextCollisionDamageTime( 0.0f ),
-			  nextWorldContactDebugTime( 0.0f ),
-			  nextKinematicContactDebugTime( 0.0f ),
+			  nextWorldContactAddedDebugTime( 0.0f ),
+			  nextWorldContactPersistedDebugTime( 0.0f ),
+			  nextKinematicContactAddedDebugTime( 0.0f ),
+			  nextKinematicContactPersistedDebugTime( 0.0f ),
 			  nextPlayerPushDebugTime( 0.0f ),
 			  firstPoseSendReported( false ),
 			  blastDebugBodyID(),
@@ -306,6 +310,8 @@ namespace
 		int otherEntityIndex;
 		float penetrationDepth;
 		float closingSpeed;
+		unsigned int sampleCount;
+		bool persisted;
 		Vec3 contactPoint;
 		Vec3 normal;
 
@@ -316,6 +322,8 @@ namespace
 			  otherEntityIndex( 0 ),
 			  penetrationDepth( 0.0f ),
 			  closingSpeed( 0.0f ),
+			  sampleCount( 0 ),
+			  persisted( false ),
 			  contactPoint( 0.0f, 0.0f, 0.0f ),
 			  normal( 0.0f, 0.0f, 0.0f )
 		{
@@ -378,34 +386,16 @@ namespace
 				return;
 
 			QueuePlayerPushLimit( body1, body2, manifold );
+			QueueContactDiagnostic( body1, body2, manifold, false );
 
-			const RVec3 contact = manifold.GetWorldSpaceContactPointOn1( 0 );
+			const RVec3 contact = body1IsRagdoll
+				? manifold.GetWorldSpaceContactPointOn1( 0 )
+				: manifold.GetWorldSpaceContactPointOn2( 0 );
 			const Vec3 normal = manifold.mWorldSpaceNormal;
 			const Vec3 relativeVelocityBefore =
 				body2.GetPointVelocity( contact ) - body1.GetPointVelocity( contact );
 			const float closingSpeedBefore =
 				(std::max)( 0.0f, -relativeVelocityBefore.Dot( normal ) );
-
-			// Keep a low-volume record of every new ragdoll/world or
-			// ragdoll/kinematic contact. This is deliberately separate from
-			// impact damage: slow player shoves must be diagnosable too.
-			NPCPhysicsPendingContactDiagnostic diagnostic;
-			diagnostic.ragdollID = ragdollID;
-			diagnostic.ragdollBodyID = ragdollBody.GetID();
-			diagnostic.otherLayer = static_cast<int>( otherLayer );
-			diagnostic.otherEntityIndex = otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER
-				? static_cast<int>( otherBody.GetUserData() ) : 0;
-			diagnostic.penetrationDepth = manifold.mPenetrationDepth;
-			diagnostic.closingSpeed = closingSpeedBefore;
-			diagnostic.contactPoint = Vec3(
-				float( contact.GetX() ),
-				float( contact.GetY() ),
-				float( contact.GetZ() ) );
-			diagnostic.normal = normal;
-			{
-				std::lock_guard<std::mutex> lock( m_mutex );
-				m_contactDiagnostics.push_back( diagnostic );
-			}
 
 			// Collision damage is reserved for actual closing impacts with a
 			// usable manifold. Diagnostic contacts above also include slow or
@@ -463,6 +453,7 @@ namespace
 			ContactSettings & ) override
 		{
 			QueuePlayerPushLimit( body1, body2, manifold );
+			QueueContactDiagnostic( body1, body2, manifold, true );
 		}
 
 		std::vector<NPCPhysicsPendingPlayerPush> DrainPlayerPushLimits()
@@ -498,6 +489,111 @@ namespace
 		}
 
 	private:
+		static bool IsContactDiagnosticMoreSevere(
+			const NPCPhysicsPendingContactDiagnostic &a,
+			const NPCPhysicsPendingContactDiagnostic &b )
+		{
+			if( a.penetrationDepth != b.penetrationDepth )
+				return a.penetrationDepth > b.penetrationDepth;
+			return a.closingSpeed > b.closingSpeed;
+		}
+
+		void QueueContactDiagnostic(
+			const Body &body1,
+			const Body &body2,
+			const ContactManifold &manifold,
+			bool persisted )
+		{
+			const ObjectLayer layer1 = body1.GetObjectLayer();
+			const ObjectLayer layer2 = body2.GetObjectLayer();
+			const bool body1IsRagdoll = layer1 == RAGDOLL_OBJECT_LAYER;
+			const bool body2IsRagdoll = layer2 == RAGDOLL_OBJECT_LAYER;
+			if( body1IsRagdoll == body2IsRagdoll )
+				return;
+
+			const Body &ragdollBody = body1IsRagdoll ? body1 : body2;
+			const Body &otherBody = body1IsRagdoll ? body2 : body1;
+			const ObjectLayer otherLayer = body1IsRagdoll ? layer2 : layer1;
+			if( ( otherLayer != WORLD_STATIC_OBJECT_LAYER &&
+				  otherLayer != BRUSH_KINEMATIC_OBJECT_LAYER ) ||
+				ragdollBody.GetMotionType() != EMotionType::Dynamic ||
+				manifold.mRelativeContactPointsOn1.size() == 0 )
+				return;
+
+			const uint64_t ragdollID = ragdollBody.GetUserData();
+			if( ragdollID == 0 )
+				return;
+
+			const RVec3 contact = body1IsRagdoll
+				? manifold.GetWorldSpaceContactPointOn1( 0 )
+				: manifold.GetWorldSpaceContactPointOn2( 0 );
+			const Vec3 normal = manifold.mWorldSpaceNormal;
+			const Vec3 relativeVelocity =
+				body2.GetPointVelocity( contact ) - body1.GetPointVelocity( contact );
+			const float closingSpeed =
+				(std::max)( 0.0f, -relativeVelocity.Dot( normal ) );
+			if( !std::isfinite( manifold.mPenetrationDepth ) ||
+				!std::isfinite( closingSpeed ) )
+				return;
+
+			NPCPhysicsPendingContactDiagnostic diagnostic;
+			diagnostic.ragdollID = ragdollID;
+			diagnostic.ragdollBodyID = ragdollBody.GetID();
+			diagnostic.otherLayer = static_cast<int>( otherLayer );
+			diagnostic.otherEntityIndex = otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER
+				? static_cast<int>( otherBody.GetUserData() ) : 0;
+			diagnostic.penetrationDepth = manifold.mPenetrationDepth;
+			diagnostic.closingSpeed = closingSpeed;
+			diagnostic.sampleCount = 1;
+			diagnostic.persisted = persisted;
+			diagnostic.contactPoint = Vec3(
+				float( contact.GetX() ),
+				float( contact.GetY() ),
+				float( contact.GetZ() ) );
+			diagnostic.normal = normal;
+
+			// Keep only the deepest contact for each ragdoll/layer/callback
+			// stage between diagnostic drains. The hard cap protects against
+			// pathological contact counts without changing the solver.
+			const size_t maxContactDiagnostics = 256;
+			std::lock_guard<std::mutex> lock( m_mutex );
+			for( size_t i = 0; i < m_contactDiagnostics.size(); ++i )
+			{
+				NPCPhysicsPendingContactDiagnostic &existing = m_contactDiagnostics[i];
+				if( existing.ragdollID != diagnostic.ragdollID ||
+					existing.otherLayer != diagnostic.otherLayer ||
+					existing.persisted != diagnostic.persisted )
+					continue;
+
+				if( existing.sampleCount < 0xFFFFFFFFu )
+					++existing.sampleCount;
+				if( IsContactDiagnosticMoreSevere( diagnostic, existing ) )
+				{
+					diagnostic.sampleCount = existing.sampleCount;
+					existing = diagnostic;
+				}
+				return;
+			}
+
+			if( m_contactDiagnostics.size() < maxContactDiagnostics )
+			{
+				m_contactDiagnostics.push_back( diagnostic );
+				return;
+			}
+
+			size_t leastSevereIndex = 0;
+			for( size_t i = 1; i < m_contactDiagnostics.size(); ++i )
+			{
+				if( IsContactDiagnosticMoreSevere(
+						m_contactDiagnostics[leastSevereIndex],
+						m_contactDiagnostics[i] ) )
+					leastSevereIndex = i;
+			}
+			if( IsContactDiagnosticMoreSevere(
+					diagnostic, m_contactDiagnostics[leastSevereIndex] ) )
+				m_contactDiagnostics[leastSevereIndex] = diagnostic;
+		}
+
 		void QueuePlayerPushLimit(
 			const Body &body1,
 			const Body &body2,
@@ -2704,8 +2800,12 @@ namespace
 				continue;
 
 			float &nextDebugTime = event.otherLayer == WORLD_STATIC_OBJECT_LAYER
-				? ragdoll->nextWorldContactDebugTime
-				: ragdoll->nextKinematicContactDebugTime;
+				? ( event.persisted
+					? ragdoll->nextWorldContactPersistedDebugTime
+					: ragdoll->nextWorldContactAddedDebugTime )
+				: ( event.persisted
+					? ragdoll->nextKinematicContactPersistedDebugTime
+					: ragdoll->nextKinematicContactAddedDebugTime );
 			if( gpGlobals->time < nextDebugTime )
 				continue;
 
@@ -2739,10 +2839,11 @@ namespace
 
 			ALERT(
 				at_console,
-				"[NPC physics] Contact: ent=%d id=%d body=%d other=%s/%d penetration=%.3f closing=%.1f point=(%.1f %.1f %.1f) normal=(%.2f %.2f %.2f).\n",
+				"[NPC physics] Contact %s: ent=%d id=%d body=%d other=%s/%d samples=%u penetration=%.3f closing=%.1f point=(%.1f %.1f %.1f) normal=(%.2f %.2f %.2f).\n",
+				event.persisted ? "persisted" : "added",
 				ENTINDEX( ragdoll->entity ), ragdoll->networkID, bodyIndex,
-				otherKind, event.otherEntityIndex, event.penetrationDepth,
-				event.closingSpeed,
+				otherKind, event.otherEntityIndex, event.sampleCount,
+				event.penetrationDepth, event.closingSpeed,
 				event.contactPoint.GetX(), event.contactPoint.GetY(), event.contactPoint.GetZ(),
 				event.normal.GetX(), event.normal.GetY(), event.normal.GetZ()
 			);
