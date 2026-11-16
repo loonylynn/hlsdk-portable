@@ -33,6 +33,7 @@
 #include "xash_physint.h"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 extern DLL_GLOBAL Vector		g_vecAttackDir;
