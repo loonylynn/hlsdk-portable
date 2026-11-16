@@ -165,6 +165,7 @@ void Ragdoll_Init( void )
 	gEngfuncs.pfnHookUserMsg( "RagdollPose", Ragdoll_MessageHandler );
 	gEngfuncs.pfnHookUserMsg( "RagdollImpact", Ragdoll_ImpactMessageHandler );
 	g_RagdollMessageHooked = true;
+	ConsolePrint( "[NPC ragdoll] Client pose and impact message hooks installed.\n" );
 }
 
 int Ragdoll_MessageHandler( const char *, int size, void *buffer )
