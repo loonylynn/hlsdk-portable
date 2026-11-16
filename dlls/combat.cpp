@@ -1206,6 +1206,19 @@ void RadiusDamage( Vector vecSrc, entvars_t *pevInflictor, entvars_t *pevAttacke
 						pEntity->TakeDamage( pevInflictor, pevAttacker, flAdjustedDamage, bitsDamageType );
 					}
 				}
+#ifndef CLIENT_DLL
+			else if( isJoltRagdoll && CVAR_GET_FLOAT( "sv_npc_vphysics_debug" ) >= 0.5f )
+			{
+				const int blockerEntity = tr.pHit ? ENTINDEX( tr.pHit ) : 0;
+				const int blockerModel = tr.pHit ? tr.pHit->v.modelindex : 0;
+				ALERT(
+					at_console,
+					"[NPC blast] RadiusDamage LOS blocked: target=%d blocker=%d model=%d fraction=%.3f end=(%.1f %.1f %.1f).\n",
+					ENTINDEX( pEntity->edict() ), blockerEntity, blockerModel,
+					tr.flFraction, tr.vecEndPos.x, tr.vecEndPos.y, tr.vecEndPos.z
+				);
+			}
+#endif
 			}
 		}
 	}
