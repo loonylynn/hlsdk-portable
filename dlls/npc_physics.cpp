@@ -22,6 +22,7 @@
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
@@ -62,6 +63,11 @@ namespace
 	static constexpr uint32_t RAGDOLL_MAX_BODIES = 4096;
 	static constexpr uint32_t RAGDOLL_MAX_BODY_PAIRS = 8192;
 	static constexpr uint32_t RAGDOLL_MAX_CONTACT_CONSTRAINTS = 8192;
+	// The bridge keeps geometry, gravity and velocities in GoldSrc map units
+	// (1 unit = 1 inch). Jolt's absolute PhysicsSettings defaults are in meters,
+	// so convert those distances/speeds instead of using SI-sized tolerances
+	// against inch-scaled world geometry.
+	static constexpr float RAGDOLL_SOURCE_UNITS_PER_METER = 39.3700787f;
 	static constexpr float RAGDOLL_FIXED_STEP = 1.0f / 120.0f;
 	static constexpr int RAGDOLL_MAX_STEPS_PER_FRAME = 8;
 	static constexpr float RAGDOLL_ACTIVE_POSE_INTERVAL = 0.05f;
@@ -581,9 +587,33 @@ namespace
 			g_npcPhysics.broadPhaseFilter,
 			g_npcPhysics.objectLayerFilter
 		);
+
+		// Jolt's documented defaults assume meters. The bridge intentionally
+		// uses GoldSrc inches throughout (including sv_gravity=800), so scale
+		// every linear tolerance and squared-distance threshold to that space.
+		PhysicsSettings sourceUnitSettings = g_npcPhysics.system.GetPhysicsSettings();
+		const float sourceScale = RAGDOLL_SOURCE_UNITS_PER_METER;
+		const float sourceScaleSquared = sourceScale * sourceScale;
+		sourceUnitSettings.mSpeculativeContactDistance *= sourceScale;
+		sourceUnitSettings.mPenetrationSlop *= sourceScale;
+		sourceUnitSettings.mManifoldTolerance *= sourceScale;
+		sourceUnitSettings.mMaxPenetrationDistance *= sourceScale;
+		sourceUnitSettings.mMinVelocityForRestitution *= sourceScale;
+		sourceUnitSettings.mPointVelocitySleepThreshold *= sourceScale;
+		sourceUnitSettings.mBodyPairCacheMaxDeltaPositionSq *= sourceScaleSquared;
+		sourceUnitSettings.mContactPointPreserveLambdaMaxDistSq *= sourceScaleSquared;
+		sourceUnitSettings.mInternalEdgeRemovalVertexToleranceSq *= sourceScaleSquared;
+		g_npcPhysics.system.SetPhysicsSettings( sourceUnitSettings );
 		g_npcPhysics.system.SetContactListener( &g_npcPhysics.contactListener );
 
 		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -800.0f ) );
+		ALERT(
+			at_console,
+			"[NPC physics] Jolt GoldSrc-unit scaling: units/m=%.3f max-penetration-correction=%.2f speculative-distance=%.2f.\n",
+			sourceScale,
+			sourceUnitSettings.mMaxPenetrationDistance,
+			sourceUnitSettings.mSpeculativeContactDistance
+		);
 		g_npcPhysics.fixedAccumulator = 0.0f;
 		g_npcPhysics.initialized = true;
 		return true;
@@ -1910,8 +1940,11 @@ namespace
 				const NPCPhysicsRagdollPoint &p = bodyDefinition.points[point];
 				points[point] = Vec3( p.x, p.y, p.z );
 			}
+			// Match Jolt's 5 cm convex padding after converting it to the
+			// GoldSrc inch coordinate system (about 1.97 map units).
 			ConvexHullShapeSettings hullSettings(
-				points, static_cast<int>( bodyDefinition.points.size() ), 0.05f );
+				points, static_cast<int>( bodyDefinition.points.size() ),
+				0.05f * RAGDOLL_SOURCE_UNITS_PER_METER );
 			Shape::ShapeResult result = hullSettings.Create();
 			if( !result.IsValid() )
 			{
