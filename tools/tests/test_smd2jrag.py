@@ -104,6 +104,24 @@ class SMDToJRAGTests(unittest.TestCase):
         }
         self.assertEqual(actual, expected)
 
+    def test_skeleton_frame_end_marker_is_accepted(self):
+        source = self.smd.read_text(encoding="utf-8")
+        source = source.replace(
+            '2 3 0 0 0 0 0\n'
+            'triangles\n',
+            '2 3 0 0 0 0 0\n'
+            'end\n'
+            'triangles\n',
+            1,
+        )
+        standard_smd = self.root / "standard_frame_end.smd"
+        standard_smd.write_text(source, encoding="utf-8")
+
+        parsed = smd2jrag.parse_smd(standard_smd)
+        self.assertEqual(parsed.pose[2], (3.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        bodies = smd2jrag.build_bodies(parsed, smd2jrag.parse_qci(self.qci))
+        self.assertEqual(len(bodies), 1)
+
     def test_repeated_same_name_node_index_uses_final_parent_with_warning(self):
         source = self.smd.read_text(encoding="utf-8")
         source = source.replace(
