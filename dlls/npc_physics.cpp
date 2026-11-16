@@ -1816,7 +1816,7 @@ namespace
 				}
 				ALERT(
 					at_console,
-					"[NPC blast] Post-step: ent=%d id=%d body=%d dt=%.2f body-delta=(%.1f %.1f %.1f) body-v=(%.1f %.1f %.1f) body-w=(%.1f %.1f %.1f) root-delta=(%.1f %.1f %.1f) root-v=(%.1f %.1f %.1f).\\n",
+					"[NPC blast] Post-step: ent=%d id=%d body=%d dt=%.2f body-delta=(%.1f %.1f %.1f) body-v=(%.1f %.1f %.1f) body-w=(%.1f %.1f %.1f) root-delta=(%.1f %.1f %.1f) root-v=(%.1f %.1f %.1f).\n",
 					ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.blastDebugBodyIndex,
 					gpGlobals->time - ragdoll.blastDebugTime,
 					bodyDelta.GetX(), bodyDelta.GetY(), bodyDelta.GetZ(),
@@ -2050,7 +2050,7 @@ int NPCPhysics_ApplyBlastImpulse(
 	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
-			"[NPC blast] Immediate velocity: ent=%d body=%d impulse=(%.1f %.1f %.1f) v-before=(%.1f %.1f %.1f) v-after=(%.1f %.1f %.1f) w-before=(%.1f %.1f %.1f) w-after=(%.1f %.1f %.1f).\\n",
+			"[NPC blast] Immediate velocity: ent=%d body=%d impulse=(%.1f %.1f %.1f) v-before=(%.1f %.1f %.1f) v-after=(%.1f %.1f %.1f) w-before=(%.1f %.1f %.1f) w-after=(%.1f %.1f %.1f).\n",
 			ENTINDEX( targetEntity ), impulseBodyIndex,
 			impulse.GetX(), impulse.GetY(), impulse.GetZ(),
 			velocityBefore.GetX(), velocityBefore.GetY(), velocityBefore.GetZ(),
