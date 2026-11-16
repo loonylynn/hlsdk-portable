@@ -3017,7 +3017,10 @@ namespace
 			// null pointer. Use worldspawn as the safe fallback, then prefer a
 			// live brush/actor entity when the contact supplied one.
 			edict_t *attacker = INDEXENT( 0 );
-			if( FNullEnt( attacker ) || attacker->free )
+			// FNullEnt treats edict offset 0 as null, but index 0 is the
+			// actual worldspawn edict. For this one special case, test the
+			// pointer and free flag directly instead of using FNullEnt.
+			if( !attacker || attacker->free )
 				attacker = NULL;
 			if( attackerIndex > 0 && attackerIndex < gpGlobals->maxEntities )
 			{
