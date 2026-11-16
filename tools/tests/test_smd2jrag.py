@@ -104,6 +104,35 @@ class SMDToJRAGTests(unittest.TestCase):
         }
         self.assertEqual(actual, expected)
 
+    def test_repeated_same_name_node_index_uses_final_parent_with_warning(self):
+        source = self.smd.read_text(encoding="utf-8")
+        source = source.replace(
+            '1 "Bip01 Helper" 0\\n',
+            '1 "Bip01 Helper" 0\\n1 "Bip01 Helper" -1\\n',
+            1,
+        )
+        duplicate_smd = self.root / "duplicate_nodes.smd"
+        duplicate_smd.write_text(source, encoding="utf-8")
+
+        parsed = smd2jrag.parse_smd(duplicate_smd)
+        self.assertEqual(parsed.nodes[1].name, "Bip01 Helper")
+        self.assertEqual(parsed.nodes[1].parent, -1)
+        self.assertEqual(len(parsed.warnings), 1)
+        self.assertIn("using final parent -1 instead of 0", parsed.warnings[0])
+
+    def test_repeated_node_index_with_different_name_is_rejected(self):
+        source = self.smd.read_text(encoding="utf-8")
+        source = source.replace(
+            '1 "Bip01 Helper" 0\\n',
+            '1 "Bip01 Helper" 0\\n1 "Renamed Helper" -1\\n',
+            1,
+        )
+        duplicate_smd = self.root / "conflicting_nodes.smd"
+        duplicate_smd.write_text(source, encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "duplicate bone index 1 changes name"):
+            smd2jrag.parse_smd(duplicate_smd)
+
     def test_rejects_invalid_restitution(self):
         qci = smd2jrag.parse_qci(self.qci)
         bodies = smd2jrag.build_bodies(smd2jrag.parse_smd(self.smd), qci)
