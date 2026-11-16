@@ -186,6 +186,12 @@ namespace
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
 		std::vector<float> bodyMasses;
+		BodyID blastDebugBodyID;
+		int blastDebugBodyIndex;
+		Vec3 blastDebugBodyStartPosition;
+		Vec3 blastDebugRootStartPosition;
+		float blastDebugTime;
+		bool blastDebugPending;
 		Ref<Ragdoll> physicsRagdoll;
 		Ref<Skeleton> physicsSkeleton;
 		Ref<Skeleton> studioSkeleton;
@@ -203,6 +209,12 @@ namespace
 			  bodyCount( 0 ),
 			  rootElement( -1 ),
 			  nextPoseTime( 0.0f ),
+			  blastDebugBodyID(),
+			  blastDebugBodyIndex( -1 ),
+			  blastDebugBodyStartPosition( 0.0f, 0.0f, 0.0f ),
+			  blastDebugRootStartPosition( 0.0f, 0.0f, 0.0f ),
+			  blastDebugTime( 0.0f ),
+			  blastDebugPending( false ),
 			  addedToPhysicsSystem( false )
 		{
 		}
@@ -1777,6 +1789,45 @@ namespace
 		{
 			NPCPhysicsRagdoll &ragdoll = g_ragdolls[r];
 
+			// One-shot blast telemetry: compare the selected body and the actual
+			// ragdoll root after 100 ms of Jolt simulation.
+			if( ragdoll.blastDebugPending &&
+				gpGlobals->time - ragdoll.blastDebugTime >= 0.10f &&
+				ragdoll.blastDebugBodyID.IsInvalid() == false )
+			{
+				const RVec3 bodyPosition = bodyInterface.GetPosition( ragdoll.blastDebugBodyID );
+				const Vec3 bodyDelta(
+					float( bodyPosition.GetX() ) - ragdoll.blastDebugBodyStartPosition.GetX(),
+					float( bodyPosition.GetY() ) - ragdoll.blastDebugBodyStartPosition.GetY(),
+					float( bodyPosition.GetZ() ) - ragdoll.blastDebugBodyStartPosition.GetZ() );
+				const Vec3 bodyVelocity = bodyInterface.GetLinearVelocity( ragdoll.blastDebugBodyID );
+				const Vec3 bodyAngular = bodyInterface.GetAngularVelocity( ragdoll.blastDebugBodyID );
+				Vec3 rootDelta( 0.0f, 0.0f, 0.0f );
+				Vec3 rootVelocity( 0.0f, 0.0f, 0.0f );
+				if( ragdoll.rootElement >= 0 && ragdoll.rootElement < ragdoll.bodyCount )
+				{
+					const BodyID rootBody = ragdoll.physicsRagdoll->GetBodyID( ragdoll.rootElement );
+					const RVec3 rootPosition = bodyInterface.GetPosition( rootBody );
+					rootDelta = Vec3(
+						float( rootPosition.GetX() ) - ragdoll.blastDebugRootStartPosition.GetX(),
+						float( rootPosition.GetY() ) - ragdoll.blastDebugRootStartPosition.GetY(),
+						float( rootPosition.GetZ() ) - ragdoll.blastDebugRootStartPosition.GetZ() );
+					rootVelocity = bodyInterface.GetLinearVelocity( rootBody );
+				}
+				ALERT(
+					at_console,
+					"[NPC blast] Post-step: ent=%d id=%d body=%d dt=%.2f body-delta=(%.1f %.1f %.1f) body-v=(%.1f %.1f %.1f) body-w=(%.1f %.1f %.1f) root-delta=(%.1f %.1f %.1f) root-v=(%.1f %.1f %.1f).\\n",
+					ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.blastDebugBodyIndex,
+					gpGlobals->time - ragdoll.blastDebugTime,
+					bodyDelta.GetX(), bodyDelta.GetY(), bodyDelta.GetZ(),
+					bodyVelocity.GetX(), bodyVelocity.GetY(), bodyVelocity.GetZ(),
+					bodyAngular.GetX(), bodyAngular.GetY(), bodyAngular.GetZ(),
+					rootDelta.GetX(), rootDelta.GetY(), rootDelta.GetZ(),
+					rootVelocity.GetX(), rootVelocity.GetY(), rootVelocity.GetZ()
+				);
+				ragdoll.blastDebugPending = false;
+			}
+
 			// Move the carrier edict with the simulated root element. Besides
 			// keeping the corpse's network origin useful, this keeps renderer
 			// culling and the entity's PVS bounds near a ragdoll that has fallen.
@@ -1974,11 +2025,39 @@ int NPCPhysics_ApplyBlastImpulse(
 		return 0;
 
 	const Vec3 impulse = blastDirection * scaledImpulse;
+	const Vec3 velocityBefore = bodyInterface.GetLinearVelocity( impulseBody );
+	const Vec3 angularBefore = bodyInterface.GetAngularVelocity( impulseBody );
 	bodyInterface.ActivateBody( impulseBody );
 	// Apply at the exposed surface point, not at the body's center. Because
 	// direction follows the ragdoll's exposed mass center, an asymmetric hit
 	// produces a lever arm and angular response without an arbitrary spin.
 	bodyInterface.AddImpulse( impulseBody, impulse, impulsePoint );
+
+	const Vec3 velocityAfter = bodyInterface.GetLinearVelocity( impulseBody );
+	const Vec3 angularAfter = bodyInterface.GetAngularVelocity( impulseBody );
+	const RVec3 bodyPosition = bodyInterface.GetPosition( impulseBody );
+	const BodyID rootBody = targetRagdoll->physicsRagdoll->GetBodyID( targetRagdoll->rootElement );
+	const RVec3 rootPosition = bodyInterface.GetPosition( rootBody );
+	targetRagdoll->blastDebugBodyID = impulseBody;
+	targetRagdoll->blastDebugBodyIndex = impulseBodyIndex;
+	targetRagdoll->blastDebugBodyStartPosition = Vec3(
+		float( bodyPosition.GetX() ), float( bodyPosition.GetY() ), float( bodyPosition.GetZ() ) );
+	targetRagdoll->blastDebugRootStartPosition = Vec3(
+		float( rootPosition.GetX() ), float( rootPosition.GetY() ), float( rootPosition.GetZ() ) );
+	targetRagdoll->blastDebugTime = gpGlobals ? gpGlobals->time : 0.0f;
+	targetRagdoll->blastDebugPending = true;
+
+	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT(
+			at_console,
+			"[NPC blast] Immediate velocity: ent=%d body=%d impulse=(%.1f %.1f %.1f) v-before=(%.1f %.1f %.1f) v-after=(%.1f %.1f %.1f) w-before=(%.1f %.1f %.1f) w-after=(%.1f %.1f %.1f).\\n",
+			ENTINDEX( targetEntity ), impulseBodyIndex,
+			impulse.GetX(), impulse.GetY(), impulse.GetZ(),
+			velocityBefore.GetX(), velocityBefore.GetY(), velocityBefore.GetZ(),
+			velocityAfter.GetX(), velocityAfter.GetY(), velocityAfter.GetZ(),
+			angularBefore.GetX(), angularBefore.GetY(), angularBefore.GetZ(),
+			angularAfter.GetX(), angularAfter.GetY(), angularAfter.GetZ()
+		);
 
 	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
 		targetRagdoll->nextPoseTime = gpGlobals->time;
