@@ -170,6 +170,9 @@ def parse_smd(path: Path) -> SMDData:
             continue
         if frame_index is None:
             continue
+        # SMD uses an "end" marker to close each skeleton frame.
+        if stripped.lower() == "end":
+            continue
         if len(parts) != 7:
             raise ValueError("{}:{}: expected bone index and six transform values".format(path, line_number))
         try:
