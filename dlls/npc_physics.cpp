@@ -3028,7 +3028,7 @@ namespace
 				if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 					ALERT(
 						at_console,
-						"[NPC physics] Skipped collision damage: no valid world or contact attacker (entity=%d id=%d other=%d).\\n",
+						"[NPC physics] Skipped collision damage: no valid world or contact attacker (entity=%d id=%d other=%d).\n",
 						ENTINDEX( ragdoll->entity ), ragdoll->networkID, attackerIndex
 					);
 				continue;
@@ -3046,7 +3046,7 @@ namespace
 			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 				ALERT(
 					at_console,
-					"[NPC physics] Applying collision damage: entity=%d id=%d jolt-body=%u inflictor=%d attacker=%d delta-v=%.1f damage=%.1f health=%.1f.\\n",
+					"[NPC physics] Applying collision damage: entity=%d id=%d jolt-body=%u inflictor=%d attacker=%d delta-v=%.1f damage=%.1f health=%.1f.\n",
 					ENTINDEX( ragdoll->entity ), ragdoll->networkID,
 					event.ragdollBodyID.GetIndex(), ENTINDEX( attacker ),
 					ENTINDEX( attacker ), event.velocityLoss, damage,
@@ -3057,7 +3057,7 @@ namespace
 			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 				ALERT(
 					at_console,
-					"[NPC physics] Collision impact damage applied: entity=%d id=%d jolt-body=%u attacker=%d delta-v=%.1f damage=%.1f health=%.1f.\\n",
+					"[NPC physics] Collision impact damage applied: entity=%d id=%d jolt-body=%u attacker=%d delta-v=%.1f damage=%.1f health=%.1f.\n",
 					ENTINDEX( ragdoll->entity ), ragdoll->networkID,
 					event.ragdollBodyID.GetIndex(), ENTINDEX( attacker ),
 					event.velocityLoss, damage, ragdoll->entity->v.health
