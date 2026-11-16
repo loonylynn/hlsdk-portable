@@ -37,6 +37,7 @@ class SMDData:
     nodes: Dict[int, BoneNode]
     pose: Dict[int, Tuple[float, float, float, float, float, float]]
     vertices: Dict[int, List[Vec3]]
+    warnings: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -100,6 +101,7 @@ def parse_smd(path: Path) -> SMDData:
 
     nodes: Dict[int, BoneNode] = {}
     folded_names: Dict[str, int] = {}
+    node_warnings: List[str] = []
     for line_number, line in enumerate(lines[nodes_start + 1:nodes_end], nodes_start + 2):
         if not line.strip():
             continue
@@ -112,9 +114,25 @@ def parse_smd(path: Path) -> SMDData:
         except ValueError as exc:
             raise ValueError("{}:{}: invalid bone index/parent".format(path, line_number)) from exc
         name = parts[1]
-        if index in nodes:
-            raise ValueError("{}:{}: duplicate bone index {}".format(path, line_number, index))
         folded = name.casefold()
+        previous = nodes.get(index)
+        if previous is not None:
+            # Some decompiled/hand-edited ragdoll SMDs repeat a node index
+            # and name with a corrected parent later in the nodes table.
+            # A skeleton frame can only contain one transform for that index,
+            # so retain one node and use the final declaration as authoritative.
+            # Reuse of an index for a different name is still ambiguous/invalid.
+            if previous.name.casefold() != folded:
+                raise ValueError(
+                    "{}:{}: duplicate bone index {} changes name from {!r} to {!r}".format(
+                        path, line_number, index, previous.name, name))
+            if previous.parent != parent:
+                node_warnings.append(
+                    "{}:{}: repeated node index {} ({!r}); using final parent {} "
+                    "instead of {}".format(
+                        path, line_number, index, name, parent, previous.parent))
+            nodes[index] = BoneNode(index, name, parent)
+            continue
         if folded in folded_names:
             raise ValueError("{}:{}: duplicate bone name {!r}".format(path, line_number, name))
         nodes[index] = BoneNode(index, name, parent)
@@ -191,7 +209,8 @@ def parse_smd(path: Path) -> SMDData:
 
     if not vertices:
         raise ValueError("{}: triangles section contains no valid SMD vertices".format(path))
-    return SMDData(nodes=nodes, pose=pose, vertices=vertices)
+    return SMDData(
+        nodes=nodes, pose=pose, vertices=vertices, warnings=node_warnings)
 
 
 def _strip_qci_comments(text: str) -> str:
@@ -656,6 +675,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("smd2jrag: error: {}".format(exc), file=sys.stderr)
         return 2
 
+    for warning in smd.warnings:
+        print("Warning: {}".format(warning), file=sys.stderr)
     for warning in unbound_qci_directives(smd, qci):
         print("Warning: {}".format(warning), file=sys.stderr)
 
