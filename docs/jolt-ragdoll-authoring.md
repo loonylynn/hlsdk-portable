@@ -148,11 +148,15 @@ physical joint behavior.
 ## Repeated SMD node declarations
 
 Some decompiled or manually edited SMD files repeat a numeric node index with
-the same bone name but a different parent. A skeleton frame can only provide
-one transform for that numeric index, so the parser keeps the final declaration
-in the `nodes` section and prints a warning describing the previous and final
-parent. Repeated indices that change to a different bone name remain errors;
-the tool never guesses which bone the transform or triangle weights refer to.
+the same bone name but a different parent. The parser keeps the final
+declaration in the `nodes` section and prints a warning describing the
+previous and final parent. These files may also repeat that ID's transform
+record in a skeleton frame; when (and only when) the ID is a confirmed
+same-name duplicate in `nodes`, the parser keeps the final transform in each
+frame and reports the choice. Duplicate transforms for all other IDs remain
+errors. Repeated node indices that change to a different bone name are also
+errors; the tool never guesses which bone the transform or triangle weights
+refer to.
 
 The supplied Scientist `ragdoll.smd` contains three repeated same-name indices
 (`61`, `71`, and `81`). The later declarations are used for its skeleton
