@@ -1936,11 +1936,13 @@ int NPCPhysics_ApplyBlastImpulse(
 			totalRagdollMass += mass;
 	}
 
-	// Match the nillerusr Source HL1 radius-damage model: aim from the
-	// explosion to the entity's BodyTarget, calculate one character-level
-	// blast impulse, and apply it to the ragdoll's main physics body at the
-	// explosion origin. RadiusDamage has already performed the entity-level
-	// brush/solid visibility test and damage-distance calculation.
+	// A ragdoll is a constrained group of independent bodies. Sending the
+	// entire character impulse into the small pelvis body saturates its linear
+	// velocity limit and creates a large off-center torque that the joints
+	// and floor contacts immediately fight. Apply most of the same total
+	// momentum across all body masses (a shared character-level delta-v), then
+	// apply a smaller share to the body nearest BodyTarget for a localized
+	// rotational response.
 	Vec3 blastDirection(
 		targetPoint[0] - origin[0],
 		targetPoint[1] - origin[1],
@@ -1952,8 +1954,7 @@ int NPCPhysics_ApplyBlastImpulse(
 		blastDirection /= directionLength;
 
 	// Source's explosive force uses a 75 kg reference character at
-	// 4 units/sec per damage point, capped at a 400 units/sec reference
-	// speed. Apply its small per-victim variation after the cap.
+	// 4 units/sec per damage point, capped at a 400 units/sec reference speed.
 	const float baseImpulse = (std::min)( blastDamage * 300.0f, 30000.0f );
 	const float randomScale = RANDOM_FLOAT( 0.85f, 1.15f );
 	const float scaledImpulse = baseImpulse * randomScale * blastScale;
@@ -1961,24 +1962,80 @@ int NPCPhysics_ApplyBlastImpulse(
 		return 0;
 
 	const Vec3 impulse = blastDirection * scaledImpulse;
-	const RVec3 applicationPoint( origin[0], origin[1], origin[2] );
-	const Vec3 velocityBefore = bodyInterface.GetLinearVelocity( impulseBody );
-	const Vec3 angularBefore = bodyInterface.GetAngularVelocity( impulseBody );
-
-	bodyInterface.ActivateBody( impulseBody );
-	// ApplyForceOffset in Source applies the damage force at the explosion's
-	// world position. Jolt AddImpulse takes the corresponding world-space point.
-	// Keeping this lever arm is important: applying at a body surface or center
-	// removes the broad rotational response that the Source path produces.
-	bodyInterface.AddImpulse( impulseBody, impulse, applicationPoint );
-
-	const Vec3 velocityAfter = bodyInterface.GetLinearVelocity( impulseBody );
-	const Vec3 angularAfter = bodyInterface.GetAngularVelocity( impulseBody );
-	const RVec3 bodyPosition = bodyInterface.GetPosition( impulseBody );
+	const Vec3 distributedImpulse = impulse * 0.85f;
+	const Vec3 sharedVelocityDelta = distributedImpulse / totalRagdollMass;
 	const BodyID rootBody = targetRagdoll->physicsRagdoll->GetBodyID( targetRagdoll->rootElement );
+
+	// BodyTarget is normally around the torso. Find the physical part closest
+	// to that point instead of always striking the pelvis.
+	int impactBodyIndex = targetRagdoll->rootElement;
+	float closestDistanceSquared = FLT_MAX;
+	for( int body = 0; body < targetRagdoll->bodyCount; ++body )
+	{
+		const BodyID bodyID = targetRagdoll->physicsRagdoll->GetBodyID( body );
+		if( bodyID.IsInvalid() )
+			continue;
+
+		const RVec3 position = bodyInterface.GetPosition( bodyID );
+		const Vec3 offset(
+			targetPoint[0] - float( position.GetX() ),
+			targetPoint[1] - float( position.GetY() ),
+			targetPoint[2] - float( position.GetZ() ) );
+		const float distanceSquared = offset.LengthSq();
+		if( std::isfinite( distanceSquared ) && distanceSquared < closestDistanceSquared )
+		{
+			closestDistanceSquared = distanceSquared;
+			impactBodyIndex = body;
+		}
+	}
+
+	const BodyID impactBody = targetRagdoll->physicsRagdoll->GetBodyID( impactBodyIndex );
+	const float impactBodyMass = targetRagdoll->bodyMasses[impactBodyIndex];
+	if( impactBody.IsInvalid() || !std::isfinite( impactBodyMass ) || impactBodyMass <= 0.0f )
+		return 0;
+
+	const Vec3 velocityBefore = bodyInterface.GetLinearVelocity( impactBody );
+	const Vec3 angularBefore = bodyInterface.GetAngularVelocity( impactBody );
+
+	for( int body = 0; body < targetRagdoll->bodyCount; ++body )
+	{
+		const float mass = targetRagdoll->bodyMasses[body];
+		const BodyID bodyID = targetRagdoll->physicsRagdoll->GetBodyID( body );
+		if( bodyID.IsInvalid() || !std::isfinite( mass ) || mass <= 0.0f )
+			continue;
+
+		const RVec3 position = bodyInterface.GetPosition( bodyID );
+		const Vec3 bodyImpulse = sharedVelocityDelta * mass;
+		bodyInterface.ActivateBody( bodyID );
+		bodyInterface.AddImpulse( bodyID, bodyImpulse, position );
+	}
+
+	// Keep 15% of the total impulse localized at BodyTarget. Clamping the
+	// lever arm prevents a distant explosion origin from spinning the pelvis
+	// at its angular-velocity ceiling.
+	const RVec3 impactPosition = bodyInterface.GetPosition( impactBody );
+	Vec3 leverArm(
+		targetPoint[0] - float( impactPosition.GetX() ),
+		targetPoint[1] - float( impactPosition.GetY() ),
+		targetPoint[2] - float( impactPosition.GetZ() ) );
+	const float leverLength = leverArm.Length();
+	if( leverLength > 16.0f )
+		leverArm *= 16.0f / leverLength;
+	const RVec3 applicationPoint(
+		float( impactPosition.GetX() ) + leverArm.GetX(),
+		float( impactPosition.GetY() ) + leverArm.GetY(),
+		float( impactPosition.GetZ() ) + leverArm.GetZ() );
+
+	const Vec3 localizedImpulse = impulse * 0.15f;
+	bodyInterface.ActivateBody( impactBody );
+	bodyInterface.AddImpulse( impactBody, localizedImpulse, applicationPoint );
+
+	const Vec3 velocityAfter = bodyInterface.GetLinearVelocity( impactBody );
+	const Vec3 angularAfter = bodyInterface.GetAngularVelocity( impactBody );
+	const RVec3 bodyPosition = bodyInterface.GetPosition( impactBody );
 	const RVec3 rootPosition = bodyInterface.GetPosition( rootBody );
-	targetRagdoll->blastDebugBodyID = impulseBody;
-	targetRagdoll->blastDebugBodyIndex = targetRagdoll->rootElement;
+	targetRagdoll->blastDebugBodyID = impactBody;
+	targetRagdoll->blastDebugBodyIndex = impactBodyIndex;
 	targetRagdoll->blastDebugBodyStartPosition = Vec3(
 		float( bodyPosition.GetX() ), float( bodyPosition.GetY() ), float( bodyPosition.GetZ() ) );
 	targetRagdoll->blastDebugRootStartPosition = Vec3(
@@ -1989,13 +2046,25 @@ int NPCPhysics_ApplyBlastImpulse(
 	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
-			"[NPC blast] Immediate velocity: ent=%d body=%d impulse=(%.1f %.1f %.1f) v-before=(%.1f %.1f %.1f) v-after=(%.1f %.1f %.1f) w-before=(%.1f %.1f %.1f) w-after=(%.1f %.1f %.1f).\n",
-			ENTINDEX( targetEntity ), targetRagdoll->rootElement,
+			"[NPC blast] Immediate velocity: ent=%d body=%d impulse=(%.1f %.1f %.1f) v-before=(%.1f %.1f %.1f) v-after=(%.1f %.1f %.1f) w-before=(%.1f %.1f %.1f) w-after=(%.1f %.1f %.1f).\\n",
+			ENTINDEX( targetEntity ), impactBodyIndex,
 			impulse.GetX(), impulse.GetY(), impulse.GetZ(),
 			velocityBefore.GetX(), velocityBefore.GetY(), velocityBefore.GetZ(),
 			velocityAfter.GetX(), velocityAfter.GetY(), velocityAfter.GetZ(),
 			angularBefore.GetX(), angularBefore.GetY(), angularBefore.GetZ(),
 			angularAfter.GetX(), angularAfter.GetY(), angularAfter.GetZ()
+		);
+
+	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT(
+			at_console,
+			"[NPC blast] Distributed character impulse: ent=%d id=%d body=%d mass=%.1f total-mass=%.1f damage=%.1f radius=%.1f impulse=%.1f random=%.2f scale=%.2f origin=(%.1f %.1f %.1f) target=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\\n",
+			ENTINDEX( targetEntity ), targetRagdoll->networkID,
+			impactBodyIndex, impactBodyMass, totalRagdollMass,
+			blastDamage, radius, scaledImpulse, randomScale, blastScale,
+			origin[0], origin[1], origin[2],
+			targetPoint[0], targetPoint[1], targetPoint[2],
+			blastDirection.GetX(), blastDirection.GetY(), blastDirection.GetZ()
 		);
 
 	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
@@ -2186,6 +2255,14 @@ int NPCPhysics_TraceAndApplyImpact(
 	hitPosition[2] = float( impactPoint.GetZ() );
 	*hitEntity = targetEntity;
 	return TRUE;
+}
+
+int NPCPhysics_HasRagdollDefinition( edict_t *ent )
+{
+	if( !NPCPhysics_Enabled() || !NPCPhysics_IsEligibleMonster( ent ) )
+		return FALSE;
+
+	return NPCPhysics_GetRagdollDefinition( ent, false ) ? TRUE : FALSE;
 }
 
 int NPCPhysics_TryCreateRagdoll( edict_t *ent )
