@@ -72,7 +72,7 @@ class JRAGToolTests(unittest.TestCase):
 
     def _run(self, args):
         output = io.StringIO()
-        with contextlib.redirect_stdout(output):
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             result = jragtool.main(args)
         return result, output.getvalue()
 
