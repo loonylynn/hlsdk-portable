@@ -2503,9 +2503,11 @@ namespace
 		for( size_t i = g_ragdolls.size(); i > 0; --i )
 		{
 			NPCPhysicsRagdoll &ragdoll = g_ragdolls[i - 1];
+			// The ragdoll carrier is intentionally SOLID_NOT from the moment
+			// its Jolt bodies are created. Only remove it when the edict is gone,
+			// its serial changes, or the normal gib path hides it with EF_NODRAW.
 			if( !ragdoll.entity || ragdoll.entity->free ||
 				ragdoll.entity->serialnumber != ragdoll.serialNumber ||
-				ragdoll.entity->v.solid == SOLID_NOT ||
 				( ragdoll.entity->v.effects & EF_NODRAW ) )
 			{
 				NPCPhysics_DestroyRagdoll( ragdoll );
