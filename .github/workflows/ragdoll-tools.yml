@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'tools/smd2jrag.py'
+      - 'tools/jragtool.py'
       - 'tools/tests/**'
       - '.github/workflows/ragdoll-tools.yml'
   pull_request:
