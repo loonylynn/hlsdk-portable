@@ -13,6 +13,7 @@
 #include "studio.h"
 #include "cbase.h"
 #include "monsters.h"
+#include "basemonster.h"
 
 
 #include <Jolt/Jolt.h>
@@ -1229,7 +1230,7 @@ namespace
 		return value;
 	}
 
-	static bool NPCPhysics_CreateRagdoll( edict_t *ent )
+	static bool NPCPhysics_CreateRagdoll( edict_t *ent, bool restorePersistentState = false )
 	{
 		if( !ent || ent->free )
 			return NPCPhysics_RagdollSetupFailed( "NPC entity is invalid" );
@@ -1273,6 +1274,63 @@ namespace
 				return NPCPhysics_RagdollSetupFailed( "NPC studio skeleton contains an invalid parent index" );
 			g_engfuncs.pfnGetBonePosition( ent, i, &bonePositions[i][0], &boneAngles[i][0] );
 			boneRotations[i] = NPCPhysics_AnglesToQuaternion( boneAngles[i] );
+		}
+
+		CBaseMonster *persistentMonster = static_cast<CBaseMonster *>( CBaseEntity::Instance( ent ) );
+		bool hasPersistentPose = restorePersistentState && persistentMonster &&
+			persistentMonster->m_iNpcRagdollPersistVersion == NPC_RAGDOLL_PERSIST_VERSION &&
+			persistentMonster->m_iNpcRagdollPersistBoneCount == ragdoll.studioBoneCount &&
+			persistentMonster->m_iNpcRagdollPersistBodyCount ==
+				static_cast<int>( physicsDefinition->bodies.size() ) &&
+			ragdoll.studioBoneCount <= NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES &&
+			static_cast<int>( physicsDefinition->bodies.size() ) <= NPC_RAGDOLL_PERSIST_MAX_BODIES;
+
+		// Validate the full pose and velocity snapshot before using any of it.
+		// Positions are offsets from pev->origin, which the save system rebases
+		// automatically across a landmark transition.
+		if( hasPersistentPose )
+		{
+			for( int bone = 0; bone < ragdoll.studioBoneCount; ++bone )
+			{
+				const float *saved = &persistentMonster->m_flNpcRagdollPersistStudioPose[
+					bone * NPC_RAGDOLL_PERSIST_STUDIO_STRIDE];
+				float quaternionLengthSquared = 0.0f;
+				for( int component = 0; component < NPC_RAGDOLL_PERSIST_STUDIO_STRIDE; ++component )
+					if( !std::isfinite( saved[component] ) )
+						hasPersistentPose = false;
+				for( int component = 3; component < 7; ++component )
+					quaternionLengthSquared += saved[component] * saved[component];
+				if( !std::isfinite( quaternionLengthSquared ) || quaternionLengthSquared < 1.0e-8f )
+					hasPersistentPose = false;
+				if( !hasPersistentPose )
+					break;
+			}
+
+			for( int body = 0; hasPersistentPose &&
+				body < persistentMonster->m_iNpcRagdollPersistBodyCount; ++body )
+			{
+				const float *saved = &persistentMonster->m_flNpcRagdollPersistBodyVelocity[
+					body * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE];
+				for( int component = 0; component < NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE; ++component )
+					if( !std::isfinite( saved[component] ) )
+						hasPersistentPose = false;
+			}
+		}
+
+		if( hasPersistentPose )
+		{
+			const ::Vector carrierOrigin = ent->v.origin;
+			for( int bone = 0; bone < ragdoll.studioBoneCount; ++bone )
+			{
+				const float *saved = &persistentMonster->m_flNpcRagdollPersistStudioPose[
+					bone * NPC_RAGDOLL_PERSIST_STUDIO_STRIDE];
+				bonePositions[bone] = carrierOrigin + ::Vector( saved[0], saved[1], saved[2] );
+				boneRotations[bone] = Quat( saved[3], saved[4], saved[5], saved[6] ).Normalized();
+			}
+			ALERT( at_console,
+				"[NPC physics] Restoring saved ragdoll pose: entity=%d bones=%d bodies=%d.\n",
+				ENTINDEX( ent ), ragdoll.studioBoneCount,
+				static_cast<int>( physicsDefinition->bodies.size() ) );
 		}
 
 		// Resolve the model-specific physical rig by bone name. The file's
@@ -1566,7 +1624,7 @@ namespace
 
 		NPCPhysicsLivePose *livePose = NULL;
 		const int entityIndex = ENTINDEX( ent );
-		if( entityIndex >= 0 && entityIndex < (int)g_livePoses.size() )
+		if( !hasPersistentPose && entityIndex >= 0 && entityIndex < (int)g_livePoses.size() )
 		{
 			NPCPhysicsLivePose &candidate = g_livePoses[entityIndex];
 			if( candidate.serialNumber == ent->serialnumber &&
@@ -1630,10 +1688,31 @@ namespace
 			bodyInterface.SetLinearVelocity( bodyID, linearVelocity );
 			bodyInterface.SetAngularVelocity( bodyID, angularVelocity );
 		}
+
+		// A transferred corpse resumes with the velocity of each original body,
+		// not with the default animation-derived velocity of the carrier entity.
+		if( hasPersistentPose )
+		{
+			for( int body = 0; body < ragdoll.bodyCount; ++body )
+			{
+				const float *saved = &persistentMonster->m_flNpcRagdollPersistBodyVelocity[
+					body * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE];
+				Vec3 linearVelocity( saved[0], saved[1], saved[2] );
+				Vec3 angularVelocity( saved[3], saved[4], saved[5] );
+				linearVelocity = NPCPhysics_ClampVector( linearVelocity, RAGDOLL_VELOCITY_LIMIT );
+				angularVelocity = NPCPhysics_ClampVector( angularVelocity, RAGDOLL_ANGULAR_VELOCITY_LIMIT );
+				const BodyID bodyID = ragdoll.physicsRagdoll->GetBodyID( body );
+				bodyInterface.SetLinearVelocity( bodyID, linearVelocity );
+				bodyInterface.SetAngularVelocity( bodyID, angularVelocity );
+				bodyInterface.ActivateBody( bodyID );
+			}
+		}
+
 		// Only replace the animated corpse after all physics bodies and joints
 		// were built successfully. Freeze the death frame so non-physics bones
 		// remain a stable fallback and inherit from simulated parents.
 		ent->v.iuser4 = 1;
+		ent->v.effects &= ~EF_NODRAW;
 		ent->v.solid = SOLID_NOT;
 		ent->v.movetype = MOVETYPE_NONE;
 		ent->v.takedamage = DAMAGE_NO;
@@ -1647,7 +1726,9 @@ namespace
 		g_ragdolls.push_back( ragdoll );
 		ALERT(
 			at_console,
-			"[NPC physics] Created articulated Jolt ragdoll: %d physics bodies for %d studio bones.\n",
+			hasPersistentPose
+				? "[NPC physics] Restored articulated Jolt ragdoll: %d physics bodies for %d studio bones.\n"
+				: "[NPC physics] Created articulated Jolt ragdoll: %d physics bodies for %d studio bones.\n",
 			ragdoll.bodyCount,
 			ragdoll.studioBoneCount
 		);
@@ -1733,6 +1814,85 @@ namespace
 				}
 			MESSAGE_END();
 		}
+	}
+
+	static void NPCPhysics_SaveRagdollStateInternal( edict_t *ent )
+	{
+		if( !ent || ent->free || !g_npcPhysics.initialized || g_ragdolls.empty() )
+			return;
+
+		CBaseMonster *monster = static_cast<CBaseMonster *>( CBaseEntity::Instance( ent ) );
+		if( !monster )
+			return;
+
+		NPCPhysicsRagdoll *ragdoll = NULL;
+		for( size_t i = 0; i < g_ragdolls.size(); ++i )
+			if( g_ragdolls[i].entity == ent &&
+				g_ragdolls[i].serialNumber == ent->serialnumber &&
+				g_ragdolls[i].addedToPhysicsSystem &&
+				g_ragdolls[i].physicsRagdoll.GetPtr() )
+			{
+				ragdoll = &g_ragdolls[i];
+				break;
+			}
+
+		if( !ragdoll )
+			return;
+
+		if( ragdoll->studioBoneCount <= 0 ||
+			ragdoll->studioBoneCount > NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES ||
+			ragdoll->bodyCount <= 0 ||
+			ragdoll->bodyCount > NPC_RAGDOLL_PERSIST_MAX_BODIES )
+		{
+			monster->m_iNpcRagdollPersistVersion = 0;
+			return;
+		}
+
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		const Vec3 rootBoneOrigin = NPCPhysics_GetRootBoneOrigin( *ragdoll, bodyInterface );
+		NPCPhysics_UpdateMappedStudioPose( *ragdoll, bodyInterface, rootBoneOrigin );
+		const Vec3 carrierOrigin( ent->v.origin[0], ent->v.origin[1], ent->v.origin[2] );
+
+		for( int bone = 0; bone < ragdoll->studioBoneCount; ++bone )
+		{
+			const Mat44 &transform = ragdoll->studioPoseModelSpace[bone];
+			const Vec3 relativePosition =
+				rootBoneOrigin + transform.GetTranslation() - carrierOrigin;
+			const Quat rotation = transform.GetQuaternion().Normalized();
+			float *saved = &monster->m_flNpcRagdollPersistStudioPose[
+				bone * NPC_RAGDOLL_PERSIST_STUDIO_STRIDE];
+			saved[0] = relativePosition.GetX();
+			saved[1] = relativePosition.GetY();
+			saved[2] = relativePosition.GetZ();
+			saved[3] = rotation.GetX();
+			saved[4] = rotation.GetY();
+			saved[5] = rotation.GetZ();
+			saved[6] = rotation.GetW();
+		}
+
+		for( int body = 0; body < ragdoll->bodyCount; ++body )
+		{
+			const BodyID bodyID = ragdoll->physicsRagdoll->GetBodyID( body );
+			const Vec3 linear = bodyInterface.GetLinearVelocity( bodyID );
+			const Vec3 angular = bodyInterface.GetAngularVelocity( bodyID );
+			float *saved = &monster->m_flNpcRagdollPersistBodyVelocity[
+				body * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE];
+			saved[0] = linear.GetX();
+			saved[1] = linear.GetY();
+			saved[2] = linear.GetZ();
+			saved[3] = angular.GetX();
+			saved[4] = angular.GetY();
+			saved[5] = angular.GetZ();
+		}
+
+		monster->m_iNpcRagdollPersistVersion = NPC_RAGDOLL_PERSIST_VERSION;
+		monster->m_iNpcRagdollPersistBoneCount = ragdoll->studioBoneCount;
+		monster->m_iNpcRagdollPersistBodyCount = ragdoll->bodyCount;
+
+		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT( at_console,
+				"[NPC physics] Saved transferable ragdoll: entity=%d bones=%d bodies=%d.\n",
+				ENTINDEX( ent ), ragdoll->studioBoneCount, ragdoll->bodyCount );
 	}
 
 	static int NPCPhysics_PhysicsEntity( edict_t *ent )
@@ -1877,6 +2037,11 @@ namespace
 			}
 		}
 	}
+}
+
+void NPCPhysics_SaveRagdollState( edict_t *ent )
+{
+	NPCPhysics_SaveRagdollStateInternal( ent );
 }
 
 int NPCPhysics_IsRagdollEntity( edict_t *ent )
@@ -2262,12 +2427,41 @@ int NPCPhysics_HasRagdollDefinition( edict_t *ent )
 	return NPCPhysics_GetRagdollDefinition( ent, false ) ? TRUE : FALSE;
 }
 
+int NPCPhysics_RestorePersistentRagdoll( edict_t *ent )
+{
+	if( !NPCPhysics_Enabled() || !NPCPhysics_IsEligibleMonster( ent ) ||
+		NPCPhysics_IsRagdollEntity( ent ) )
+		return FALSE;
+
+	CBaseMonster *monster = static_cast<CBaseMonster *>( CBaseEntity::Instance( ent ) );
+	if( !monster ||
+		monster->m_iNpcRagdollPersistVersion != NPC_RAGDOLL_PERSIST_VERSION ||
+		monster->m_iNpcRagdollPersistBoneCount <= 0 ||
+		monster->m_iNpcRagdollPersistBoneCount > NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES ||
+		monster->m_iNpcRagdollPersistBodyCount <= 0 ||
+		monster->m_iNpcRagdollPersistBodyCount > NPC_RAGDOLL_PERSIST_MAX_BODIES )
+		return FALSE;
+
+	if( !NPCPhysics_CreateRagdoll( ent, true ) )
+	{
+		ALERT( at_console,
+			"[NPC physics] Could not restore transferred ragdoll for entity %d; keeping saved pose data for retry.\n",
+			ENTINDEX( ent ) );
+		return FALSE;
+	}
+
+	monster->m_iNpcRagdollPersistVersion = 0;
+	monster->m_iNpcRagdollPersistBoneCount = 0;
+	monster->m_iNpcRagdollPersistBodyCount = 0;
+	return TRUE;
+}
+
 int NPCPhysics_TryCreateRagdoll( edict_t *ent )
 {
 	if( !NPCPhysics_Enabled() || !NPCPhysics_IsEligibleMonster( ent ) )
 		return FALSE;
 
-	if( !NPCPhysics_CreateRagdoll( ent ) )
+	if( !NPCPhysics_CreateRagdoll( ent, false ) )
 	{
 		ALERT( at_console, "[NPC physics] Jolt ragdoll creation failed; using GoldSrc death animation.\n" );
 		return FALSE;
@@ -2375,19 +2569,6 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 
 void NPCPhysics_ResetMap( void )
 {
-	for( size_t i = 0; i < g_ragdolls.size(); ++i )
-	{
-		NPCPhysicsRagdoll &ragdoll = g_ragdolls[i];
-		if( ragdoll.entity && !ragdoll.entity->free &&
-			ragdoll.entity->serialnumber == ragdoll.serialNumber )
-		{
-			ragdoll.entity->v.effects |= EF_NODRAW;
-			ragdoll.entity->v.iuser4 = 0;
-			ragdoll.entity->v.solid = SOLID_NOT;
-			ragdoll.entity->v.movetype = MOVETYPE_NONE;
-		}
-	}
-
 	NPCPhysics_DestroyAllRagdolls();
 	NPCPhysics_DestroyBrushColliders();
 	NPCPhysics_DestroyWorldCollider();
