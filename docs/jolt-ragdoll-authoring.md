@@ -153,8 +153,9 @@ declaration in the `nodes` section and prints a warning describing the
 previous and final parent. These files may also repeat that ID's transform
 record in a skeleton frame; when (and only when) the ID is a confirmed
 same-name duplicate in `nodes`, the parser keeps the final transform in each
-frame and reports the choice. Duplicate transforms for all other IDs remain
-errors. Repeated node indices that change to a different bone name are also
+frame and reports the choice. It accepts no more transform records for an ID
+than there are matching node declarations. Duplicate transforms for all other
+IDs remain errors. Repeated node indices that change to a different bone name are also
 errors; the tool never guesses which bone the transform or triangle weights
 refer to.
 
