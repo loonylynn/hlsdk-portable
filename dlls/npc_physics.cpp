@@ -2501,6 +2501,108 @@ int NPCPhysics_TraceAndApplyImpact(
 	return TRUE;
 }
 
+int NPCPhysics_ApplyBulletImpulseToRagdoll(
+	edict_t *targetEntity,
+	const float *impactPosition,
+	const float *direction,
+	float impulseMagnitude )
+{
+	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || !targetEntity ||
+		targetEntity->free || !impactPosition || !direction ||
+		!std::isfinite( impulseMagnitude ) || impulseMagnitude <= 0.0f )
+		return FALSE;
+
+	NPCPhysicsRagdoll *targetRagdoll = NULL;
+	for( size_t i = 0; i < g_ragdolls.size(); ++i )
+	{
+		NPCPhysicsRagdoll &ragdoll = g_ragdolls[i];
+		if( ragdoll.entity == targetEntity &&
+			ragdoll.serialNumber == targetEntity->serialnumber &&
+			ragdoll.addedToPhysicsSystem &&
+			ragdoll.physicsRagdoll.GetPtr() )
+		{
+			targetRagdoll = &ragdoll;
+			break;
+		}
+	}
+	if( !targetRagdoll || targetRagdoll->bodyCount <= 0 )
+		return FALSE;
+
+	Vec3 impulseDirection( direction[0], direction[1], direction[2] );
+	if( !std::isfinite( impulseDirection.GetX() ) ||
+		!std::isfinite( impulseDirection.GetY() ) ||
+		!std::isfinite( impulseDirection.GetZ() ) )
+		return FALSE;
+	const float directionLength = impulseDirection.Length();
+	if( !std::isfinite( directionLength ) || directionLength <= 0.001f )
+		return FALSE;
+	impulseDirection /= directionLength;
+
+	Vec3 impulse = impulseDirection * impulseMagnitude;
+	impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
+	if( impulse.LengthSq() <= 1.0e-6f )
+		return FALSE;
+
+	BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+	int impactBodyIndex = -1;
+	float closestDistanceSquared = FLT_MAX;
+	RVec3 closestBodyPosition;
+	for( int body = 0; body < targetRagdoll->bodyCount; ++body )
+	{
+		const BodyID bodyID = targetRagdoll->physicsRagdoll->GetBodyID( body );
+		const RVec3 bodyPosition = bodyInterface.GetPosition( bodyID );
+		const float dx = float( bodyPosition.GetX() ) - impactPosition[0];
+		const float dy = float( bodyPosition.GetY() ) - impactPosition[1];
+		const float dz = float( bodyPosition.GetZ() ) - impactPosition[2];
+		const float distanceSquared = dx * dx + dy * dy + dz * dz;
+		if( distanceSquared < closestDistanceSquared )
+		{
+			closestDistanceSquared = distanceSquared;
+			impactBodyIndex = body;
+			closestBodyPosition = bodyPosition;
+		}
+	}
+	if( impactBodyIndex < 0 )
+		return FALSE;
+
+	const BodyID impactBody = targetRagdoll->physicsRagdoll->GetBodyID( impactBodyIndex );
+	Vec3 leverArm(
+		impactPosition[0] - float( closestBodyPosition.GetX() ),
+		impactPosition[1] - float( closestBodyPosition.GetY() ),
+		impactPosition[2] - float( closestBodyPosition.GetZ() ) );
+	const float leverLength = leverArm.Length();
+	if( leverLength > 16.0f )
+		leverArm *= 16.0f / leverLength;
+
+	const RVec3 applicationPoint(
+		float( closestBodyPosition.GetX() ) + leverArm.GetX(),
+		float( closestBodyPosition.GetY() ) + leverArm.GetY(),
+		float( closestBodyPosition.GetZ() ) + leverArm.GetZ() );
+
+	bodyInterface.ActivateBody( impactBody );
+	bodyInterface.AddImpulse( impactBody, impulse, applicationPoint );
+
+	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
+		targetRagdoll->nextPoseTime = gpGlobals->time;
+
+	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+	{
+		const float bodyMass = impactBodyIndex < static_cast<int>( targetRagdoll->bodyMasses.size() )
+			? targetRagdoll->bodyMasses[impactBodyIndex] : 0.0f;
+		ALERT(
+			at_console,
+			"[NPC bullet] Applied deferred lethal-hit impulse: entity=%d id=%d body=%d mass=%.2f impulse=(%.1f %.1f %.1f) point=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\\n",
+			ENTINDEX( targetEntity ), targetRagdoll->networkID,
+			impactBodyIndex, bodyMass,
+			impulse.GetX(), impulse.GetY(), impulse.GetZ(),
+			impactPosition[0], impactPosition[1], impactPosition[2],
+			impulseDirection.GetX(), impulseDirection.GetY(), impulseDirection.GetZ()
+		);
+	}
+
+	return TRUE;
+}
+
 int NPCPhysics_HasRagdollDefinition( edict_t *ent )
 {
 	if( !NPCPhysics_Enabled() || !NPCPhysics_IsEligibleMonster( ent ) )
