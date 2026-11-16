@@ -10,6 +10,7 @@ on:
   pull_request:
     paths:
       - 'tools/smd2jrag.py'
+      - 'tools/jragtool.py'
       - 'tools/tests/**'
       - '.github/workflows/ragdoll-tools.yml'
 
@@ -23,7 +24,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Compile converter
-        run: python -m py_compile tools/smd2jrag.py
+      - name: Compile authoring tools
+        run: python -m py_compile tools/smd2jrag.py tools/jragtool.py
       - name: Run converter tests
         run: python -m unittest discover -s tools/tests -v
