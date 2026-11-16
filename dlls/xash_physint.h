@@ -148,6 +148,8 @@ typedef xash_trace_s xash_trace_t;
 int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks );
 int NPCPhysics_HasRagdollDefinition( edict_t *ent );
 int NPCPhysics_TryCreateRagdoll( edict_t *ent );
+int NPCPhysics_RestorePersistentRagdoll( edict_t *ent );
+void NPCPhysics_SaveRagdollState( edict_t *ent );
 int NPCPhysics_IsRagdollEntity( edict_t *ent );
 int NPCPhysics_ApplyBlastImpulse(
 	edict_t *targetEntity,
