@@ -41,6 +41,7 @@ python3 tools/jragtool.py validate "$SCIENTIST/scientist.jrag" \
 Install the validated sidecar next to the compiled model in the active game:
 
 ```bash
+SCIENTIST="/media/lucasg/wii_gamecube hdd/Scientist"
 ENGINE_ROOT="/media/lucasg/wii_gamecube hdd/HALF-LIFE PROJECT/xash3d-fwgs-linux-i386"
 GAME="$ENGINE_ROOT/valve"
 install -Dm644 "$SCIENTIST/scientist.jrag" "$GAME/models/scientist.jrag"
@@ -132,6 +133,17 @@ collision geometry. This preserves the physical hierarchy when helper, finger,
 neck, or other non-physical studio bones sit between rigid bodies.
 `$rootbone` may be a non-physical skeleton anchor above the first physical
 body.
+
+A QC/QCI can contain a joint directive for a bone that exists in the SMD
+skeleton but has no collision mesh. There is no Jolt body or joint to receive
+that directive, so the tool prints a warning and ignores it. It does not guess
+that the constraint should be transferred to a nearby physical bone. A
+directive naming a bone absent from the SMD remains an error. For the supplied
+Scientist source, `Bip02 Spine2` has a QCI constraint but no collision hull;
+the torso hull is assigned to `Bip02 Spine1`. The `Spine2` directive is
+therefore reported as ignored, and does not constrain the `Spine1` body. Add
+an explicit `Spine1` constraint in the QCI only if that is the intended
+physical joint behavior.
 
 The generated hull point cloud is the unique set of SMD collision-mesh vertices
 assigned to each bone, transformed into bone-local space. Each physical bone
