@@ -600,10 +600,11 @@ void CBaseMonster::Killed( entvars_t *pevAttacker, int iGib )
 	// An authored Jolt rig should get the chance to take over a normal
 	// lethal death before GoldSrc's overkill threshold turns it into gibs.
 	// Explicit GIB_ALWAYS requests still retain the original gib behavior.
+	const BOOL shouldGib = ShouldGibMonster( iGib );
 	const BOOL hasJoltRagdoll = ( pev->flags & FL_MONSTER ) &&
 		iGib != GIB_ALWAYS && NPCPhysics_HasRagdollDefinition( ENT( pev ) );
 
-	if( ShouldGibMonster( iGib ) && !hasJoltRagdoll )
+	if( shouldGib && !hasJoltRagdoll )
 	{
 		CallGibMonster();
 		return;
@@ -622,7 +623,7 @@ void CBaseMonster::Killed( entvars_t *pevAttacker, int iGib )
 	}
 
 	// If the Jolt handoff was unavailable or failed, retain ordinary gibbing.
-	if( ShouldGibMonster( iGib ) )
+	if( shouldGib )
 	{
 		CallGibMonster();
 		return;
@@ -1221,7 +1222,7 @@ void RadiusDamage( Vector vecSrc, entvars_t *pevInflictor, entvars_t *pevAttacke
 				{
 					ALERT(
 						at_console,
-						"[NPC blast] Visible non-damageable ragdoll: target=%d fraction=%.3f.\\n",
+						"[NPC blast] Visible non-damageable ragdoll: target=%d fraction=%.3f.\n",
 						ENTINDEX( pEntity->edict() ), tr.flFraction
 					);
 				}
