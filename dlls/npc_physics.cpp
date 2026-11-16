@@ -28,6 +28,7 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/CollisionGroup.h>
 #include <Jolt/Physics/Constraints/SixDOFConstraint.h>
@@ -53,6 +54,7 @@ namespace
 
 	static constexpr ObjectLayer RAGDOLL_OBJECT_LAYER = 0;
 	static constexpr ObjectLayer WORLD_STATIC_OBJECT_LAYER = 1;
+	// Shared by moving BSP brushes and the living-actor hull proxies.
 	static constexpr ObjectLayer BRUSH_KINEMATIC_OBJECT_LAYER = 2;
 	static constexpr uint32_t RAGDOLL_MAX_BODIES = 4096;
 	static constexpr uint32_t RAGDOLL_MAX_BODY_PAIRS = 8192;
@@ -84,8 +86,9 @@ namespace
 		{
 			// The world BSP and inline brush models are triangle meshes. Jolt
 			// does not support mesh-vs-mesh contacts when one mesh is kinematic.
-			// Only the convex articulated ragdoll bodies need contacts with either
-			// class of environment geometry.
+			// Living actors are represented by kinematic box hulls on the same
+			// layer. Only convex articulated ragdoll bodies need contacts with
+			// environment geometry or actor hulls.
 			return layer1 == RAGDOLL_OBJECT_LAYER || layer2 == RAGDOLL_OBJECT_LAYER;
 		}
 	};
@@ -186,6 +189,28 @@ namespace
 		}
 	};
 
+	struct NPCPhysicsActorCollider
+	{
+		int entityIndex;
+		int serialNumber;
+		BodyID bodyID;
+		Vec3 position;
+		Vec3 centerOffset;
+		Vec3 halfExtents;
+		bool wasMoving;
+
+		NPCPhysicsActorCollider()
+			: entityIndex( -1 ),
+			  serialNumber( 0 ),
+			  bodyID(),
+			  position( 0.0f, 0.0f, 0.0f ),
+			  centerOffset( 0.0f, 0.0f, 0.0f ),
+			  halfExtents( 0.0f, 0.0f, 0.0f ),
+			  wasMoving( false )
+		{
+		}
+	};
+
 	struct NPCPhysicsRagdoll
 	{
 		edict_t *entity;
@@ -271,6 +296,7 @@ namespace
 	static xash_brush_collision_mesh_api_s *g_brushCollisionMeshAPI = NULL;
 	static std::vector<NPCPhysicsBrushModelShape> g_brushModelShapes;
 	static std::vector<NPCPhysicsBrushCollider> g_brushColliders;
+	static std::vector<NPCPhysicsActorCollider> g_actorColliders;
 	static bool g_brushCollisionUnavailableLogged = false;
 	static bool g_brushCollisionStatusLogged = false;
 	static BodyID g_worldCollisionBodyID;
@@ -894,6 +920,201 @@ namespace
 			{
 				NPCPhysics_DestroyBrushCollider( g_brushColliders[i - 1] );
 				g_brushColliders.erase( g_brushColliders.begin() + ( i - 1 ) );
+			}
+		}
+	}
+
+	static void NPCPhysics_DestroyActorCollider( NPCPhysicsActorCollider &collider )
+	{
+		if( !g_npcPhysics.initialized || collider.bodyID.IsInvalid() )
+			return;
+
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		if( bodyInterface.IsAdded( collider.bodyID ) )
+			bodyInterface.RemoveBody( collider.bodyID );
+		bodyInterface.DestroyBody( collider.bodyID );
+		collider.bodyID = BodyID();
+	}
+
+	static void NPCPhysics_DestroyActorColliders()
+	{
+		for( size_t i = 0; i < g_actorColliders.size(); ++i )
+			NPCPhysics_DestroyActorCollider( g_actorColliders[i] );
+		g_actorColliders.clear();
+	}
+
+	static int NPCPhysics_FindActorCollider( int entityIndex )
+	{
+		for( size_t i = 0; i < g_actorColliders.size(); ++i )
+			if( g_actorColliders[i].entityIndex == entityIndex )
+				return static_cast<int>( i );
+		return -1;
+	}
+
+	static bool NPCPhysics_IsActorColliderCandidate( edict_t *ent )
+	{
+		if( !ent || ent->free )
+			return false;
+
+		const int flags = ent->v.flags;
+		if( !( flags & ( FL_CLIENT | FL_MONSTER ) ) ||
+			( flags & ( FL_KILLME | FL_DORMANT ) ) ||
+			NPCPhysics_IsRagdollEntity( ent ) )
+			return false;
+
+		if( ent->v.deadflag != DEAD_NO || ent->v.health <= 0.0f )
+			return false;
+
+		if( ent->v.movetype != MOVETYPE_WALK &&
+			ent->v.movetype != MOVETYPE_STEP &&
+			ent->v.movetype != MOVETYPE_FLY )
+			return false;
+
+		return ent->v.solid == SOLID_SLIDEBOX || ent->v.solid == SOLID_BBOX;
+	}
+
+	static void NPCPhysics_UpdateActorColliders()
+	{
+		if( !g_npcPhysics.initialized || !gpGlobals )
+			return;
+
+		std::vector<int> presentEntities;
+		presentEntities.reserve( 32 );
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+
+		float frameTime = gpGlobals->frametime;
+		if( frameTime < 0.0f )
+			frameTime = 0.0f;
+		if( frameTime > 0.1f )
+			frameTime = 0.1f;
+
+		for( int entityIndex = 1; entityIndex < gpGlobals->maxEntities; ++entityIndex )
+		{
+			edict_t *ent = INDEXENT( entityIndex );
+			if( !NPCPhysics_IsActorColliderCandidate( ent ) )
+				continue;
+
+			const Vec3 mins( ent->v.mins[0], ent->v.mins[1], ent->v.mins[2] );
+			const Vec3 maxs( ent->v.maxs[0], ent->v.maxs[1], ent->v.maxs[2] );
+			const Vec3 halfExtents = ( maxs - mins ) * 0.5f;
+			const Vec3 centerOffset = ( maxs + mins ) * 0.5f;
+			if( !std::isfinite( halfExtents.GetX() ) ||
+				!std::isfinite( halfExtents.GetY() ) ||
+				!std::isfinite( halfExtents.GetZ() ) ||
+				!std::isfinite( centerOffset.GetX() ) ||
+				!std::isfinite( centerOffset.GetY() ) ||
+				!std::isfinite( centerOffset.GetZ() ) ||
+				halfExtents.GetX() < 1.0f || halfExtents.GetY() < 1.0f ||
+				halfExtents.GetZ() < 1.0f ||
+				halfExtents.GetX() > 128.0f || halfExtents.GetY() > 128.0f ||
+				halfExtents.GetZ() > 128.0f )
+				continue;
+
+			presentEntities.push_back( entityIndex );
+			const Vec3 position(
+				ent->v.origin[0] + centerOffset.GetX(),
+				ent->v.origin[1] + centerOffset.GetY(),
+				ent->v.origin[2] + centerOffset.GetZ() );
+
+			int colliderIndex = NPCPhysics_FindActorCollider( entityIndex );
+			if( colliderIndex >= 0 )
+			{
+				NPCPhysicsActorCollider &existing = g_actorColliders[colliderIndex];
+				const Vec3 extentDelta = halfExtents - existing.halfExtents;
+				if( existing.serialNumber != ent->serialnumber ||
+					extentDelta.LengthSq() > 0.0001f )
+				{
+					NPCPhysics_DestroyActorCollider( existing );
+					g_actorColliders.erase( g_actorColliders.begin() + colliderIndex );
+					colliderIndex = -1;
+				}
+			}
+
+			if( colliderIndex < 0 )
+			{
+				BoxShapeSettings shapeSettings( halfExtents );
+				Shape::ShapeResult shapeResult = shapeSettings.Create();
+				if( !shapeResult.IsValid() )
+					continue;
+
+				BodyCreationSettings bodySettings(
+					shapeResult.Get(),
+					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
+					Quat::sIdentity(),
+					EMotionType::Kinematic,
+					BRUSH_KINEMATIC_OBJECT_LAYER
+				);
+				bodySettings.mFriction = 0.65f;
+				bodySettings.mRestitution = 0.0f;
+
+				const BodyID bodyID = bodyInterface.CreateAndAddBody(
+					bodySettings,
+					EActivation::Activate
+				);
+				if( bodyID.IsInvalid() )
+					continue;
+
+				NPCPhysicsActorCollider collider;
+				collider.entityIndex = entityIndex;
+				collider.serialNumber = ent->serialnumber;
+				collider.bodyID = bodyID;
+				collider.position = position;
+				collider.centerOffset = centerOffset;
+				collider.halfExtents = halfExtents;
+				g_actorColliders.push_back( collider );
+
+				ALERT(
+					at_console,
+					"[NPC physics] Added living actor hull: entity=%d type=%s half=(%.1f %.1f %.1f).\n",
+					entityIndex,
+					( ent->v.flags & FL_CLIENT ) ? "player" : "NPC",
+					halfExtents.GetX(), halfExtents.GetY(), halfExtents.GetZ()
+				);
+				continue;
+			}
+
+			NPCPhysicsActorCollider &collider = g_actorColliders[colliderIndex];
+			const Vec3 positionDelta = position - collider.position;
+			const bool transformChanged = positionDelta.LengthSq() > 0.0001f;
+
+			// MoveKinematic turns GoldSrc actor displacement into surface
+			// velocity. A single unchanged target after movement stops clears
+			// that velocity; stationary hulls do not need per-frame updates.
+			if( frameTime > 0.0001f && ( transformChanged || collider.wasMoving ) )
+			{
+				if( positionDelta.LengthSq() > 256.0f * 256.0f )
+				{
+					// Spawn/teleport changes must not launch nearby ragdolls.
+					bodyInterface.SetPositionAndRotation(
+						collider.bodyID,
+						RVec3( position.GetX(), position.GetY(), position.GetZ() ),
+						Quat::sIdentity(),
+						EActivation::Activate
+					);
+				}
+				else
+				{
+					bodyInterface.MoveKinematic(
+						collider.bodyID,
+						RVec3( position.GetX(), position.GetY(), position.GetZ() ),
+						Quat::sIdentity(),
+						frameTime
+					);
+				}
+
+				collider.position = position;
+				collider.wasMoving = transformChanged;
+			}
+			collider.centerOffset = centerOffset;
+		}
+
+		for( size_t i = g_actorColliders.size(); i > 0; --i )
+		{
+			const int entityIndex = g_actorColliders[i - 1].entityIndex;
+			if( std::find( presentEntities.begin(), presentEntities.end(), entityIndex ) == presentEntities.end() )
+			{
+				NPCPhysics_DestroyActorCollider( g_actorColliders[i - 1] );
+				g_actorColliders.erase( g_actorColliders.begin() + ( i - 1 ) );
 			}
 		}
 	}
@@ -2034,7 +2255,10 @@ namespace
 		}
 
 		if( g_ragdolls.empty() )
+		{
+			NPCPhysics_DestroyActorColliders();
 			return;
+		}
 
 		float gravity = NPCPhysics_GetCvar( "sv_gravity", 800.0f );
 		if( gravity < 0.0f )
@@ -2042,6 +2266,7 @@ namespace
 		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -gravity ) );
 
 		NPCPhysics_UpdateBrushColliders();
+		NPCPhysics_UpdateActorColliders();
 
 		float frameTime = gpGlobals->frametime;
 		if( frameTime < 0.0f )
@@ -2821,6 +3046,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 void NPCPhysics_ResetMap( void )
 {
 	NPCPhysics_DestroyAllRagdolls();
+	NPCPhysics_DestroyActorColliders();
 	NPCPhysics_DestroyBrushColliders();
 	NPCPhysics_DestroyWorldCollider();
 	for( size_t i = 0; i < g_livePoses.size(); ++i )
@@ -2838,6 +3064,7 @@ void NPCPhysics_ResetMap( void )
 void NPCPhysics_Shutdown( void )
 {
 	NPCPhysics_DestroyAllRagdolls();
+	NPCPhysics_DestroyActorColliders();
 	NPCPhysics_DestroyBrushColliders();
 	NPCPhysics_DestroyWorldCollider();
 
