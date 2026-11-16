@@ -101,6 +101,7 @@ def parse_smd(path: Path) -> SMDData:
 
     nodes: Dict[int, BoneNode] = {}
     folded_names: Dict[str, int] = {}
+    duplicate_node_indices = set()
     node_warnings: List[str] = []
     for line_number, line in enumerate(lines[nodes_start + 1:nodes_end], nodes_start + 2):
         if not line.strip():
@@ -117,6 +118,7 @@ def parse_smd(path: Path) -> SMDData:
         folded = name.casefold()
         previous = nodes.get(index)
         if previous is not None:
+            duplicate_node_indices.add(index)
             # Some decompiled/hand-edited ragdoll SMDs repeat a node index
             # and name with a corrected parent later in the nodes table.
             # A skeleton frame can only contain one transform for that index,
@@ -176,7 +178,11 @@ def parse_smd(path: Path) -> SMDData:
             raise ValueError("{}:{}: skeleton references unknown bone {}".format(path, line_number, bone_index))
         values = tuple(_finite_float(value, "{}:{}".format(path, line_number)) for value in parts[1:])
         if bone_index in frames[frame_index]:
-            raise ValueError("{}:{}: duplicate transform for bone {}".format(path, line_number, bone_index))
+            if bone_index not in duplicate_node_indices:
+                raise ValueError("{}:{}: duplicate transform for bone {}".format(path, line_number, bone_index))
+            node_warnings.append(
+                "{}:{}: repeated transform for duplicate node index {}; using final "
+                "transform in frame {}".format(path, line_number, bone_index, frame_index))
         frames[frame_index][bone_index] = values  # type: ignore[assignment]
 
     if not frames:
