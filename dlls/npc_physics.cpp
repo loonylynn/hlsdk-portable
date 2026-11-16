@@ -221,6 +221,13 @@ namespace
 		}
 	};
 
+	// The creation path logs restored velocities before the diagnostic helper's
+	// implementation later in this file.
+	static void NPCPhysics_LogRagdollVelocitySummary(
+		const char *stage,
+		edict_t *ent,
+		const NPCPhysicsRagdoll &ragdoll );
+
 	struct NPCPhysicsWorld
 	{
 		RagdollBroadPhaseLayers broadPhaseLayers;
