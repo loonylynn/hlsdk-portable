@@ -2847,7 +2847,7 @@ namespace
 			{
 				ALERT(
 					at_console,
-					"[NPC physics] Player push limited: ragdoll=%d id=%d body=%u player=%d mass=%.1f push-speed=%.1f->%.1f limit=%.1f%s.\n",
+					"[NPC physics] Player push limited: ragdoll=%d id=%d body=%d player=%d mass=%.1f push-speed=%.1f->%.1f limit=%.1f%s.\n",
 					ENTINDEX( ragdoll->entity ), ragdoll->networkID,
 					ragdollBodyIndex, event.playerEntityIndex,
 					contactMass, currentPushSpeed, maxAllowedPushSpeed,
