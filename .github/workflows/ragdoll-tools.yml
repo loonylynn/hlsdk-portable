@@ -26,5 +26,5 @@ jobs:
           python-version: '3.10'
       - name: Compile authoring tools
         run: python -m py_compile tools/smd2jrag.py tools/jragtool.py
-      - name: Run converter tests
+      - name: Run authoring tool tests
         run: python -m unittest discover -s tools/tests -v
