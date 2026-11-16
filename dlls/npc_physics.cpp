@@ -1822,12 +1822,23 @@ namespace
 
 	static void NPCPhysics_SaveRagdollStateInternal( edict_t *ent )
 	{
-		if( !ent || ent->free || !g_npcPhysics.initialized || g_ragdolls.empty() )
+		if( !ent || ent->free )
 			return;
 
 		CBaseMonster *monster = static_cast<CBaseMonster *>( CBaseEntity::Instance( ent ) );
 		if( !monster )
 			return;
+
+		const bool isRagdollCarrier = ent->v.iuser4 == 1;
+		const bool debug = NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f;
+		if( !g_npcPhysics.initialized || g_ragdolls.empty() )
+		{
+			if( isRagdollCarrier && debug )
+				ALERT( at_console,
+					"[NPC physics] Save callback reached ragdoll carrier %d, but the Jolt world has no active ragdolls.\n",
+					ENTINDEX( ent ) );
+			return;
+		}
 
 		NPCPhysicsRagdoll *ragdoll = NULL;
 		for( size_t i = 0; i < g_ragdolls.size(); ++i )
@@ -1841,7 +1852,13 @@ namespace
 			}
 
 		if( !ragdoll )
+		{
+			if( isRagdollCarrier && debug )
+				ALERT( at_console,
+					"[NPC physics] Save callback reached ragdoll carrier %d, but its live Jolt state was not registered.\n",
+					ENTINDEX( ent ) );
 			return;
+		}
 
 		if( ragdoll->studioBoneCount <= 0 ||
 			ragdoll->studioBoneCount > NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES ||
@@ -2438,13 +2455,29 @@ int NPCPhysics_RestorePersistentRagdoll( edict_t *ent )
 		return FALSE;
 
 	CBaseMonster *monster = static_cast<CBaseMonster *>( CBaseEntity::Instance( ent ) );
-	if( !monster ||
-		monster->m_iNpcRagdollPersistVersion != NPC_RAGDOLL_PERSIST_VERSION ||
+	if( !monster )
+		return FALSE;
+
+	if( monster->m_iNpcRagdollPersistVersion != NPC_RAGDOLL_PERSIST_VERSION ||
 		monster->m_iNpcRagdollPersistBoneCount <= 0 ||
 		monster->m_iNpcRagdollPersistBoneCount > NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES ||
 		monster->m_iNpcRagdollPersistBodyCount <= 0 ||
 		monster->m_iNpcRagdollPersistBodyCount > NPC_RAGDOLL_PERSIST_MAX_BODIES )
+	{
+		if( ent->v.iuser4 == 1 &&
+			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT( at_console,
+				"[NPC physics] Transitioned ragdoll carrier %d has no valid saved pose (version=%d bones=%d bodies=%d).\n",
+				ENTINDEX( ent ), monster->m_iNpcRagdollPersistVersion,
+				monster->m_iNpcRagdollPersistBoneCount, monster->m_iNpcRagdollPersistBodyCount );
 		return FALSE;
+	}
+
+	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT( at_console,
+			"[NPC physics] Found transferred ragdoll state: entity=%d bones=%d bodies=%d.\n",
+			ENTINDEX( ent ), monster->m_iNpcRagdollPersistBoneCount,
+			monster->m_iNpcRagdollPersistBodyCount );
 
 	if( !NPCPhysics_CreateRagdoll( ent, true ) )
 	{
