@@ -345,6 +345,9 @@ def inspect_smd(smd_path: Path, qci_path: Optional[Path] = None) -> None:
             parent = smd.nodes[parent].parent
         physical_parent[index] = parent if parent in collision_ids else None
 
+    for warning in smd.warnings:
+        print("WARNING: {}".format(warning))
+
     print("SMD: {}".format(smd_path))
     print("Skeleton bones: {}".format(len(smd.nodes)))
     print("Collision bodies: {}".format(len(collision_ids)))
@@ -432,6 +435,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             source_qci = converter.parse_qci(args.source)
             smd_path = _resolve_smd(args.source, args.smd)
             source_smd = converter.parse_smd(smd_path)
+            for warning in source_smd.warnings:
+                print("WARNING: {}".format(warning))
             for warning in converter.unbound_qci_directives(source_smd, source_qci):
                 print("WARNING: {}".format(warning))
             bodies = converter.convert(
@@ -447,10 +452,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     index, body.name, parent, len(body.points)))
             return 0
         if args.command == "validate":
+            source_smd = converter.parse_smd(args.smd)
+            for warning in source_smd.warnings:
+                print("WARNING: {}".format(warning))
             definition, bone_count = validate_definition(args.jrag, args.smd, args.qci)
             if args.qci:
                 source_qci = converter.parse_qci(args.qci)
-                source_smd = converter.parse_smd(args.smd)
                 for warning in converter.unbound_qci_directives(source_smd, source_qci):
                     print("WARNING: {}".format(warning))
             print("Valid: {} ({} bodies; {} SMD skeleton bones).".format(
