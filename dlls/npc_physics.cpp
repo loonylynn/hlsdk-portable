@@ -185,7 +185,9 @@ namespace
 		BodyID bodyID;
 		Vec3 position;
 		Quat rotation;
+		bool isKinematic;
 		bool wasMoving;
+		bool pendingStaticTransition;
 
 		NPCPhysicsBrushCollider()
 			: entityIndex( -1 ),
@@ -193,7 +195,9 @@ namespace
 			  bodyID(),
 			  position( 0.0f, 0.0f, 0.0f ),
 			  rotation( Quat::sIdentity() ),
-			  wasMoving( false )
+			  isKinematic( false ),
+			  wasMoving( false ),
+			  pendingStaticTransition( false )
 		{
 		}
 	};
@@ -1093,16 +1097,21 @@ namespace
 
 			if( colliderIndex < 0 )
 			{
+				// Most inline BSP entities are stationary. Create them as static
+				// bodies first; only promote a body to kinematic when its actual
+				// transform changes. Reserve motion properties so Jolt can switch
+				// the same body to kinematic without rebuilding its mesh shape.
 				BodyCreationSettings bodySettings(
 					shape.GetPtr(),
 					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
 					rotation,
-					EMotionType::Kinematic,
+					EMotionType::Static,
 					BRUSH_KINEMATIC_OBJECT_LAYER
 				);
+				bodySettings.mAllowDynamicOrKinematic = true;
 				// Mesh shapes do not have a closed volume from which to derive
-				// mass properties. Kinematic bodies still need valid motion
-				// properties so MoveKinematic can provide their surface velocity.
+				// mass properties. Supply valid values for the optional kinematic
+				// motion properties; static bodies do not use these values.
 				bodySettings.mOverrideMassProperties = EOverrideMassProperties::MassAndInertiaProvided;
 				bodySettings.mMassPropertiesOverride.mMass = 1.0f;
 				bodySettings.mMassPropertiesOverride.mInertia = Mat44::sIdentity();
@@ -1112,7 +1121,7 @@ namespace
 
 				const BodyID bodyID = bodyInterface.CreateAndAddBody(
 					bodySettings,
-					EActivation::Activate
+					EActivation::DontActivate
 				);
 				if( bodyID.IsInvalid() )
 				{
@@ -1133,7 +1142,7 @@ namespace
 				g_brushColliders.push_back( collider );
 				ALERT(
 					at_console,
-					"[NPC physics] Added kinematic inline BSP collider: entity %d, model %d.\n",
+					"[NPC physics] Added static inline BSP collider: entity %d, model %d.\n",
 					entityInfo.entityIndex,
 					entityInfo.modelIndex
 				);
@@ -1151,13 +1160,25 @@ namespace
 			if( frameTime > 0.1f )
 				frameTime = 0.1f;
 
-			// MoveKinematic derives linear/angular velocity from the transform
-			// delta. This lets a closing door or moving platform push the
-			// articulated ragdoll instead of teleporting a static collider into it.
-			// Send one final unchanged target after movement stops to clear the
-			// kinematic velocity, then leave stationary bodies asleep.
-			if( frameTime > 0.0001f && ( transformChanged || collider.wasMoving ) )
+			// Only entities whose transforms actually change need a kinematic
+			// surface velocity. This avoids keeping every stationary func_wall
+			// and other inline BSP entity in the moving broadphase.
+			if( frameTime > 0.0001f && transformChanged )
 			{
+				if( !collider.isKinematic )
+				{
+					bodyInterface.SetMotionType(
+						collider.bodyID, EMotionType::Kinematic, EActivation::Activate );
+					collider.isKinematic = true;
+					ALERT(
+						at_console,
+						"[NPC physics] Promoted inline BSP collider to kinematic: entity %d, model %d.\n",
+						collider.entityIndex, collider.modelIndex
+					);
+				}
+
+				// MoveKinematic derives linear/angular surface velocity from the
+				// transform delta so moving doors and platforms can push ragdolls.
 				bodyInterface.MoveKinematic(
 					collider.bodyID,
 					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
@@ -1166,7 +1187,34 @@ namespace
 				);
 				collider.position = position;
 				collider.rotation = rotation;
-				collider.wasMoving = transformChanged;
+				collider.wasMoving = true;
+				collider.pendingStaticTransition = false;
+			}
+			else if( frameTime > 0.0001f && collider.wasMoving )
+			{
+				// Give the kinematic body one unchanged target to clear the
+				// velocity calculated on its last moving frame. Switch it back
+				// to static on the following frame, after that final step.
+				bodyInterface.MoveKinematic(
+					collider.bodyID,
+					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
+					rotation,
+					frameTime
+				);
+				collider.wasMoving = false;
+				collider.pendingStaticTransition = true;
+			}
+			else if( collider.pendingStaticTransition )
+			{
+				bodyInterface.SetMotionType(
+					collider.bodyID, EMotionType::Static, EActivation::DontActivate );
+				collider.isKinematic = false;
+				collider.pendingStaticTransition = false;
+				ALERT(
+					at_console,
+					"[NPC physics] Settled inline BSP collider to static: entity %d, model %d.\n",
+					collider.entityIndex, collider.modelIndex
+				);
 			}
 		}
 
