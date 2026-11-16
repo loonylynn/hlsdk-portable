@@ -72,6 +72,9 @@ namespace
 	static constexpr float RAGDOLL_SOURCE_UNITS_PER_METER = 39.3700787f;
 	static constexpr float RAGDOLL_FIXED_STEP = 1.0f / 120.0f;
 	static constexpr int RAGDOLL_MAX_STEPS_PER_FRAME = 8;
+	// Articulated ragdolls need extra position iterations when multiple limbs
+	// are constrained against static BSP surfaces in tight corners.
+	static constexpr uint32_t RAGDOLL_CONSTRAINT_POSITION_STEPS = 8;
 	static constexpr float RAGDOLL_ACTIVE_POSE_INTERVAL = 0.05f;
 	static constexpr float RAGDOLL_SLEEPING_POSE_INTERVAL = 0.20f;
 	static constexpr int RAGDOLL_NETWORK_BODIES_PER_CHUNK = 10;
@@ -912,11 +915,12 @@ namespace
 		g_npcPhysics.system->SetGravity( Vec3( 0.0f, 0.0f, -800.0f ) );
 		ALERT(
 			at_console,
-			"[NPC physics] Jolt GoldSrc-unit scaling: units/m=%.3f max-penetration-correction=%.2f speculative-distance=%.2f position-steps=%u.\n",
+			"[NPC physics] Jolt GoldSrc-unit scaling: units/m=%.3f max-penetration-correction=%.2f speculative-distance=%.2f position-steps=%u constraint-position-steps=%u.\n",
 			sourceScale,
 			sourceUnitSettings.mMaxPenetrationDistance,
 			sourceUnitSettings.mSpeculativeContactDistance,
-			sourceUnitSettings.mNumPositionSteps
+			sourceUnitSettings.mNumPositionSteps,
+			RAGDOLL_CONSTRAINT_POSITION_STEPS
 		);
 		g_npcPhysics.fixedAccumulator = 0.0f;
 		g_npcPhysics.initialized = true;
@@ -2431,6 +2435,10 @@ namespace
 			{
 				SixDOFConstraintSettings *constraint = new SixDOFConstraintSettings();
 				constraint->mSpace = EConstraintSpace::WorldSpace;
+				// Raise the solver iteration count for the entire articulated
+				// island, including its environment contacts. This improves
+				// convergence when several limbs are trapped against corner faces.
+				constraint->mNumPositionStepsOverride = RAGDOLL_CONSTRAINT_POSITION_STEPS;
 				const Vec3 joint(
 					bonePositions[studioBone][0],
 					bonePositions[studioBone][1],
