@@ -145,6 +145,20 @@ therefore reported as ignored, and does not constrain the `Spine1` body. Add
 an explicit `Spine1` constraint in the QCI only if that is the intended
 physical joint behavior.
 
+## Repeated SMD node declarations
+
+Some decompiled or manually edited SMD files repeat a numeric node index with
+the same bone name but a different parent. A skeleton frame can only provide
+one transform for that numeric index, so the parser keeps the final declaration
+in the `nodes` section and prints a warning describing the previous and final
+parent. Repeated indices that change to a different bone name remain errors;
+the tool never guesses which bone the transform or triangle weights refer to.
+
+The supplied Scientist `ragdoll.smd` contains three repeated same-name indices
+(`61`, `71`, and `81`). The later declarations are used for its skeleton
+hierarchy, and the tool reports each choice during `inspect`, `generate`, and
+`validate`.
+
 The generated hull point cloud is the unique set of SMD collision-mesh vertices
 assigned to each bone, transformed into bone-local space. Each physical bone
 must have a closed, three-dimensional convex collision mesh. Duplicate triangle
