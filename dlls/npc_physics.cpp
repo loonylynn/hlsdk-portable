@@ -2054,9 +2054,9 @@ int NPCPhysics_ApplyBlastImpulse(
 	const Vec3 velocityBefore = bodyInterface.GetLinearVelocity( impulseBody );
 	const Vec3 angularBefore = bodyInterface.GetAngularVelocity( impulseBody );
 	bodyInterface.ActivateBody( impulseBody );
-	// Apply at the exposed surface point, not at the body's center. Because
-	// direction follows the ragdoll's exposed mass center, an asymmetric hit
-	// produces a lever arm and angular response without an arbitrary spin.
+	// Apply at the exposed surface point, not at the body's center. The
+	// upper-body blast direction and off-center application point produce a
+	// directional launch plus angular response without arbitrary spin.
 	bodyInterface.AddImpulse( impulseBody, impulse, impulsePoint );
 
 	const Vec3 velocityAfter = bodyInterface.GetLinearVelocity( impulseBody );
