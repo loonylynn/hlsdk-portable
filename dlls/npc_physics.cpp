@@ -2784,22 +2784,27 @@ namespace
 					break;
 				}
 			}
-			if( !ragdoll || ragdoll->bodyMasses.size() !=
-				static_cast<size_t>( ragdoll->bodyCount ) )
+			if( !ragdoll || !ragdoll->entity || ragdoll->entity->free ||
+				ragdoll->entity->serialnumber != ragdoll->serialNumber ||
+				ragdoll->bodyMasses.size() != static_cast<size_t>( ragdoll->bodyCount ) )
 				continue;
 
-			float totalMass = 0.0f;
-			for( size_t body = 0; body < ragdoll->bodyMasses.size(); ++body )
+			int ragdollBodyIndex = -1;
+			for( int body = 0; body < ragdoll->bodyCount; ++body )
 			{
-				const float mass = ragdoll->bodyMasses[body];
-				if( !std::isfinite( mass ) || mass <= 0.0f )
+				if( ragdoll->physicsRagdoll->GetBodyID( body ) == event.ragdollBodyID )
 				{
-					totalMass = 0.0f;
+					ragdollBodyIndex = body;
 					break;
 				}
-				totalMass += mass;
 			}
-			if( !std::isfinite( totalMass ) || totalMass <= 0.0f )
+			if( ragdollBodyIndex < 0 )
+				continue;
+
+			// Source's player controller checks the mass of the contacted
+			// physics object, so use this ragdoll body rather than group mass.
+			const float contactMass = ragdoll->bodyMasses[ragdollBodyIndex];
+			if( !std::isfinite( contactMass ) || contactMass <= 0.0f )
 				continue;
 
 			const float initialPushSpeed =
@@ -2823,7 +2828,7 @@ namespace
 			// actor is still kinematic, so apply that limit to the velocity gained
 			// by the contacted ragdoll body rather than feeding movement back into
 			// GoldSrc's player movement code.
-			const bool exceedsMassLimit = totalMass > massLimit;
+			const bool exceedsMassLimit = contactMass > massLimit;
 			const float maxAllowedPushSpeed = exceedsMassLimit
 				? initialPushSpeed
 				: ( initialPushSpeed < speedLimit ? speedLimit : initialPushSpeed );
@@ -2844,8 +2849,8 @@ namespace
 					at_console,
 					"[NPC physics] Player push limited: ragdoll=%d id=%d body=%u player=%d mass=%.1f push-speed=%.1f->%.1f limit=%.1f%s.\n",
 					ENTINDEX( ragdoll->entity ), ragdoll->networkID,
-					event.ragdollBodyID.GetIndex(), event.playerEntityIndex,
-					totalMass, currentPushSpeed, maxAllowedPushSpeed,
+					ragdollBodyIndex, event.playerEntityIndex,
+					contactMass, currentPushSpeed, maxAllowedPushSpeed,
 					speedLimit, exceedsMassLimit ? " (mass limit)" : ""
 				);
 				ragdoll->nextPlayerPushDebugTime = gpGlobals->time + 0.5f;
