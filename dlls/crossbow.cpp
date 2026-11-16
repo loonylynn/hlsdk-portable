@@ -24,6 +24,89 @@
 #include "gamerules.h"
 
 #if !CLIENT_DLL
+#include "xash_physint.h"
+#include <cmath>
+static float NPCPhysics_GetCrossbowImpulseMagnitude()
+{
+	const float massPounds = 0.002285f * 800.0f / 16.0f;
+	const float massKilograms = massPounds * 0.45359237f;
+	return 8000.0f * 12.0f * massKilograms * 3.5f;
+}
+struct NPCPhysicsPendingCrossbowImpact
+{
+	edict_t *entity;
+	int serialNumber;
+	Vector impactPosition;
+	Vector direction;
+	float impulseMagnitude;
+};
+static float NPCPhysics_GetScaledCrossbowImpulse()
+{
+	float scale = CVAR_GET_FLOAT( "sv_npc_vphysics_crossbow_scale" );
+	if( !std::isfinite( scale ) || scale < 0.0f )
+		scale = 0.0f;
+	return NPCPhysics_GetCrossbowImpulseMagnitude() * scale;
+}
+static int NPCPhysics_TraceCrossbowImpact(
+	const Vector &start, const Vector &end, float maxFraction,
+	float impulseMultiplier, TraceResult *trace )
+{
+	if( !trace || !std::isfinite( impulseMultiplier ) || impulseMultiplier < 0.0f )
+		return FALSE;
+	const float impulseMagnitude = NPCPhysics_GetScaledCrossbowImpulse() * impulseMultiplier;
+	if( !std::isfinite( impulseMagnitude ) )
+		return FALSE;
+	float hitFraction = trace->flFraction;
+	float hitPosition[3];
+	edict_t *hitEntity = NULL;
+	if( NPCPhysics_TraceAndApplyImpact(
+		&start[0], &end[0], maxFraction, impulseMagnitude,
+		&hitFraction, hitPosition, &hitEntity ) )
+	{
+		trace->flFraction = hitFraction;
+		trace->vecEndPos = Vector( hitPosition[0], hitPosition[1], hitPosition[2] );
+		trace->pHit = hitEntity;
+		return TRUE;
+	}
+	return FALSE;
+}
+static void NPCPhysics_QueueCrossbowImpact(
+	CBaseEntity *target, const Vector &impactPosition,
+	const Vector &direction, NPCPhysicsPendingCrossbowImpact *pending )
+{
+	if( !target || !pending )
+		return;
+	edict_t *targetEntity = target->edict();
+	if( !targetEntity || targetEntity->free ||
+		NPCPhysics_IsRagdollEntity( targetEntity ) ||
+		!NPCPhysics_HasRagdollDefinition( targetEntity ) )
+		return;
+	const float impulseMagnitude = NPCPhysics_GetScaledCrossbowImpulse();
+	if( !std::isfinite( impulseMagnitude ) || impulseMagnitude <= 0.0f )
+		return;
+	pending->entity = targetEntity;
+	pending->serialNumber = targetEntity->serialnumber;
+	pending->impactPosition = impactPosition;
+	pending->direction = direction;
+	pending->impulseMagnitude = impulseMagnitude;
+}
+static void NPCPhysics_ApplyPendingCrossbowImpact( NPCPhysicsPendingCrossbowImpact *pending )
+{
+	if( !pending || !pending->entity )
+		return;
+	if( !pending->entity->free &&
+		pending->entity->serialnumber == pending->serialNumber &&
+		NPCPhysics_IsRagdollEntity( pending->entity ) )
+	{
+		NPCPhysics_ApplyImpactImpulseToRagdoll(
+			pending->entity, &pending->impactPosition[0], &pending->direction[0],
+			pending->impulseMagnitude, "crossbow" );
+	}
+	pending->entity = NULL;
+}
+#endif
+
+#if !CLIENT_DLL
 #define BOLT_AIR_VELOCITY	2000
 #define BOLT_WATER_VELOCITY	1000
 
@@ -98,26 +181,46 @@ void CCrossbowBolt::BoltTouch( CBaseEntity *pOther )
 	SetTouch( NULL );
 	SetThink( NULL );
 
-	if( pOther->pev->takedamage )
+	TraceResult tr = UTIL_GetGlobalTrace();
+	entvars_t *pevOwner = VARS( pev->owner );
+	NPCPhysicsPendingCrossbowImpact pendingCrossbowImpact;
+	pendingCrossbowImpact.entity = NULL;
+	pendingCrossbowImpact.serialNumber = -1;
+	pendingCrossbowImpact.impulseMagnitude = 0.0f;
+	const Vector impactDirection = pev->velocity.Normalize();
+	const Vector impactEnd = tr.vecEndPos;
+	Vector impactStart = pev->oldorigin;
+	const float segmentLength = ( impactEnd - impactStart ).Length();
+	if( segmentLength > 256.0f || segmentLength <= 0.001f )
+		impactStart = impactEnd - impactDirection * 64.0f;
+	// Direct SP bolts use HL2's XBowBolt impulse. MP explosive bolts use
+	// a trace-only intercept and receive force from the existing RadiusDamage.
+	const float impactMultiplier = g_pGameRules->IsMultiplayer() ? 0.0f : 1.0f;
+	if( NPCPhysics_TraceCrossbowImpact( impactStart, impactEnd, 1.0f, impactMultiplier, &tr ) )
 	{
-		TraceResult tr = UTIL_GetGlobalTrace();
-		entvars_t *pevOwner;
-
-		pevOwner = VARS( pev->owner );
+		CBaseEntity *ragdollHit = CBaseEntity::Instance( tr.pHit );
+		if( ragdollHit )
+			pOther = ragdollHit;
+	}
+	if( pOther && pOther->pev->takedamage )
+	{
 
 		// UNDONE: this needs to call TraceAttack instead
 		ClearMultiDamage();
-
+		if( !g_pGameRules->IsMultiplayer() )
+			NPCPhysics_QueueCrossbowImpact(
+				pOther, tr.vecEndPos, impactDirection, &pendingCrossbowImpact );
 		if( pOther->IsPlayer() )
 		{
-			pOther->TraceAttack( pevOwner, gSkillData.plrDmgCrossbowClient, pev->velocity.Normalize(), &tr, DMG_NEVERGIB ); 
+			pOther->TraceAttack( pevOwner, gSkillData.plrDmgCrossbowClient, impactDirection, &tr, DMG_NEVERGIB ); 
 		}
 		else
 		{
-			pOther->TraceAttack( pevOwner, gSkillData.plrDmgCrossbowMonster, pev->velocity.Normalize(), &tr, DMG_BULLET | DMG_NEVERGIB ); 
+			pOther->TraceAttack( pevOwner, gSkillData.plrDmgCrossbowMonster, impactDirection, &tr, DMG_BULLET | DMG_NEVERGIB ); 
 		}
-
 		ApplyMultiDamage( pev, pevOwner );
+		if( !g_pGameRules->IsMultiplayer() )
+			NPCPhysics_ApplyPendingCrossbowImpact( &pendingCrossbowImpact );
 
 		pev->velocity = Vector( 0, 0, 0 );
 		// play body "thwack" sound
@@ -378,15 +481,23 @@ void CCrossbow::FireSniperBolt()
 	UTIL_MakeVectors( anglesAim );
 	Vector vecSrc = m_pPlayer->GetGunPosition() - gpGlobals->v_up * 2.0f;
 	Vector vecDir = gpGlobals->v_forward;
-
-	UTIL_TraceLine( vecSrc, vecSrc + vecDir * 8192, dont_ignore_monsters, m_pPlayer->edict(), &tr );
-
+	Vector vecEnd = vecSrc + vecDir * 8192.0f;
+	UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, m_pPlayer->edict(), &tr );
 #if !CLIENT_DLL
-	if( tr.pHit->v.takedamage )
+	NPCPhysicsPendingCrossbowImpact pendingCrossbowImpact;
+	pendingCrossbowImpact.entity = NULL;
+	pendingCrossbowImpact.serialNumber = -1;
+	pendingCrossbowImpact.impulseMagnitude = 0.0f;
+	NPCPhysics_TraceCrossbowImpact( vecSrc, vecEnd, tr.flFraction, 1.0f, &tr );
+	if( tr.pHit && tr.pHit->v.takedamage )
 	{
+		CBaseEntity *pTarget = CBaseEntity::Instance( tr.pHit );
 		ClearMultiDamage();
-		CBaseEntity::Instance( tr.pHit )->TraceAttack( m_pPlayer->pev, 120, vecDir, &tr, DMG_BULLET | DMG_NEVERGIB ); 
+		NPCPhysics_QueueCrossbowImpact(
+			pTarget, tr.vecEndPos, vecDir, &pendingCrossbowImpact );
+		pTarget->TraceAttack( m_pPlayer->pev, 120, vecDir, &tr, DMG_BULLET | DMG_NEVERGIB ); 
 		ApplyMultiDamage( pev, m_pPlayer->pev );
+		NPCPhysics_ApplyPendingCrossbowImpact( &pendingCrossbowImpact );
 	}
 #endif
 }
