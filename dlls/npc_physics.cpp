@@ -83,6 +83,10 @@ namespace
 	static constexpr int RAGDOLL_DEFINITION_MAX_HULL_POINTS = 32;
 	static constexpr int RAGDOLL_DEFINITION_MAX_FILE_BYTES = 1024 * 1024;
 
+	// Sampled on the main thread before each Jolt frame; declared before the
+	// contact listener that reads it during Jolt callbacks.
+	static bool g_npcPhysicsContactDebugEnabled = false;
+
 	class RagdollBroadPhaseLayers final : public BroadPhaseLayerInterface
 	{
 	public:
@@ -792,9 +796,6 @@ namespace
 	static cvar_t g_svNpcVPhysicsPlayerPushMass = { "sv_npc_vphysics_player_push_mass", "350", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsPlayerPushSpeed = { "sv_npc_vphysics_player_push_speed", "50", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
-	// Sampled on the main thread before each Jolt frame; avoids diagnostic
-	// shape queries and engine cvar calls when contact logging is disabled.
-	static bool g_npcPhysicsContactDebugEnabled = false;
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
 	{
