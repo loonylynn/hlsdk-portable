@@ -99,8 +99,8 @@ class JRAGToolTests(unittest.TestCase):
     def test_inspect_reports_repeated_smd_node_declarations(self):
         source = self.smd.read_text(encoding="utf-8")
         source = source.replace(
-            '1 "Bip01 Helper" 0\\n',
-            '1 "Bip01 Helper" 0\\n1 "Bip01 Helper" -1\\n',
+            '1 "Bip01 Helper" 0\n',
+            '1 "Bip01 Helper" 0\n1 "Bip01 Helper" -1\n',
             1,
         )
         self.smd.write_text(source, encoding="utf-8")
