@@ -107,8 +107,8 @@ class SMDToJRAGTests(unittest.TestCase):
     def test_repeated_same_name_node_index_uses_final_parent_with_warning(self):
         source = self.smd.read_text(encoding="utf-8")
         source = source.replace(
-            '1 "Bip01 Helper" 0\\n',
-            '1 "Bip01 Helper" 0\\n1 "Bip01 Helper" -1\\n',
+            '1 "Bip01 Helper" 0\n',
+            '1 "Bip01 Helper" 0\n1 "Bip01 Helper" -1\n',
             1,
         )
         duplicate_smd = self.root / "duplicate_nodes.smd"
@@ -123,8 +123,8 @@ class SMDToJRAGTests(unittest.TestCase):
     def test_repeated_node_index_with_different_name_is_rejected(self):
         source = self.smd.read_text(encoding="utf-8")
         source = source.replace(
-            '1 "Bip01 Helper" 0\\n',
-            '1 "Bip01 Helper" 0\\n1 "Renamed Helper" -1\\n',
+            '1 "Bip01 Helper" 0\n',
+            '1 "Bip01 Helper" 0\n1 "Renamed Helper" -1\n',
             1,
         )
         duplicate_smd = self.root / "conflicting_nodes.smd"
