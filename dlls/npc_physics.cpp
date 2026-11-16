@@ -2851,112 +2851,112 @@ namespace
 		return 0;
 	}
 
-		static void NPCPhysics_ProcessContactDiagnostics()
+	static void NPCPhysics_ProcessContactDiagnostics()
+	{
+		std::vector<NPCPhysicsPendingContactDiagnostic> pending =
+			g_npcPhysics.contactListener.DrainDiagnostics();
+		if( pending.empty() || !gpGlobals ||
+			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) < 0.5f )
+			return;
+
+		for( size_t i = 0; i < pending.size(); ++i )
 		{
-			std::vector<NPCPhysicsPendingContactDiagnostic> pending =
-				g_npcPhysics.contactListener.DrainDiagnostics();
-			if( pending.empty() || !gpGlobals ||
-				NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) < 0.5f )
-				return;
-
-			for( size_t i = 0; i < pending.size(); ++i )
+			const NPCPhysicsPendingContactDiagnostic &event = pending[i];
+			NPCPhysicsRagdoll *ragdoll = NULL;
+			for( size_t r = 0; r < g_ragdolls.size(); ++r )
 			{
-				const NPCPhysicsPendingContactDiagnostic &event = pending[i];
-				NPCPhysicsRagdoll *ragdoll = NULL;
-				for( size_t r = 0; r < g_ragdolls.size(); ++r )
+				if( g_ragdolls[r].networkID == static_cast<int>( event.ragdollID ) &&
+					g_ragdolls[r].addedToPhysicsSystem &&
+					g_ragdolls[r].physicsRagdoll.GetPtr() )
 				{
-					if( g_ragdolls[r].networkID == static_cast<int>( event.ragdollID ) &&
-						g_ragdolls[r].addedToPhysicsSystem &&
-						g_ragdolls[r].physicsRagdoll.GetPtr() )
-					{
-						ragdoll = &g_ragdolls[r];
-						break;
-					}
+					ragdoll = &g_ragdolls[r];
+					break;
 				}
-				if( !ragdoll || !ragdoll->entity || ragdoll->entity->free ||
-					ragdoll->entity->serialnumber != ragdoll->serialNumber )
-					continue;
-
-				int bodyIndex = -1;
-				for( int body = 0; body < ragdoll->bodyCount; ++body )
-				{
-					if( ragdoll->physicsRagdoll->GetBodyID( body ) == event.ragdollBodyID )
-					{
-						bodyIndex = body;
-						break;
-					}
-				}
-				if( bodyIndex < 0 )
-					continue;
-
-				// Source keeps static world geometry distinct from moving brush
-				// and actor hull contacts. Throttle each body/channel separately
-				// so one busy limb cannot hide another body's penetration data.
-				const int debugChannel = ( event.otherLayer == WORLD_STATIC_OBJECT_LAYER ? 0 : 2 ) +
-					( event.persisted ? 1 : 0 );
-				const size_t debugSlot = static_cast<size_t>( bodyIndex ) * 4 +
-					static_cast<size_t>( debugChannel );
-				if( debugSlot >= ragdoll->nextContactDebugTimes.size() )
-					continue;
-				float &nextDebugTime = ragdoll->nextContactDebugTimes[debugSlot];
-				if( gpGlobals->time < nextDebugTime )
-					continue;
-
-				const char *otherKind = event.otherLayer == WORLD_STATIC_OBJECT_LAYER
-					? "world" : "kinematic";
-				if( event.otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER &&
-					event.otherEntityIndex > 0 &&
-					event.otherEntityIndex < gpGlobals->maxEntities )
-				{
-					edict_t *other = INDEXENT( event.otherEntityIndex );
-					if( !FNullEnt( other ) && !other->free )
-					{
-						if( other->v.flags & FL_CLIENT )
-							otherKind = "player";
-						else if( other->v.flags & FL_MONSTER )
-							otherKind = "actor";
-						else
-							otherKind = "brush";
-					}
-				}
-
-				const char *boneName = ragdoll->physicsSkeleton.GetPtr()
-					? ragdoll->physicsSkeleton->GetJoint( bodyIndex ).mName.c_str()
-					: "unknown";
-				const float bodyMass = bodyIndex < static_cast<int>( ragdoll->bodyMasses.size() )
-					? ragdoll->bodyMasses[bodyIndex] : 0.0f;
-
-				ALERT(
-					at_console,
-					"[NPC physics] Contact %s: ent=%d id=%d body=%d bone='%s' other=%s/%d samples=%u jolt-depth=%.3f closing=%.1f point=(%.1f %.1f %.1f) normal=(%.2f %.2f %.2f).\n",
-					event.persisted ? "persisted" : "added",
-					ENTINDEX( ragdoll->entity ), ragdoll->networkID, bodyIndex, boneName,
-					otherKind, event.otherEntityIndex, event.sampleCount,
-					event.penetrationDepth, event.closingSpeed,
-					event.contactPoint.GetX(), event.contactPoint.GetY(), event.contactPoint.GetZ(),
-					event.normal.GetX(), event.normal.GetY(), event.normal.GetZ()
-				);
-				ALERT(
-					at_console,
-					"[NPC physics] Contact shape detail: ent=%d id=%d body=%d mass=%.1f ragdoll-shape=%s com=(%.1f %.1f %.1f) rot=(%.3f %.3f %.3f %.3f) bounds-com=(%.1f %.1f %.1f)-(%.1f %.1f %.1f) other-shape=%s other-com=(%.1f %.1f %.1f) other-rot=(%.3f %.3f %.3f %.3f) other-bounds-com=(%.1f %.1f %.1f)-(%.1f %.1f %.1f).\n",
-					ENTINDEX( ragdoll->entity ), ragdoll->networkID, bodyIndex, bodyMass,
-					NPCPhysics_ShapeSubTypeName( event.ragdollShapeSubType ),
-					event.ragdollCenterOfMass.GetX(), event.ragdollCenterOfMass.GetY(), event.ragdollCenterOfMass.GetZ(),
-					event.ragdollRotation.GetX(), event.ragdollRotation.GetY(),
-					event.ragdollRotation.GetZ(), event.ragdollRotation.GetW(),
-					event.ragdollBoundsMin.GetX(), event.ragdollBoundsMin.GetY(), event.ragdollBoundsMin.GetZ(),
-					event.ragdollBoundsMax.GetX(), event.ragdollBoundsMax.GetY(), event.ragdollBoundsMax.GetZ(),
-					NPCPhysics_ShapeSubTypeName( event.otherShapeSubType ),
-					event.otherCenterOfMass.GetX(), event.otherCenterOfMass.GetY(), event.otherCenterOfMass.GetZ(),
-					event.otherRotation.GetX(), event.otherRotation.GetY(),
-					event.otherRotation.GetZ(), event.otherRotation.GetW(),
-					event.otherBoundsMin.GetX(), event.otherBoundsMin.GetY(), event.otherBoundsMin.GetZ(),
-					event.otherBoundsMax.GetX(), event.otherBoundsMax.GetY(), event.otherBoundsMax.GetZ()
-				);
-
-				nextDebugTime = gpGlobals->time + 0.5f;
 			}
+			if( !ragdoll || !ragdoll->entity || ragdoll->entity->free ||
+				ragdoll->entity->serialnumber != ragdoll->serialNumber )
+				continue;
+
+			int bodyIndex = -1;
+			for( int body = 0; body < ragdoll->bodyCount; ++body )
+			{
+				if( ragdoll->physicsRagdoll->GetBodyID( body ) == event.ragdollBodyID )
+				{
+					bodyIndex = body;
+					break;
+				}
+			}
+			if( bodyIndex < 0 )
+				continue;
+
+			// Source keeps static world geometry distinct from moving brush
+			// and actor hull contacts. Throttle each body/channel separately
+			// so one busy limb cannot hide another body's penetration data.
+			const int debugChannel = ( event.otherLayer == WORLD_STATIC_OBJECT_LAYER ? 0 : 2 ) +
+				( event.persisted ? 1 : 0 );
+			const size_t debugSlot = static_cast<size_t>( bodyIndex ) * 4 +
+				static_cast<size_t>( debugChannel );
+			if( debugSlot >= ragdoll->nextContactDebugTimes.size() )
+				continue;
+			float &nextDebugTime = ragdoll->nextContactDebugTimes[debugSlot];
+			if( gpGlobals->time < nextDebugTime )
+				continue;
+
+			const char *otherKind = event.otherLayer == WORLD_STATIC_OBJECT_LAYER
+				? "world" : "kinematic";
+			if( event.otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER &&
+				event.otherEntityIndex > 0 &&
+				event.otherEntityIndex < gpGlobals->maxEntities )
+			{
+				edict_t *other = INDEXENT( event.otherEntityIndex );
+				if( !FNullEnt( other ) && !other->free )
+				{
+					if( other->v.flags & FL_CLIENT )
+						otherKind = "player";
+					else if( other->v.flags & FL_MONSTER )
+						otherKind = "actor";
+					else
+						otherKind = "brush";
+				}
+			}
+
+			const char *boneName = ragdoll->physicsSkeleton.GetPtr()
+				? ragdoll->physicsSkeleton->GetJoint( bodyIndex ).mName.c_str()
+				: "unknown";
+			const float bodyMass = bodyIndex < static_cast<int>( ragdoll->bodyMasses.size() )
+				? ragdoll->bodyMasses[bodyIndex] : 0.0f;
+
+			ALERT(
+				at_console,
+				"[NPC physics] Contact %s: ent=%d id=%d body=%d bone='%s' other=%s/%d samples=%u jolt-depth=%.3f closing=%.1f point=(%.1f %.1f %.1f) normal=(%.2f %.2f %.2f).\n",
+				event.persisted ? "persisted" : "added",
+				ENTINDEX( ragdoll->entity ), ragdoll->networkID, bodyIndex, boneName,
+				otherKind, event.otherEntityIndex, event.sampleCount,
+				event.penetrationDepth, event.closingSpeed,
+				event.contactPoint.GetX(), event.contactPoint.GetY(), event.contactPoint.GetZ(),
+				event.normal.GetX(), event.normal.GetY(), event.normal.GetZ()
+			);
+			ALERT(
+				at_console,
+				"[NPC physics] Contact shape detail: ent=%d id=%d body=%d mass=%.1f ragdoll-shape=%s com=(%.1f %.1f %.1f) rot=(%.3f %.3f %.3f %.3f) bounds-com=(%.1f %.1f %.1f)-(%.1f %.1f %.1f) other-shape=%s other-com=(%.1f %.1f %.1f) other-rot=(%.3f %.3f %.3f %.3f) other-bounds-com=(%.1f %.1f %.1f)-(%.1f %.1f %.1f).\n",
+				ENTINDEX( ragdoll->entity ), ragdoll->networkID, bodyIndex, bodyMass,
+				NPCPhysics_ShapeSubTypeName( event.ragdollShapeSubType ),
+				event.ragdollCenterOfMass.GetX(), event.ragdollCenterOfMass.GetY(), event.ragdollCenterOfMass.GetZ(),
+				event.ragdollRotation.GetX(), event.ragdollRotation.GetY(),
+				event.ragdollRotation.GetZ(), event.ragdollRotation.GetW(),
+				event.ragdollBoundsMin.GetX(), event.ragdollBoundsMin.GetY(), event.ragdollBoundsMin.GetZ(),
+				event.ragdollBoundsMax.GetX(), event.ragdollBoundsMax.GetY(), event.ragdollBoundsMax.GetZ(),
+				NPCPhysics_ShapeSubTypeName( event.otherShapeSubType ),
+				event.otherCenterOfMass.GetX(), event.otherCenterOfMass.GetY(), event.otherCenterOfMass.GetZ(),
+				event.otherRotation.GetX(), event.otherRotation.GetY(),
+				event.otherRotation.GetZ(), event.otherRotation.GetW(),
+				event.otherBoundsMin.GetX(), event.otherBoundsMin.GetY(), event.otherBoundsMin.GetZ(),
+				event.otherBoundsMax.GetX(), event.otherBoundsMax.GetY(), event.otherBoundsMax.GetZ()
+			);
+
+			nextDebugTime = gpGlobals->time + 0.5f;
 		}
+	}
 
 	static void NPCPhysics_ProcessPlayerPushLimits( BodyInterface &bodyInterface )
 	{
