@@ -23,7 +23,7 @@
 // Studio transforms are offsets from pev->origin plus a quaternion. Body
 // velocities allow an in-flight corpse to continue moving after a map load.
 #define NPC_RAGDOLL_PERSIST_VERSION 1
-#define NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES 256
+#define NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES 128
 #define NPC_RAGDOLL_PERSIST_MAX_BODIES 64
 #define NPC_RAGDOLL_PERSIST_STUDIO_STRIDE 7
 #define NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE 6
