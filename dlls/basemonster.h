@@ -129,7 +129,14 @@ public:
 	float m_flNpcRagdollPersistBodyVelocity[
 		NPC_RAGDOLL_PERSIST_MAX_BODIES * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE];
 
+#ifdef CLIENT_DLL
+	// The client DLL shares CBaseMonster's class layout through weapon and
+	// entity code, but does not compile the server-only monsters.cpp. Keep
+	// the client vtable self-contained; ragdoll transition flags are server-only.
+	virtual int ObjectCaps( void ) { return CBaseToggle::ObjectCaps(); }
+#else
 	virtual int ObjectCaps( void );
+#endif
 	virtual int Save( CSave &save ); 
 	virtual int Restore( CRestore &restore );
 	static TYPEDESCRIPTION m_SaveData[];
