@@ -270,6 +270,7 @@ namespace
 	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsBulletScale = { "sv_npc_vphysics_bullet_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsCrowbarScale = { "sv_npc_vphysics_crowbar_scale", "1.0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsCrossbowScale = { "sv_npc_vphysics_crossbow_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsBlastScale = { "sv_npc_vphysics_blast_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
@@ -2341,7 +2342,7 @@ int NPCPhysics_TraceAndApplyImpact(
 	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
 		!start || !end || !hitFraction || !hitPosition || !hitEntity ||
 		!std::isfinite( maxFraction ) || !std::isfinite( impulseMagnitude ) ||
-		impulseMagnitude <= 0.0f )
+		impulseMagnitude < 0.0f )
 		return FALSE;
 
 	maxFraction = (std::max)( 0.0f, (std::min)( maxFraction, 1.0f ) );
@@ -2414,14 +2415,16 @@ int NPCPhysics_TraceAndApplyImpact(
 	}
 
 	const JPH::RVec3 impactPoint = ray.GetPointOnRay( hit.mFraction );
-	JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
-	impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
-
-	JPH::BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
-	// Source's client ragdoll applies a localized force to the struck physics
-	// object. Explicit activation guarantees that a sleeping Jolt limb wakes.
-	bodyInterface.ActivateBody( hit.mBodyID );
-	bodyInterface.AddImpulse( hit.mBodyID, impulse, impactPoint );
+	if( impulseMagnitude > 0.0f )
+	{
+		JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
+		impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
+		JPH::BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		// Source's client ragdoll applies a localized force to the struck physics
+		// object. Explicit activation guarantees that a sleeping Jolt limb wakes.
+		bodyInterface.ActivateBody( hit.mBodyID );
+		bodyInterface.AddImpulse( hit.mBodyID, impulse, impactPoint );
+	}
 
 	// A sleeping corpse normally sends only a 5 Hz heartbeat. A weapon strike
 	// should be visible on the next end-frame snapshot, not after that interval.
@@ -2501,11 +2504,12 @@ int NPCPhysics_TraceAndApplyImpact(
 	return TRUE;
 }
 
-int NPCPhysics_ApplyBulletImpulseToRagdoll(
+int NPCPhysics_ApplyImpactImpulseToRagdoll(
 	edict_t *targetEntity,
 	const float *impactPosition,
 	const float *direction,
-	float impulseMagnitude )
+	float impulseMagnitude,
+	const char *impactName )
 {
 	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || !targetEntity ||
 		targetEntity->free || !impactPosition || !direction ||
@@ -2591,7 +2595,8 @@ int NPCPhysics_ApplyBulletImpulseToRagdoll(
 			? targetRagdoll->bodyMasses[impactBodyIndex] : 0.0f;
 		ALERT(
 			at_console,
-			"[NPC bullet] Applied deferred lethal-hit impulse: entity=%d id=%d body=%d mass=%.2f impulse=(%.1f %.1f %.1f) point=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\n",
+			"[NPC %s] Applied deferred lethal-hit impulse: entity=%d id=%d body=%d mass=%.2f impulse=(%.1f %.1f %.1f) point=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\n",
+			( impactName && impactName[0] ) ? impactName : "weapon",
 			ENTINDEX( targetEntity ), targetRagdoll->networkID,
 			impactBodyIndex, bodyMass,
 			impulse.GetX(), impulse.GetY(), impulse.GetZ(),
@@ -2601,6 +2606,16 @@ int NPCPhysics_ApplyBulletImpulseToRagdoll(
 	}
 
 	return TRUE;
+}
+
+int NPCPhysics_ApplyBulletImpulseToRagdoll(
+	edict_t *targetEntity,
+	const float *impactPosition,
+	const float *direction,
+	float impulseMagnitude )
+{
+	return NPCPhysics_ApplyImpactImpulseToRagdoll(
+		targetEntity, impactPosition, direction, impulseMagnitude, "bullet" );
 }
 
 int NPCPhysics_HasRagdollDefinition( edict_t *ent )
@@ -2684,6 +2699,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsMass );
 	CVAR_REGISTER( &g_svNpcVPhysicsBulletScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsCrowbarScale );
+	CVAR_REGISTER( &g_svNpcVPhysicsCrossbowScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsBlastScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsDebug );
 
