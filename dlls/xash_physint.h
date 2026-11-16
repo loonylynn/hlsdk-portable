@@ -167,5 +167,11 @@ int NPCPhysics_TraceAndApplyImpact(
 	float *hitPosition,
 	edict_t **hitEntity
 );
+int NPCPhysics_ApplyBulletImpulseToRagdoll(
+	edict_t *targetEntity,
+	const float *impactPosition,
+	const float *direction,
+	float impulseMagnitude
+);
 void NPCPhysics_ResetMap( void );
 void NPCPhysics_Shutdown( void );
