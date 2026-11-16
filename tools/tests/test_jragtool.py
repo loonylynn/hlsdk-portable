@@ -28,6 +28,7 @@ class JRAGToolTests(unittest.TestCase):
             '    $rotdamping 1.5\n'
             '    $rootbone "Bip01"\n'
             '    $jointconstrain "Bip01 L Leg" x limit -25 20\n'
+            '    $jointconstrain "Bip01 Helper" y limit -5 5\n'
             '    $jointrotdamping "Bip01 L Leg" 5\n'
             '}\n',
             encoding="utf-8",
@@ -142,6 +143,27 @@ class JRAGToolTests(unittest.TestCase):
         ])
         self.assertEqual(result, 2)
         self.assertIn("joint_min does not match", output)
+
+    def test_nonphysical_qci_directive_is_warned_and_ignored(self):
+        output = self._generate()
+        self.assertIn(
+            "WARNING: $jointconstrain targets non-physical skeleton bone 'Bip01 Helper'",
+            output)
+        definition = jragtool.read_jrag(self.jrag)
+        self.assertEqual(definition.bodies[0].joint_min, (-25.0, -1.0e30, -1.0e30))
+        self.assertEqual(definition.bodies[0].joint_max, (20.0, 1.0e30, 1.0e30))
+
+    def test_unknown_qci_bone_remains_an_error(self):
+        invalid_qci = self.root / "invalid.qci"
+        invalid_qci.write_text(
+            self.qci.read_text(encoding="utf-8").replace(
+                '"Bip01 Helper"', '"NotInSkeleton"'),
+            encoding="utf-8")
+        result, output = self._run([
+            "inspect", str(self.smd), "--qci", str(invalid_qci)
+        ])
+        self.assertEqual(result, 2)
+        self.assertIn("was not found in the SMD nodes", output)
 
     def test_runtime_parser_rejects_trailing_directives(self):
         self._generate()
