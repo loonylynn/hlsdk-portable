@@ -224,7 +224,8 @@ namespace
 		int rootElement;
 		float nextPoseTime;
 		float nextCollisionDamageTime;
-		float nextContactDebugTime;
+		float nextWorldContactDebugTime;
+		float nextKinematicContactDebugTime;
 		bool firstPoseSendReported;
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
@@ -253,7 +254,8 @@ namespace
 			  rootElement( -1 ),
 			  nextPoseTime( 0.0f ),
 			  nextCollisionDamageTime( 0.0f ),
-			  nextContactDebugTime( 0.0f ),
+			  nextWorldContactDebugTime( 0.0f ),
+			  nextKinematicContactDebugTime( 0.0f ),
 			  firstPoseSendReported( false ),
 			  blastDebugBodyID(),
 			  blastDebugBodyIndex( -1 ),
@@ -2503,8 +2505,13 @@ namespace
 				}
 			}
 			if( !ragdoll || !ragdoll->entity || ragdoll->entity->free ||
-				ragdoll->entity->serialnumber != ragdoll->serialNumber ||
-				gpGlobals->time < ragdoll->nextContactDebugTime )
+				ragdoll->entity->serialnumber != ragdoll->serialNumber )
+				continue;
+
+			float &nextDebugTime = event.otherLayer == WORLD_STATIC_OBJECT_LAYER
+				? ragdoll->nextWorldContactDebugTime
+				: ragdoll->nextKinematicContactDebugTime;
+			if( gpGlobals->time < nextDebugTime )
 				continue;
 
 			int bodyIndex = -1;
@@ -2544,7 +2551,7 @@ namespace
 				event.contactPoint.GetX(), event.contactPoint.GetY(), event.contactPoint.GetZ(),
 				event.normal.GetX(), event.normal.GetY(), event.normal.GetZ()
 			);
-			ragdoll->nextContactDebugTime = gpGlobals->time + 0.5f;
+			nextDebugTime = gpGlobals->time + 0.5f;
 		}
 	}
 
