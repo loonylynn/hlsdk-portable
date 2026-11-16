@@ -129,9 +129,9 @@ int CBaseMonster::ObjectCaps( void )
 {
 	int caps = CBaseToggle::ObjectCaps();
 
-	// Dead Jolt ragdolls are portable physics entities. They must survive
-	// landmark transitions even when their carrier is outside a trigger_transition
-	// brush. FCAP_FORCE_TRANSITION still obeys the engine's PVS visibility rule.
+	// Dead Jolt ragdolls are portable physics entities. The change-list builder
+	// explicitly includes them even when outside the landmark PVS; this flag
+	// bypasses any named trigger_transition volume restriction.
 	if( NPCPhysics_IsRagdollEntity( ENT( pev ) ) )
 		caps |= FCAP_ACROSS_TRANSITION | FCAP_FORCE_TRANSITION;
 
