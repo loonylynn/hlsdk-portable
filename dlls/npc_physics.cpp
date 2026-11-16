@@ -581,7 +581,7 @@ namespace
 				return;
 
 			const uint64_t ragdollID = ragdollBody.GetUserData();
-			if( ragdollID == 0 )
+			if( ragdollID == 0 || !g_npcPhysicsContactDebugEnabled )
 				return;
 
 			const RVec3 contact = body1IsRagdoll
@@ -792,6 +792,9 @@ namespace
 	static cvar_t g_svNpcVPhysicsPlayerPushMass = { "sv_npc_vphysics_player_push_mass", "350", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsPlayerPushSpeed = { "sv_npc_vphysics_player_push_speed", "50", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
+	// Sampled on the main thread before each Jolt frame; avoids diagnostic
+	// shape queries and engine cvar calls when contact logging is disabled.
+	static bool g_npcPhysicsContactDebugEnabled = false;
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
 	{
@@ -3197,6 +3200,9 @@ namespace
 	{
 		if( !g_npcPhysics.initialized || !gpGlobals )
 			return;
+
+		g_npcPhysicsContactDebugEnabled =
+			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f;
 
 		NPCPhysics_RemoveGibbedRagdolls();
 		if( g_ragdolls.empty() )
