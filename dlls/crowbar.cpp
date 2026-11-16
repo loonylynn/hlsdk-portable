@@ -25,6 +25,49 @@
 #include <algorithm>
 #ifndef CLIENT_DLL
 #include "xash_physint.h"
+#if !CLIENT_DLL
+struct NPCPhysicsPendingCrowbarImpact
+{
+	edict_t *entity;
+	int serialNumber;
+	Vector impactPosition;
+	Vector direction;
+	float impulseMagnitude;
+};
+static void NPCPhysics_QueueCrowbarImpact(
+	CBaseEntity *target, const Vector &impactPosition,
+	const Vector &direction, float impulseMagnitude,
+	NPCPhysicsPendingCrowbarImpact *pending )
+{
+	if( !target || !pending )
+		return;
+	edict_t *targetEntity = target->edict();
+	if( !targetEntity || targetEntity->free ||
+		NPCPhysics_IsRagdollEntity( targetEntity ) ||
+		!NPCPhysics_HasRagdollDefinition( targetEntity ) )
+		return;
+	pending->entity = targetEntity;
+	pending->serialNumber = targetEntity->serialnumber;
+	pending->impactPosition = impactPosition;
+	pending->direction = direction;
+	pending->impulseMagnitude = impulseMagnitude;
+}
+static void NPCPhysics_ApplyPendingCrowbarImpact( NPCPhysicsPendingCrowbarImpact *pending )
+{
+	if( !pending || !pending->entity )
+		return;
+	if( !pending->entity->free &&
+		pending->entity->serialnumber == pending->serialNumber &&
+		NPCPhysics_IsRagdollEntity( pending->entity ) )
+	{
+		NPCPhysics_ApplyImpactImpulseToRagdoll(
+			pending->entity, &pending->impactPosition[0], &pending->direction[0],
+			pending->impulseMagnitude, "crowbar" );
+	}
+	pending->entity = NULL;
+}
+#endif
+
 #endif
 
 #define	CROWBAR_BODYHIT_VOLUME 128
@@ -184,6 +227,12 @@ int CCrowbar::Swing( int fFirst )
 	int fDidHit = FALSE;
 
 	TraceResult tr;
+#if !CLIENT_DLL
+	NPCPhysicsPendingCrowbarImpact pendingCrowbarImpact;
+	pendingCrowbarImpact.entity = NULL;
+	pendingCrowbarImpact.serialNumber = -1;
+	pendingCrowbarImpact.impulseMagnitude = 0.0f;
+#endif
 
 	UTIL_MakeVectors( m_pPlayer->pev->v_angle );
 	Vector vecSrc = m_pPlayer->GetGunPosition();
@@ -279,6 +328,10 @@ int CCrowbar::Swing( int fFirst )
 		if( pEntity )
 		{
 			ClearMultiDamage();
+			NPCPhysics_QueueCrowbarImpact(
+				pEntity, tr.vecEndPos, gpGlobals->v_forward,
+				impactDamage * 75.0f * 4.0f * crowbarImpactScale,
+				&pendingCrowbarImpact );
 			// If building with the clientside weapon prediction system,
 			// UTIL_WeaponTimeBase() is always 0 and m_flNextPrimaryAttack is >= -1.0f, thus making
 			// m_flNextPrimaryAttack + 1 < UTIL_WeaponTimeBase() always evaluate to false.
@@ -297,6 +350,7 @@ int CCrowbar::Swing( int fFirst )
 				pEntity->TraceAttack( m_pPlayer->pev, gSkillData.plrDmgCrowbar * 0.5f, gpGlobals->v_forward, &tr, DMG_CLUB ); 
 			}
 			ApplyMultiDamage( m_pPlayer->pev, m_pPlayer->pev );
+			NPCPhysics_ApplyPendingCrowbarImpact( &pendingCrowbarImpact );
 
 			if( pEntity->Classify() != CLASS_NONE && pEntity->Classify() != CLASS_MACHINE )
 			{

@@ -19,6 +19,15 @@
 //
 // generic Monster
 //
+// Portable Jolt ragdoll state serialized with transferable monsters.
+// Studio transforms are offsets from pev->origin plus a quaternion. Body
+// velocities allow an in-flight corpse to continue moving after a map load.
+#define NPC_RAGDOLL_PERSIST_VERSION 1
+#define NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES 128
+#define NPC_RAGDOLL_PERSIST_MAX_BODIES 64
+#define NPC_RAGDOLL_PERSIST_STUDIO_STRIDE 7
+#define NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE 6
+
 class CBaseMonster : public CBaseToggle
 {
 private:
@@ -112,6 +121,22 @@ public:
 
 	float m_flLastYawTime;
 
+	int m_iNpcRagdollPersistVersion;
+	int m_iNpcRagdollPersistBoneCount;
+	int m_iNpcRagdollPersistBodyCount;
+	float m_flNpcRagdollPersistStudioPose[
+		NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES * NPC_RAGDOLL_PERSIST_STUDIO_STRIDE];
+	float m_flNpcRagdollPersistBodyVelocity[
+		NPC_RAGDOLL_PERSIST_MAX_BODIES * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE];
+
+#ifdef CLIENT_DLL
+	// The client DLL shares CBaseMonster's class layout through weapon and
+	// entity code, but does not compile the server-only monsters.cpp. Keep
+	// the client vtable self-contained; ragdoll transition flags are server-only.
+	virtual int ObjectCaps( void ) { return CBaseToggle::ObjectCaps(); }
+#else
+	virtual int ObjectCaps( void );
+#endif
 	virtual int Save( CSave &save ); 
 	virtual int Restore( CRestore &restore );
 	static TYPEDESCRIPTION m_SaveData[];

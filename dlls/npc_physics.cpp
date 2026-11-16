@@ -13,6 +13,7 @@
 #include "studio.h"
 #include "cbase.h"
 #include "monsters.h"
+#include "basemonster.h"
 
 
 #include <Jolt/Jolt.h>
@@ -21,12 +22,16 @@
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
+#include <Jolt/Physics/Collision/EstimateCollisionResponse.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/CollisionGroup.h>
 #include <Jolt/Physics/Constraints/SixDOFConstraint.h>
@@ -37,6 +42,7 @@
 #include <cmath>
 #include <cfloat>
 #include <iomanip>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <cstdint>
@@ -51,9 +57,17 @@ namespace
 	using namespace JPH;
 
 	static constexpr ObjectLayer RAGDOLL_OBJECT_LAYER = 0;
+	static constexpr ObjectLayer WORLD_STATIC_OBJECT_LAYER = 1;
+	// Shared by moving BSP brushes and the living-actor hull proxies.
+	static constexpr ObjectLayer BRUSH_KINEMATIC_OBJECT_LAYER = 2;
 	static constexpr uint32_t RAGDOLL_MAX_BODIES = 4096;
 	static constexpr uint32_t RAGDOLL_MAX_BODY_PAIRS = 8192;
 	static constexpr uint32_t RAGDOLL_MAX_CONTACT_CONSTRAINTS = 8192;
+	// The bridge keeps geometry, gravity and velocities in GoldSrc map units
+	// (1 unit = 1 inch). Jolt's absolute PhysicsSettings defaults are in meters,
+	// so convert those distances/speeds instead of using SI-sized tolerances
+	// against inch-scaled world geometry.
+	static constexpr float RAGDOLL_SOURCE_UNITS_PER_METER = 39.3700787f;
 	static constexpr float RAGDOLL_FIXED_STEP = 1.0f / 120.0f;
 	static constexpr int RAGDOLL_MAX_STEPS_PER_FRAME = 8;
 	static constexpr float RAGDOLL_ACTIVE_POSE_INTERVAL = 0.05f;
@@ -77,7 +91,15 @@ namespace
 	class RagdollObjectLayerFilter final : public ObjectLayerPairFilter
 	{
 	public:
-		bool ShouldCollide( ObjectLayer, ObjectLayer ) const override { return true; }
+		bool ShouldCollide( ObjectLayer layer1, ObjectLayer layer2 ) const override
+		{
+			// The world BSP and inline brush models are triangle meshes. Jolt
+			// does not support mesh-vs-mesh contacts when one mesh is kinematic.
+			// Living actors are represented by kinematic box hulls on the same
+			// layer. Only convex articulated ragdoll bodies need contacts with
+			// environment geometry or actor hulls.
+			return layer1 == RAGDOLL_OBJECT_LAYER || layer2 == RAGDOLL_OBJECT_LAYER;
+		}
 	};
 
 	class RagdollBroadPhaseFilter final : public ObjectVsBroadPhaseLayerFilter
@@ -163,13 +185,41 @@ namespace
 		BodyID bodyID;
 		Vec3 position;
 		Quat rotation;
+		bool isKinematic;
+		bool wasMoving;
+		bool pendingStaticTransition;
 
 		NPCPhysicsBrushCollider()
 			: entityIndex( -1 ),
 			  modelIndex( 0 ),
 			  bodyID(),
 			  position( 0.0f, 0.0f, 0.0f ),
-			  rotation( Quat::sIdentity() )
+			  rotation( Quat::sIdentity() ),
+			  isKinematic( false ),
+			  wasMoving( false ),
+			  pendingStaticTransition( false )
+		{
+		}
+	};
+
+	struct NPCPhysicsActorCollider
+	{
+		int entityIndex;
+		int serialNumber;
+		BodyID bodyID;
+		Vec3 position;
+		Vec3 centerOffset;
+		Vec3 halfExtents;
+		bool wasMoving;
+
+		NPCPhysicsActorCollider()
+			: entityIndex( -1 ),
+			  serialNumber( 0 ),
+			  bodyID(),
+			  position( 0.0f, 0.0f, 0.0f ),
+			  centerOffset( 0.0f, 0.0f, 0.0f ),
+			  halfExtents( 0.0f, 0.0f, 0.0f ),
+			  wasMoving( false )
 		{
 		}
 	};
@@ -183,8 +233,20 @@ namespace
 		int bodyCount;
 		int rootElement;
 		float nextPoseTime;
+		float nextCollisionDamageTime;
+		float nextWorldContactDebugTime;
+		float nextKinematicContactDebugTime;
+		float nextPlayerPushDebugTime;
+		bool firstPoseSendReported;
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
+		std::vector<float> bodyMasses;
+		BodyID blastDebugBodyID;
+		int blastDebugBodyIndex;
+		Vec3 blastDebugBodyStartPosition;
+		Vec3 blastDebugRootStartPosition;
+		float blastDebugTime;
+		bool blastDebugPending;
 		Ref<Ragdoll> physicsRagdoll;
 		Ref<Skeleton> physicsSkeleton;
 		Ref<Skeleton> studioSkeleton;
@@ -202,16 +264,320 @@ namespace
 			  bodyCount( 0 ),
 			  rootElement( -1 ),
 			  nextPoseTime( 0.0f ),
+			  nextCollisionDamageTime( 0.0f ),
+			  nextWorldContactDebugTime( 0.0f ),
+			  nextKinematicContactDebugTime( 0.0f ),
+			  nextPlayerPushDebugTime( 0.0f ),
+			  firstPoseSendReported( false ),
+			  blastDebugBodyID(),
+			  blastDebugBodyIndex( -1 ),
+			  blastDebugBodyStartPosition( 0.0f, 0.0f, 0.0f ),
+			  blastDebugRootStartPosition( 0.0f, 0.0f, 0.0f ),
+			  blastDebugTime( 0.0f ),
+			  blastDebugPending( false ),
 			  addedToPhysicsSystem( false )
 		{
 		}
 	};
+
+	struct NPCPhysicsPendingCollisionDamage
+	{
+		uint64_t ragdollID;
+		BodyID ragdollBodyID;
+		int otherEntityIndex;
+		float velocityLoss;
+		Vec3 contactPoint;
+
+		NPCPhysicsPendingCollisionDamage()
+			: ragdollID( 0 ),
+			  ragdollBodyID(),
+			  otherEntityIndex( 0 ),
+			  velocityLoss( 0.0f ),
+			  contactPoint( 0.0f, 0.0f, 0.0f )
+		{
+		}
+	};
+
+	struct NPCPhysicsPendingContactDiagnostic
+	{
+		uint64_t ragdollID;
+		BodyID ragdollBodyID;
+		int otherLayer;
+		int otherEntityIndex;
+		float penetrationDepth;
+		float closingSpeed;
+		Vec3 contactPoint;
+		Vec3 normal;
+
+		NPCPhysicsPendingContactDiagnostic()
+			: ragdollID( 0 ),
+			  ragdollBodyID(),
+			  otherLayer( 0 ),
+			  otherEntityIndex( 0 ),
+			  penetrationDepth( 0.0f ),
+			  closingSpeed( 0.0f ),
+			  contactPoint( 0.0f, 0.0f, 0.0f ),
+			  normal( 0.0f, 0.0f, 0.0f )
+		{
+		}
+	};
+
+	struct NPCPhysicsPendingPlayerPush
+	{
+		uint64_t ragdollID;
+		BodyID ragdollBodyID;
+		int playerEntityIndex;
+		Vec3 pushDirection;
+		Vec3 contactPoint;
+		Vec3 ragdollPointVelocityBefore;
+		Vec3 playerPointVelocityBefore;
+
+		NPCPhysicsPendingPlayerPush()
+			: ragdollID( 0 ),
+			  ragdollBodyID(),
+			  playerEntityIndex( 0 ),
+			  pushDirection( 0.0f, 0.0f, 0.0f ),
+			  contactPoint( 0.0f, 0.0f, 0.0f ),
+			  ragdollPointVelocityBefore( 0.0f, 0.0f, 0.0f ),
+			  playerPointVelocityBefore( 0.0f, 0.0f, 0.0f )
+		{
+		}
+	};
+
+	class NPCPhysicsContactListener final : public ContactListener
+	{
+	public:
+		void OnContactAdded(
+			const Body &body1,
+			const Body &body2,
+			const ContactManifold &manifold,
+			ContactSettings &settings ) override
+		{
+			const ObjectLayer layer1 = body1.GetObjectLayer();
+			const ObjectLayer layer2 = body2.GetObjectLayer();
+			const bool body1IsRagdoll = layer1 == RAGDOLL_OBJECT_LAYER;
+			const bool body2IsRagdoll = layer2 == RAGDOLL_OBJECT_LAYER;
+
+			// This pass models Source's ragdoll-vs-world/brush/actor impact path.
+			// Ragdoll-vs-ragdoll damage is deliberately left out for now.
+			if( body1IsRagdoll == body2IsRagdoll )
+				return;
+
+			const Body &ragdollBody = body1IsRagdoll ? body1 : body2;
+			const Body &otherBody = body1IsRagdoll ? body2 : body1;
+			const ObjectLayer otherLayer = body1IsRagdoll ? layer2 : layer1;
+			if( otherLayer != WORLD_STATIC_OBJECT_LAYER &&
+				otherLayer != BRUSH_KINEMATIC_OBJECT_LAYER )
+				return;
+			if( ragdollBody.GetMotionType() != EMotionType::Dynamic ||
+				manifold.mRelativeContactPointsOn1.size() == 0 )
+				return;
+
+			const uint64_t ragdollID = ragdollBody.GetUserData();
+			if( ragdollID == 0 )
+				return;
+
+			QueuePlayerPushLimit( body1, body2, manifold );
+
+			const RVec3 contact = manifold.GetWorldSpaceContactPointOn1( 0 );
+			const Vec3 normal = manifold.mWorldSpaceNormal;
+			const Vec3 relativeVelocityBefore =
+				body2.GetPointVelocity( contact ) - body1.GetPointVelocity( contact );
+			const float closingSpeedBefore =
+				(std::max)( 0.0f, -relativeVelocityBefore.Dot( normal ) );
+
+			// Keep a low-volume record of every new ragdoll/world or
+			// ragdoll/kinematic contact. This is deliberately separate from
+			// impact damage: slow player shoves must be diagnosable too.
+			NPCPhysicsPendingContactDiagnostic diagnostic;
+			diagnostic.ragdollID = ragdollID;
+			diagnostic.ragdollBodyID = ragdollBody.GetID();
+			diagnostic.otherLayer = static_cast<int>( otherLayer );
+			diagnostic.otherEntityIndex = otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER
+				? static_cast<int>( otherBody.GetUserData() ) : 0;
+			diagnostic.penetrationDepth = manifold.mPenetrationDepth;
+			diagnostic.closingSpeed = closingSpeedBefore;
+			diagnostic.contactPoint = Vec3(
+				float( contact.GetX() ),
+				float( contact.GetY() ),
+				float( contact.GetZ() ) );
+			diagnostic.normal = normal;
+			{
+				std::lock_guard<std::mutex> lock( m_mutex );
+				m_contactDiagnostics.push_back( diagnostic );
+			}
+
+			// Collision damage is reserved for actual closing impacts with a
+			// usable manifold. Diagnostic contacts above also include slow or
+			// resting contacts, which are useful when investigating wall clips.
+			if( manifold.mPenetrationDepth < 0.0f || closingSpeedBefore < 1.0f )
+				return;
+
+			CollisionEstimationResult estimate;
+			EstimateCollisionResponse(
+				body1, body2, manifold, estimate,
+				settings.mCombinedFriction, settings.mCombinedRestitution,
+				1.0f, 2 );
+
+			const RVec3 center1 = body1.GetCenterOfMassPosition();
+			const RVec3 center2 = body2.GetCenterOfMassPosition();
+			const Vec3 offset1(
+				float( contact.GetX() - center1.GetX() ),
+				float( contact.GetY() - center1.GetY() ),
+				float( contact.GetZ() - center1.GetZ() ) );
+			const Vec3 offset2(
+				float( contact.GetX() - center2.GetX() ),
+				float( contact.GetY() - center2.GetY() ),
+				float( contact.GetZ() - center2.GetZ() ) );
+
+			const Vec3 velocity1After = estimate.mLinearVelocity1 +
+				estimate.mAngularVelocity1.Cross( offset1 );
+			const Vec3 velocity2After = estimate.mLinearVelocity2 +
+				estimate.mAngularVelocity2.Cross( offset2 );
+			const Vec3 relativeVelocityAfter = velocity2After - velocity1After;
+			const float closingSpeedAfter =
+				(std::max)( 0.0f, -relativeVelocityAfter.Dot( normal ) );
+			const float velocityLoss = closingSpeedBefore - closingSpeedAfter;
+			if( !std::isfinite( velocityLoss ) || velocityLoss < 1.0f )
+				return;
+
+			NPCPhysicsPendingCollisionDamage event;
+			event.ragdollID = ragdollID;
+			event.ragdollBodyID = ragdollBody.GetID();
+			event.otherEntityIndex = otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER
+				? static_cast<int>( otherBody.GetUserData() ) : 0;
+			event.velocityLoss = velocityLoss;
+			event.contactPoint = Vec3(
+				float( contact.GetX() ),
+				float( contact.GetY() ),
+				float( contact.GetZ() ) );
+
+			std::lock_guard<std::mutex> lock( m_mutex );
+			m_pending.push_back( event );
+		}
+
+		void OnContactPersisted(
+			const Body &body1,
+			const Body &body2,
+			const ContactManifold &manifold,
+			ContactSettings & ) override
+		{
+			QueuePlayerPushLimit( body1, body2, manifold );
+		}
+
+		std::vector<NPCPhysicsPendingPlayerPush> DrainPlayerPushLimits()
+		{
+			std::lock_guard<std::mutex> lock( m_mutex );
+			std::vector<NPCPhysicsPendingPlayerPush> result;
+			result.swap( m_playerPushLimits );
+			return result;
+		}
+
+		std::vector<NPCPhysicsPendingCollisionDamage> Drain()
+		{
+			std::lock_guard<std::mutex> lock( m_mutex );
+			std::vector<NPCPhysicsPendingCollisionDamage> result;
+			result.swap( m_pending );
+			return result;
+		}
+
+		std::vector<NPCPhysicsPendingContactDiagnostic> DrainDiagnostics()
+		{
+			std::lock_guard<std::mutex> lock( m_mutex );
+			std::vector<NPCPhysicsPendingContactDiagnostic> result;
+			result.swap( m_contactDiagnostics );
+			return result;
+		}
+
+		void Clear()
+		{
+			std::lock_guard<std::mutex> lock( m_mutex );
+			m_pending.clear();
+			m_contactDiagnostics.clear();
+			m_playerPushLimits.clear();
+		}
+
+	private:
+		void QueuePlayerPushLimit(
+			const Body &body1,
+			const Body &body2,
+			const ContactManifold &manifold )
+		{
+			const ObjectLayer layer1 = body1.GetObjectLayer();
+			const ObjectLayer layer2 = body2.GetObjectLayer();
+			const bool body1IsRagdoll = layer1 == RAGDOLL_OBJECT_LAYER;
+			const bool body2IsRagdoll = layer2 == RAGDOLL_OBJECT_LAYER;
+			if( body1IsRagdoll == body2IsRagdoll )
+				return;
+
+			const Body &ragdollBody = body1IsRagdoll ? body1 : body2;
+			const Body &playerBody = body1IsRagdoll ? body2 : body1;
+			if( playerBody.GetObjectLayer() != BRUSH_KINEMATIC_OBJECT_LAYER ||
+				ragdollBody.GetMotionType() != EMotionType::Dynamic ||
+				manifold.mRelativeContactPointsOn1.size() == 0 ||
+				!gpGlobals )
+				return;
+
+			const int playerEntityIndex = static_cast<int>( playerBody.GetUserData() );
+			if( playerEntityIndex <= 0 || playerEntityIndex >= gpGlobals->maxEntities )
+				return;
+
+			edict_t *player = INDEXENT( playerEntityIndex );
+			if( !player || player->free || !( player->v.flags & FL_CLIENT ) )
+				return;
+
+			const RVec3 contact = body1IsRagdoll
+				? manifold.GetWorldSpaceContactPointOn1( 0 )
+				: manifold.GetWorldSpaceContactPointOn2( 0 );
+			// Jolt's manifold normal points from body 1 toward body 2.
+			// Convert it into the direction from the player into the ragdoll.
+			const Vec3 pushDirection = body1IsRagdoll
+				? -manifold.mWorldSpaceNormal
+				: manifold.mWorldSpaceNormal;
+			const Vec3 ragdollPointVelocity =
+				ragdollBody.GetPointVelocity( contact );
+			const Vec3 playerPointVelocity =
+				playerBody.GetPointVelocity( contact );
+			const float approachSpeed =
+				( playerPointVelocity - ragdollPointVelocity ).Dot( pushDirection );
+			if( !std::isfinite( approachSpeed ) || approachSpeed < 1.0f )
+				return;
+
+			NPCPhysicsPendingPlayerPush event;
+			event.ragdollID = ragdollBody.GetUserData();
+			event.ragdollBodyID = ragdollBody.GetID();
+			event.playerEntityIndex = playerEntityIndex;
+			event.pushDirection = pushDirection;
+			event.contactPoint = Vec3(
+				float( contact.GetX() ),
+				float( contact.GetY() ),
+				float( contact.GetZ() ) );
+			event.ragdollPointVelocityBefore = ragdollPointVelocity;
+			event.playerPointVelocityBefore = playerPointVelocity;
+
+			std::lock_guard<std::mutex> lock( m_mutex );
+			m_playerPushLimits.push_back( event );
+		}
+
+		std::mutex m_mutex;
+		std::vector<NPCPhysicsPendingCollisionDamage> m_pending;
+		std::vector<NPCPhysicsPendingContactDiagnostic> m_contactDiagnostics;
+		std::vector<NPCPhysicsPendingPlayerPush> m_playerPushLimits;
+	};
+
+	// The creation path logs restored velocities before the diagnostic helper's
+	// implementation later in this file.
+	static void NPCPhysics_LogRagdollVelocitySummary(
+		const char *stage,
+		edict_t *ent,
+		const NPCPhysicsRagdoll &ragdoll );
 
 	struct NPCPhysicsWorld
 	{
 		RagdollBroadPhaseLayers broadPhaseLayers;
 		RagdollObjectLayerFilter objectLayerFilter;
 		RagdollBroadPhaseFilter broadPhaseFilter;
+		NPCPhysicsContactListener contactListener;
 		PhysicsSystem system;
 		JobSystemSingleThreaded jobs;
 		TempAllocatorImpl *tempAllocator;
@@ -239,6 +605,7 @@ namespace
 	static xash_brush_collision_mesh_api_s *g_brushCollisionMeshAPI = NULL;
 	static std::vector<NPCPhysicsBrushModelShape> g_brushModelShapes;
 	static std::vector<NPCPhysicsBrushCollider> g_brushColliders;
+	static std::vector<NPCPhysicsActorCollider> g_actorColliders;
 	static bool g_brushCollisionUnavailableLogged = false;
 	static bool g_brushCollisionStatusLogged = false;
 	static BodyID g_worldCollisionBodyID;
@@ -249,6 +616,12 @@ namespace
 	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsBulletScale = { "sv_npc_vphysics_bullet_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsCrowbarScale = { "sv_npc_vphysics_crowbar_scale", "1.0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsCrossbowScale = { "sv_npc_vphysics_crossbow_scale", "1.0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsBlastScale = { "sv_npc_vphysics_blast_scale", "1.0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsImpactDamageScale = { "sv_npc_vphysics_impact_damage_scale", "0.25", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsPlayerPushMass = { "sv_npc_vphysics_player_push_mass", "350", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsPlayerPushSpeed = { "sv_npc_vphysics_player_push_speed", "50", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
 	{
@@ -261,6 +634,31 @@ namespace
 	static bool NPCPhysics_Enabled()
 	{
 		return NPCPhysics_GetCvar( "sv_npc_vphysics", 1.0f ) >= 0.5f;
+	}
+
+	// Source's default NPC physics impact table is keyed by squared velocity
+	// lost during contact. Keep its thresholds with a conservative scale so
+	// ordinary corpse settling does not repeatedly cause damage.
+	static float NPCPhysics_CalculateCollisionDamage( float velocityLoss )
+	{
+		const float scale = NPCPhysics_GetCvar(
+			"sv_npc_vphysics_impact_damage_scale", 0.25f );
+		if( !std::isfinite( velocityLoss ) || velocityLoss <= 0.0f ||
+			!std::isfinite( scale ) || scale <= 0.0f )
+			return 0.0f;
+
+		const float impactEnergy = velocityLoss * velocityLoss * scale;
+		if( impactEnergy < 150.0f * 150.0f )
+			return 0.0f;
+		if( impactEnergy < 250.0f * 250.0f )
+			return 5.0f;
+		if( impactEnergy < 350.0f * 350.0f )
+			return 10.0f;
+		if( impactEnergy < 500.0f * 500.0f )
+			return 50.0f;
+		if( impactEnergy < 1000.0f * 1000.0f )
+			return 100.0f;
+		return 500.0f;
 	}
 
 	static bool NPCPhysics_RagdollSetupFailed( const char *reason )
@@ -302,7 +700,38 @@ namespace
 			g_npcPhysics.objectLayerFilter
 		);
 
+		// Jolt's documented defaults assume meters. The bridge intentionally
+		// uses GoldSrc inches throughout (including sv_gravity=800), so scale
+		// every linear tolerance and squared-distance threshold to that space.
+		PhysicsSettings sourceUnitSettings = g_npcPhysics.system.GetPhysicsSettings();
+		const float sourceScale = RAGDOLL_SOURCE_UNITS_PER_METER;
+		const float sourceScaleSquared = sourceScale * sourceScale;
+		sourceUnitSettings.mSpeculativeContactDistance *= sourceScale;
+		sourceUnitSettings.mPenetrationSlop *= sourceScale;
+		sourceUnitSettings.mManifoldTolerance *= sourceScale;
+		sourceUnitSettings.mMaxPenetrationDistance *= sourceScale;
+		sourceUnitSettings.mMinVelocityForRestitution *= sourceScale;
+		sourceUnitSettings.mPointVelocitySleepThreshold *= sourceScale;
+		sourceUnitSettings.mBodyPairCacheMaxDeltaPositionSq *= sourceScaleSquared;
+		sourceUnitSettings.mContactPointPreserveLambdaMaxDistSq *= sourceScaleSquared;
+		sourceUnitSettings.mInternalEdgeRemovalVertexToleranceSq *= sourceScaleSquared;
+
+		// Articulated ragdolls can be wedged between the player hull and BSP
+		// surfaces. Give the contact/joint island more position-solver passes
+		// so deep transient contacts are corrected more completely per step.
+		sourceUnitSettings.mNumPositionSteps = 4;
+		g_npcPhysics.system.SetPhysicsSettings( sourceUnitSettings );
+		g_npcPhysics.system.SetContactListener( &g_npcPhysics.contactListener );
+
 		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -800.0f ) );
+		ALERT(
+			at_console,
+			"[NPC physics] Jolt GoldSrc-unit scaling: units/m=%.3f max-penetration-correction=%.2f speculative-distance=%.2f position-steps=%u.\n",
+			sourceScale,
+			sourceUnitSettings.mMaxPenetrationDistance,
+			sourceUnitSettings.mSpeculativeContactDistance,
+			sourceUnitSettings.mNumPositionSteps
+		);
 		g_npcPhysics.fixedAccumulator = 0.0f;
 		g_npcPhysics.initialized = true;
 		return true;
@@ -567,7 +996,7 @@ namespace
 			RVec3( 0.0f, 0.0f, 0.0f ),
 			Quat::sIdentity(),
 			EMotionType::Static,
-			RAGDOLL_OBJECT_LAYER
+			WORLD_STATIC_OBJECT_LAYER
 		);
 		bodySettings.mFriction = 0.9f;
 		bodySettings.mRestitution = 0.0f;
@@ -776,19 +1205,31 @@ namespace
 
 			if( colliderIndex < 0 )
 			{
+				// Most inline BSP entities are stationary. Create them as static
+				// bodies first; only promote a body to kinematic when its actual
+				// transform changes. Reserve motion properties so Jolt can switch
+				// the same body to kinematic without rebuilding its mesh shape.
 				BodyCreationSettings bodySettings(
 					shape.GetPtr(),
 					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
 					rotation,
 					EMotionType::Static,
-					RAGDOLL_OBJECT_LAYER
+					BRUSH_KINEMATIC_OBJECT_LAYER
 				);
+				bodySettings.mAllowDynamicOrKinematic = true;
+				// Mesh shapes do not have a closed volume from which to derive
+				// mass properties. Supply valid values for the optional kinematic
+				// motion properties; static bodies do not use these values.
+				bodySettings.mOverrideMassProperties = EOverrideMassProperties::MassAndInertiaProvided;
+				bodySettings.mMassPropertiesOverride.mMass = 1.0f;
+				bodySettings.mMassPropertiesOverride.mInertia = Mat44::sIdentity();
+				bodySettings.mUserData = static_cast<uint64_t>( entityInfo.entityIndex );
 				bodySettings.mFriction = 0.9f;
 				bodySettings.mRestitution = 0.0f;
 
 				const BodyID bodyID = bodyInterface.CreateAndAddBody(
 					bodySettings,
-					EActivation::Activate
+					EActivation::DontActivate
 				);
 				if( bodyID.IsInvalid() )
 				{
@@ -809,7 +1250,7 @@ namespace
 				g_brushColliders.push_back( collider );
 				ALERT(
 					at_console,
-					"[NPC physics] Added inline BSP collider: entity %d, model %d.\n",
+					"[NPC physics] Added static inline BSP collider: entity %d, model %d.\n",
 					entityInfo.entityIndex,
 					entityInfo.modelIndex
 				);
@@ -818,17 +1259,70 @@ namespace
 
 			NPCPhysicsBrushCollider &collider = g_brushColliders[colliderIndex];
 			const Vec3 positionDelta = position - collider.position;
-			if( positionDelta.LengthSq() > 0.0001f ||
-				NPCPhysics_QuaternionsDiffer( rotation, collider.rotation ) )
+			const bool transformChanged = positionDelta.LengthSq() > 0.0001f ||
+				NPCPhysics_QuaternionsDiffer( rotation, collider.rotation );
+
+			float frameTime = gpGlobals ? gpGlobals->frametime : 0.0f;
+			if( frameTime < 0.0f )
+				frameTime = 0.0f;
+			if( frameTime > 0.1f )
+				frameTime = 0.1f;
+
+			// Only entities whose transforms actually change need a kinematic
+			// surface velocity. This avoids keeping every stationary func_wall
+			// and other inline BSP entity in the moving broadphase.
+			if( frameTime > 0.0001f && transformChanged )
 			{
-				bodyInterface.SetPositionAndRotation(
+				if( !collider.isKinematic )
+				{
+					bodyInterface.SetMotionType(
+						collider.bodyID, EMotionType::Kinematic, EActivation::Activate );
+					collider.isKinematic = true;
+					ALERT(
+						at_console,
+						"[NPC physics] Promoted inline BSP collider to kinematic: entity %d, model %d.\n",
+						collider.entityIndex, collider.modelIndex
+					);
+				}
+
+				// MoveKinematic derives linear/angular surface velocity from the
+				// transform delta so moving doors and platforms can push ragdolls.
+				bodyInterface.MoveKinematic(
 					collider.bodyID,
 					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
 					rotation,
-					EActivation::DontActivate
+					frameTime
 				);
 				collider.position = position;
 				collider.rotation = rotation;
+				collider.wasMoving = true;
+				collider.pendingStaticTransition = false;
+			}
+			else if( frameTime > 0.0001f && collider.wasMoving )
+			{
+				// Give the kinematic body one unchanged target to clear the
+				// velocity calculated on its last moving frame. Switch it back
+				// to static on the following frame, after that final step.
+				bodyInterface.MoveKinematic(
+					collider.bodyID,
+					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
+					rotation,
+					frameTime
+				);
+				collider.wasMoving = false;
+				collider.pendingStaticTransition = true;
+			}
+			else if( collider.pendingStaticTransition )
+			{
+				bodyInterface.SetMotionType(
+					collider.bodyID, EMotionType::Static, EActivation::DontActivate );
+				collider.isKinematic = false;
+				collider.pendingStaticTransition = false;
+				ALERT(
+					at_console,
+					"[NPC physics] Settled inline BSP collider to static: entity %d, model %d.\n",
+					collider.entityIndex, collider.modelIndex
+				);
 			}
 		}
 
@@ -839,6 +1333,202 @@ namespace
 			{
 				NPCPhysics_DestroyBrushCollider( g_brushColliders[i - 1] );
 				g_brushColliders.erase( g_brushColliders.begin() + ( i - 1 ) );
+			}
+		}
+	}
+
+	static void NPCPhysics_DestroyActorCollider( NPCPhysicsActorCollider &collider )
+	{
+		if( !g_npcPhysics.initialized || collider.bodyID.IsInvalid() )
+			return;
+
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		if( bodyInterface.IsAdded( collider.bodyID ) )
+			bodyInterface.RemoveBody( collider.bodyID );
+		bodyInterface.DestroyBody( collider.bodyID );
+		collider.bodyID = BodyID();
+	}
+
+	static void NPCPhysics_DestroyActorColliders()
+	{
+		for( size_t i = 0; i < g_actorColliders.size(); ++i )
+			NPCPhysics_DestroyActorCollider( g_actorColliders[i] );
+		g_actorColliders.clear();
+	}
+
+	static int NPCPhysics_FindActorCollider( int entityIndex )
+	{
+		for( size_t i = 0; i < g_actorColliders.size(); ++i )
+			if( g_actorColliders[i].entityIndex == entityIndex )
+				return static_cast<int>( i );
+		return -1;
+	}
+
+	static bool NPCPhysics_IsActorColliderCandidate( edict_t *ent )
+	{
+		if( !ent || ent->free )
+			return false;
+
+		const int flags = ent->v.flags;
+		if( !( flags & ( FL_CLIENT | FL_MONSTER ) ) ||
+			( flags & ( FL_KILLME | FL_DORMANT ) ) ||
+			NPCPhysics_IsRagdollEntity( ent ) )
+			return false;
+
+		if( ent->v.deadflag != DEAD_NO || ent->v.health <= 0.0f )
+			return false;
+
+		if( ent->v.movetype != MOVETYPE_WALK &&
+			ent->v.movetype != MOVETYPE_STEP &&
+			ent->v.movetype != MOVETYPE_FLY )
+			return false;
+
+		return ent->v.solid == SOLID_SLIDEBOX || ent->v.solid == SOLID_BBOX;
+	}
+
+	static void NPCPhysics_UpdateActorColliders()
+	{
+		if( !g_npcPhysics.initialized || !gpGlobals )
+			return;
+
+		std::vector<int> presentEntities;
+		presentEntities.reserve( 32 );
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+
+		float frameTime = gpGlobals->frametime;
+		if( frameTime < 0.0f )
+			frameTime = 0.0f;
+		if( frameTime > 0.1f )
+			frameTime = 0.1f;
+
+		for( int entityIndex = 1; entityIndex < gpGlobals->maxEntities; ++entityIndex )
+		{
+			edict_t *ent = INDEXENT( entityIndex );
+			if( !NPCPhysics_IsActorColliderCandidate( ent ) )
+				continue;
+
+			const Vec3 mins( ent->v.mins[0], ent->v.mins[1], ent->v.mins[2] );
+			const Vec3 maxs( ent->v.maxs[0], ent->v.maxs[1], ent->v.maxs[2] );
+			const Vec3 halfExtents = ( maxs - mins ) * 0.5f;
+			const Vec3 centerOffset = ( maxs + mins ) * 0.5f;
+			if( !std::isfinite( halfExtents.GetX() ) ||
+				!std::isfinite( halfExtents.GetY() ) ||
+				!std::isfinite( halfExtents.GetZ() ) ||
+				!std::isfinite( centerOffset.GetX() ) ||
+				!std::isfinite( centerOffset.GetY() ) ||
+				!std::isfinite( centerOffset.GetZ() ) ||
+				halfExtents.GetX() < 1.0f || halfExtents.GetY() < 1.0f ||
+				halfExtents.GetZ() < 1.0f ||
+				halfExtents.GetX() > 128.0f || halfExtents.GetY() > 128.0f ||
+				halfExtents.GetZ() > 128.0f )
+				continue;
+
+			presentEntities.push_back( entityIndex );
+			const Vec3 position(
+				ent->v.origin[0] + centerOffset.GetX(),
+				ent->v.origin[1] + centerOffset.GetY(),
+				ent->v.origin[2] + centerOffset.GetZ() );
+
+			int colliderIndex = NPCPhysics_FindActorCollider( entityIndex );
+			if( colliderIndex >= 0 )
+			{
+				NPCPhysicsActorCollider &existing = g_actorColliders[colliderIndex];
+				const Vec3 extentDelta = halfExtents - existing.halfExtents;
+				if( existing.serialNumber != ent->serialnumber ||
+					extentDelta.LengthSq() > 0.0001f )
+				{
+					NPCPhysics_DestroyActorCollider( existing );
+					g_actorColliders.erase( g_actorColliders.begin() + colliderIndex );
+					colliderIndex = -1;
+				}
+			}
+
+			if( colliderIndex < 0 )
+			{
+				BoxShapeSettings shapeSettings( halfExtents );
+				Shape::ShapeResult shapeResult = shapeSettings.Create();
+				if( !shapeResult.IsValid() )
+					continue;
+
+				BodyCreationSettings bodySettings(
+					shapeResult.Get(),
+					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
+					Quat::sIdentity(),
+					EMotionType::Kinematic,
+					BRUSH_KINEMATIC_OBJECT_LAYER
+				);
+				bodySettings.mUserData = static_cast<uint64_t>( entityIndex );
+				bodySettings.mFriction = 0.65f;
+				bodySettings.mRestitution = 0.0f;
+
+				const BodyID bodyID = bodyInterface.CreateAndAddBody(
+					bodySettings,
+					EActivation::Activate
+				);
+				if( bodyID.IsInvalid() )
+					continue;
+
+				NPCPhysicsActorCollider collider;
+				collider.entityIndex = entityIndex;
+				collider.serialNumber = ent->serialnumber;
+				collider.bodyID = bodyID;
+				collider.position = position;
+				collider.centerOffset = centerOffset;
+				collider.halfExtents = halfExtents;
+				g_actorColliders.push_back( collider );
+
+				ALERT(
+					at_console,
+					"[NPC physics] Added living actor hull: entity=%d type=%s half=(%.1f %.1f %.1f).\n",
+					entityIndex,
+					( ent->v.flags & FL_CLIENT ) ? "player" : "NPC",
+					halfExtents.GetX(), halfExtents.GetY(), halfExtents.GetZ()
+				);
+				continue;
+			}
+
+			NPCPhysicsActorCollider &collider = g_actorColliders[colliderIndex];
+			const Vec3 positionDelta = position - collider.position;
+			const bool transformChanged = positionDelta.LengthSq() > 0.0001f;
+
+			// MoveKinematic turns GoldSrc actor displacement into surface
+			// velocity. A single unchanged target after movement stops clears
+			// that velocity; stationary hulls do not need per-frame updates.
+			if( frameTime > 0.0001f && ( transformChanged || collider.wasMoving ) )
+			{
+				if( positionDelta.LengthSq() > 256.0f * 256.0f )
+				{
+					// Spawn/teleport changes must not launch nearby ragdolls.
+					bodyInterface.SetPositionAndRotation(
+						collider.bodyID,
+						RVec3( position.GetX(), position.GetY(), position.GetZ() ),
+						Quat::sIdentity(),
+						EActivation::Activate
+					);
+				}
+				else
+				{
+					bodyInterface.MoveKinematic(
+						collider.bodyID,
+						RVec3( position.GetX(), position.GetY(), position.GetZ() ),
+						Quat::sIdentity(),
+						frameTime
+					);
+				}
+
+				collider.position = position;
+				collider.wasMoving = transformChanged;
+			}
+			collider.centerOffset = centerOffset;
+		}
+
+		for( size_t i = g_actorColliders.size(); i > 0; --i )
+		{
+			const int entityIndex = g_actorColliders[i - 1].entityIndex;
+			if( std::find( presentEntities.begin(), presentEntities.end(), entityIndex ) == presentEntities.end() )
+			{
+				NPCPhysics_DestroyActorCollider( g_actorColliders[i - 1] );
+				g_actorColliders.erase( g_actorColliders.begin() + ( i - 1 ) );
 			}
 		}
 	}
@@ -1214,7 +1904,7 @@ namespace
 		return value;
 	}
 
-	static bool NPCPhysics_CreateRagdoll( edict_t *ent )
+	static bool NPCPhysics_CreateRagdoll( edict_t *ent, bool restorePersistentState = false )
 	{
 		if( !ent || ent->free )
 			return NPCPhysics_RagdollSetupFailed( "NPC entity is invalid" );
@@ -1258,6 +1948,67 @@ namespace
 				return NPCPhysics_RagdollSetupFailed( "NPC studio skeleton contains an invalid parent index" );
 			g_engfuncs.pfnGetBonePosition( ent, i, &bonePositions[i][0], &boneAngles[i][0] );
 			boneRotations[i] = NPCPhysics_AnglesToQuaternion( boneAngles[i] );
+		}
+
+		CBaseMonster *persistentMonster = static_cast<CBaseMonster *>( CBaseEntity::Instance( ent ) );
+		bool hasPersistentPose = restorePersistentState && persistentMonster &&
+			persistentMonster->m_iNpcRagdollPersistVersion == NPC_RAGDOLL_PERSIST_VERSION &&
+			persistentMonster->m_iNpcRagdollPersistBoneCount == ragdoll.studioBoneCount &&
+			persistentMonster->m_iNpcRagdollPersistBodyCount ==
+				static_cast<int>( physicsDefinition->bodies.size() ) &&
+			ragdoll.studioBoneCount <= NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES &&
+			static_cast<int>( physicsDefinition->bodies.size() ) <= NPC_RAGDOLL_PERSIST_MAX_BODIES;
+
+		// Validate the full pose and velocity snapshot before using any of it.
+		// Positions are offsets from pev->origin, which the save system rebases
+		// automatically across a landmark transition.
+		if( hasPersistentPose )
+		{
+			for( int bone = 0; bone < ragdoll.studioBoneCount; ++bone )
+			{
+				const float *saved = &persistentMonster->m_flNpcRagdollPersistStudioPose[
+					bone * NPC_RAGDOLL_PERSIST_STUDIO_STRIDE];
+				float quaternionLengthSquared = 0.0f;
+				for( int component = 0; component < NPC_RAGDOLL_PERSIST_STUDIO_STRIDE; ++component )
+					if( !std::isfinite( saved[component] ) )
+						hasPersistentPose = false;
+				for( int component = 3; component < 7; ++component )
+					quaternionLengthSquared += saved[component] * saved[component];
+				if( !std::isfinite( quaternionLengthSquared ) || quaternionLengthSquared < 1.0e-8f )
+					hasPersistentPose = false;
+				if( !hasPersistentPose )
+					break;
+			}
+
+			for( int body = 0; hasPersistentPose &&
+				body < persistentMonster->m_iNpcRagdollPersistBodyCount; ++body )
+			{
+				const float *saved = &persistentMonster->m_flNpcRagdollPersistBodyVelocity[
+					body * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE];
+				for( int component = 0; component < NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE; ++component )
+					if( !std::isfinite( saved[component] ) )
+						hasPersistentPose = false;
+			}
+		}
+
+		if( restorePersistentState && !hasPersistentPose )
+			return NPCPhysics_RagdollSetupFailed(
+				"saved ragdoll snapshot is incompatible with this model or contains invalid data" );
+
+		if( hasPersistentPose )
+		{
+			const ::Vector carrierOrigin = ent->v.origin;
+			for( int bone = 0; bone < ragdoll.studioBoneCount; ++bone )
+			{
+				const float *saved = &persistentMonster->m_flNpcRagdollPersistStudioPose[
+					bone * NPC_RAGDOLL_PERSIST_STUDIO_STRIDE];
+				bonePositions[bone] = carrierOrigin + ::Vector( saved[0], saved[1], saved[2] );
+				boneRotations[bone] = Quat( saved[3], saved[4], saved[5], saved[6] ).Normalized();
+			}
+			ALERT( at_console,
+				"[NPC physics] Restoring saved ragdoll pose: entity=%d bones=%d bodies=%d.\n",
+				ENTINDEX( ent ), ragdoll.studioBoneCount,
+				static_cast<int>( physicsDefinition->bodies.size() ) );
 		}
 
 		// Resolve the model-specific physical rig by bone name. The file's
@@ -1351,6 +2102,9 @@ namespace
 				const NPCPhysicsRagdollPoint &p = bodyDefinition.points[point];
 				points[point] = Vec3( p.x, p.y, p.z );
 			}
+			// The hull vertices are already in GoldSrc units, so keep this
+			// padding in the same unit space. Do not convert the SI default:
+			// Jolt subtracts the convex radius before rounding the hull.
 			ConvexHullShapeSettings hullSettings(
 				points, static_cast<int>( bodyDefinition.points.size() ), 0.05f );
 			Shape::ShapeResult result = hullSettings.Create();
@@ -1446,6 +2200,7 @@ namespace
 		ragdoll.studioPoseModelSpace.resize( ragdoll.studioBoneCount );
 
 
+		ragdoll.bodyMasses.resize( ragdoll.bodyCount, 0.0f );
 		Ref<RagdollSettings> settings = new RagdollSettings();
 		settings->mSkeleton = ragdoll.physicsSkeleton;
 		settings->mParts.resize( ragdoll.bodyCount );
@@ -1470,7 +2225,9 @@ namespace
 			part.mObjectLayer = RAGDOLL_OBJECT_LAYER;
 			part.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
 			part.mInertiaMultiplier = physicsDefinition->inertiaMultiplier;
-			part.mMassPropertiesOverride.mMass = (std::max)( 0.25f, bodyMass );
+			const float physicalBodyMass = (std::max)( 0.25f, bodyMass );
+			ragdoll.bodyMasses[body] = physicalBodyMass;
+			part.mMassPropertiesOverride.mMass = physicalBodyMass;
 			part.mFriction = physicsDefinition->friction;
 			part.mRestitution = physicsDefinition->restitution;
 			part.mLinearDamping = physicsDefinition->linearDamping;
@@ -1519,12 +2276,23 @@ namespace
 			}
 		}
 
-		// Jolt's native articulated ragdoll owns body/constraint creation, collision
-		// filtering, stabilization and lifetime from this point onward.
+		// Build the initial body transforms used by Jolt's pose-aware collision
+		// filter. The hull vertices are authored around each body's local shape
+		// center, so offset each bone transform by the same center used for
+		// RagdollSettings::Part::mPosition above.
+		std::vector<Mat44> physicsBodyTransforms = physicsNeutralModel;
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+			physicsBodyTransforms[body] =
+				physicsBodyTransforms[body].PreTranslated( ragdoll.bones[body].localShapeCenter );
+
+		// Disable collisions not only between direct parent/child bodies, but
+		// also between other hull pairs that overlap in the initial pose. This
+		// prevents adjacent limbs and torso parts from pushing against each other
+		// while the ragdoll is trying to articulate naturally.
 		if( !settings->Stabilize() )
 			return NPCPhysics_RagdollSetupFailed( "Jolt could not stabilize the authored ragdoll" );
 		settings->CalculateConstraintPriorities();
-		settings->DisableParentChildCollisions();
+		settings->DisableParentChildCollisions( physicsBodyTransforms.data(), 1.0f );
 		settings->CalculateBodyIndexToConstraintIndex();
 
 		ragdoll.physicsRagdoll = settings->CreateRagdoll(
@@ -1537,7 +2305,7 @@ namespace
 
 		NPCPhysicsLivePose *livePose = NULL;
 		const int entityIndex = ENTINDEX( ent );
-		if( entityIndex >= 0 && entityIndex < (int)g_livePoses.size() )
+		if( !hasPersistentPose && entityIndex >= 0 && entityIndex < (int)g_livePoses.size() )
 		{
 			NPCPhysicsLivePose &candidate = g_livePoses[entityIndex];
 			if( candidate.serialNumber == ent->serialnumber &&
@@ -1601,13 +2369,37 @@ namespace
 			bodyInterface.SetLinearVelocity( bodyID, linearVelocity );
 			bodyInterface.SetAngularVelocity( bodyID, angularVelocity );
 		}
+
+		// A transferred corpse resumes with the velocity of each original body,
+		// not with the default animation-derived velocity of the carrier entity.
+		if( hasPersistentPose )
+		{
+			for( int body = 0; body < ragdoll.bodyCount; ++body )
+			{
+				const float *saved = &persistentMonster->m_flNpcRagdollPersistBodyVelocity[
+					body * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE];
+				Vec3 linearVelocity( saved[0], saved[1], saved[2] );
+				Vec3 angularVelocity( saved[3], saved[4], saved[5] );
+				linearVelocity = NPCPhysics_ClampVector( linearVelocity, RAGDOLL_VELOCITY_LIMIT );
+				angularVelocity = NPCPhysics_ClampVector( angularVelocity, RAGDOLL_ANGULAR_VELOCITY_LIMIT );
+				const BodyID bodyID = ragdoll.physicsRagdoll->GetBodyID( body );
+				bodyInterface.SetLinearVelocity( bodyID, linearVelocity );
+				bodyInterface.SetAngularVelocity( bodyID, angularVelocity );
+				bodyInterface.ActivateBody( bodyID );
+			}
+			NPCPhysics_LogRagdollVelocitySummary( "Restored", ent, ragdoll );
+		}
+
 		// Only replace the animated corpse after all physics bodies and joints
 		// were built successfully. Freeze the death frame so non-physics bones
 		// remain a stable fallback and inherit from simulated parents.
 		ent->v.iuser4 = 1;
+		ent->v.effects &= ~EF_NODRAW;
 		ent->v.solid = SOLID_NOT;
 		ent->v.movetype = MOVETYPE_NONE;
-		ent->v.takedamage = DAMAGE_NO;
+		// Keep the corpse damageable so deferred Jolt impacts use the normal
+		// CBaseMonster::DeadTakeDamage corpse-gib rules.
+		ent->v.takedamage = DAMAGE_YES;
 		ent->v.deadflag = DEAD_DEAD;
 		ent->v.nextthink = -1.0f;
 		ent->v.framerate = 0.0f;
@@ -1618,7 +2410,12 @@ namespace
 		g_ragdolls.push_back( ragdoll );
 		ALERT(
 			at_console,
-			"[NPC physics] Created articulated Jolt ragdoll: %d physics bodies for %d studio bones.\n",
+			hasPersistentPose
+				? "[NPC physics] Restored articulated Jolt ragdoll: entity=%d model='%s' id=%d bodies=%d studio-bones=%d.\n"
+				: "[NPC physics] Created articulated Jolt ragdoll: entity=%d model='%s' id=%d bodies=%d studio-bones=%d.\n",
+			ENTINDEX( ent ),
+			STRING( ent->v.model ),
+			ragdoll.networkID,
 			ragdoll.bodyCount,
 			ragdoll.studioBoneCount
 		);
@@ -1676,6 +2473,23 @@ namespace
 		const int entityIndex = ENTINDEX( ragdoll.entity );
 		const int snapshotBoneCount = ragdoll.studioBoneCount;
 
+		if( !ragdoll.firstPoseSendReported )
+		{
+			ALERT(
+				at_console,
+				"[NPC physics] Sending first ragdoll pose: entity=%d model='%s' id=%d bodies=%d studio-bones=%d pvs-origin=(%.1f %.1f %.1f).\n",
+				entityIndex,
+				STRING( ragdoll.entity->v.model ),
+				ragdoll.networkID,
+				ragdoll.bodyCount,
+				ragdoll.studioBoneCount,
+				ragdoll.entity->v.origin[0],
+				ragdoll.entity->v.origin[1],
+				ragdoll.entity->v.origin[2]
+			);
+			ragdoll.firstPoseSendReported = true;
+		}
+
 		for( int start = 0; start < snapshotBoneCount; start += RAGDOLL_NETWORK_BODIES_PER_CHUNK )
 		{
 			const int count = (std::min)(
@@ -1706,6 +2520,155 @@ namespace
 		}
 	}
 
+	static void NPCPhysics_LogRagdollVelocitySummary(
+		const char *stage,
+		edict_t *ent,
+		const NPCPhysicsRagdoll &ragdoll )
+	{
+		if( !ent || !ragdoll.physicsRagdoll.GetPtr() || ragdoll.bodyCount <= 0 ||
+			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) < 0.5f )
+			return;
+
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		const int rootBodyIndex = ragdoll.rootElement >= 0 && ragdoll.rootElement < ragdoll.bodyCount
+			? ragdoll.rootElement : 0;
+		const BodyID rootBodyID = ragdoll.physicsRagdoll->GetBodyID( rootBodyIndex );
+		const Vec3 rootLinear = bodyInterface.GetLinearVelocity( rootBodyID );
+		const Vec3 rootAngular = bodyInterface.GetAngularVelocity( rootBodyID );
+
+		int fastestBodyIndex = rootBodyIndex;
+		float fastestSpeedSquared = -1.0f;
+		Vec3 fastestLinear( 0.0f, 0.0f, 0.0f );
+		Vec3 fastestAngular( 0.0f, 0.0f, 0.0f );
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+		{
+			const BodyID bodyID = ragdoll.physicsRagdoll->GetBodyID( body );
+			const Vec3 linear = bodyInterface.GetLinearVelocity( bodyID );
+			const float speedSquared =
+				linear.GetX() * linear.GetX() +
+				linear.GetY() * linear.GetY() +
+				linear.GetZ() * linear.GetZ();
+			if( speedSquared > fastestSpeedSquared )
+			{
+				fastestSpeedSquared = speedSquared;
+				fastestBodyIndex = body;
+				fastestLinear = linear;
+				fastestAngular = bodyInterface.GetAngularVelocity( bodyID );
+			}
+		}
+
+		ALERT(
+			at_console,
+			"[NPC physics] %s ragdoll velocities: entity=%d root-body=%d root-v=(%.1f %.1f %.1f) root-w=(%.2f %.2f %.2f) fastest-body=%d speed=%.1f v=(%.1f %.1f %.1f) w=(%.2f %.2f %.2f).\n",
+			stage, ENTINDEX( ent ), rootBodyIndex,
+			rootLinear.GetX(), rootLinear.GetY(), rootLinear.GetZ(),
+			rootAngular.GetX(), rootAngular.GetY(), rootAngular.GetZ(),
+			fastestBodyIndex, std::sqrt( (std::max)( 0.0f, fastestSpeedSquared ) ),
+			fastestLinear.GetX(), fastestLinear.GetY(), fastestLinear.GetZ(),
+			fastestAngular.GetX(), fastestAngular.GetY(), fastestAngular.GetZ()
+		);
+	}
+
+	static void NPCPhysics_SaveRagdollStateInternal( edict_t *ent )
+	{
+		if( !ent || ent->free )
+			return;
+
+		CBaseMonster *monster = static_cast<CBaseMonster *>( CBaseEntity::Instance( ent ) );
+		if( !monster )
+			return;
+
+		const bool hasPriorRagdollSnapshot =
+			monster->m_iNpcRagdollPersistVersion != 0 ||
+			monster->m_iNpcRagdollPersistBoneCount != 0 ||
+			monster->m_iNpcRagdollPersistBodyCount != 0;
+		const bool debug = NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f;
+		if( !g_npcPhysics.initialized || g_ragdolls.empty() )
+		{
+			if( hasPriorRagdollSnapshot && debug )
+				ALERT( at_console,
+					"[NPC physics] Existing ragdoll snapshot for entity %d could not be refreshed: Jolt world has no active ragdolls.\n",
+					ENTINDEX( ent ) );
+			return;
+		}
+
+		NPCPhysicsRagdoll *ragdoll = NULL;
+		for( size_t i = 0; i < g_ragdolls.size(); ++i )
+			if( g_ragdolls[i].entity == ent &&
+				g_ragdolls[i].serialNumber == ent->serialnumber &&
+				g_ragdolls[i].addedToPhysicsSystem &&
+				g_ragdolls[i].physicsRagdoll.GetPtr() )
+			{
+				ragdoll = &g_ragdolls[i];
+				break;
+			}
+
+		if( !ragdoll )
+		{
+			if( hasPriorRagdollSnapshot && debug )
+				ALERT( at_console,
+					"[NPC physics] Existing ragdoll snapshot for entity %d could not be refreshed: live Jolt state is not registered.\n",
+					ENTINDEX( ent ) );
+			return;
+		}
+
+		if( ragdoll->studioBoneCount <= 0 ||
+			ragdoll->studioBoneCount > NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES ||
+			ragdoll->bodyCount <= 0 ||
+			ragdoll->bodyCount > NPC_RAGDOLL_PERSIST_MAX_BODIES )
+		{
+			monster->m_iNpcRagdollPersistVersion = 0;
+			return;
+		}
+
+		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		const Vec3 rootBoneOrigin = NPCPhysics_GetRootBoneOrigin( *ragdoll, bodyInterface );
+		NPCPhysics_UpdateMappedStudioPose( *ragdoll, bodyInterface, rootBoneOrigin );
+		const Vec3 carrierOrigin( ent->v.origin[0], ent->v.origin[1], ent->v.origin[2] );
+
+		for( int bone = 0; bone < ragdoll->studioBoneCount; ++bone )
+		{
+			const Mat44 &transform = ragdoll->studioPoseModelSpace[bone];
+			const Vec3 relativePosition =
+				rootBoneOrigin + transform.GetTranslation() - carrierOrigin;
+			const Quat rotation = transform.GetQuaternion().Normalized();
+			float *saved = &monster->m_flNpcRagdollPersistStudioPose[
+				bone * NPC_RAGDOLL_PERSIST_STUDIO_STRIDE];
+			saved[0] = relativePosition.GetX();
+			saved[1] = relativePosition.GetY();
+			saved[2] = relativePosition.GetZ();
+			saved[3] = rotation.GetX();
+			saved[4] = rotation.GetY();
+			saved[5] = rotation.GetZ();
+			saved[6] = rotation.GetW();
+		}
+
+		for( int body = 0; body < ragdoll->bodyCount; ++body )
+		{
+			const BodyID bodyID = ragdoll->physicsRagdoll->GetBodyID( body );
+			const Vec3 linear = bodyInterface.GetLinearVelocity( bodyID );
+			const Vec3 angular = bodyInterface.GetAngularVelocity( bodyID );
+			float *saved = &monster->m_flNpcRagdollPersistBodyVelocity[
+				body * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE];
+			saved[0] = linear.GetX();
+			saved[1] = linear.GetY();
+			saved[2] = linear.GetZ();
+			saved[3] = angular.GetX();
+			saved[4] = angular.GetY();
+			saved[5] = angular.GetZ();
+		}
+		NPCPhysics_LogRagdollVelocitySummary( "Saved", ent, *ragdoll );
+
+		monster->m_iNpcRagdollPersistVersion = NPC_RAGDOLL_PERSIST_VERSION;
+		monster->m_iNpcRagdollPersistBoneCount = ragdoll->studioBoneCount;
+		monster->m_iNpcRagdollPersistBodyCount = ragdoll->bodyCount;
+
+		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT( at_console,
+				"[NPC physics] Saved transferable ragdoll: entity=%d bones=%d bodies=%d.\n",
+				ENTINDEX( ent ), ragdoll->studioBoneCount, ragdoll->bodyCount );
+	}
+
 	static int NPCPhysics_PhysicsEntity( edict_t *ent )
 	{
 		// Capture live animation transforms only. Return 0 so GoldSrc remains the
@@ -1714,24 +2677,295 @@ namespace
 		return 0;
 	}
 
-	static void NPCPhysics_EndFrame( void )
+	static void NPCPhysics_ProcessContactDiagnostics()
 	{
-		if( !g_npcPhysics.initialized || g_ragdolls.empty() || !gpGlobals )
+		std::vector<NPCPhysicsPendingContactDiagnostic> pending =
+			g_npcPhysics.contactListener.DrainDiagnostics();
+		if( pending.empty() || !gpGlobals ||
+			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) < 0.5f )
 			return;
 
+		for( size_t i = 0; i < pending.size(); ++i )
+		{
+			const NPCPhysicsPendingContactDiagnostic &event = pending[i];
+			NPCPhysicsRagdoll *ragdoll = NULL;
+			for( size_t r = 0; r < g_ragdolls.size(); ++r )
+			{
+				if( g_ragdolls[r].networkID == static_cast<int>( event.ragdollID ) &&
+					g_ragdolls[r].addedToPhysicsSystem &&
+					g_ragdolls[r].physicsRagdoll.GetPtr() )
+				{
+					ragdoll = &g_ragdolls[r];
+					break;
+				}
+			}
+			if( !ragdoll || !ragdoll->entity || ragdoll->entity->free ||
+				ragdoll->entity->serialnumber != ragdoll->serialNumber )
+				continue;
+
+			float &nextDebugTime = event.otherLayer == WORLD_STATIC_OBJECT_LAYER
+				? ragdoll->nextWorldContactDebugTime
+				: ragdoll->nextKinematicContactDebugTime;
+			if( gpGlobals->time < nextDebugTime )
+				continue;
+
+			int bodyIndex = -1;
+			for( int body = 0; body < ragdoll->bodyCount; ++body )
+			{
+				if( ragdoll->physicsRagdoll->GetBodyID( body ) == event.ragdollBodyID )
+				{
+					bodyIndex = body;
+					break;
+				}
+			}
+
+			const char *otherKind = event.otherLayer == WORLD_STATIC_OBJECT_LAYER
+				? "world" : "kinematic";
+			if( event.otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER &&
+				event.otherEntityIndex > 0 &&
+				event.otherEntityIndex < gpGlobals->maxEntities )
+			{
+				edict_t *other = INDEXENT( event.otherEntityIndex );
+				if( !FNullEnt( other ) && !other->free )
+				{
+					if( other->v.flags & FL_CLIENT )
+						otherKind = "player";
+					else if( other->v.flags & FL_MONSTER )
+						otherKind = "actor";
+					else
+						otherKind = "brush";
+				}
+			}
+
+			ALERT(
+				at_console,
+				"[NPC physics] Contact: ent=%d id=%d body=%d other=%s/%d penetration=%.3f closing=%.1f point=(%.1f %.1f %.1f) normal=(%.2f %.2f %.2f).\n",
+				ENTINDEX( ragdoll->entity ), ragdoll->networkID, bodyIndex,
+				otherKind, event.otherEntityIndex, event.penetrationDepth,
+				event.closingSpeed,
+				event.contactPoint.GetX(), event.contactPoint.GetY(), event.contactPoint.GetZ(),
+				event.normal.GetX(), event.normal.GetY(), event.normal.GetZ()
+			);
+			nextDebugTime = gpGlobals->time + 0.5f;
+		}
+	}
+
+	static void NPCPhysics_ProcessPlayerPushLimits( BodyInterface &bodyInterface )
+	{
+		std::vector<NPCPhysicsPendingPlayerPush> pending =
+			g_npcPhysics.contactListener.DrainPlayerPushLimits();
+		if( pending.empty() || g_ragdolls.empty() )
+			return;
+
+		float massLimit = NPCPhysics_GetCvar( "sv_npc_vphysics_player_push_mass", 350.0f );
+		float speedLimit = NPCPhysics_GetCvar( "sv_npc_vphysics_player_push_speed", 50.0f );
+		if( !std::isfinite( massLimit ) )
+			massLimit = 350.0f;
+		if( !std::isfinite( speedLimit ) )
+			speedLimit = 50.0f;
+		massLimit = (std::max)( 0.0f, massLimit );
+		speedLimit = (std::max)( 0.0f, speedLimit );
+
+		for( size_t i = 0; i < pending.size(); ++i )
+		{
+			const NPCPhysicsPendingPlayerPush &event = pending[i];
+			if( event.ragdollBodyID.IsInvalid() ||
+				!bodyInterface.IsAdded( event.ragdollBodyID ) )
+				continue;
+
+			NPCPhysicsRagdoll *ragdoll = NULL;
+			for( size_t r = 0; r < g_ragdolls.size(); ++r )
+			{
+				if( g_ragdolls[r].networkID == static_cast<int>( event.ragdollID ) &&
+					g_ragdolls[r].addedToPhysicsSystem &&
+					g_ragdolls[r].physicsRagdoll.GetPtr() )
+				{
+					ragdoll = &g_ragdolls[r];
+					break;
+				}
+			}
+			if( !ragdoll || !ragdoll->entity || ragdoll->entity->free ||
+				ragdoll->entity->serialnumber != ragdoll->serialNumber ||
+				ragdoll->bodyMasses.size() != static_cast<size_t>( ragdoll->bodyCount ) )
+				continue;
+
+			int ragdollBodyIndex = -1;
+			for( int body = 0; body < ragdoll->bodyCount; ++body )
+			{
+				if( ragdoll->physicsRagdoll->GetBodyID( body ) == event.ragdollBodyID )
+				{
+					ragdollBodyIndex = body;
+					break;
+				}
+			}
+			if( ragdollBodyIndex < 0 )
+				continue;
+
+			// Source's player controller checks the mass of the contacted
+			// physics object, so use this ragdoll body rather than group mass.
+			const float contactMass = ragdoll->bodyMasses[ragdollBodyIndex];
+			if( !std::isfinite( contactMass ) || contactMass <= 0.0f )
+				continue;
+
+			const float initialPushSpeed =
+				event.ragdollPointVelocityBefore.Dot( event.pushDirection );
+			const float playerPushSpeed =
+				event.playerPointVelocityBefore.Dot( event.pushDirection );
+			if( playerPushSpeed <= initialPushSpeed + 0.5f )
+				continue;
+
+			const RVec3 contactPoint(
+				event.contactPoint.GetX(),
+				event.contactPoint.GetY(),
+				event.contactPoint.GetZ() );
+			const Vec3 currentPointVelocity =
+				bodyInterface.GetPointVelocity( event.ragdollBodyID, contactPoint );
+			const float currentPushSpeed =
+				currentPointVelocity.Dot( event.pushDirection );
+
+			// Source's player controller refuses to push objects over its mass
+			// threshold and limits the push response to a normal speed. The Jolt
+			// actor is still kinematic, so apply that limit to the velocity gained
+			// by the contacted ragdoll body rather than feeding movement back into
+			// GoldSrc's player movement code.
+			const bool exceedsMassLimit = contactMass > massLimit;
+			const float maxAllowedPushSpeed = exceedsMassLimit
+				? initialPushSpeed
+				: ( initialPushSpeed < speedLimit ? speedLimit : initialPushSpeed );
+			if( currentPushSpeed <= maxAllowedPushSpeed + 0.01f )
+				continue;
+
+			const Vec3 currentLinearVelocity =
+				bodyInterface.GetLinearVelocity( event.ragdollBodyID );
+			const Vec3 correctedLinearVelocity = currentLinearVelocity +
+				event.pushDirection * ( maxAllowedPushSpeed - currentPushSpeed );
+			bodyInterface.SetLinearVelocity(
+				event.ragdollBodyID, correctedLinearVelocity );
+
+			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f &&
+				gpGlobals && gpGlobals->time >= ragdoll->nextPlayerPushDebugTime )
+			{
+				ALERT(
+					at_console,
+					"[NPC physics] Player push limited: ragdoll=%d id=%d body=%d player=%d mass=%.1f push-speed=%.1f->%.1f limit=%.1f%s.\n",
+					ENTINDEX( ragdoll->entity ), ragdoll->networkID,
+					ragdollBodyIndex, event.playerEntityIndex,
+					contactMass, currentPushSpeed, maxAllowedPushSpeed,
+					speedLimit, exceedsMassLimit ? " (mass limit)" : ""
+				);
+				ragdoll->nextPlayerPushDebugTime = gpGlobals->time + 0.5f;
+			}
+		}
+	}
+
+	static void NPCPhysics_ProcessCollisionDamage()
+	{
+		std::vector<NPCPhysicsPendingCollisionDamage> pending =
+			g_npcPhysics.contactListener.Drain();
+		if( pending.empty() || !NPCPhysics_Enabled() )
+			return;
+
+		// One strongest impact per corpse per server frame. This collapses
+		// multi-point manifolds and prevents a single landing from multiplying
+		// damage by the number of contact points and articulated bones.
+		std::vector<NPCPhysicsPendingCollisionDamage> strongest;
+		for( size_t i = 0; i < pending.size(); ++i )
+		{
+			NPCPhysicsPendingCollisionDamage &event = pending[i];
+			size_t existing = strongest.size();
+			for( size_t j = 0; j < strongest.size(); ++j )
+				if( strongest[j].ragdollID == event.ragdollID )
+				{
+					existing = j;
+					break;
+				}
+			if( existing == strongest.size() )
+				strongest.push_back( event );
+			else if( event.velocityLoss > strongest[existing].velocityLoss )
+				strongest[existing] = event;
+		}
+
+		for( size_t i = 0; i < strongest.size(); ++i )
+		{
+			const NPCPhysicsPendingCollisionDamage &event = strongest[i];
+			NPCPhysicsRagdoll *ragdoll = NULL;
+			for( size_t r = 0; r < g_ragdolls.size(); ++r )
+				if( g_ragdolls[r].networkID == static_cast<int>( event.ragdollID ) &&
+					g_ragdolls[r].addedToPhysicsSystem &&
+					g_ragdolls[r].physicsRagdoll.GetPtr() )
+				{
+					ragdoll = &g_ragdolls[r];
+					break;
+				}
+			if( !ragdoll || !ragdoll->entity || ragdoll->entity->free ||
+				ragdoll->entity->serialnumber != ragdoll->serialNumber ||
+				gpGlobals->time < ragdoll->nextCollisionDamageTime )
+				continue;
+
+			const float damage = NPCPhysics_CalculateCollisionDamage( event.velocityLoss );
+			if( damage <= 0.0f || ragdoll->entity->v.takedamage == DAMAGE_NO )
+				continue;
+
+			int attackerIndex = event.otherEntityIndex;
+			edict_t *attacker = NULL;
+			if( attackerIndex > 0 && attackerIndex < gpGlobals->maxEntities )
+			{
+				edict_t *candidate = INDEXENT( attackerIndex );
+				if( !FNullEnt( candidate ) && !candidate->free )
+					attacker = candidate;
+			}
+			entvars_t *attackerVars = attacker ? &attacker->v : NULL;
+			CBaseEntity *victim = CBaseEntity::Instance( ragdoll->entity );
+			if( !victim )
+				continue;
+
+			// DeadTakeDamage accumulates DMG_GIB_CORPSE damage and invokes the
+			// normal monster gib path only after the corpse's remaining health
+			// has been exhausted.
+			ragdoll->nextCollisionDamageTime = gpGlobals->time + 0.25f;
+			victim->TakeDamage( attackerVars, attackerVars, damage, DMG_GIB_CORPSE );
+
+			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+				ALERT(
+					at_console,
+					"[NPC physics] Collision impact damage: entity=%d id=%d jolt-body=%u other=%d delta-v=%.1f damage=%.1f health=%.1f.\n",
+					ENTINDEX( ragdoll->entity ), ragdoll->networkID,
+					event.ragdollBodyID.GetIndex(), attackerIndex,
+					event.velocityLoss, damage, ragdoll->entity->v.health
+				);
+		}
+	}
+
+	static void NPCPhysics_RemoveGibbedRagdolls()
+	{
 		for( size_t i = g_ragdolls.size(); i > 0; --i )
 		{
 			NPCPhysicsRagdoll &ragdoll = g_ragdolls[i - 1];
+			// The ragdoll carrier is intentionally SOLID_NOT from the moment
+			// its Jolt bodies are created. Only remove it when the edict is gone,
+			// its serial changes, or the normal gib path hides it with EF_NODRAW.
 			if( !ragdoll.entity || ragdoll.entity->free ||
-				ragdoll.entity->serialnumber != ragdoll.serialNumber )
+				ragdoll.entity->serialnumber != ragdoll.serialNumber ||
+				( ragdoll.entity->v.effects & EF_NODRAW ) )
 			{
 				NPCPhysics_DestroyRagdoll( ragdoll );
 				g_ragdolls.erase( g_ragdolls.begin() + ( i - 1 ) );
 			}
 		}
+	}
 
-		if( g_ragdolls.empty() )
+	static void NPCPhysics_EndFrame( void )
+	{
+		if( !g_npcPhysics.initialized || !gpGlobals )
 			return;
+
+		NPCPhysics_RemoveGibbedRagdolls();
+		if( g_ragdolls.empty() )
+		{
+			g_npcPhysics.contactListener.Clear();
+			NPCPhysics_DestroyActorColliders();
+			return;
+		}
 
 		float gravity = NPCPhysics_GetCvar( "sv_gravity", 800.0f );
 		if( gravity < 0.0f )
@@ -1739,6 +2973,7 @@ namespace
 		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -gravity ) );
 
 		NPCPhysics_UpdateBrushColliders();
+		NPCPhysics_UpdateActorColliders();
 
 		float frameTime = gpGlobals->frametime;
 		if( frameTime < 0.0f )
@@ -1763,13 +2998,62 @@ namespace
 				&g_npcPhysics.jobs
 			);
 
+			NPCPhysics_ProcessPlayerPushLimits( bodyInterface );
 			g_npcPhysics.fixedAccumulator -= RAGDOLL_FIXED_STEP;
 			++steps;
+		}
+
+		NPCPhysics_ProcessContactDiagnostics();
+		NPCPhysics_ProcessCollisionDamage();
+		NPCPhysics_RemoveGibbedRagdolls();
+		if( g_ragdolls.empty() )
+		{
+			NPCPhysics_DestroyActorColliders();
+			return;
 		}
 
 		for( size_t r = 0; r < g_ragdolls.size(); ++r )
 		{
 			NPCPhysicsRagdoll &ragdoll = g_ragdolls[r];
+
+			// One-shot blast telemetry: compare the selected body and the actual
+			// ragdoll root after 100 ms of Jolt simulation.
+			if( ragdoll.blastDebugPending &&
+				gpGlobals->time - ragdoll.blastDebugTime >= 0.10f &&
+				ragdoll.blastDebugBodyID.IsInvalid() == false )
+			{
+				const RVec3 bodyPosition = bodyInterface.GetPosition( ragdoll.blastDebugBodyID );
+				const Vec3 bodyDelta(
+					float( bodyPosition.GetX() ) - ragdoll.blastDebugBodyStartPosition.GetX(),
+					float( bodyPosition.GetY() ) - ragdoll.blastDebugBodyStartPosition.GetY(),
+					float( bodyPosition.GetZ() ) - ragdoll.blastDebugBodyStartPosition.GetZ() );
+				const Vec3 bodyVelocity = bodyInterface.GetLinearVelocity( ragdoll.blastDebugBodyID );
+				const Vec3 bodyAngular = bodyInterface.GetAngularVelocity( ragdoll.blastDebugBodyID );
+				Vec3 rootDelta( 0.0f, 0.0f, 0.0f );
+				Vec3 rootVelocity( 0.0f, 0.0f, 0.0f );
+				if( ragdoll.rootElement >= 0 && ragdoll.rootElement < ragdoll.bodyCount )
+				{
+					const BodyID rootBody = ragdoll.physicsRagdoll->GetBodyID( ragdoll.rootElement );
+					const RVec3 rootPosition = bodyInterface.GetPosition( rootBody );
+					rootDelta = Vec3(
+						float( rootPosition.GetX() ) - ragdoll.blastDebugRootStartPosition.GetX(),
+						float( rootPosition.GetY() ) - ragdoll.blastDebugRootStartPosition.GetY(),
+						float( rootPosition.GetZ() ) - ragdoll.blastDebugRootStartPosition.GetZ() );
+					rootVelocity = bodyInterface.GetLinearVelocity( rootBody );
+				}
+				ALERT(
+					at_console,
+					"[NPC blast] Post-step: ent=%d id=%d body=%d dt=%.2f body-delta=(%.1f %.1f %.1f) body-v=(%.1f %.1f %.1f) body-w=(%.1f %.1f %.1f) root-delta=(%.1f %.1f %.1f) root-v=(%.1f %.1f %.1f).\n",
+					ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.blastDebugBodyIndex,
+					gpGlobals->time - ragdoll.blastDebugTime,
+					bodyDelta.GetX(), bodyDelta.GetY(), bodyDelta.GetZ(),
+					bodyVelocity.GetX(), bodyVelocity.GetY(), bodyVelocity.GetZ(),
+					bodyAngular.GetX(), bodyAngular.GetY(), bodyAngular.GetZ(),
+					rootDelta.GetX(), rootDelta.GetY(), rootDelta.GetZ(),
+					rootVelocity.GetX(), rootVelocity.GetY(), rootVelocity.GetZ()
+				);
+				ragdoll.blastDebugPending = false;
+			}
 
 			// Move the carrier edict with the simulated root element. Besides
 			// keeping the corpse's network origin useful, this keeps renderer
@@ -1811,6 +3095,11 @@ namespace
 	}
 }
 
+void NPCPhysics_SaveRagdollState( edict_t *ent )
+{
+	NPCPhysics_SaveRagdollStateInternal( ent );
+}
+
 int NPCPhysics_IsRagdollEntity( edict_t *ent )
 {
 	if( !ent || ent->free )
@@ -1827,6 +3116,193 @@ int NPCPhysics_IsRagdollEntity( edict_t *ent )
 	return FALSE;
 }
 
+int NPCPhysics_ApplyBlastImpulse(
+	edict_t *targetEntity,
+	const float *origin,
+	const float *targetPoint,
+	float radius,
+	float blastDamage )
+{
+	const float blastScale = NPCPhysics_GetCvar( "sv_npc_vphysics_blast_scale", 1.0f );
+	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
+		!targetEntity || targetEntity->free || !origin || !targetPoint ||
+		!std::isfinite( radius ) || radius <= 0.001f ||
+		!std::isfinite( blastDamage ) || blastDamage <= 0.0f ||
+		!std::isfinite( blastScale ) || blastScale <= 0.0f ||
+		!std::isfinite( origin[0] ) || !std::isfinite( origin[1] ) ||
+		!std::isfinite( origin[2] ) ||
+		!std::isfinite( targetPoint[0] ) || !std::isfinite( targetPoint[1] ) ||
+		!std::isfinite( targetPoint[2] ) )
+		return 0;
+
+	NPCPhysicsRagdoll *targetRagdoll = NULL;
+	for( size_t i = 0; i < g_ragdolls.size(); ++i )
+	{
+		NPCPhysicsRagdoll &ragdoll = g_ragdolls[i];
+		if( ragdoll.entity == targetEntity &&
+			ragdoll.serialNumber == targetEntity->serialnumber &&
+			ragdoll.addedToPhysicsSystem && ragdoll.physicsRagdoll.GetPtr() )
+		{
+			targetRagdoll = &ragdoll;
+			break;
+		}
+	}
+
+	if( !targetRagdoll || targetRagdoll->bodyCount <= 0 ||
+		targetRagdoll->bodyMasses.size() != static_cast<size_t>( targetRagdoll->bodyCount ) ||
+		targetRagdoll->rootElement < 0 ||
+		targetRagdoll->rootElement >= targetRagdoll->bodyCount )
+		return 0;
+
+	BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+	const BodyID rootBody = targetRagdoll->physicsRagdoll->GetBodyID( targetRagdoll->rootElement );
+	if( rootBody.IsInvalid() )
+		return 0;
+
+	float totalRagdollMass = 0.0f;
+	for( size_t i = 0; i < targetRagdoll->bodyMasses.size(); ++i )
+	{
+		const float mass = targetRagdoll->bodyMasses[i];
+		if( std::isfinite( mass ) && mass > 0.0f )
+			totalRagdollMass += mass;
+	}
+
+	// A ragdoll is a constrained group of independent bodies. Sending the
+	// entire character impulse into the small pelvis body saturates its linear
+	// velocity limit and creates a large off-center torque that the joints
+	// and floor contacts immediately fight. Apply most of the same total
+	// momentum across all body masses (a shared character-level delta-v), then
+	// apply a smaller share to the body nearest BodyTarget for a localized
+	// rotational response.
+	Vec3 blastDirection(
+		targetPoint[0] - origin[0],
+		targetPoint[1] - origin[1],
+		targetPoint[2] - origin[2] );
+	const float directionLength = blastDirection.Length();
+	if( !std::isfinite( directionLength ) || directionLength <= 0.001f )
+		blastDirection = Vec3( 0.0f, 0.0f, 1.0f );
+	else
+		blastDirection /= directionLength;
+
+	// Source's explosive force uses a 75 kg reference character at
+	// 4 units/sec per damage point, capped at a 400 units/sec reference speed.
+	const float baseImpulse = (std::min)( blastDamage * 300.0f, 30000.0f );
+	const float randomScale = RANDOM_FLOAT( 0.85f, 1.15f );
+	const float scaledImpulse = baseImpulse * randomScale * blastScale;
+	if( !std::isfinite( scaledImpulse ) || scaledImpulse <= 0.0f )
+		return 0;
+
+	const Vec3 impulse = blastDirection * scaledImpulse;
+	const Vec3 distributedImpulse = impulse * 0.85f;
+	const Vec3 sharedVelocityDelta = distributedImpulse / totalRagdollMass;
+
+	// BodyTarget is normally around the torso. Find the physical part closest
+	// to that point instead of always striking the pelvis.
+	int impactBodyIndex = targetRagdoll->rootElement;
+	float closestDistanceSquared = FLT_MAX;
+	for( int body = 0; body < targetRagdoll->bodyCount; ++body )
+	{
+		const BodyID bodyID = targetRagdoll->physicsRagdoll->GetBodyID( body );
+		if( bodyID.IsInvalid() )
+			continue;
+
+		const RVec3 position = bodyInterface.GetPosition( bodyID );
+		const Vec3 offset(
+			targetPoint[0] - float( position.GetX() ),
+			targetPoint[1] - float( position.GetY() ),
+			targetPoint[2] - float( position.GetZ() ) );
+		const float distanceSquared = offset.LengthSq();
+		if( std::isfinite( distanceSquared ) && distanceSquared < closestDistanceSquared )
+		{
+			closestDistanceSquared = distanceSquared;
+			impactBodyIndex = body;
+		}
+	}
+
+	const BodyID impactBody = targetRagdoll->physicsRagdoll->GetBodyID( impactBodyIndex );
+	const float impactBodyMass = targetRagdoll->bodyMasses[impactBodyIndex];
+	if( impactBody.IsInvalid() || !std::isfinite( impactBodyMass ) || impactBodyMass <= 0.0f )
+		return 0;
+
+	const Vec3 velocityBefore = bodyInterface.GetLinearVelocity( impactBody );
+	const Vec3 angularBefore = bodyInterface.GetAngularVelocity( impactBody );
+
+	for( int body = 0; body < targetRagdoll->bodyCount; ++body )
+	{
+		const float mass = targetRagdoll->bodyMasses[body];
+		const BodyID bodyID = targetRagdoll->physicsRagdoll->GetBodyID( body );
+		if( bodyID.IsInvalid() || !std::isfinite( mass ) || mass <= 0.0f )
+			continue;
+
+		const RVec3 position = bodyInterface.GetPosition( bodyID );
+		const Vec3 bodyImpulse = sharedVelocityDelta * mass;
+		bodyInterface.ActivateBody( bodyID );
+		bodyInterface.AddImpulse( bodyID, bodyImpulse, position );
+	}
+
+	// Keep 15% of the total impulse localized at BodyTarget. Clamping the
+	// lever arm prevents a distant explosion origin from spinning the pelvis
+	// at its angular-velocity ceiling.
+	const RVec3 impactPosition = bodyInterface.GetPosition( impactBody );
+	Vec3 leverArm(
+		targetPoint[0] - float( impactPosition.GetX() ),
+		targetPoint[1] - float( impactPosition.GetY() ),
+		targetPoint[2] - float( impactPosition.GetZ() ) );
+	const float leverLength = leverArm.Length();
+	if( leverLength > 16.0f )
+		leverArm *= 16.0f / leverLength;
+	const RVec3 applicationPoint(
+		float( impactPosition.GetX() ) + leverArm.GetX(),
+		float( impactPosition.GetY() ) + leverArm.GetY(),
+		float( impactPosition.GetZ() ) + leverArm.GetZ() );
+
+	const Vec3 localizedImpulse = impulse * 0.15f;
+	bodyInterface.ActivateBody( impactBody );
+	bodyInterface.AddImpulse( impactBody, localizedImpulse, applicationPoint );
+
+	const Vec3 velocityAfter = bodyInterface.GetLinearVelocity( impactBody );
+	const Vec3 angularAfter = bodyInterface.GetAngularVelocity( impactBody );
+	const RVec3 bodyPosition = bodyInterface.GetPosition( impactBody );
+	const RVec3 rootPosition = bodyInterface.GetPosition( rootBody );
+	targetRagdoll->blastDebugBodyID = impactBody;
+	targetRagdoll->blastDebugBodyIndex = impactBodyIndex;
+	targetRagdoll->blastDebugBodyStartPosition = Vec3(
+		float( bodyPosition.GetX() ), float( bodyPosition.GetY() ), float( bodyPosition.GetZ() ) );
+	targetRagdoll->blastDebugRootStartPosition = Vec3(
+		float( rootPosition.GetX() ), float( rootPosition.GetY() ), float( rootPosition.GetZ() ) );
+	targetRagdoll->blastDebugTime = gpGlobals ? gpGlobals->time : 0.0f;
+	targetRagdoll->blastDebugPending = true;
+
+	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT(
+			at_console,
+			"[NPC blast] Immediate velocity: ent=%d body=%d impulse=(%.1f %.1f %.1f) v-before=(%.1f %.1f %.1f) v-after=(%.1f %.1f %.1f) w-before=(%.1f %.1f %.1f) w-after=(%.1f %.1f %.1f).\n",
+			ENTINDEX( targetEntity ), impactBodyIndex,
+			impulse.GetX(), impulse.GetY(), impulse.GetZ(),
+			velocityBefore.GetX(), velocityBefore.GetY(), velocityBefore.GetZ(),
+			velocityAfter.GetX(), velocityAfter.GetY(), velocityAfter.GetZ(),
+			angularBefore.GetX(), angularBefore.GetY(), angularBefore.GetZ(),
+			angularAfter.GetX(), angularAfter.GetY(), angularAfter.GetZ()
+		);
+
+	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT(
+			at_console,
+			"[NPC blast] Distributed character impulse: ent=%d id=%d body=%d mass=%.1f total-mass=%.1f damage=%.1f radius=%.1f impulse=%.1f random=%.2f scale=%.2f origin=(%.1f %.1f %.1f) target=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\n",
+			ENTINDEX( targetEntity ), targetRagdoll->networkID,
+			impactBodyIndex, impactBodyMass, totalRagdollMass,
+			blastDamage, radius, scaledImpulse, randomScale, blastScale,
+			origin[0], origin[1], origin[2],
+			targetPoint[0], targetPoint[1], targetPoint[2],
+			blastDirection.GetX(), blastDirection.GetY(), blastDirection.GetZ()
+		);
+
+	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
+		targetRagdoll->nextPoseTime = gpGlobals->time;
+
+	return 1;
+}
+
 int NPCPhysics_TraceAndApplyImpact(
 	const float *start,
 	const float *end,
@@ -1839,7 +3315,7 @@ int NPCPhysics_TraceAndApplyImpact(
 	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
 		!start || !end || !hitFraction || !hitPosition || !hitEntity ||
 		!std::isfinite( maxFraction ) || !std::isfinite( impulseMagnitude ) ||
-		impulseMagnitude <= 0.0f )
+		impulseMagnitude < 0.0f )
 		return FALSE;
 
 	maxFraction = (std::max)( 0.0f, (std::min)( maxFraction, 1.0f ) );
@@ -1856,8 +3332,20 @@ int NPCPhysics_TraceAndApplyImpact(
 		rayDirection );
 	JPH::RayCastResult hit;
 	hit.mFraction = maxFraction;
+	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT(
+			at_console,
+			"[NPC decals] Bullet trace: start=(%.1f %.1f %.1f) end=(%.1f %.1f %.1f) base-fraction=%.3f jolt-length=%.1f.\n",
+			start[0], start[1], start[2], end[0], end[1], end[2],
+			maxFraction, rayLength
+		);
+
 	if( !g_npcPhysics.system.GetNarrowPhaseQuery().CastRay( ray, hit ) )
+	{
+		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT( at_console, "[NPC decals] Jolt ray did not hit any physics body.\n" );
 		return FALSE;
+	}
 
 	// The Jolt world and brush colliders participate in the ray test too.
 	// Only accept a body that belongs to one of our articulated NPC ragdolls.
@@ -1889,17 +3377,27 @@ int NPCPhysics_TraceAndApplyImpact(
 	}
 
 	if( !foundRagdollBody || !targetEntity )
+	{
+		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT(
+				at_console,
+				"[NPC decals] Jolt ray hit a non-ragdoll body (fraction %.4f).\n",
+				hit.mFraction
+			);
 		return FALSE;
+	}
 
 	const JPH::RVec3 impactPoint = ray.GetPointOnRay( hit.mFraction );
-	JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
-	impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
-
-	JPH::BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
-	// Source's client ragdoll applies a localized force to the struck physics
-	// object. Explicit activation guarantees that a sleeping Jolt limb wakes.
-	bodyInterface.ActivateBody( hit.mBodyID );
-	bodyInterface.AddImpulse( hit.mBodyID, impulse, impactPoint );
+	if( impulseMagnitude > 0.0f )
+	{
+		JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
+		impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
+		JPH::BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		// Source's client ragdoll applies a localized force to the struck physics
+		// object. Explicit activation guarantees that a sleeping Jolt limb wakes.
+		bodyInterface.ActivateBody( hit.mBodyID );
+		bodyInterface.AddImpulse( hit.mBodyID, impulse, impactPoint );
+	}
 
 	// A sleeping corpse normally sends only a 5 Hz heartbeat. A weapon strike
 	// should be visible on the next end-frame snapshot, not after that interval.
@@ -1913,6 +3411,14 @@ int NPCPhysics_TraceAndApplyImpact(
 	{
 		CBaseEntity *hitObject = CBaseEntity::Instance( targetEntity );
 		const int bloodColor = hitObject ? hitObject->BloodColor() : DONT_BLEED;
+		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT(
+				at_console,
+				"[NPC decals] Hit ragdoll ent=%d id=%d body=%d fraction=%.4f blood=%d msg=%d.\n",
+				ENTINDEX( targetEntity ), targetRagdoll->networkID,
+				targetBodyIndex, hit.mFraction, bloodColor, g_msgRagdollImpact
+			);
+
 		if( bloodColor != DONT_BLEED )
 		{
 			const RagdollBone &bone = targetRagdoll->bones[targetBodyIndex];
@@ -1945,9 +3451,23 @@ int NPCPhysics_TraceAndApplyImpact(
 					WRITE_BYTE( (std::max)( 1, (std::min)( 255, encodedRadius ) ) );
 					WRITE_BYTE( markColor );
 				MESSAGE_END();
+
+				if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+					ALERT(
+						at_console,
+						"[NPC decals] Sent RagdollImpact: ent=%d id=%d studio-bone=%d radius=%.2f color=%d.\n",
+						ENTINDEX( targetEntity ), targetRagdoll->networkID,
+						bone.studioBoneIndex, markRadius, markColor
+					);
 			}
+			else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+				ALERT( at_console, "[NPC decals] Hit body has invalid studio bone %d.\n", bone.studioBoneIndex );
 		}
+		else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT( at_console, "[NPC decals] Ragdoll blood color is DONT_BLEED; no mark sent.\n" );
 	}
+	else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT( at_console, "[NPC decals] Impact usermessage is not registered or body index is invalid.\n" );
 
 	*hitFraction = hit.mFraction;
 	hitPosition[0] = float( impactPoint.GetX() );
@@ -1957,12 +3477,183 @@ int NPCPhysics_TraceAndApplyImpact(
 	return TRUE;
 }
 
+int NPCPhysics_ApplyImpactImpulseToRagdoll(
+	edict_t *targetEntity,
+	const float *impactPosition,
+	const float *direction,
+	float impulseMagnitude,
+	const char *impactName )
+{
+	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || !targetEntity ||
+		targetEntity->free || !impactPosition || !direction ||
+		!std::isfinite( impulseMagnitude ) || impulseMagnitude <= 0.0f )
+		return FALSE;
+
+	NPCPhysicsRagdoll *targetRagdoll = NULL;
+	for( size_t i = 0; i < g_ragdolls.size(); ++i )
+	{
+		NPCPhysicsRagdoll &ragdoll = g_ragdolls[i];
+		if( ragdoll.entity == targetEntity &&
+			ragdoll.serialNumber == targetEntity->serialnumber &&
+			ragdoll.addedToPhysicsSystem &&
+			ragdoll.physicsRagdoll.GetPtr() )
+		{
+			targetRagdoll = &ragdoll;
+			break;
+		}
+	}
+	if( !targetRagdoll || targetRagdoll->bodyCount <= 0 )
+		return FALSE;
+
+	Vec3 impulseDirection( direction[0], direction[1], direction[2] );
+	if( !std::isfinite( impulseDirection.GetX() ) ||
+		!std::isfinite( impulseDirection.GetY() ) ||
+		!std::isfinite( impulseDirection.GetZ() ) )
+		return FALSE;
+	const float directionLength = impulseDirection.Length();
+	if( !std::isfinite( directionLength ) || directionLength <= 0.001f )
+		return FALSE;
+	impulseDirection = impulseDirection * ( 1.0f / directionLength );
+
+	Vec3 impulse = impulseDirection * impulseMagnitude;
+	impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
+	if( impulse.Length() <= 1.0e-3f )
+		return FALSE;
+
+	BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+	int impactBodyIndex = -1;
+	float closestDistanceSquared = FLT_MAX;
+	RVec3 closestBodyPosition( 0.0, 0.0, 0.0 );
+	for( int body = 0; body < targetRagdoll->bodyCount; ++body )
+	{
+		const BodyID bodyID = targetRagdoll->physicsRagdoll->GetBodyID( body );
+		const RVec3 bodyPosition = bodyInterface.GetPosition( bodyID );
+		const float dx = float( bodyPosition.GetX() ) - impactPosition[0];
+		const float dy = float( bodyPosition.GetY() ) - impactPosition[1];
+		const float dz = float( bodyPosition.GetZ() ) - impactPosition[2];
+		const float distanceSquared = dx * dx + dy * dy + dz * dz;
+		if( distanceSquared < closestDistanceSquared )
+		{
+			closestDistanceSquared = distanceSquared;
+			impactBodyIndex = body;
+			closestBodyPosition = bodyPosition;
+		}
+	}
+	if( impactBodyIndex < 0 )
+		return FALSE;
+
+	const BodyID impactBody = targetRagdoll->physicsRagdoll->GetBodyID( impactBodyIndex );
+	Vec3 leverArm(
+		impactPosition[0] - float( closestBodyPosition.GetX() ),
+		impactPosition[1] - float( closestBodyPosition.GetY() ),
+		impactPosition[2] - float( closestBodyPosition.GetZ() ) );
+	const float leverLength = leverArm.Length();
+	if( leverLength > 16.0f )
+		leverArm *= 16.0f / leverLength;
+
+	const RVec3 applicationPoint(
+		float( closestBodyPosition.GetX() ) + leverArm.GetX(),
+		float( closestBodyPosition.GetY() ) + leverArm.GetY(),
+		float( closestBodyPosition.GetZ() ) + leverArm.GetZ() );
+
+	bodyInterface.ActivateBody( impactBody );
+	bodyInterface.AddImpulse( impactBody, impulse, applicationPoint );
+
+	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
+		targetRagdoll->nextPoseTime = gpGlobals->time;
+
+	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+	{
+		const float bodyMass = impactBodyIndex < static_cast<int>( targetRagdoll->bodyMasses.size() )
+			? targetRagdoll->bodyMasses[impactBodyIndex] : 0.0f;
+		ALERT(
+			at_console,
+			"[NPC %s] Applied deferred lethal-hit impulse: entity=%d id=%d body=%d mass=%.2f impulse=(%.1f %.1f %.1f) point=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\n",
+			( impactName && impactName[0] ) ? impactName : "weapon",
+			ENTINDEX( targetEntity ), targetRagdoll->networkID,
+			impactBodyIndex, bodyMass,
+			impulse.GetX(), impulse.GetY(), impulse.GetZ(),
+			impactPosition[0], impactPosition[1], impactPosition[2],
+			impulseDirection.GetX(), impulseDirection.GetY(), impulseDirection.GetZ()
+		);
+	}
+
+	return TRUE;
+}
+
+int NPCPhysics_ApplyBulletImpulseToRagdoll(
+	edict_t *targetEntity,
+	const float *impactPosition,
+	const float *direction,
+	float impulseMagnitude )
+{
+	return NPCPhysics_ApplyImpactImpulseToRagdoll(
+		targetEntity, impactPosition, direction, impulseMagnitude, "bullet" );
+}
+
+int NPCPhysics_HasRagdollDefinition( edict_t *ent )
+{
+	if( !NPCPhysics_Enabled() || !NPCPhysics_IsEligibleMonster( ent ) )
+		return FALSE;
+
+	return NPCPhysics_GetRagdollDefinition( ent, false ) ? TRUE : FALSE;
+}
+
+int NPCPhysics_RestorePersistentRagdoll( edict_t *ent )
+{
+	if( !NPCPhysics_Enabled() || !NPCPhysics_IsEligibleMonster( ent ) ||
+		NPCPhysics_IsRagdollEntity( ent ) )
+		return FALSE;
+
+	CBaseMonster *monster = static_cast<CBaseMonster *>( CBaseEntity::Instance( ent ) );
+	if( !monster )
+		return FALSE;
+
+	const bool hasAnyPersistentRagdollData =
+		monster->m_iNpcRagdollPersistVersion != 0 ||
+		monster->m_iNpcRagdollPersistBoneCount != 0 ||
+		monster->m_iNpcRagdollPersistBodyCount != 0;
+	if( monster->m_iNpcRagdollPersistVersion != NPC_RAGDOLL_PERSIST_VERSION ||
+		monster->m_iNpcRagdollPersistBoneCount <= 0 ||
+		monster->m_iNpcRagdollPersistBoneCount > NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES ||
+		monster->m_iNpcRagdollPersistBodyCount <= 0 ||
+		monster->m_iNpcRagdollPersistBodyCount > NPC_RAGDOLL_PERSIST_MAX_BODIES )
+	{
+		if( hasAnyPersistentRagdollData &&
+			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			ALERT( at_console,
+				"[NPC physics] Entity %d has incomplete ragdoll snapshot data (version=%d bones=%d bodies=%d).\n",
+				ENTINDEX( ent ), monster->m_iNpcRagdollPersistVersion,
+				monster->m_iNpcRagdollPersistBoneCount, monster->m_iNpcRagdollPersistBodyCount );
+		return FALSE;
+	}
+
+	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT( at_console,
+			"[NPC physics] Found transferred ragdoll state: entity=%d bones=%d bodies=%d.\n",
+			ENTINDEX( ent ), monster->m_iNpcRagdollPersistBoneCount,
+			monster->m_iNpcRagdollPersistBodyCount );
+
+	if( !NPCPhysics_CreateRagdoll( ent, true ) )
+	{
+		ALERT( at_console,
+			"[NPC physics] Could not restore transferred ragdoll for entity %d; keeping saved pose data for retry.\n",
+			ENTINDEX( ent ) );
+		return FALSE;
+	}
+
+	monster->m_iNpcRagdollPersistVersion = 0;
+	monster->m_iNpcRagdollPersistBoneCount = 0;
+	monster->m_iNpcRagdollPersistBodyCount = 0;
+	return TRUE;
+}
+
 int NPCPhysics_TryCreateRagdoll( edict_t *ent )
 {
 	if( !NPCPhysics_Enabled() || !NPCPhysics_IsEligibleMonster( ent ) )
 		return FALSE;
 
-	if( !NPCPhysics_CreateRagdoll( ent ) )
+	if( !NPCPhysics_CreateRagdoll( ent, false ) )
 	{
 		ALERT( at_console, "[NPC physics] Jolt ragdoll creation failed; using GoldSrc death animation.\n" );
 		return FALSE;
@@ -1981,6 +3672,12 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsMass );
 	CVAR_REGISTER( &g_svNpcVPhysicsBulletScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsCrowbarScale );
+	CVAR_REGISTER( &g_svNpcVPhysicsCrossbowScale );
+	CVAR_REGISTER( &g_svNpcVPhysicsBlastScale );
+	CVAR_REGISTER( &g_svNpcVPhysicsImpactDamageScale );
+	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushMass );
+	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushSpeed );
+	CVAR_REGISTER( &g_svNpcVPhysicsDebug );
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
 	g_worldCollisionMeshAPI = NULL;
@@ -2068,22 +3765,11 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 
 void NPCPhysics_ResetMap( void )
 {
-	for( size_t i = 0; i < g_ragdolls.size(); ++i )
-	{
-		NPCPhysicsRagdoll &ragdoll = g_ragdolls[i];
-		if( ragdoll.entity && !ragdoll.entity->free &&
-			ragdoll.entity->serialnumber == ragdoll.serialNumber )
-		{
-			ragdoll.entity->v.effects |= EF_NODRAW;
-			ragdoll.entity->v.iuser4 = 0;
-			ragdoll.entity->v.solid = SOLID_NOT;
-			ragdoll.entity->v.movetype = MOVETYPE_NONE;
-		}
-	}
-
 	NPCPhysics_DestroyAllRagdolls();
+	NPCPhysics_DestroyActorColliders();
 	NPCPhysics_DestroyBrushColliders();
 	NPCPhysics_DestroyWorldCollider();
+	g_npcPhysics.contactListener.Clear();
 	for( size_t i = 0; i < g_livePoses.size(); ++i )
 	{
 		g_livePoses[i].serialNumber = -1;
@@ -2098,7 +3784,11 @@ void NPCPhysics_ResetMap( void )
 
 void NPCPhysics_Shutdown( void )
 {
+	if( g_npcPhysics.initialized )
+		g_npcPhysics.system.SetContactListener( NULL );
+	g_npcPhysics.contactListener.Clear();
 	NPCPhysics_DestroyAllRagdolls();
+	NPCPhysics_DestroyActorColliders();
 	NPCPhysics_DestroyBrushColliders();
 	NPCPhysics_DestroyWorldCollider();
 

@@ -43,6 +43,9 @@ static int g_BlobShadowStudioEntity = -1;
 static cvar_t *cl_blobshadows = NULL;
 static cvar_t *cl_blobshadows_opacity = NULL;
 static cvar_t *cl_ragdoll_bloodmarks = NULL;
+static cvar_t *cl_ragdoll_bloodmarks_debug = NULL;
+static int g_RagdollDebugLastMarkCount[2048];
+static int g_RagdollDebugLastID[2048];
 static model_t *cl_blobshadow_sprite = NULL;
 
 // Minimal Xash sprite metadata mirrors. We temporarily substitute the frame's
@@ -213,9 +216,23 @@ static void StudioPrepareRagdollImpactMarks( CStudioModelRenderer *renderer )
 				rayStart, worldPosition, &sourceRadius, &bloodColor, &ragdollID ) )
 			continue;
 
-		IEngineStudio.StudioDecalShoot(
+		int submitted = IEngineStudio.StudioDecalShoot(
 			entity->index, ragdollID, boneIndex,
 			rayStart, worldPosition, sourceRadius, bloodColor );
+		if( cl_ragdoll_bloodmarks_debug && cl_ragdoll_bloodmarks_debug->value > 0.0f &&
+			gEngfuncs.Con_Printf &&
+			( ragdollID != g_RagdollDebugLastID[entity->index] ||
+			  markIndex >= g_RagdollDebugLastMarkCount[entity->index] ) )
+		{
+			gEngfuncs.Con_Printf(
+				"[Ragdoll decals] Client submit: ent=%d id=%d bone=%d radius=%.2f accepted=%d.\n",
+				entity->index, ragdollID, boneIndex, sourceRadius, submitted );
+		}
+		if( markIndex == markCount - 1 )
+		{
+			g_RagdollDebugLastID[entity->index] = ragdollID;
+			g_RagdollDebugLastMarkCount[entity->index] = markCount;
+		}
 	}
 }
 
@@ -569,6 +586,9 @@ void CStudioModelRenderer::Init( void )
 		cl_blobshadows_opacity = CVAR_CREATE( "cl_blobshadows_opacity", "0.53", FCVAR_ARCHIVE );
 	if( !cl_ragdoll_bloodmarks )
 		cl_ragdoll_bloodmarks = CVAR_CREATE( "cl_ragdoll_bloodmarks", "1", FCVAR_ARCHIVE );
+	if( !cl_ragdoll_bloodmarks_debug )
+		cl_ragdoll_bloodmarks_debug = CVAR_CREATE(
+			"cl_ragdoll_bloodmarks_debug", "0", FCVAR_ARCHIVE );
 
 	m_pChromeSprite			= IEngineStudio.GetChromeSprite();
 

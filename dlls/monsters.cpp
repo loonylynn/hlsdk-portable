@@ -34,6 +34,8 @@
 #include "soundent.h"
 #include "gamerules.h"
 #include "game.h"
+#include "basemonster.h"
+#include "xash_physint.h"
 
 #define MONSTER_CUT_CORNER_DIST		8 // 8 means the monster's bounding box is contained without the box of the node in WC
 
@@ -111,12 +113,37 @@ TYPEDESCRIPTION	CBaseMonster::m_SaveData[] =
 
 	DEFINE_FIELD( CBaseMonster, m_scriptState, FIELD_INTEGER ),
 	DEFINE_FIELD( CBaseMonster, m_pCine, FIELD_CLASSPTR ),
+
+	DEFINE_FIELD( CBaseMonster, m_iNpcRagdollPersistVersion, FIELD_INTEGER ),
+	DEFINE_FIELD( CBaseMonster, m_iNpcRagdollPersistBoneCount, FIELD_INTEGER ),
+	DEFINE_FIELD( CBaseMonster, m_iNpcRagdollPersistBodyCount, FIELD_INTEGER ),
+	DEFINE_ARRAY( CBaseMonster, m_flNpcRagdollPersistStudioPose, FIELD_FLOAT,
+		NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES * NPC_RAGDOLL_PERSIST_STUDIO_STRIDE ),
+	DEFINE_ARRAY( CBaseMonster, m_flNpcRagdollPersistBodyVelocity, FIELD_FLOAT,
+		NPC_RAGDOLL_PERSIST_MAX_BODIES * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE ),
 };
 
 //IMPLEMENT_SAVERESTORE( CBaseMonster, CBaseToggle )
 
+int CBaseMonster::ObjectCaps( void )
+{
+	int caps = CBaseToggle::ObjectCaps();
+
+	// Dead Jolt ragdolls are portable physics entities. The change-list builder
+	// explicitly includes them even when outside the landmark PVS; this flag
+	// bypasses any named trigger_transition volume restriction.
+	if( NPCPhysics_IsRagdollEntity( ENT( pev ) ) )
+		caps |= FCAP_ACROSS_TRANSITION | FCAP_FORCE_TRANSITION;
+
+	return caps;
+}
+
 int CBaseMonster::Save( CSave &save )
 {
+	// Refresh the portable state while the live Jolt bodies are still valid.
+	// The engine serializes entities before ServerDeactivate tears down the map.
+	NPCPhysics_SaveRagdollState( ENT( pev ) );
+
 	if( !CBaseToggle::Save( save ) )
 		return 0;
 	return save.WriteFields( "CBaseMonster", this, m_SaveData, ARRAYSIZE( m_SaveData ) );
@@ -126,6 +153,15 @@ int CBaseMonster::Restore( CRestore &restore )
 {
 	if( !CBaseToggle::Restore( restore ) )
 		return 0;
+
+	// Older saves do not contain these fields; start from a safe empty state
+	// before reading any snapshot values that may be present.
+	m_iNpcRagdollPersistVersion = 0;
+	m_iNpcRagdollPersistBoneCount = 0;
+	m_iNpcRagdollPersistBodyCount = 0;
+	memset( m_flNpcRagdollPersistStudioPose, 0, sizeof( m_flNpcRagdollPersistStudioPose ) );
+	memset( m_flNpcRagdollPersistBodyVelocity, 0, sizeof( m_flNpcRagdollPersistBodyVelocity ) );
+
 	int status = restore.ReadFields( "CBaseMonster", this, m_SaveData, ARRAYSIZE( m_SaveData ) );
 
 	// We don't save/restore routes yet
@@ -135,8 +171,10 @@ int CBaseMonster::Restore( CRestore &restore )
 	m_pSchedule = NULL;
 	m_iTaskStatus = TASKSTATUS_NEW;
 
-	// Reset animation
-	m_Activity = ACT_RESET;
+	// A transferred ragdoll is reconstructed from the serialized physics pose
+	// during ServerActivate; do not restart its old living animation here.
+	if( m_iNpcRagdollPersistVersion != NPC_RAGDOLL_PERSIST_VERSION )
+		m_Activity = ACT_RESET;
 
 	// If we don't have an enemy, clear conditions like see enemy, etc.
 	if( m_hEnemy == 0 )
@@ -2001,6 +2039,11 @@ void CBaseMonster::MonsterInit( void )
 	}
 
 	// Set fields common to all monsters
+	m_iNpcRagdollPersistVersion = 0;
+	m_iNpcRagdollPersistBoneCount = 0;
+	m_iNpcRagdollPersistBodyCount = 0;
+	memset( m_flNpcRagdollPersistStudioPose, 0, sizeof( m_flNpcRagdollPersistStudioPose ) );
+	memset( m_flNpcRagdollPersistBodyVelocity, 0, sizeof( m_flNpcRagdollPersistBodyVelocity ) );
 	m_bitsDamageTypeMod = 0;
 	m_iBleedingTicksRemaining = 0;
 	m_flBleedingNextDamageTime = 0;
