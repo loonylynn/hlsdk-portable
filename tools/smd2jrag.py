@@ -121,8 +121,8 @@ def parse_smd(path: Path) -> SMDData:
             duplicate_node_indices.add(index)
             # Some decompiled/hand-edited ragdoll SMDs repeat a node index
             # and name with a corrected parent later in the nodes table.
-            # A skeleton frame can only contain one transform for that index,
-            # so retain one node and use the final declaration as authoritative.
+            # Collapse those declarations to one canonical node here. Matching
+            # repeated transform records are handled below using the final pose.
             # Reuse of an index for a different name is still ambiguous/invalid.
             if previous.name.casefold() != folded:
                 raise ValueError(
