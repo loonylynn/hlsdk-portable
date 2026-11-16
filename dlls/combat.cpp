@@ -33,6 +33,7 @@
 #include "xash_physint.h"
 
 #include <algorithm>
+#include <vector>
 
 extern DLL_GLOBAL Vector		g_vecAttackDir;
 extern DLL_GLOBAL int			g_iSkillLevel;
@@ -1576,6 +1577,68 @@ static void NPCPhysics_ApplyBulletImpact(
 		trace->pHit = hitEntity;
 	}
 }
+struct NPCPhysicsPendingBulletImpact
+{
+	edict_t *entity;
+	int serialNumber;
+	Vector impactPosition;
+	Vector direction;
+	float impulseMagnitude;
+};
+
+static void NPCPhysics_QueueBulletImpact(
+	std::vector<NPCPhysicsPendingBulletImpact> &pending,
+	CBaseEntity *target,
+	const Vector &impactPosition,
+	const Vector &direction,
+	int bulletType,
+	BOOL playerBullet )
+{
+	if( !target || bulletType == BULLET_NONE )
+		return;
+
+	edict_t *targetEntity = target->edict();
+	if( !targetEntity || targetEntity->free ||
+		NPCPhysics_IsRagdollEntity( targetEntity ) ||
+		!NPCPhysics_HasRagdollDefinition( targetEntity ) )
+		return;
+
+	const float configuredScale = CVAR_GET_FLOAT( "sv_npc_vphysics_bullet_scale" );
+	const float impulseMagnitude =
+		NPCPhysics_GetBulletImpactImpulse( bulletType, playerBullet ) *
+		(std::max)( 0.0f, configuredScale );
+	if( !std::isfinite( impulseMagnitude ) || impulseMagnitude <= 0.0f )
+		return;
+
+	NPCPhysicsPendingBulletImpact impact;
+	impact.entity = targetEntity;
+	impact.serialNumber = targetEntity->serialnumber;
+	impact.impactPosition = impactPosition;
+	impact.direction = direction;
+	impact.impulseMagnitude = impulseMagnitude;
+	pending.push_back( impact );
+}
+
+static void NPCPhysics_ApplyPendingBulletImpacts(
+	std::vector<NPCPhysicsPendingBulletImpact> &pending )
+{
+	for( size_t i = 0; i < pending.size(); ++i )
+	{
+		const NPCPhysicsPendingBulletImpact &impact = pending[i];
+		if( !impact.entity || impact.entity->free ||
+			impact.entity->serialnumber != impact.serialNumber ||
+			!NPCPhysics_IsRagdollEntity( impact.entity ) )
+			continue;
+
+		NPCPhysics_ApplyBulletImpulseToRagdoll(
+			impact.entity,
+			&impact.impactPosition[0],
+			&impact.direction[0],
+			impact.impulseMagnitude
+		);
+	}
+	pending.clear();
+}
 #endif
 
 void CBaseEntity::FireBullets( ULONG cShots, Vector vecSrc, Vector vecDirShooting, Vector vecSpread, float flDistance, int iBulletType, int iTracerFreq, int iDamage, entvars_t *pevAttacker )
@@ -1583,6 +1646,9 @@ void CBaseEntity::FireBullets( ULONG cShots, Vector vecSrc, Vector vecDirShootin
 	static int tracerCount;
 	int tracer;
 	TraceResult tr;
+#ifndef CLIENT_DLL
+	std::vector<NPCPhysicsPendingBulletImpact> pendingBulletImpacts;
+#endif
 	Vector vecRight = gpGlobals->v_right;
 	Vector vecUp = gpGlobals->v_up;
 
@@ -1654,6 +1720,10 @@ void CBaseEntity::FireBullets( ULONG cShots, Vector vecSrc, Vector vecDirShootin
 			CBaseEntity *pEntity = CBaseEntity::Instance( tr.pHit );
 
 			vecDir = vecDir.Normalize();
+#ifndef CLIENT_DLL
+			NPCPhysics_QueueBulletImpact(
+				pendingBulletImpacts, pEntity, tr.vecEndPos, vecDir, iBulletType, FALSE );
+#endif
 
 			if( iDamage )
 			{
@@ -1706,6 +1776,9 @@ void CBaseEntity::FireBullets( ULONG cShots, Vector vecSrc, Vector vecDirShootin
 		UTIL_BubbleTrail( vecSrc, tr.vecEndPos, (int)( ( flDistance * tr.flFraction ) / 64.0f ) );
 	}
 	ApplyMultiDamage( pev, pevAttacker );
+#ifndef CLIENT_DLL
+	NPCPhysics_ApplyPendingBulletImpacts( pendingBulletImpacts );
+#endif
 }
 
 /*
@@ -1721,6 +1794,9 @@ Vector CBaseEntity::FireBulletsPlayer( ULONG cShots, Vector vecSrc, Vector vecDi
 {
 	static int tracerCount;
 	TraceResult tr;
+#ifndef CLIENT_DLL
+	std::vector<NPCPhysicsPendingBulletImpact> pendingBulletImpacts;
+#endif
 	Vector vecRight = gpGlobals->v_right;
 	Vector vecUp = gpGlobals->v_up;
 	float x = 0.0f, y = 0.0f;
@@ -1757,6 +1833,10 @@ Vector CBaseEntity::FireBulletsPlayer( ULONG cShots, Vector vecSrc, Vector vecDi
 			CBaseEntity *pEntity = CBaseEntity::Instance( tr.pHit );
 
 			vecDir = vecDir.Normalize();
+#ifndef CLIENT_DLL
+			NPCPhysics_QueueBulletImpact(
+				pendingBulletImpacts, pEntity, tr.vecEndPos, vecDir, iBulletType, TRUE );
+#endif
 
 			if( iDamage )
 			{
@@ -1799,6 +1879,9 @@ Vector CBaseEntity::FireBulletsPlayer( ULONG cShots, Vector vecSrc, Vector vecDi
 		UTIL_BubbleTrail( vecSrc, tr.vecEndPos, (int)( ( flDistance * tr.flFraction ) / 64.0f ) );
 	}
 	ApplyMultiDamage( pev, pevAttacker );
+#ifndef CLIENT_DLL
+	NPCPhysics_ApplyPendingBulletImpacts( pendingBulletImpacts );
+#endif
 
 	return Vector( x * vecSpread.x, y * vecSpread.y, 0.0 );
 }
