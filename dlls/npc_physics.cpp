@@ -224,6 +224,7 @@ namespace
 		int rootElement;
 		float nextPoseTime;
 		float nextCollisionDamageTime;
+		float nextContactDebugTime;
 		bool firstPoseSendReported;
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
@@ -252,6 +253,7 @@ namespace
 			  rootElement( -1 ),
 			  nextPoseTime( 0.0f ),
 			  nextCollisionDamageTime( 0.0f ),
+			  nextContactDebugTime( 0.0f ),
 			  firstPoseSendReported( false ),
 			  blastDebugBodyID(),
 			  blastDebugBodyIndex( -1 ),
@@ -282,6 +284,30 @@ namespace
 		}
 	};
 
+	struct NPCPhysicsPendingContactDiagnostic
+	{
+		uint64_t ragdollID;
+		BodyID ragdollBodyID;
+		int otherLayer;
+		int otherEntityIndex;
+		float penetrationDepth;
+		float closingSpeed;
+		Vec3 contactPoint;
+		Vec3 normal;
+
+		NPCPhysicsPendingContactDiagnostic()
+			: ragdollID( 0 ),
+			  ragdollBodyID(),
+			  otherLayer( 0 ),
+			  otherEntityIndex( 0 ),
+			  penetrationDepth( 0.0f ),
+			  closingSpeed( 0.0f ),
+			  contactPoint( 0.0f, 0.0f, 0.0f ),
+			  normal( 0.0f, 0.0f, 0.0f )
+		{
+		}
+	};
+
 	class NPCPhysicsContactListener final : public ContactListener
 	{
 	public:
@@ -308,7 +334,6 @@ namespace
 				otherLayer != BRUSH_KINEMATIC_OBJECT_LAYER )
 				return;
 			if( ragdollBody.GetMotionType() != EMotionType::Dynamic ||
-				manifold.mPenetrationDepth < 0.0f ||
 				manifold.mRelativeContactPointsOn1.size() == 0 )
 				return;
 
@@ -322,7 +347,32 @@ namespace
 				body2.GetPointVelocity( contact ) - body1.GetPointVelocity( contact );
 			const float closingSpeedBefore =
 				(std::max)( 0.0f, -relativeVelocityBefore.Dot( normal ) );
-			if( closingSpeedBefore < 1.0f )
+
+			// Keep a low-volume record of every new ragdoll/world or
+			// ragdoll/kinematic contact. This is deliberately separate from
+			// impact damage: slow player shoves must be diagnosable too.
+			NPCPhysicsPendingContactDiagnostic diagnostic;
+			diagnostic.ragdollID = ragdollID;
+			diagnostic.ragdollBodyID = ragdollBody.GetID();
+			diagnostic.otherLayer = static_cast<int>( otherLayer );
+			diagnostic.otherEntityIndex = otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER
+				? static_cast<int>( otherBody.GetUserData() ) : 0;
+			diagnostic.penetrationDepth = manifold.mPenetrationDepth;
+			diagnostic.closingSpeed = closingSpeedBefore;
+			diagnostic.contactPoint = Vec3(
+				float( contact.GetX() ),
+				float( contact.GetY() ),
+				float( contact.GetZ() ) );
+			diagnostic.normal = normal;
+			{
+				std::lock_guard<std::mutex> lock( m_mutex );
+				m_contactDiagnostics.push_back( diagnostic );
+			}
+
+			// Collision damage is reserved for actual closing impacts with a
+			// usable manifold. Diagnostic contacts above also include slow or
+			// resting contacts, which are useful when investigating wall clips.
+			if( manifold.mPenetrationDepth < 0.0f || closingSpeedBefore < 1.0f )
 				return;
 
 			CollisionEstimationResult estimate;
@@ -376,15 +426,25 @@ namespace
 			return result;
 		}
 
+		std::vector<NPCPhysicsPendingContactDiagnostic> DrainDiagnostics()
+		{
+			std::lock_guard<std::mutex> lock( m_mutex );
+			std::vector<NPCPhysicsPendingContactDiagnostic> result;
+			result.swap( m_contactDiagnostics );
+			return result;
+		}
+
 		void Clear()
 		{
 			std::lock_guard<std::mutex> lock( m_mutex );
 			m_pending.clear();
+			m_contactDiagnostics.clear();
 		}
 
 	private:
 		std::mutex m_mutex;
 		std::vector<NPCPhysicsPendingCollisionDamage> m_pending;
+		std::vector<NPCPhysicsPendingContactDiagnostic> m_contactDiagnostics;
 	};
 
 	// The creation path logs restored velocities before the diagnostic helper's
@@ -2420,6 +2480,74 @@ namespace
 		return 0;
 	}
 
+	static void NPCPhysics_ProcessContactDiagnostics()
+	{
+		std::vector<NPCPhysicsPendingContactDiagnostic> pending =
+			g_npcPhysics.contactListener.DrainDiagnostics();
+		if( pending.empty() || !gpGlobals ||
+			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) < 0.5f )
+			return;
+
+		for( size_t i = 0; i < pending.size(); ++i )
+		{
+			const NPCPhysicsPendingContactDiagnostic &event = pending[i];
+			NPCPhysicsRagdoll *ragdoll = NULL;
+			for( size_t r = 0; r < g_ragdolls.size(); ++r )
+			{
+				if( g_ragdolls[r].networkID == static_cast<int>( event.ragdollID ) &&
+					g_ragdolls[r].addedToPhysicsSystem &&
+					g_ragdolls[r].physicsRagdoll.GetPtr() )
+				{
+					ragdoll = &g_ragdolls[r];
+					break;
+				}
+			}
+			if( !ragdoll || !ragdoll->entity || ragdoll->entity->free ||
+				ragdoll->entity->serialnumber != ragdoll->serialNumber ||
+				gpGlobals->time < ragdoll->nextContactDebugTime )
+				continue;
+
+			int bodyIndex = -1;
+			for( int body = 0; body < ragdoll->bodyCount; ++body )
+			{
+				if( ragdoll->physicsRagdoll->GetBodyID( body ) == event.ragdollBodyID )
+				{
+					bodyIndex = body;
+					break;
+				}
+			}
+
+			const char *otherKind = event.otherLayer == WORLD_STATIC_OBJECT_LAYER
+				? "world" : "kinematic";
+			if( event.otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER &&
+				event.otherEntityIndex > 0 &&
+				event.otherEntityIndex < gpGlobals->maxEntities )
+			{
+				edict_t *other = INDEXENT( event.otherEntityIndex );
+				if( !FNullEnt( other ) && !other->free )
+				{
+					if( other->v.flags & FL_CLIENT )
+						otherKind = "player";
+					else if( other->v.flags & FL_MONSTER )
+						otherKind = "actor";
+					else
+						otherKind = "brush";
+				}
+			}
+
+			ALERT(
+				at_console,
+				"[NPC physics] Contact: ent=%d id=%d body=%d other=%s/%d penetration=%.3f closing=%.1f point=(%.1f %.1f %.1f) normal=(%.2f %.2f %.2f).\n",
+				ENTINDEX( ragdoll->entity ), ragdoll->networkID, bodyIndex,
+				otherKind, event.otherEntityIndex, event.penetrationDepth,
+				event.closingSpeed,
+				event.contactPoint.GetX(), event.contactPoint.GetY(), event.contactPoint.GetZ(),
+				event.normal.GetX(), event.normal.GetY(), event.normal.GetZ()
+			);
+			ragdoll->nextContactDebugTime = gpGlobals->time + 0.5f;
+		}
+	}
+
 	static void NPCPhysics_ProcessCollisionDamage()
 	{
 		std::vector<NPCPhysicsPendingCollisionDamage> pending =
@@ -2564,6 +2692,7 @@ namespace
 			++steps;
 		}
 
+		NPCPhysics_ProcessContactDiagnostics();
 		NPCPhysics_ProcessCollisionDamage();
 		NPCPhysics_RemoveGibbedRagdolls();
 		if( g_ragdolls.empty() )
