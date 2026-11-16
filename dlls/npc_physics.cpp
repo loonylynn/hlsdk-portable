@@ -323,6 +323,8 @@ namespace
 		Vec3 otherBoundsMin;
 		Vec3 otherBoundsMax;
 		int otherShapeSubType;
+		uint32_t ragdollSubShapeID;
+		uint32_t otherSubShapeID;
 
 		NPCPhysicsPendingContactDiagnostic()
 			: ragdollID( 0 ),
@@ -344,7 +346,9 @@ namespace
 			  otherRotation( Quat::sIdentity() ),
 			  otherBoundsMin( 0.0f, 0.0f, 0.0f ),
 			  otherBoundsMax( 0.0f, 0.0f, 0.0f ),
-			  otherShapeSubType( -1 )
+			  otherShapeSubType( -1 ),
+			  ragdollSubShapeID( 0xFFFFFFFFu ),
+			  otherSubShapeID( 0xFFFFFFFFu )
 		{
 		}
 	};
@@ -591,11 +595,11 @@ namespace
 			const RVec3 contact = body1IsRagdoll
 				? manifold.GetWorldSpaceContactPointOn1( 0 )
 				: manifold.GetWorldSpaceContactPointOn2( 0 );
-			const Vec3 normal = manifold.mWorldSpaceNormal;
+			const Vec3 manifoldNormal = manifold.mWorldSpaceNormal;
 			const Vec3 relativeVelocity =
 				body2.GetPointVelocity( contact ) - body1.GetPointVelocity( contact );
 			const float closingSpeed =
-				(std::max)( 0.0f, -relativeVelocity.Dot( normal ) );
+				(std::max)( 0.0f, -relativeVelocity.Dot( manifoldNormal ) );
 			if( !std::isfinite( manifold.mPenetrationDepth ) ||
 				!std::isfinite( closingSpeed ) )
 				return;
@@ -614,7 +618,14 @@ namespace
 				float( contact.GetX() ),
 				float( contact.GetY() ),
 				float( contact.GetZ() ) );
-			diagnostic.normal = normal;
+			// Jolt's manifold normal points in the direction that moves body 2
+			// out of the collision. Orient this diagnostic normal toward the
+			// ragdoll so its meaning is stable regardless of body ordering.
+			diagnostic.normal = body1IsRagdoll ? -manifoldNormal : manifoldNormal;
+			diagnostic.ragdollSubShapeID = body1IsRagdoll
+				? manifold.mSubShapeID1.GetValue() : manifold.mSubShapeID2.GetValue();
+			diagnostic.otherSubShapeID = body1IsRagdoll
+				? manifold.mSubShapeID2.GetValue() : manifold.mSubShapeID1.GetValue();
 
 			// Source's player shadow update checks the penetrating state and
 			// inspects intersecting entities before reconciling movement.
@@ -2932,13 +2943,15 @@ namespace
 
 			ALERT(
 				at_console,
-				"[NPC physics] Contact %s: ent=%d id=%d body=%d bone='%s' other=%s/%d samples=%u jolt-depth=%.3f closing=%.1f point=(%.1f %.1f %.1f) normal=(%.2f %.2f %.2f).\n",
+				"[NPC physics] Contact %s: ent=%d id=%d body=%d bone='%s' other=%s/%d samples=%u jolt-depth=%.3f closing=%.1f point=(%.1f %.1f %.1f) ragdoll-normal=(%.2f %.2f %.2f) subshape-ragdoll=%u subshape-other=%u.\n",
 				event.persisted ? "persisted" : "added",
 				ENTINDEX( ragdoll->entity ), ragdoll->networkID, bodyIndex, boneName,
 				otherKind, event.otherEntityIndex, event.sampleCount,
 				event.penetrationDepth, event.closingSpeed,
 				event.contactPoint.GetX(), event.contactPoint.GetY(), event.contactPoint.GetZ(),
-				event.normal.GetX(), event.normal.GetY(), event.normal.GetZ()
+				event.normal.GetX(), event.normal.GetY(), event.normal.GetZ(),
+				static_cast<unsigned int>( event.ragdollSubShapeID ),
+				static_cast<unsigned int>( event.otherSubShapeID )
 			);
 			ALERT(
 				at_console,
