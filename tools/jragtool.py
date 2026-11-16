@@ -364,6 +364,8 @@ def inspect_smd(smd_path: Path, qci_path: Optional[Path] = None) -> None:
 
     if qci_path:
         qci = converter.parse_qci(qci_path)
+        for warning in converter.unbound_qci_directives(smd, qci):
+            print("WARNING: {}".format(warning))
         print("")
         print("QCI: {}".format(qci_path))
         print("Collision block: {}".format(qci.collision_name))
@@ -427,10 +429,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             inspect_smd(args.smd, args.qci)
             return 0
         if args.command == "generate":
+            source_qci = converter.parse_qci(args.source)
+            smd_path = _resolve_smd(args.source, args.smd)
+            source_smd = converter.parse_smd(smd_path)
+            for warning in converter.unbound_qci_directives(source_smd, source_qci):
+                print("WARNING: {}".format(warning))
             bodies = converter.convert(
                 args.source, args.smd, args.output,
                 friction=args.friction, restitution=args.restitution)
-            smd_path = _resolve_smd(args.source, args.smd)
             definition, _bone_count = validate_definition(
                 args.output, smd_path, args.source)
             print("Generated and validated {} ({} rigid bodies).".format(
@@ -442,6 +448,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 0
         if args.command == "validate":
             definition, bone_count = validate_definition(args.jrag, args.smd, args.qci)
+            if args.qci:
+                source_qci = converter.parse_qci(args.qci)
+                source_smd = converter.parse_smd(args.smd)
+                for warning in converter.unbound_qci_directives(source_smd, source_qci):
+                    print("WARNING: {}".format(warning))
             print("Valid: {} ({} bodies; {} SMD skeleton bones).".format(
                 args.jrag, len(definition.bodies), bone_count))
             print("  Geometry, hull points, body order and physical parent links match.")
