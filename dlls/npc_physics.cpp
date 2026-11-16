@@ -2536,17 +2536,17 @@ int NPCPhysics_ApplyBulletImpulseToRagdoll(
 	const float directionLength = impulseDirection.Length();
 	if( !std::isfinite( directionLength ) || directionLength <= 0.001f )
 		return FALSE;
-	impulseDirection /= directionLength;
+	impulseDirection = impulseDirection * ( 1.0f / directionLength );
 
 	Vec3 impulse = impulseDirection * impulseMagnitude;
 	impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
-	if( impulse.LengthSq() <= 1.0e-6f )
+	if( impulse.Length() <= 1.0e-3f )
 		return FALSE;
 
 	BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
 	int impactBodyIndex = -1;
 	float closestDistanceSquared = FLT_MAX;
-	RVec3 closestBodyPosition;
+	RVec3 closestBodyPosition( 0.0, 0.0, 0.0 );
 	for( int body = 0; body < targetRagdoll->bodyCount; ++body )
 	{
 		const BodyID bodyID = targetRagdoll->physicsRagdoll->GetBodyID( body );
@@ -2591,7 +2591,7 @@ int NPCPhysics_ApplyBulletImpulseToRagdoll(
 			? targetRagdoll->bodyMasses[impactBodyIndex] : 0.0f;
 		ALERT(
 			at_console,
-			"[NPC bullet] Applied deferred lethal-hit impulse: entity=%d id=%d body=%d mass=%.2f impulse=(%.1f %.1f %.1f) point=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\\n",
+			"[NPC bullet] Applied deferred lethal-hit impulse: entity=%d id=%d body=%d mass=%.2f impulse=(%.1f %.1f %.1f) point=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\n",
 			ENTINDEX( targetEntity ), targetRagdoll->networkID,
 			impactBodyIndex, bodyMass,
 			impulse.GetX(), impulse.GetY(), impulse.GetZ(),
