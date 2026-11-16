@@ -43,6 +43,7 @@
 #include <cfloat>
 #include <iomanip>
 #include <mutex>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <cstdint>
@@ -674,7 +675,7 @@ namespace
 		RagdollObjectLayerFilter objectLayerFilter;
 		RagdollBroadPhaseFilter broadPhaseFilter;
 		NPCPhysicsContactListener contactListener;
-		PhysicsSystem system;
+		std::unique_ptr<PhysicsSystem> system;
 		JobSystemSingleThreaded jobs;
 		TempAllocatorImpl *tempAllocator;
 		float fixedAccumulator;
@@ -786,7 +787,8 @@ namespace
 		RegisterTypes();
 
 		g_npcPhysics.tempAllocator = new TempAllocatorImpl( 16 * 1024 * 1024 );
-		g_npcPhysics.system.Init(
+		g_npcPhysics.system.reset( new PhysicsSystem() );
+		g_npcPhysics.system->Init(
 			RAGDOLL_MAX_BODIES,
 			0,
 			RAGDOLL_MAX_BODY_PAIRS,
@@ -799,7 +801,7 @@ namespace
 		// Jolt's documented defaults assume meters. The bridge intentionally
 		// uses GoldSrc inches throughout (including sv_gravity=800), so scale
 		// every linear tolerance and squared-distance threshold to that space.
-		PhysicsSettings sourceUnitSettings = g_npcPhysics.system.GetPhysicsSettings();
+		PhysicsSettings sourceUnitSettings = g_npcPhysics.system->GetPhysicsSettings();
 		const float sourceScale = RAGDOLL_SOURCE_UNITS_PER_METER;
 		const float sourceScaleSquared = sourceScale * sourceScale;
 		sourceUnitSettings.mSpeculativeContactDistance *= sourceScale;
@@ -816,10 +818,10 @@ namespace
 		// surfaces. Give the contact/joint island more position-solver passes
 		// so deep transient contacts are corrected more completely per step.
 		sourceUnitSettings.mNumPositionSteps = 4;
-		g_npcPhysics.system.SetPhysicsSettings( sourceUnitSettings );
-		g_npcPhysics.system.SetContactListener( &g_npcPhysics.contactListener );
+		g_npcPhysics.system->SetPhysicsSettings( sourceUnitSettings );
+		g_npcPhysics.system->SetContactListener( &g_npcPhysics.contactListener );
 
-		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -800.0f ) );
+		g_npcPhysics.system->SetGravity( Vec3( 0.0f, 0.0f, -800.0f ) );
 		ALERT(
 			at_console,
 			"[NPC physics] Jolt GoldSrc-unit scaling: units/m=%.3f max-penetration-correction=%.2f speculative-distance=%.2f position-steps=%u.\n",
@@ -974,7 +976,7 @@ namespace
 	{
 		if( g_npcPhysics.initialized && !g_worldCollisionBodyID.IsInvalid() )
 		{
-			BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+			BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 			if( bodyInterface.IsAdded( g_worldCollisionBodyID ) )
 				bodyInterface.RemoveBody( g_worldCollisionBodyID );
 			bodyInterface.DestroyBody( g_worldCollisionBodyID );
@@ -990,7 +992,7 @@ namespace
 		if( g_worldCollisionReady &&
 			g_npcPhysics.initialized &&
 			!g_worldCollisionBodyID.IsInvalid() &&
-			g_npcPhysics.system.GetBodyInterface().IsAdded( g_worldCollisionBodyID ) )
+			g_npcPhysics.system->GetBodyInterface().IsAdded( g_worldCollisionBodyID ) )
 			return true;
 
 		if( !g_npcPhysics.initialized ||
@@ -1097,7 +1099,7 @@ namespace
 		bodySettings.mFriction = 0.9f;
 		bodySettings.mRestitution = 0.0f;
 
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 		const BodyID worldBody = bodyInterface.CreateAndAddBody(
 			bodySettings,
 			EActivation::DontActivate
@@ -1125,7 +1127,7 @@ namespace
 		if( !g_npcPhysics.initialized || collider.bodyID.IsInvalid() )
 			return;
 
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 		if( bodyInterface.IsAdded( collider.bodyID ) )
 			bodyInterface.RemoveBody( collider.bodyID );
 		bodyInterface.DestroyBody( collider.bodyID );
@@ -1268,7 +1270,7 @@ namespace
 
 		std::vector<int> presentEntities;
 		presentEntities.reserve( entityCount );
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 
 		for( int ordinal = 0; ordinal < entityCount; ++ordinal )
 		{
@@ -1438,7 +1440,7 @@ namespace
 		if( !g_npcPhysics.initialized || collider.bodyID.IsInvalid() )
 			return;
 
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 		if( bodyInterface.IsAdded( collider.bodyID ) )
 			bodyInterface.RemoveBody( collider.bodyID );
 		bodyInterface.DestroyBody( collider.bodyID );
@@ -1489,7 +1491,7 @@ namespace
 
 		std::vector<int> presentEntities;
 		presentEntities.reserve( 32 );
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 
 		float frameTime = gpGlobals->frametime;
 		if( frameTime < 0.0f )
@@ -2393,7 +2395,7 @@ namespace
 
 		ragdoll.physicsRagdoll = settings->CreateRagdoll(
 			static_cast<CollisionGroup::GroupID>( ragdoll.networkID ),
-			static_cast<uint64>( ragdoll.networkID ), &g_npcPhysics.system );
+			static_cast<uint64>( ragdoll.networkID ), g_npcPhysics.system.get() );
 		if( !ragdoll.physicsRagdoll.GetPtr() )
 			return NPCPhysics_RagdollSetupFailed( "Jolt could not allocate native ragdoll bodies" );
 		ragdoll.physicsRagdoll->AddToPhysicsSystem( EActivation::Activate );
@@ -2420,7 +2422,7 @@ namespace
 		if( animationDeltaTime < 0.001f || animationDeltaTime > 0.15f )
 			animationDeltaTime = 1.0f / 60.0f;
 
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
 			const RagdollBone &bone = ragdoll.bones[body];
@@ -2625,7 +2627,7 @@ namespace
 			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) < 0.5f )
 			return;
 
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 		const int rootBodyIndex = ragdoll.rootElement >= 0 && ragdoll.rootElement < ragdoll.bodyCount
 			? ragdoll.rootElement : 0;
 		const BodyID rootBodyID = ragdoll.physicsRagdoll->GetBodyID( rootBodyIndex );
@@ -2717,7 +2719,7 @@ namespace
 			return;
 		}
 
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 		const Vec3 rootBoneOrigin = NPCPhysics_GetRootBoneOrigin( *ragdoll, bodyInterface );
 		NPCPhysics_UpdateMappedStudioPose( *ragdoll, bodyInterface, rootBoneOrigin );
 		const Vec3 carrierOrigin( ent->v.origin[0], ent->v.origin[1], ent->v.origin[2] );
@@ -3099,7 +3101,7 @@ namespace
 		float gravity = NPCPhysics_GetCvar( "sv_gravity", 800.0f );
 		if( gravity < 0.0f )
 			gravity = 800.0f;
-		g_npcPhysics.system.SetGravity( Vec3( 0.0f, 0.0f, -gravity ) );
+		g_npcPhysics.system->SetGravity( Vec3( 0.0f, 0.0f, -gravity ) );
 
 		NPCPhysics_UpdateBrushColliders();
 		NPCPhysics_UpdateActorColliders();
@@ -3115,12 +3117,12 @@ namespace
 		if( g_npcPhysics.fixedAccumulator > maxAccumulatedTime )
 			g_npcPhysics.fixedAccumulator = maxAccumulatedTime;
 
-		BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 		int steps = 0;
 		while( g_npcPhysics.fixedAccumulator >= RAGDOLL_FIXED_STEP &&
 			steps < RAGDOLL_MAX_STEPS_PER_FRAME )
 		{
-			g_npcPhysics.system.Update(
+			g_npcPhysics.system->Update(
 				RAGDOLL_FIXED_STEP,
 				1,
 				g_npcPhysics.tempAllocator,
@@ -3283,7 +3285,7 @@ int NPCPhysics_ApplyBlastImpulse(
 		targetRagdoll->rootElement >= targetRagdoll->bodyCount )
 		return 0;
 
-	BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+	BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 	const BodyID rootBody = targetRagdoll->physicsRagdoll->GetBodyID( targetRagdoll->rootElement );
 	if( rootBody.IsInvalid() )
 		return 0;
@@ -3469,7 +3471,7 @@ int NPCPhysics_TraceAndApplyImpact(
 			maxFraction, rayLength
 		);
 
-	if( !g_npcPhysics.system.GetNarrowPhaseQuery().CastRay( ray, hit ) )
+	if( !g_npcPhysics.system->GetNarrowPhaseQuery().CastRay( ray, hit ) )
 	{
 		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 			ALERT( at_console, "[NPC decals] Jolt ray did not hit any physics body.\n" );
@@ -3521,7 +3523,7 @@ int NPCPhysics_TraceAndApplyImpact(
 	{
 		JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
 		impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
-		JPH::BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+		JPH::BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 		// Source's client ragdoll applies a localized force to the struck physics
 		// object. Explicit activation guarantees that a sleeping Jolt limb wakes.
 		bodyInterface.ActivateBody( hit.mBodyID );
@@ -3649,7 +3651,7 @@ int NPCPhysics_ApplyImpactImpulseToRagdoll(
 	if( impulse.Length() <= 1.0e-3f )
 		return FALSE;
 
-	BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
+	BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 	int impactBodyIndex = -1;
 	float closestDistanceSquared = FLT_MAX;
 	RVec3 closestBodyPosition( 0.0, 0.0, 0.0 );
@@ -3913,13 +3915,18 @@ void NPCPhysics_ResetMap( void )
 
 void NPCPhysics_Shutdown( void )
 {
-	if( g_npcPhysics.initialized )
-		g_npcPhysics.system.SetContactListener( NULL );
+	if( g_npcPhysics.system )
+		g_npcPhysics.system->SetContactListener( NULL );
 	g_npcPhysics.contactListener.Clear();
 	NPCPhysics_DestroyAllRagdolls();
 	NPCPhysics_DestroyActorColliders();
 	NPCPhysics_DestroyBrushColliders();
 	NPCPhysics_DestroyWorldCollider();
+
+	// PhysicsSystem owns Jolt's contact caches. Destroy it while the Jolt
+	// allocator and registered types are still alive; leaving it as a global
+	// value would defer its destructor until dlclose(), after this shutdown.
+	g_npcPhysics.system.reset();
 
 	if( g_npcPhysics.initialized )
 	{
