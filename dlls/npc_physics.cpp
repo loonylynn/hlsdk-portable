@@ -1923,9 +1923,8 @@ int NPCPhysics_ApplyBlastImpulse(
 		return 0;
 
 	BodyInterface &bodyInterface = g_npcPhysics.system.GetBodyInterface();
-	const BodyID impulseBody = targetRagdoll->physicsRagdoll->GetBodyID( targetRagdoll->rootElement );
-	const float impulseBodyMass = targetRagdoll->bodyMasses[targetRagdoll->rootElement];
-	if( !std::isfinite( impulseBodyMass ) || impulseBodyMass <= 0.0f || impulseBody.IsInvalid() )
+	const BodyID rootBody = targetRagdoll->physicsRagdoll->GetBodyID( targetRagdoll->rootElement );
+	if( rootBody.IsInvalid() )
 		return 0;
 
 	float totalRagdollMass = 0.0f;
@@ -1964,7 +1963,6 @@ int NPCPhysics_ApplyBlastImpulse(
 	const Vec3 impulse = blastDirection * scaledImpulse;
 	const Vec3 distributedImpulse = impulse * 0.85f;
 	const Vec3 sharedVelocityDelta = distributedImpulse / totalRagdollMass;
-	const BodyID rootBody = targetRagdoll->physicsRagdoll->GetBodyID( targetRagdoll->rootElement );
 
 	// BodyTarget is normally around the torso. Find the physical part closest
 	// to that point instead of always striking the pelvis.
@@ -2046,7 +2044,7 @@ int NPCPhysics_ApplyBlastImpulse(
 	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
-			"[NPC blast] Immediate velocity: ent=%d body=%d impulse=(%.1f %.1f %.1f) v-before=(%.1f %.1f %.1f) v-after=(%.1f %.1f %.1f) w-before=(%.1f %.1f %.1f) w-after=(%.1f %.1f %.1f).\\n",
+			"[NPC blast] Immediate velocity: ent=%d body=%d impulse=(%.1f %.1f %.1f) v-before=(%.1f %.1f %.1f) v-after=(%.1f %.1f %.1f) w-before=(%.1f %.1f %.1f) w-after=(%.1f %.1f %.1f).\n",
 			ENTINDEX( targetEntity ), impactBodyIndex,
 			impulse.GetX(), impulse.GetY(), impulse.GetZ(),
 			velocityBefore.GetX(), velocityBefore.GetY(), velocityBefore.GetZ(),
@@ -2058,7 +2056,7 @@ int NPCPhysics_ApplyBlastImpulse(
 	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
-			"[NPC blast] Distributed character impulse: ent=%d id=%d body=%d mass=%.1f total-mass=%.1f damage=%.1f radius=%.1f impulse=%.1f random=%.2f scale=%.2f origin=(%.1f %.1f %.1f) target=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\\n",
+			"[NPC blast] Distributed character impulse: ent=%d id=%d body=%d mass=%.1f total-mass=%.1f damage=%.1f radius=%.1f impulse=%.1f random=%.2f scale=%.2f origin=(%.1f %.1f %.1f) target=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\n",
 			ENTINDEX( targetEntity ), targetRagdoll->networkID,
 			impactBodyIndex, impactBodyMass, totalRagdollMass,
 			blastDamage, radius, scaledImpulse, randomScale, blastScale,
@@ -2069,18 +2067,6 @@ int NPCPhysics_ApplyBlastImpulse(
 
 	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
 		targetRagdoll->nextPoseTime = gpGlobals->time;
-
-	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
-		ALERT(
-			at_console,
-			"[NPC blast] Applied Source-style impulse: ent=%d id=%d body=%d mass=%.1f total-mass=%.1f damage=%.1f radius=%.1f impulse=%.1f random=%.2f scale=%.2f origin=(%.1f %.1f %.1f) target=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\n",
-			ENTINDEX( targetEntity ), targetRagdoll->networkID,
-			targetRagdoll->rootElement, impulseBodyMass, totalRagdollMass,
-			blastDamage, radius, scaledImpulse, randomScale, blastScale,
-			origin[0], origin[1], origin[2],
-			targetPoint[0], targetPoint[1], targetPoint[2],
-			blastDirection.GetX(), blastDirection.GetY(), blastDirection.GetZ()
-		);
 
 	return 1;
 }
