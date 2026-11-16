@@ -1537,12 +1537,23 @@ namespace
 			}
 		}
 
-		// Jolt's native articulated ragdoll owns body/constraint creation, collision
-		// filtering, stabilization and lifetime from this point onward.
+		// Build the initial body transforms used by Jolt's pose-aware collision
+		// filter. The hull vertices are authored around each body's local shape
+		// center, so offset each bone transform by the same center used for
+		// RagdollSettings::Part::mPosition above.
+		std::vector<Mat44> physicsBodyTransforms = physicsNeutralModel;
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+			physicsBodyTransforms[body] =
+				physicsBodyTransforms[body].PreTranslated( ragdoll.bones[body].localShapeCenter );
+
+		// Disable collisions not only between direct parent/child bodies, but
+		// also between other hull pairs that overlap in the initial pose. This
+		// prevents adjacent limbs and torso parts from pushing against each other
+		// while the ragdoll is trying to articulate naturally.
 		if( !settings->Stabilize() )
 			return NPCPhysics_RagdollSetupFailed( "Jolt could not stabilize the authored ragdoll" );
 		settings->CalculateConstraintPriorities();
-		settings->DisableParentChildCollisions();
+		settings->DisableParentChildCollisions( physicsBodyTransforms.data(), 1.0f );
 		settings->CalculateBodyIndexToConstraintIndex();
 
 		ragdoll.physicsRagdoll = settings->CreateRagdoll(
