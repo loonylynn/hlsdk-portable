@@ -151,6 +151,7 @@ int NPCPhysics_IsRagdollEntity( edict_t *ent );
 int NPCPhysics_ApplyBlastImpulse(
 	edict_t *targetEntity,
 	const float *origin,
+	const float *targetPoint,
 	float radius,
 	float blastDamage
 );
