@@ -224,6 +224,7 @@ namespace
 		int rootElement;
 		float nextPoseTime;
 		float nextCollisionDamageTime;
+		bool firstPoseSendReported;
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
 		std::vector<float> bodyMasses;
@@ -251,6 +252,7 @@ namespace
 			  rootElement( -1 ),
 			  nextPoseTime( 0.0f ),
 			  nextCollisionDamageTime( 0.0f ),
+			  firstPoseSendReported( false ),
 			  blastDebugBodyID(),
 			  blastDebugBodyIndex( -1 ),
 			  blastDebugBodyStartPosition( 0.0f, 0.0f, 0.0f ),
@@ -2152,8 +2154,11 @@ namespace
 		ALERT(
 			at_console,
 			hasPersistentPose
-				? "[NPC physics] Restored articulated Jolt ragdoll: %d physics bodies for %d studio bones.\n"
-				: "[NPC physics] Created articulated Jolt ragdoll: %d physics bodies for %d studio bones.\n",
+				? "[NPC physics] Restored articulated Jolt ragdoll: entity=%d model='%s' id=%d bodies=%d studio-bones=%d.\n"
+				: "[NPC physics] Created articulated Jolt ragdoll: entity=%d model='%s' id=%d bodies=%d studio-bones=%d.\n",
+			ENTINDEX( ent ),
+			STRING( ent->v.model ),
+			ragdoll.networkID,
 			ragdoll.bodyCount,
 			ragdoll.studioBoneCount
 		);
@@ -2210,6 +2215,23 @@ namespace
 		NPCPhysics_UpdateMappedStudioPose( ragdoll, bodyInterface, rootBoneOrigin );
 		const int entityIndex = ENTINDEX( ragdoll.entity );
 		const int snapshotBoneCount = ragdoll.studioBoneCount;
+
+		if( !ragdoll.firstPoseSendReported )
+		{
+			ALERT(
+				at_console,
+				"[NPC physics] Sending first ragdoll pose: entity=%d model='%s' id=%d bodies=%d studio-bones=%d pvs-origin=(%.1f %.1f %.1f).\n",
+				entityIndex,
+				STRING( ragdoll.entity->v.model ),
+				ragdoll.networkID,
+				ragdoll.bodyCount,
+				ragdoll.studioBoneCount,
+				ragdoll.entity->v.origin[0],
+				ragdoll.entity->v.origin[1],
+				ragdoll.entity->v.origin[2]
+			);
+			ragdoll.firstPoseSendReported = true;
+		}
 
 		for( int start = 0; start < snapshotBoneCount; start += RAGDOLL_NETWORK_BODIES_PER_CHUNK )
 		{
