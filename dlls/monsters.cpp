@@ -146,6 +146,8 @@ int CBaseMonster::Restore( CRestore &restore )
 	m_iNpcRagdollPersistVersion = 0;
 	m_iNpcRagdollPersistBoneCount = 0;
 	m_iNpcRagdollPersistBodyCount = 0;
+	memset( m_flNpcRagdollPersistStudioPose, 0, sizeof( m_flNpcRagdollPersistStudioPose ) );
+	memset( m_flNpcRagdollPersistBodyVelocity, 0, sizeof( m_flNpcRagdollPersistBodyVelocity ) );
 
 	int status = restore.ReadFields( "CBaseMonster", this, m_SaveData, ARRAYSIZE( m_SaveData ) );
 
@@ -2027,6 +2029,8 @@ void CBaseMonster::MonsterInit( void )
 	m_iNpcRagdollPersistVersion = 0;
 	m_iNpcRagdollPersistBoneCount = 0;
 	m_iNpcRagdollPersistBodyCount = 0;
+	memset( m_flNpcRagdollPersistStudioPose, 0, sizeof( m_flNpcRagdollPersistStudioPose ) );
+	memset( m_flNpcRagdollPersistBodyVelocity, 0, sizeof( m_flNpcRagdollPersistBodyVelocity ) );
 	m_bitsDamageTypeMod = 0;
 	m_iBleedingTicksRemaining = 0;
 	m_flBleedingNextDamageTime = 0;
