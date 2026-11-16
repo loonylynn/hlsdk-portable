@@ -129,6 +129,7 @@ public:
 	float m_flNpcRagdollPersistBodyVelocity[
 		NPC_RAGDOLL_PERSIST_MAX_BODIES * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE];
 
+	virtual int ObjectCaps( void );
 	virtual int Save( CSave &save ); 
 	virtual int Restore( CRestore &restore );
 	static TYPEDESCRIPTION m_SaveData[];
