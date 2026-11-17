@@ -4074,37 +4074,100 @@ namespace
 		NPCPhysics_UpdateMappedStudioPose( *ragdoll, bodyInterface, rootBoneOrigin );
 		const Vec3 carrierOrigin( ent->v.origin[0], ent->v.origin[1], ent->v.origin[2] );
 
-		for( int bone = 0; bone < ragdoll->studioBoneCount; ++bone )
+		// Build the complete snapshot off to the side. A non-finite transform or
+		// velocity must never leave partially updated transition data on the
+		// entity, because that data can be serialized and retried on a later map.
+		float studioSnapshot[
+			NPC_RAGDOLL_PERSIST_MAX_STUDIO_BONES * NPC_RAGDOLL_PERSIST_STUDIO_STRIDE] = {};
+		float bodyVelocitySnapshot[
+			NPC_RAGDOLL_PERSIST_MAX_BODIES * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE] = {};
+		const auto isFiniteVector = []( const Vec3 &value ) -> bool
+		{
+			return std::isfinite( value.GetX() ) &&
+				std::isfinite( value.GetY() ) &&
+				std::isfinite( value.GetZ() );
+		};
+
+		const char *invalidSnapshotReason = NULL;
+		if( !isFiniteVector( rootBoneOrigin ) || !isFiniteVector( carrierOrigin ) )
+			invalidSnapshotReason = "non-finite carrier or root-bone position";
+
+		for( int bone = 0; !invalidSnapshotReason && bone < ragdoll->studioBoneCount; ++bone )
 		{
 			const Mat44 &transform = ragdoll->studioPoseModelSpace[bone];
 			const Vec3 relativePosition =
 				rootBoneOrigin + transform.GetTranslation() - carrierOrigin;
-			const Quat rotation = transform.GetQuaternion().Normalized();
-			float *saved = &monster->m_flNpcRagdollPersistStudioPose[
+			const Quat rotation = transform.GetQuaternion();
+			const float quaternionLengthSquared =
+				rotation.GetX() * rotation.GetX() +
+				rotation.GetY() * rotation.GetY() +
+				rotation.GetZ() * rotation.GetZ() +
+				rotation.GetW() * rotation.GetW();
+			if( !isFiniteVector( relativePosition ) ||
+				!std::isfinite( rotation.GetX() ) ||
+				!std::isfinite( rotation.GetY() ) ||
+				!std::isfinite( rotation.GetZ() ) ||
+				!std::isfinite( rotation.GetW() ) ||
+				!std::isfinite( quaternionLengthSquared ) ||
+				quaternionLengthSquared < 1.0e-8f )
+			{
+				invalidSnapshotReason = "non-finite studio transform or invalid bone quaternion";
+				break;
+			}
+
+			const float inverseQuaternionLength = 1.0f / std::sqrt( quaternionLengthSquared );
+			float *saved = &studioSnapshot[
 				bone * NPC_RAGDOLL_PERSIST_STUDIO_STRIDE];
 			saved[0] = relativePosition.GetX();
 			saved[1] = relativePosition.GetY();
 			saved[2] = relativePosition.GetZ();
-			saved[3] = rotation.GetX();
-			saved[4] = rotation.GetY();
-			saved[5] = rotation.GetZ();
-			saved[6] = rotation.GetW();
+			saved[3] = rotation.GetX() * inverseQuaternionLength;
+			saved[4] = rotation.GetY() * inverseQuaternionLength;
+			saved[5] = rotation.GetZ() * inverseQuaternionLength;
+			saved[6] = rotation.GetW() * inverseQuaternionLength;
 		}
 
-		for( int body = 0; body < ragdoll->bodyCount; ++body )
+		for( int body = 0; !invalidSnapshotReason && body < ragdoll->bodyCount; ++body )
 		{
 			const BodyID bodyID = ragdoll->physicsRagdoll->GetBodyID( body );
 			const Vec3 linear = bodyInterface.GetLinearVelocity( bodyID );
 			const Vec3 angular = bodyInterface.GetAngularVelocity( bodyID );
-			float *saved = &monster->m_flNpcRagdollPersistBodyVelocity[
+			if( !isFiniteVector( linear ) || !isFiniteVector( angular ) )
+			{
+				invalidSnapshotReason = "non-finite rigid-body velocity";
+				break;
+			}
+
+			const Vec3 safeLinear =
+				NPCPhysics_ClampVector( linear, RAGDOLL_VELOCITY_LIMIT );
+			const Vec3 safeAngular =
+				NPCPhysics_ClampVector( angular, RAGDOLL_ANGULAR_VELOCITY_LIMIT );
+			float *saved = &bodyVelocitySnapshot[
 				body * NPC_RAGDOLL_PERSIST_BODY_VELOCITY_STRIDE];
-			saved[0] = linear.GetX();
-			saved[1] = linear.GetY();
-			saved[2] = linear.GetZ();
-			saved[3] = angular.GetX();
-			saved[4] = angular.GetY();
-			saved[5] = angular.GetZ();
+			saved[0] = safeLinear.GetX();
+			saved[1] = safeLinear.GetY();
+			saved[2] = safeLinear.GetZ();
+			saved[3] = safeAngular.GetX();
+			saved[4] = safeAngular.GetY();
+			saved[5] = safeAngular.GetZ();
 		}
+
+		if( invalidSnapshotReason )
+		{
+			NPCPhysics_ClearPersistentRagdollState( ent, ent->serialnumber );
+			if( debug )
+				ALERT( at_console,
+					"[NPC physics] Rejected transferable ragdoll snapshot for entity %d: %s.\\n",
+					ENTINDEX( ent ), invalidSnapshotReason );
+			return;
+		}
+
+		// Commit arrays first and metadata last. Restores treat the nonzero
+		// version/count tuple as the validity marker for the complete snapshot.
+		memcpy( monster->m_flNpcRagdollPersistStudioPose,
+			studioSnapshot, sizeof( studioSnapshot ) );
+		memcpy( monster->m_flNpcRagdollPersistBodyVelocity,
+			bodyVelocitySnapshot, sizeof( bodyVelocitySnapshot ) );
 		NPCPhysics_LogRagdollVelocitySummary( "Saved", ent, *ragdoll );
 
 		monster->m_iNpcRagdollPersistVersion = NPC_RAGDOLL_PERSIST_VERSION;
