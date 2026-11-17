@@ -620,7 +620,7 @@ void CBaseMonster::Killed( entvars_t *pevAttacker, int iGib )
 			? STRING( pevAttacker->classname ) : "<none>";
 		ALERT(
 			at_console,
-			"[NPC physics] Lethal ragdoll handoff: entity=%d classname='%s' model='%s' attacker='%s' gib=%d should-gib=%d violence-gibs=%d health=%.1f.\\n",
+			"[NPC physics] Lethal ragdoll handoff: entity=%d classname='%s' model='%s' attacker='%s' gib=%d should-gib=%d violence-gibs=%d health=%.1f.\n",
 			ENTINDEX( ENT( pev ) ),
 			STRING( pev->classname ),
 			STRING( pev->model ),
