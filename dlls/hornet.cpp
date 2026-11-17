@@ -433,3 +433,45 @@ void CHornet::DieTouch( CBaseEntity *pOther )
 	SetThink( &CBaseEntity::SUB_Remove );
 	pev->nextthink = gpGlobals->time + 1.0f;// stick around long enough for the sound to finish!
 }
+
+#ifndef CLIENT_DLL
+int NPCPhysics_TriggerHornetProjectileImpact(
+	edict_t *projectile,
+	edict_t *target,
+	const float *start,
+	const float *end,
+	float maxFraction )
+{
+	if( !projectile || projectile->free ||
+		!FClassnameIs( &projectile->v, "hornet" ) ||
+		!target || target->free ||
+		!NPCPhysics_IsRagdollEntity( target ) ||
+		!start || !end || !std::isfinite( maxFraction ) )
+		return FALSE;
+
+	CBaseEntity *hornet = CBaseEntity::Instance( projectile );
+	CBaseEntity *victim = CBaseEntity::Instance( target );
+	if( !hornet || !victim )
+		return FALSE;
+
+	const int serialNumber = projectile->serialnumber;
+	const int modelIndexBeforeTouch = projectile->v.modelindex;
+
+	// Preserve TrackTouch's relationship and owner rules. A hornet that
+	// deliberately turns away from this target must not kick the ragdoll.
+	hornet->Touch( victim );
+
+	if( projectile->free || projectile->serialnumber != serialNumber ||
+		modelIndexBeforeTouch == 0 || projectile->v.modelindex != 0 )
+		return FALSE;
+
+	const float damage = (std::max)( 1.0f, projectile->v.dmg );
+	const float impulseMagnitude = (std::min)( damage * 300.0f, 3000.0f );
+	if( !std::isfinite( impulseMagnitude ) || impulseMagnitude <= 0.0f )
+		return FALSE;
+
+	return NPCPhysics_TraceTargetAndApplyImpact(
+		target, start, end, maxFraction, impulseMagnitude );
+}
+#endif
+
