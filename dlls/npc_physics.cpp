@@ -4880,14 +4880,16 @@ int NPCPhysics_ApplyBlastImpulse(
 	return 1;
 }
 
-int NPCPhysics_TraceAndApplyImpact(
+static int NPCPhysics_TraceRagdollImpactInternal(
 	const float *start,
 	const float *end,
 	float maxFraction,
 	float impulseMagnitude,
 	float *hitFraction,
 	float *hitPosition,
-	edict_t **hitEntity )
+	edict_t **hitEntity,
+	bool applyImpulse,
+	bool sendImpactMark )
 {
 	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
 		!start || !end || !hitFraction || !hitPosition || !hitEntity ||
@@ -4912,7 +4914,7 @@ int NPCPhysics_TraceAndApplyImpact(
 	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
-			"[NPC decals] Bullet trace: start=(%.1f %.1f %.1f) end=(%.1f %.1f %.1f) base-fraction=%.3f jolt-length=%.1f.\n",
+			"[NPC projectile] Physics trace: start=(%.1f %.1f %.1f) end=(%.1f %.1f %.1f) base-fraction=%.3f jolt-length=%.1f.\n",
 			start[0], start[1], start[2], end[0], end[1], end[2],
 			maxFraction, rayLength
 		);
@@ -4920,7 +4922,7 @@ int NPCPhysics_TraceAndApplyImpact(
 	if( !g_npcPhysics.system->GetNarrowPhaseQuery().CastRay( ray, hit ) )
 	{
 		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
-			ALERT( at_console, "[NPC decals] Jolt ray did not hit any physics body.\n" );
+			ALERT( at_console, "[NPC projectile] Jolt ray did not hit any physics body.\n" );
 		return FALSE;
 	}
 
@@ -4958,14 +4960,14 @@ int NPCPhysics_TraceAndApplyImpact(
 		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 			ALERT(
 				at_console,
-				"[NPC decals] Jolt ray hit a non-ragdoll body (fraction %.4f).\n",
+				"[NPC projectile] Jolt ray hit a non-ragdoll body (fraction %.4f).\n",
 				hit.mFraction
 			);
 		return FALSE;
 	}
 
 	const JPH::RVec3 impactPoint = ray.GetPointOnRay( hit.mFraction );
-	if( impulseMagnitude > 0.0f )
+	if( applyImpulse && impulseMagnitude > 0.0f )
 	{
 		JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
 		impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
@@ -4983,7 +4985,7 @@ int NPCPhysics_TraceAndApplyImpact(
 
 	// Send a world-space impact mark. The client projects it onto the
 	// articulated studio mesh, then attaches the result to its skinned triangles.
-	if( g_msgRagdollImpact > 0 && targetBodyIndex >= 0 &&
+	if( sendImpactMark && g_msgRagdollImpact > 0 && targetBodyIndex >= 0 &&
 		targetBodyIndex < targetRagdoll->bodyCount )
 	{
 		CBaseEntity *hitObject = CBaseEntity::Instance( targetEntity );
@@ -4991,7 +4993,7 @@ int NPCPhysics_TraceAndApplyImpact(
 		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 			ALERT(
 				at_console,
-				"[NPC decals] Hit ragdoll ent=%d id=%d body=%d fraction=%.4f blood=%d msg=%d.\n",
+				"[NPC projectile] Hit ragdoll ent=%d id=%d body=%d fraction=%.4f blood=%d msg=%d.\n",
 				ENTINDEX( targetEntity ), targetRagdoll->networkID,
 				targetBodyIndex, hit.mFraction, bloodColor, g_msgRagdollImpact
 			);
@@ -5032,7 +5034,7 @@ int NPCPhysics_TraceAndApplyImpact(
 				if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 					ALERT(
 						at_console,
-						"[NPC decals] Sent RagdollImpact: ent=%d id=%d studio-bone=%d radius=%.2f color=%d.\n",
+						"[NPC projectile] Sent RagdollImpact: ent=%d id=%d studio-bone=%d radius=%.2f color=%d.\n",
 						ENTINDEX( targetEntity ), targetRagdoll->networkID,
 						bone.studioBoneIndex, markRadius, markColor
 					);
@@ -5043,8 +5045,8 @@ int NPCPhysics_TraceAndApplyImpact(
 		else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 			ALERT( at_console, "[NPC decals] Blood mark suppressed by blood color or violence cvar.\n" );
 	}
-	else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
-		ALERT( at_console, "[NPC decals] Impact usermessage is not registered or body index is invalid.\n" );
+	else if( sendImpactMark && NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		ALERT( at_console, "[NPC projectile] Impact usermessage is not registered or body index is invalid.\n" );
 
 	*hitFraction = hit.mFraction;
 	hitPosition[0] = float( impactPoint.GetX() );
@@ -5052,6 +5054,34 @@ int NPCPhysics_TraceAndApplyImpact(
 	hitPosition[2] = float( impactPoint.GetZ() );
 	*hitEntity = targetEntity;
 	return TRUE;
+}
+
+
+int NPCPhysics_TraceAndApplyImpact(
+	const float *start,
+	const float *end,
+	float maxFraction,
+	float impulseMagnitude,
+	float *hitFraction,
+	float *hitPosition,
+	edict_t **hitEntity )
+{
+	return NPCPhysics_TraceRagdollImpactInternal(
+		start, end, maxFraction, impulseMagnitude,
+		hitFraction, hitPosition, hitEntity, true, true );
+}
+
+int NPCPhysics_TraceRagdollImpact(
+	const float *start,
+	const float *end,
+	float maxFraction,
+	float *hitFraction,
+	float *hitPosition,
+	edict_t **hitEntity )
+{
+	return NPCPhysics_TraceRagdollImpactInternal(
+		start, end, maxFraction, 0.0f,
+		hitFraction, hitPosition, hitEntity, false, false );
 }
 
 int NPCPhysics_ApplyImpactImpulseToRagdoll(
