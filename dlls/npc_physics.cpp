@@ -189,6 +189,8 @@ namespace
 		float friction;
 		float restitution;
 		bool selfCollisions;
+		bool hasExplicitCollisionRules;
+		std::vector<std::pair<int, int>> collisionPairs;
 		float animatedFrictionMinimum;
 		float animatedFrictionMaximum;
 		float animatedFrictionTimeIn;
@@ -1842,6 +1844,8 @@ namespace
 
 		std::istringstream input( std::string( contents, static_cast<size_t>( length ) ) );
 		definition.selfCollisions = true; // Source's default is all non-parent/child pairs enabled.
+		definition.hasExplicitCollisionRules = false;
+		definition.collisionPairs.clear();
 		definition.animatedFrictionMinimum = 0.0f;
 		definition.animatedFrictionMaximum = 0.0f;
 		definition.animatedFrictionTimeIn = 0.0f;
@@ -1911,6 +1915,7 @@ namespace
 
 		int bodyCount = 0;
 		bool sawSelfCollisions = false;
+		bool sawCollisionRules = false;
 		bool sawAnimatedFriction = false;
 		if( !NPCPhysics_NextJragLine( input, line, storage ) ||
 			!( line >> command ) )
@@ -1936,6 +1941,44 @@ namespace
 				}
 				definition.selfCollisions = enabled != 0;
 				sawSelfCollisions = true;
+			}
+			else if( command == "collision_rules" )
+			{
+				int enabled = 0;
+				if( sawCollisionRules ||
+					!( line >> enabled ) ||
+					!NPCPhysics_JragLineFinished( line ) ||
+					enabled != 1 )
+				{
+					error = "collision_rules must appear once and be 1";
+					return false;
+				}
+				definition.hasExplicitCollisionRules = true;
+				sawCollisionRules = true;
+			}
+			else if( command == "collision_pair" )
+			{
+				int first = -1;
+				int second = -1;
+				if( !definition.hasExplicitCollisionRules ||
+					!( line >> first >> second ) ||
+					!NPCPhysics_JragLineFinished( line ) ||
+					first < 0 || second < 0 || first == second ||
+					definition.collisionPairs.size() >= 2016 )
+				{
+					error = "collision_pair requires collision_rules 1 and two distinct non-negative body indices";
+					return false;
+				}
+				if( first > second )
+					std::swap( first, second );
+				for( size_t pairIndex = 0; pairIndex < definition.collisionPairs.size(); ++pairIndex )
+					if( definition.collisionPairs[pairIndex].first == first &&
+						definition.collisionPairs[pairIndex].second == second )
+					{
+						error = "duplicate collision_pair";
+						return false;
+					}
+				definition.collisionPairs.push_back( std::make_pair( first, second ) );
 			}
 			else if( command == "animated_friction" )
 			{
@@ -1984,6 +2027,18 @@ namespace
 			error = "body_count must be between 1 and 64";
 			return false;
 		}
+		if( definition.hasExplicitCollisionRules && !definition.selfCollisions )
+		{
+			error = "collision_rules cannot be combined with self_collisions 0";
+			return false;
+		}
+		for( size_t pairIndex = 0; pairIndex < definition.collisionPairs.size(); ++pairIndex )
+			if( definition.collisionPairs[pairIndex].first >= bodyCount ||
+				definition.collisionPairs[pairIndex].second >= bodyCount )
+			{
+				error = "collision_pair body index is outside body_count";
+				return false;
+			}
 
 		definition.bodies.clear();
 		definition.bodies.reserve( bodyCount );
@@ -2667,20 +2722,27 @@ namespace
 			return NPCPhysics_RagdollSetupFailed( "Jolt could not stabilize the authored ragdoll" );
 		settings->CalculateConstraintPriorities();
 		settings->DisableParentChildCollisions();
-		if( !physicsDefinition->selfCollisions )
+		if( !physicsDefinition->selfCollisions || physicsDefinition->hasExplicitCollisionRules )
 		{
-			// Source's selfcollisions=0 disables every pair of ragdoll pieces,
-			// not just directly constrained neighbors. Use a shared Jolt group
-			// filter and keep each body in its own subgroup.
-			Ref<GroupFilterTable> selfCollisionFilter =
+			// Source collisionrules blocks are allow-lists: begin with every
+			// body pair disabled, then enable only the explicit pairs. The
+			// selfcollisions=0 fallback uses the same table with no pairs enabled.
+			Ref<GroupFilterTable> collisionFilter =
 				new GroupFilterTable( static_cast<uint>( ragdoll.bodyCount ) );
 			for( int first = 0; first < ragdoll.bodyCount; ++first )
 				for( int second = first + 1; second < ragdoll.bodyCount; ++second )
-					selfCollisionFilter->DisableCollision(
+					collisionFilter->DisableCollision(
 						static_cast<uint>( first ), static_cast<uint>( second ) );
+			if( physicsDefinition->hasExplicitCollisionRules )
+				for( size_t pairIndex = 0; pairIndex < physicsDefinition->collisionPairs.size(); ++pairIndex )
+				{
+					const std::pair<int, int> &pair = physicsDefinition->collisionPairs[pairIndex];
+					collisionFilter->EnableCollision(
+						static_cast<uint>( pair.first ), static_cast<uint>( pair.second ) );
+				}
 			for( int body = 0; body < ragdoll.bodyCount; ++body )
 			{
-				settings->mParts[body].mCollisionGroup.SetGroupFilter( selfCollisionFilter.GetPtr() );
+				settings->mParts[body].mCollisionGroup.SetGroupFilter( collisionFilter.GetPtr() );
 				settings->mParts[body].mCollisionGroup.SetSubGroupID( static_cast<uint>( body ) );
 			}
 		}
