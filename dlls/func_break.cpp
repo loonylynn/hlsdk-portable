@@ -795,6 +795,16 @@ public:
 			pev->velocity.x *= MaxSpeed() / speed;
 			pev->velocity.y *= MaxSpeed() / speed;
 		}
+
+		// Unlike ordinary player pushing, a ragdoll can hit the pushable
+		// above or below its center. Preserve that vertical component, but
+		// bound the added impulse by the same configured pushable speed.
+		float verticalImpulse = velocity.z * factor;
+		if( verticalImpulse > MaxSpeed() )
+			verticalImpulse = MaxSpeed();
+		else if( verticalImpulse < -MaxSpeed() )
+			verticalImpulse = -MaxSpeed();
+		pev->velocity.z += verticalImpulse;
 	}
 	void KeyValue( KeyValueData *pkvd );
 	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
