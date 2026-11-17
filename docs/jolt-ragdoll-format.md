@@ -230,24 +230,43 @@ projectile classes and touch callbacks still need explicit support.
 
 ### Weapon force model and attached impact marks
 
-Bullet impulses use the same physical conversion used by the HL2 ammo definitions:
-projectile mass in grains is converted to kilograms, muzzle velocity in feet per
-second is converted to inches per second, and the Source 3.5 impulse exaggeration
-factor is applied. The initial mappings are 200-grain / 1225-ft/s pistol and
-SMG ammunition, 800-grain / 5000-ft/s .357 ammunition, and 400-grain / 1200-ft/s
-shotgun buckshot. The 12 mm monster round uses a provisional 400-grain /
-1225-ft/s mapping. All impulses are capped by the Jolt bridge to avoid extreme
-velocities with the reduced zombie rig.
+Hitscan and projectile bullet forces use Valve Source SDK's ammo-force
+conversion: projectile mass in grains is converted to kilograms, muzzle velocity
+in feet per second is converted to inches per second, and the Source 3.5 impulse
+exaggeration factor is applied. The supported profiles are:
 
-The crowbar follows Source's melee damage-force calculation:
-base damage multiplied by a 75 kg target mass and a 4 in/s-per-damage scale.
-Both paths apply their impulse at the actual Jolt contact point, wake the hit
-body, and request an immediate pose snapshot.
+- Glock / MP5 and generic monster bullets: 200 grains at 1225 ft/s
+  (Source `Pistol` / `SMG1` profile, approximately 666.6 kg*in/s).
+- Python .357: 800 grains at 5000 ft/s (approximately 10,882.8 kg*in/s).
+- Each shotgun buckshot pellet: 400 grains at 1200 ft/s
+  (approximately 1,305.9 kg*in/s).
+- Crossbow bolt: 800 grains at 8000 ft/s (Source `XBowBolt`, approximately
+  17,412.5 kg*in/s).
+
+The HL1 12 mm monster bullet and alien hornet have no matching Source SDK ammo
+entry. They use Source's generic `GuessDamageForce` fallback for `DMG_BULLET`,
+which selects the `SMG1` force profile (200 grains / 1225 ft/s), rather than
+inventing an unverified projectile mass or scaling a bullet force by damage.
+
+The crowbar follows Source's `CalculateMeleeDamageForce`: base damage multiplied
+by the impulse needed to accelerate a 75 kg reference character by 4 inches/sec
+per damage point. Explosions follow `CalculateExplosiveDamageForce`: the same
+300 impulse units per damage point, capped at 30,000 (the 75 kg / 400 inches/sec
+limit), with the Source 0.85–1.15 random variation. For articulated corpses the
+blast impulse is distributed across the ragdoll's bodies while preserving its
+total impulse, with 15% applied locally at the body nearest the blast target.
+
+Direct weapon impulses have a 20,000 kg*in/s bridge safety ceiling, above the
+strongest supported Source ammo profile (`XBowBolt`). The Jolt bodies retain
+their independent 2000 inch/sec maximum linear velocity. This removes the old
+3,000 impulse clamp that incorrectly weakened the .357 and crossbow.
 
 Server tuning cvars (default 1.0):
 
-- `sv_npc_vphysics_bullet_scale`: scales the Source-derived bullet impulse.
+- `sv_npc_vphysics_bullet_scale`: scales the Source-derived hitscan bullet impulse.
 - `sv_npc_vphysics_crowbar_scale`: scales the Source-style crowbar impulse.
+- `sv_npc_vphysics_crossbow_scale`: scales the Source `XBowBolt` impulse.
+- `sv_npc_vphysics_blast_scale`: scales the Source-style explosive impulse.
 
 When a bullet, crowbar, crossbow bolt, hornet, or visible explosion hits
 a bleeding Jolt ragdoll, the bridge sends an impact mark along the actual
