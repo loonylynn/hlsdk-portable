@@ -26,6 +26,7 @@
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/ObjectLayer.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/EstimateCollisionResponse.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -75,6 +76,10 @@ namespace
 	// Articulated ragdolls need extra position iterations when multiple limbs
 	// are constrained against static BSP surfaces in tight corners.
 	static constexpr uint32_t RAGDOLL_CONSTRAINT_POSITION_STEPS = 8;
+	// Require a joint to remain separated and blocked for several frames
+	// before invoking Source-style articulated separation recovery.
+	static constexpr float RAGDOLL_SEPARATION_PERSISTENCE = 0.20f;
+	static constexpr float RAGDOLL_JOINT_SEPARATION_DISTANCE = 1.0f;
 	static constexpr float RAGDOLL_ACTIVE_POSE_INTERVAL = 0.05f;
 	static constexpr float RAGDOLL_SLEEPING_POSE_INTERVAL = 0.20f;
 	static constexpr int RAGDOLL_NETWORK_BODIES_PER_CHUNK = 10;
@@ -95,6 +100,16 @@ namespace
 	public:
 		uint GetNumBroadPhaseLayers() const override { return 1; }
 		BroadPhaseLayer GetBroadPhaseLayer( ObjectLayer ) const override { return BroadPhaseLayer( 0 ); }
+	};
+
+	class RagdollEnvironmentObjectLayerFilter final : public ObjectLayerFilter
+	{
+	public:
+		bool ShouldCollide( ObjectLayer layer ) const override
+		{
+			return layer == WORLD_STATIC_OBJECT_LAYER ||
+				layer == BRUSH_KINEMATIC_OBJECT_LAYER;
+		}
 	};
 
 	class RagdollObjectLayerFilter final : public ObjectLayerPairFilter
@@ -138,6 +153,9 @@ namespace
 		int studioBoneIndex;
 		int parentElementIndex;
 		Vec3 localShapeCenter;
+		// Joint anchor expressed in the parent's center-of-mass frame. Source
+		// uses this relationship to detect and repair separated ragdoll links.
+		Vec3 parentLocalJointAnchor;
 	};
 
 	struct NPCPhysicsRagdollPoint
@@ -251,6 +269,7 @@ namespace
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
 		std::vector<float> bodyMasses;
+		std::vector<float> jointErrorSince;
 		BodyID blastDebugBodyID;
 		int blastDebugBodyIndex;
 		Vec3 blastDebugBodyStartPosition;
@@ -2286,6 +2305,25 @@ namespace
 				bodyDefinition.localShapeCenter.x,
 				bodyDefinition.localShapeCenter.y,
 				bodyDefinition.localShapeCenter.z );
+			bone.parentLocalJointAnchor = Vec3::sZero();
+			if( bone.parentElementIndex >= 0 )
+			{
+				const RagdollBone &parentBone = ragdoll.bones[bone.parentElementIndex];
+				const int parentStudioBone = parentBone.studioBoneIndex;
+				const Vec3 parentBoneOrigin(
+					bonePositions[parentStudioBone][0],
+					bonePositions[parentStudioBone][1],
+					bonePositions[parentStudioBone][2] );
+				const Vec3 childJointOrigin(
+					bonePositions[bone.studioBoneIndex][0],
+					bonePositions[bone.studioBoneIndex][1],
+					bonePositions[bone.studioBoneIndex][2] );
+				const Quat parentRotation = boneRotations[parentStudioBone];
+				const Vec3 parentBodyCenter =
+					parentBoneOrigin + parentRotation * parentBone.localShapeCenter;
+				bone.parentLocalJointAnchor =
+					parentRotation.Conjugated() * ( childJointOrigin - parentBodyCenter );
+			}
 			ragdoll.bones.push_back( bone );
 			if( bone.parentElementIndex < 0 )
 			{
@@ -2296,6 +2334,7 @@ namespace
 		}
 		if( ragdoll.rootElement < 0 )
 			return NPCPhysics_RagdollSetupFailed( "external rig has no root body" );
+		ragdoll.jointErrorSince.resize( ragdoll.bodyCount, -1.0f );
 
 		const int rootStudioBone = ragdoll.bones[ragdoll.rootElement].studioBoneIndex;
 		ragdoll.entityOriginOffset = ent->v.origin - bonePositions[rootStudioBone];
@@ -2701,6 +2740,166 @@ namespace
 		);
 		// Start a fresh settle window if an impact wakes the ragdoll again.
 		ragdoll.lastOriginChangeTime = gpGlobals->time;
+	}
+
+	static void NPCPhysics_UpdateRagdollSeparation(
+		NPCPhysicsRagdoll &ragdoll, BodyInterface &bodyInterface )
+	{
+		if( !gpGlobals || !g_npcPhysics.initialized ||
+			!ragdoll.physicsRagdoll.GetPtr() || ragdoll.bodyCount <= 1 ||
+			ragdoll.jointErrorSince.size() != static_cast<size_t>( ragdoll.bodyCount ) )
+			return;
+
+		PhysicsSystem &system = *g_npcPhysics.system;
+		RagdollEnvironmentObjectLayerFilter environmentFilter;
+		std::vector<uint8_t> needsFix( ragdoll.bodyCount, 0 );
+		std::vector<uint8_t> corrected( ragdoll.bodyCount, 0 );
+		int recoveryCount = 0;
+
+		// Source calls RagdollSolveSeparation when VPhysics reports a ragdoll
+		// constraint-group error. Jolt has no equivalent group error flag, so
+		// use the same core signal: a joint anchor that remains >1 unit apart
+		// while a ray between its expected and actual positions is blocked by
+		// world or inline-brush geometry.
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+		{
+			const RagdollBone &bone = ragdoll.bones[body];
+			const int parent = bone.parentElementIndex;
+			if( parent < 0 || parent >= ragdoll.bodyCount )
+				continue;
+
+			const BodyID parentID = ragdoll.physicsRagdoll->GetBodyID( parent );
+			const BodyID childID = ragdoll.physicsRagdoll->GetBodyID( body );
+			const RVec3 parentPositionR = bodyInterface.GetPosition( parentID );
+			const RVec3 childPositionR = bodyInterface.GetPosition( childID );
+			const Vec3 parentPosition(
+				float( parentPositionR.GetX() ),
+				float( parentPositionR.GetY() ),
+				float( parentPositionR.GetZ() ) );
+			const Vec3 childPosition(
+				float( childPositionR.GetX() ),
+				float( childPositionR.GetY() ),
+				float( childPositionR.GetZ() ) );
+			const Quat parentRotation = bodyInterface.GetRotation( parentID ).Normalized();
+			const Quat childRotation = bodyInterface.GetRotation( childID ).Normalized();
+			const Vec3 expectedChildAnchor =
+				parentPosition + parentRotation * bone.parentLocalJointAnchor;
+			const Vec3 actualChildAnchor =
+				childPosition - childRotation * bone.localShapeCenter;
+			const Vec3 separation = actualChildAnchor - expectedChildAnchor;
+			const float separationLengthSq = separation.LengthSq();
+
+			if( !std::isfinite( separationLengthSq ) ||
+				separationLengthSq <=
+					RAGDOLL_JOINT_SEPARATION_DISTANCE * RAGDOLL_JOINT_SEPARATION_DISTANCE )
+			{
+				ragdoll.jointErrorSince[body] = -1.0f;
+				continue;
+			}
+
+			if( ragdoll.jointErrorSince[body] < 0.0f )
+				ragdoll.jointErrorSince[body] = gpGlobals->time;
+
+			if( gpGlobals->time - ragdoll.jointErrorSince[body] <
+				RAGDOLL_SEPARATION_PERSISTENCE )
+				continue;
+
+			const RRayCast ray(
+				RVec3( expectedChildAnchor.GetX(), expectedChildAnchor.GetY(), expectedChildAnchor.GetZ() ),
+				separation );
+			RayCastResult hit;
+			if( !system.GetNarrowPhaseQuery().CastRay(
+				ray, hit, BroadPhaseLayerFilter(), environmentFilter ) )
+			{
+				// An unconstrained-looking joint with no environment blocker is
+				// not the Source separation case. Wait for a fresh occurrence.
+				ragdoll.jointErrorSince[body] = -1.0f;
+				continue;
+			}
+			needsFix[body] = 1;
+		}
+
+		// Match Source's descendant propagation: if a parent link is being
+		// repaired, its child chain is repaired as well, preserving the chain
+		// instead of leaving grandchildren behind.
+		for( int pass = 0; pass < ragdoll.bodyCount; ++pass )
+		{
+			bool changed = false;
+			for( int body = 0; body < ragdoll.bodyCount; ++body )
+			{
+				const int parent = ragdoll.bones[body].parentElementIndex;
+				if( parent >= 0 && parent < ragdoll.bodyCount &&
+					needsFix[parent] && !needsFix[body] )
+				{
+					needsFix[body] = 1;
+					changed = true;
+				}
+			}
+			if( !changed )
+				break;
+		}
+
+		// Correct parents before descendants regardless of the authored body
+		// ordering. Preserve child orientation, place its joint anchor at the
+		// parent's expected anchor, inherit point velocity, and clear angular
+		// velocity just like Source's group-error recovery.
+		for( int pass = 0; pass < ragdoll.bodyCount; ++pass )
+		{
+			bool changed = false;
+			for( int body = 0; body < ragdoll.bodyCount; ++body )
+			{
+				if( !needsFix[body] || corrected[body] )
+					continue;
+
+				const RagdollBone &bone = ragdoll.bones[body];
+				const int parent = bone.parentElementIndex;
+				if( parent < 0 || parent >= ragdoll.bodyCount )
+					continue;
+				if( needsFix[parent] && !corrected[parent] )
+					continue;
+
+				const BodyID parentID = ragdoll.physicsRagdoll->GetBodyID( parent );
+				const BodyID childID = ragdoll.physicsRagdoll->GetBodyID( body );
+				const RVec3 parentPositionR = bodyInterface.GetPosition( parentID );
+				const Vec3 parentPosition(
+					float( parentPositionR.GetX() ),
+					float( parentPositionR.GetY() ),
+					float( parentPositionR.GetZ() ) );
+				const Quat parentRotation = bodyInterface.GetRotation( parentID ).Normalized();
+				const Quat childRotation = bodyInterface.GetRotation( childID ).Normalized();
+				const Vec3 targetAnchor =
+					parentPosition + parentRotation * bone.parentLocalJointAnchor;
+				const Vec3 newChildCenter =
+					targetAnchor + childRotation * bone.localShapeCenter;
+				const RVec3 targetAnchorR(
+					targetAnchor.GetX(), targetAnchor.GetY(), targetAnchor.GetZ() );
+				const Vec3 inheritedVelocity =
+					bodyInterface.GetPointVelocity( parentID, targetAnchorR );
+
+				bodyInterface.SetPositionRotationAndVelocity(
+					childID,
+					RVec3( newChildCenter.GetX(), newChildCenter.GetY(), newChildCenter.GetZ() ),
+					childRotation,
+					inheritedVelocity,
+					Vec3::sZero() );
+				bodyInterface.ActivateBody( childID );
+				corrected[body] = 1;
+				changed = true;
+				++recoveryCount;
+				ragdoll.jointErrorSince[body] = -1.0f;
+			}
+			if( !changed )
+				break;
+		}
+
+		if( recoveryCount > 0 )
+		{
+			ragdoll.lastOriginChangeTime = gpGlobals->time;
+			ALERT(
+				at_console,
+				"[NPC physics] Ragdoll joint separation recovery: entity=%d id=%d corrected=%d/%d bodies.\n",
+				ENTINDEX( ragdoll.entity ), ragdoll.networkID, recoveryCount, ragdoll.bodyCount );
+		}
 	}
 
 	static void NPCPhysics_UpdateMappedStudioPose(
@@ -3411,6 +3610,7 @@ namespace
 				g_engfuncs.pfnSetOrigin( ragdoll.entity, entityOrigin );
 			}
 
+			NPCPhysics_UpdateRagdollSeparation( ragdoll, bodyInterface );
 			NPCPhysics_UpdateRagdollSleep( ragdoll, bodyInterface );
 
 			if( gpGlobals->time >= ragdoll.nextPoseTime )
