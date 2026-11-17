@@ -1535,7 +1535,7 @@ This version is used by Monsters.
 // Source's BULLET_IMPULSE formula: convert projectile mass from grains
 // to kilograms, muzzle velocity from ft/s to inches/s, then apply the
 // same 3.5 physics exaggeration factor used by HL2's ammo definitions.
-static float NPCPhysics_CalculateBulletImpulse( float grains, float feetPerSecond )
+float NPCPhysics_CalculateSourceBulletImpulse( float grains, float feetPerSecond )
 {
 	const float massPounds = 0.002285f * grains / 16.0f;
 	const float massKilograms = massPounds * 0.45359237f;
@@ -1549,24 +1549,25 @@ static float NPCPhysics_GetBulletImpactImpulse( int bulletType, BOOL playerBulle
 		switch( bulletType )
 		{
 		case BULLET_PLAYER_357:
-			return NPCPhysics_CalculateBulletImpulse( 800.0f, 5000.0f );
+			return NPCPhysics_CalculateSourceBulletImpulse( 800.0f, 5000.0f );
 		case BULLET_PLAYER_BUCKSHOT:
-			return NPCPhysics_CalculateBulletImpulse( 400.0f, 1200.0f );
+			return NPCPhysics_CalculateSourceBulletImpulse( 400.0f, 1200.0f );
 		case BULLET_PLAYER_9MM:
 		case BULLET_PLAYER_MP5:
 		default:
-			return NPCPhysics_CalculateBulletImpulse( 200.0f, 1225.0f );
+			return NPCPhysics_CalculateSourceBulletImpulse( 200.0f, 1225.0f );
 		}
 	}
 
 	switch( bulletType )
 	{
+	// Source SDK has no HL1 12 mm monster-ammo entry. Its generic
+	// DMG_BULLET GuessDamageForce fallback is the SMG1 ammo force.
 	case BULLET_MONSTER_12MM:
-		return NPCPhysics_CalculateBulletImpulse( 400.0f, 1225.0f );
 	case BULLET_MONSTER_9MM:
 	case BULLET_MONSTER_MP5:
 	default:
-		return NPCPhysics_CalculateBulletImpulse( 200.0f, 1225.0f );
+		return NPCPhysics_CalculateSourceBulletImpulse( 200.0f, 1225.0f );
 	}
 }
 
