@@ -176,6 +176,20 @@ int NPCPhysics_TraceRagdollImpact(
 	float *hitPosition,
 	edict_t **hitEntity
 );
+int NPCPhysics_TraceTargetAndApplyImpact(
+	edict_t *targetEntity,
+	const float *start,
+	const float *end,
+	float maxFraction,
+	float impulseMagnitude
+);
+int NPCPhysics_TriggerHornetProjectileImpact(
+	edict_t *projectile,
+	edict_t *target,
+	const float *start,
+	const float *end,
+	float maxFraction
+);
 int NPCPhysics_SendRagdollImpactMark(
 	edict_t *targetEntity,
 	const float *start,
