@@ -253,6 +253,25 @@ This render-only fade is updated server-side and the carrier is removed when
 the fade completes. The transferable ragdoll snapshot is cleared at retirement
 so a fading corpse cannot be restored after a level transition.
 
+Source-style global low-violence retirement is available through:
+
+```text
+sv_npc_vphysics_low_violence 0
+```
+
+Set it to `1` to force both ordinary and important ragdoll limits to zero.
+Existing and newly created Jolt corpses are then released from physics and
+fade using the retirement settings below. This is a server-wide setting, not
+a per-client visual preference.
+
+The standard GoldSrc violence cvars are also respected by the Jolt handoff:
+`violence_hblood` and `violence_ablood` suppress attached impact marks for
+the corresponding blood type. If `violence_hgibs` or `violence_agibs` is
+disabled, a death that would otherwise cross the overkill-gib threshold uses
+GoldSrc's existing no-gibs corpse fade path instead of creating a Jolt
+ragdoll. Ordinary lethal deaths still become physical ragdolls unless the
+global `sv_npc_vphysics_low_violence` mode is enabled.
+
 Fade behavior is configurable:
 
 ```text
@@ -262,9 +281,8 @@ sv_npc_vphysics_fade_time 2
 
 Set `sv_npc_vphysics_fade_on_retire 0` to remove retired carriers immediately.
 A non-positive fade time also selects immediate removal. Fade time is clamped
-to 30 seconds. This reproduces Source's visibility-aware LRU selection and
-server-side fade intent, but not its client-side rendering implementation or
-low-violence handling.
+to 30 seconds. This reproduces Source's visibility-aware LRU selection and server-side fade
+intent, but not its client-side rendering implementation.
 
 ## Ragdoll-to-ragdoll impacts
 
