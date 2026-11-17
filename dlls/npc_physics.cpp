@@ -546,6 +546,20 @@ namespace
 		}
 	};
 
+	struct NPCPhysicsPendingSeparationContact
+	{
+		uint64_t ragdollID;
+		BodyID bodyID;
+		Vec3 outwardNormal;
+
+		NPCPhysicsPendingSeparationContact()
+			: ragdollID( 0 ),
+			  bodyID(),
+			  outwardNormal( 0.0f, 0.0f, 0.0f )
+		{
+		}
+	};
+
 	class NPCPhysicsContactListener final : public ContactListener
 	{
 	public:
@@ -555,6 +569,7 @@ namespace
 			const ContactManifold &manifold,
 			ContactSettings &settings ) override
 		{
+			QueueSeparationContacts( body1, body2, manifold );
 			const ObjectLayer layer1 = body1.GetObjectLayer();
 			const ObjectLayer layer2 = body2.GetObjectLayer();
 			const bool body1IsRagdoll = layer1 == RAGDOLL_OBJECT_LAYER;
@@ -735,6 +750,7 @@ namespace
 			const ContactManifold &manifold,
 			ContactSettings & ) override
 		{
+			QueueSeparationContacts( body1, body2, manifold );
 			QueuePlayerPushLimit( body1, body2, manifold );
 			QueueMovableObjectImpact( body1, body2, manifold );
 			QueueContactDiagnostic( body1, body2, manifold, true );
@@ -764,6 +780,30 @@ namespace
 			return result;
 		}
 
+		void BeginSeparationContactFrame()
+		{
+			std::lock_guard<std::mutex> lock( m_mutex );
+			m_separationContacts.clear();
+		}
+
+		bool HasContactInDirection(
+			uint64_t ragdollID, BodyID bodyID, const Vec3 &direction )
+		{
+			if( direction.LengthSq() <= 0.0001f )
+				return false;
+
+			std::lock_guard<std::mutex> lock( m_mutex );
+			for( size_t i = 0; i < m_separationContacts.size(); ++i )
+			{
+				const NPCPhysicsPendingSeparationContact &contact = m_separationContacts[i];
+				if( contact.ragdollID == ragdollID &&
+					contact.bodyID == bodyID &&
+					contact.outwardNormal.Dot( direction ) > 0.0f )
+					return true;
+			}
+			return false;
+		}
+
 		std::vector<NPCPhysicsPendingContactDiagnostic> DrainDiagnostics()
 		{
 			std::lock_guard<std::mutex> lock( m_mutex );
@@ -776,12 +816,66 @@ namespace
 		{
 			std::lock_guard<std::mutex> lock( m_mutex );
 			m_pending.clear();
+			m_separationContacts.clear();
 			m_contactDiagnostics.clear();
 			m_playerPushLimits.clear();
 			m_movableImpacts.clear();
 		}
 
 	private:
+		void QueueSeparationContactForBody(
+			const Body &ragdollBody,
+			const Body &otherBody,
+			const Vec3 &outwardNormal )
+		{
+			const float normalLengthSq = outwardNormal.LengthSq();
+			if( ragdollBody.GetMotionType() != EMotionType::Dynamic ||
+				!std::isfinite( normalLengthSq ) || normalLengthSq < 0.5f )
+				return;
+
+			const uint64_t ragdollID = ragdollBody.GetUserData();
+			if( ragdollID == 0 )
+				return;
+			if( otherBody.GetObjectLayer() == RAGDOLL_OBJECT_LAYER &&
+				otherBody.GetUserData() == ragdollID )
+				return;
+
+			std::lock_guard<std::mutex> lock( m_mutex );
+			if( m_separationContacts.size() >= RAGDOLL_MAX_CONTACT_CONSTRAINTS )
+				return;
+
+			NPCPhysicsPendingSeparationContact contact;
+			contact.ragdollID = ragdollID;
+			contact.bodyID = ragdollBody.GetID();
+			contact.outwardNormal = outwardNormal;
+			m_separationContacts.push_back( contact );
+		}
+
+		void QueueSeparationContacts(
+			const Body &body1,
+			const Body &body2,
+			const ContactManifold &manifold )
+		{
+			if( manifold.mRelativeContactPointsOn1.empty() )
+				return;
+
+			const bool body1IsRagdoll =
+				body1.GetObjectLayer() == RAGDOLL_OBJECT_LAYER;
+			const bool body2IsRagdoll =
+				body2.GetObjectLayer() == RAGDOLL_OBJECT_LAYER;
+			if( body1IsRagdoll && body2IsRagdoll )
+			{
+				if( body1.GetUserData() == body2.GetUserData() )
+					return;
+				QueueSeparationContactForBody( body1, body2, manifold.mWorldSpaceNormal );
+				QueueSeparationContactForBody( body2, body1, -manifold.mWorldSpaceNormal );
+			}
+			else if( body1IsRagdoll )
+				QueueSeparationContactForBody( body1, body2, manifold.mWorldSpaceNormal );
+			else if( body2IsRagdoll )
+				QueueSeparationContactForBody( body2, body1, -manifold.mWorldSpaceNormal );
+		}
+
 		static bool IsContactDiagnosticMoreSevere(
 			const NPCPhysicsPendingContactDiagnostic &a,
 			const NPCPhysicsPendingContactDiagnostic &b )
@@ -1044,6 +1138,7 @@ namespace
 
 		std::mutex m_mutex;
 		std::vector<NPCPhysicsPendingCollisionDamage> m_pending;
+		std::vector<NPCPhysicsPendingSeparationContact> m_separationContacts;
 		std::vector<NPCPhysicsPendingContactDiagnostic> m_contactDiagnostics;
 		std::vector<NPCPhysicsPendingPlayerPush> m_playerPushLimits;
 		std::vector<NPCPhysicsPendingMovableImpact> m_movableImpacts;
@@ -3649,17 +3744,36 @@ namespace
 				RAGDOLL_SEPARATION_PERSISTENCE )
 				continue;
 
-			const RRayCast ray(
-				RVec3( expectedChildAnchor.GetX(), expectedChildAnchor.GetY(), expectedChildAnchor.GetZ() ),
-				separation );
-			RayCastResult hit;
-			if( !system.GetNarrowPhaseQuery().CastRay(
-				ray, hit, BroadPhaseLayerFilter(), environmentFilter ) )
+			// Source's RagdollSolveSeparation has two signals. A child whose
+			// mass is less than half its parent's is treated as constrained by
+			// something the solver cannot resolve. Otherwise, require both a
+			// contact normal facing the correction direction and a blocked
+			// environment path between the expected and actual joint anchors.
+			const bool childMuchLighter =
+				ragdoll.bodyMasses.size() == static_cast<size_t>( ragdoll.bodyCount ) &&
+				ragdoll.bodyMasses[body] * 2.0f < ragdoll.bodyMasses[parent];
+			if( !childMuchLighter )
 			{
-				// An unconstrained-looking joint with no environment blocker is
-				// not the Source separation case. Wait for a fresh occurrence.
-				ragdoll.jointErrorSince[body] = -1.0f;
-				continue;
+				const Vec3 correctionDirection = -separation;
+				if( !g_npcPhysics.contactListener.HasContactInDirection(
+					ragdoll.networkID, childID, correctionDirection ) )
+				{
+					ragdoll.jointErrorSince[body] = -1.0f;
+					continue;
+				}
+
+				const RRayCast ray(
+					RVec3( expectedChildAnchor.GetX(), expectedChildAnchor.GetY(), expectedChildAnchor.GetZ() ),
+					separation );
+				RayCastResult hit;
+				if( !system.GetNarrowPhaseQuery().CastRay(
+					ray, hit, BroadPhaseLayerFilter(), environmentFilter ) )
+				{
+					// Directional contact without a blocked separation path is
+					// not the Source recovery case.
+					ragdoll.jointErrorSince[body] = -1.0f;
+					continue;
+				}
 			}
 			needsFix[body] = 1;
 		}
@@ -4721,6 +4835,9 @@ namespace
 		while( g_npcPhysics.fixedAccumulator >= RAGDOLL_FIXED_STEP &&
 			steps < RAGDOLL_MAX_STEPS_PER_FRAME )
 		{
+			if( steps == 0 )
+				g_npcPhysics.contactListener.BeginSeparationContactFrame();
+
 			g_npcPhysics.system->Update(
 				RAGDOLL_FIXED_STEP,
 				1,
