@@ -1312,6 +1312,7 @@ StudioSetupBones
 void CStudioModelRenderer::StudioSetupBones( void )
 {
 	int i, j;
+	int ragdollAppliedBoneCount = 0;
 	double f;
 
 	mstudiobone_t *pbones;
@@ -1484,6 +1485,7 @@ void CStudioModelRenderer::StudioSetupBones( void )
 		{
 			MatrixCopy( ragdollTransform, (*m_pbonetransform)[i] );
 			MatrixCopy( ragdollTransform, (*m_plighttransform)[i] );
+			++ragdollAppliedBoneCount;
 			continue;
 		}
 
@@ -1515,6 +1517,12 @@ void CStudioModelRenderer::StudioSetupBones( void )
 		}
 	}
 
+	if( ragdollAppliedBoneCount > 0 )
+		Ragdoll_ReportAppliedBones(
+			ragdollEntityIndex,
+			ragdollAppliedBoneCount,
+			m_pStudioHeader->numbones
+		);
 }
 
 /*
