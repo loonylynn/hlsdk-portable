@@ -1132,10 +1132,12 @@ namespace
 		const int entityIndex = entity && !entity->free ? ENTINDEX( entity ) : -1;
 		const int networkID = ragdoll.networkID;
 		const int bodyCount = ragdoll.bodyCount;
+		// Release Jolt before UTIL_Remove invokes the GoldSrc entity's
+		// UpdateOnRemove callback. The callback must not observe live physics
+		// state for a corpse that is already being retired.
+		NPCPhysics_DestroyRagdoll( ragdoll );
 		if( entity && !entity->free && entity->serialnumber == ragdoll.serialNumber )
 		{
-			// Hide and schedule normal GoldSrc entity removal before releasing
-			// the Jolt bodies. This avoids leaving an animated carrier behind.
 			entity->v.effects |= EF_NODRAW;
 			entity->v.solid = SOLID_NOT;
 			entity->v.movetype = MOVETYPE_NONE;
@@ -1145,8 +1147,6 @@ namespace
 			if( baseEntity )
 				UTIL_Remove( baseEntity );
 		}
-
-		NPCPhysics_DestroyRagdoll( ragdoll );
 		g_ragdolls.erase( g_ragdolls.begin() + oldestIndex );
 		ALERT(
 			at_console,
@@ -2963,7 +2963,6 @@ namespace
 		ent->v.avelocity = g_vecZero;
 
 		g_ragdolls.push_back( ragdoll );
-		NPCPhysics_EnforceRagdollLimits();
 		ALERT(
 			at_console,
 			hasPersistentPose
