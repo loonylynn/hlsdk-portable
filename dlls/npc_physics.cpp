@@ -985,7 +985,7 @@ namespace
 	static cvar_t g_svNpcVPhysicsMaxRagdolls = { "sv_npc_vphysics_max_ragdolls", "8", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsMaxImportantRagdolls = { "sv_npc_vphysics_max_important_ragdolls", "2", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsFadeOnRetire = { "sv_npc_vphysics_fade_on_retire", "1", FCVAR_SERVER };
-static cvar_t g_svNpcVPhysicsLowViolence = { "sv_npc_vphysics_low_violence", "0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsLowViolence = { "sv_npc_vphysics_low_violence", "0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsFadeTime = { "sv_npc_vphysics_fade_time", "2.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
