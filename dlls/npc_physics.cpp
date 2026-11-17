@@ -4475,21 +4475,6 @@ namespace
 			if( bodyIndex < 0 )
 				continue;
 
-			// Source keeps static world geometry distinct from moving brush
-			// and actor hull contacts. Throttle each body/channel separately
-			// so one busy limb cannot hide another body's penetration data.
-			const int debugChannel = (
-				event.otherLayer == WORLD_STATIC_OBJECT_LAYER ? 0 :
-				event.otherLayer == RAGDOLL_OBJECT_LAYER ? 2 : 4 ) +
-				( event.persisted ? 1 : 0 );
-			const size_t debugSlot = static_cast<size_t>( bodyIndex ) * 6 +
-				static_cast<size_t>( debugChannel );
-			if( debugSlot >= ragdoll->nextContactDebugTimes.size() )
-				continue;
-			float &nextDebugTime = ragdoll->nextContactDebugTimes[debugSlot];
-			if( gpGlobals->time < nextDebugTime )
-				continue;
-
 			const char *otherKind = event.otherLayer == WORLD_STATIC_OBJECT_LAYER
 				? "world" :
 				event.otherLayer == RAGDOLL_OBJECT_LAYER ? "ragdoll" : "kinematic";
@@ -4521,9 +4506,10 @@ namespace
 
 			ALERT(
 				at_console,
-				"[NPC physics] Contact %s: ent=%d id=%d body=%d bone='%s' other=%s/%d other-ragdoll-id=%llu samples=%u jolt-depth=%.3f closing=%.1f point=(%.1f %.1f %.1f) ragdoll-normal=(%.2f %.2f %.2f) subshape-ragdoll=%u subshape-other=%u.\n",
-				event.persisted ? "persisted" : "added",
-				ENTINDEX( ragdoll->entity ), ragdoll->networkID, bodyIndex, boneName,
+				"[NPC physics] Contact %s: ent=%d classname='%s' id=%d body=%d bone='%s' other=%s/%d other-ragdoll-id=%llu samples=%u jolt-depth=%.3f closing=%.1f point=(%.1f %.1f %.1f) ragdoll-normal=(%.2f %.2f %.2f) subshape-ragdoll=%u subshape-other=%u.\n",
+				event.removed ? "ended" : "began",
+				ENTINDEX( ragdoll->entity ), STRING( ragdoll->entity->v.classname ),
+				ragdoll->networkID, bodyIndex, boneName,
 				otherKind, event.otherEntityIndex,
 				static_cast<unsigned long long>( event.otherRagdollID ), event.sampleCount,
 				event.penetrationDepth, event.closingSpeed,
@@ -4550,7 +4536,6 @@ namespace
 				event.otherBoundsMax.GetX(), event.otherBoundsMax.GetY(), event.otherBoundsMax.GetZ()
 			);
 
-			nextDebugTime = gpGlobals->time + 0.5f;
 		}
 	}
 
