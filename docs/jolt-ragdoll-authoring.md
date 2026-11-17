@@ -27,16 +27,16 @@ compared.
 
 The experimental inputs are:
 
-- `assets/valve/models/scientist.ragdoll.smd`: Source-port collision mesh and skeleton reference pose.
-- `assets/valve/models/scientist.ragdoll.qci`: Source-port mass, inertia, damping and joint settings.
-- `assets/valve/models/scientist.jrag`: generated runtime-format example, not GoldSrc compatibility evidence.
+- `assets/experimental/source-port-scientist/scientist.ragdoll.smd`: Source-port collision mesh and skeleton reference pose.
+- `assets/experimental/source-port-scientist/scientist.ragdoll.qci`: Source-port mass, inertia, damping and joint settings.
+- `assets/experimental/source-port-scientist/scientist.jrag`: generated runtime-format example, not GoldSrc compatibility evidence.
 
 The commands below reproduce and validate the conversion against those
 Source-port authoring files only:
 
 ```bash
 cd ~/hlsdk-portable
-ASSETS="assets/valve/models"
+ASSETS="assets/experimental/source-port-scientist"
 
 python3 tools/jragtool.py inspect "$ASSETS/scientist.ragdoll.smd" \
     --qci "$ASSETS/scientist.ragdoll.qci"
