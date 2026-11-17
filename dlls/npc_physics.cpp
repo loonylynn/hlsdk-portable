@@ -1150,7 +1150,7 @@ namespace
 		g_ragdolls.erase( g_ragdolls.begin() + oldestIndex );
 		ALERT(
 			at_console,
-			"[NPC physics] LRU retired %s ragdoll: entity=%d id=%d bodies=%d.\\n",
+			"[NPC physics] LRU retired %s ragdoll: entity=%d id=%d bodies=%d.\n",
 			important ? "important" : "ordinary",
 			entityIndex, networkID, bodyCount
 		);
