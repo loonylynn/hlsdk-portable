@@ -205,6 +205,8 @@ int NPCPhysics_TriggerExplosiveProjectileImpact(
 	float hitFraction,
 	const float *hitPosition
 );
+// Source SDK ammo-force conversion: grains + ft/s -> kg*inch/s.
+float NPCPhysics_CalculateSourceBulletImpulse( float grains, float feetPerSecond );
 int NPCPhysics_ApplyImpactImpulseToRagdoll(
 	edict_t *targetEntity,
 	const float *impactPosition,
