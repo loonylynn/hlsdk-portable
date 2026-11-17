@@ -71,6 +71,12 @@ int R_StudioDrawModel( int flags )
 	return g_StudioRenderer.StudioDrawModel( flags );
 }
 
+static int R_StudioHasRagdollPose( int entityIndex )
+{
+	return IEngineStudio.IsHardware && IEngineStudio.IsHardware() &&
+		Ragdoll_HasFreshPose( entityIndex );
+}
+
 /*
 ====================
 R_StudioInit
@@ -88,6 +94,7 @@ r_studio_interface_t studio =
 	STUDIO_INTERFACE_VERSION,
 	R_StudioDrawModel,
 	R_StudioDrawPlayer,
+	R_StudioHasRagdollPose,
 };
 
 /*
