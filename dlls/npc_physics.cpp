@@ -243,6 +243,8 @@ namespace
 		int rootElement;
 		float nextPoseTime;
 		float nextCollisionDamageTime;
+		Vec3 lastSleepOrigin;
+		float lastOriginChangeTime;
 		std::vector<float> nextContactDebugTimes;
 		float nextPlayerPushDebugTime;
 		bool firstPoseSendReported;
@@ -273,6 +275,8 @@ namespace
 			  rootElement( -1 ),
 			  nextPoseTime( 0.0f ),
 			  nextCollisionDamageTime( 0.0f ),
+			  lastSleepOrigin( 0.0f, 0.0f, 0.0f ),
+			  lastOriginChangeTime( 0.0f ),
 			  nextPlayerPushDebugTime( 0.0f ),
 			  firstPoseSendReported( false ),
 			  blastDebugBodyID(),
@@ -809,6 +813,7 @@ namespace
 	static cvar_t g_svNpcVPhysicsImpactDamageScale = { "sv_npc_vphysics_impact_damage_scale", "0.25", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsPlayerPushMass = { "sv_npc_vphysics_player_push_mass", "350", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsPlayerPushSpeed = { "sv_npc_vphysics_player_push_speed", "50", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsSleepAfterTime = { "sv_npc_vphysics_sleep_after_time", "5.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
@@ -2141,6 +2146,9 @@ namespace
 		ragdoll.networkID = NPCPhysics_AllocateRagdollID();
 		ragdoll.studioBoneCount = header->numbones;
 		ragdoll.nextPoseTime = 0.0f;
+		ragdoll.lastSleepOrigin = Vec3(
+			ent->v.origin[0], ent->v.origin[1], ent->v.origin[2] );
+		ragdoll.lastOriginChangeTime = gpGlobals ? gpGlobals->time : 0.0f;
 
 		std::vector<::Vector> bonePositions( ragdoll.studioBoneCount );
 		std::vector<::Vector> boneAngles( ragdoll.studioBoneCount );
@@ -2443,6 +2451,10 @@ namespace
 			part.mMaxAngularVelocity = RAGDOLL_ANGULAR_VELOCITY_LIMIT;
 			part.mMotionQuality = EMotionQuality::LinearCast;
 			part.mEnhancedInternalEdgeRemoval = true;
+			// Source controls sleep at the articulated-ragdoll level after a
+			// stationary delay. Disable Jolt's much shorter per-body auto-sleep
+			// so all pieces can be put to sleep together by that policy.
+			part.mAllowSleeping = false;
 
 			if( bone.parentElementIndex >= 0 )
 			{
@@ -2486,23 +2498,14 @@ namespace
 			}
 		}
 
-		// Build the initial body transforms used by Jolt's pose-aware collision
-		// filter. The hull vertices are authored around each body's local shape
-		// center, so offset each bone transform by the same center used for
-		// RagdollSettings::Part::mPosition above.
-		std::vector<Mat44> physicsBodyTransforms = physicsNeutralModel;
-		for( int body = 0; body < ragdoll.bodyCount; ++body )
-			physicsBodyTransforms[body] =
-				physicsBodyTransforms[body].PreTranslated( ragdoll.bones[body].localShapeCenter );
-
-		// Disable collisions not only between direct parent/child bodies, but
-		// also between other hull pairs that overlap in the initial pose. This
-		// prevents adjacent limbs and torso parts from pushing against each other
-		// while the ragdoll is trying to articulate naturally.
+		// Match Source's default ragdoll collision rules: every pair of pieces
+		// may collide except a directly constrained parent/child pair. Do not
+		// suppress other pairs merely because their authored hulls overlap in
+		// the initial pose; Source's collision set enables those pairs.
 		if( !settings->Stabilize() )
 			return NPCPhysics_RagdollSetupFailed( "Jolt could not stabilize the authored ragdoll" );
 		settings->CalculateConstraintPriorities();
-		settings->DisableParentChildCollisions( physicsBodyTransforms.data(), 1.0f );
+		settings->DisableParentChildCollisions();
 		settings->CalculateBodyIndexToConstraintIndex();
 
 		ragdoll.physicsRagdoll = settings->CreateRagdoll(
@@ -2642,6 +2645,62 @@ namespace
 		return Vec3(
 			float( position.GetX() ), float( position.GetY() ), float( position.GetZ() )
 		) - rotation * ragdoll.bones[ragdoll.rootElement].localShapeCenter;
+	}
+
+	static void NPCPhysics_UpdateRagdollSleep(
+		NPCPhysicsRagdoll &ragdoll, BodyInterface &bodyInterface )
+	{
+		if( !ragdoll.entity || ragdoll.entity->free || !gpGlobals ||
+			!ragdoll.physicsRagdoll.GetPtr() || ragdoll.bodyCount <= 0 )
+			return;
+
+		const float sleepAfterTime = NPCPhysics_GetCvar(
+			"sv_npc_vphysics_sleep_after_time", 5.0f );
+		// A negative delay disables forced sleep. Jolt auto-sleep is disabled
+		// for ragdoll parts so the complete articulated body remains in sync.
+		if( sleepAfterTime < 0.0f )
+			return;
+
+		const Vec3 currentOrigin(
+			ragdoll.entity->v.origin[0],
+			ragdoll.entity->v.origin[1],
+			ragdoll.entity->v.origin[2] );
+		const Vec3 originDelta = currentOrigin - ragdoll.lastSleepOrigin;
+		const float movementTolerance = 1.0f;
+		if( fabsf( originDelta.GetX() ) > movementTolerance ||
+			fabsf( originDelta.GetY() ) > movementTolerance ||
+			fabsf( originDelta.GetZ() ) > movementTolerance )
+			ragdoll.lastOriginChangeTime = gpGlobals->time;
+		ragdoll.lastSleepOrigin = currentOrigin;
+
+		const float stationaryTime = gpGlobals->time - ragdoll.lastOriginChangeTime;
+		if( stationaryTime < sleepAfterTime )
+			return;
+
+		std::vector<BodyID> bodyIDs;
+		bodyIDs.reserve( ragdoll.bodyCount );
+		bool anyActive = false;
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+		{
+			const BodyID bodyID = ragdoll.physicsRagdoll->GetBodyID( body );
+			bodyIDs.push_back( bodyID );
+			if( bodyInterface.IsActive( bodyID ) )
+				anyActive = true;
+		}
+
+		if( !anyActive )
+			return;
+
+		// Source sleeps the ragdoll as a unit after its origin has remained
+		// within one map unit per axis for ragdoll_sleepaftertime (5 seconds).
+		bodyInterface.DeactivateBodies( bodyIDs.data(), static_cast<int>( bodyIDs.size() ) );
+		ALERT(
+			at_console,
+			"[NPC physics] Forced ragdoll sleep after %.2f seconds stationary: entity=%d id=%d bodies=%d.\n",
+			stationaryTime, ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.bodyCount
+		);
+		// Start a fresh settle window if an impact wakes the ragdoll again.
+		ragdoll.lastOriginChangeTime = gpGlobals->time;
 	}
 
 	static void NPCPhysics_UpdateMappedStudioPose(
@@ -3352,6 +3411,8 @@ namespace
 				g_engfuncs.pfnSetOrigin( ragdoll.entity, entityOrigin );
 			}
 
+			NPCPhysics_UpdateRagdollSleep( ragdoll, bodyInterface );
+
 			if( gpGlobals->time >= ragdoll.nextPoseTime )
 			{
 				// A settled corpse needs only an occasional full-pose heartbeat.
@@ -3957,6 +4018,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsImpactDamageScale );
 	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushMass );
 	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushSpeed );
+	CVAR_REGISTER( &g_svNpcVPhysicsSleepAfterTime );
 	CVAR_REGISTER( &g_svNpcVPhysicsDebug );
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
