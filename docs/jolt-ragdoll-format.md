@@ -116,36 +116,33 @@ The loader rejects invalid parent ordering, duplicate bone names, multiple roots
 missing hulls, out-of-range limits, non-finite values, trailing directives and
 files larger than 1 MiB.
 
-## Installing the shipped model rigs
+## Installing model rigs
 
-The repository currently ships two model-specific runtime definitions:
+The repository contains an existing `zombie.jrag` sidecar and an
+experimental Scientist sidecar. Treat a sidecar as compatible only after
+confirming that its authoring skeleton and collision geometry match the exact
+GoldSrc MDL used by the game.
 
-- `zombie.jrag` for `models/zombie.mdl`.
-- `scientist.jrag` for `models/scientist.mdl`.
-
-Copy the sidecars into the active game's `models/` folder. For a typical
-installation:
+For the existing zombie asset, a typical installation is:
 
 ```bash
 GAME="/path/to/xash3d/valve"
 install -Dm644 assets/valve/models/zombie.jrag "$GAME/models/zombie.jrag"
-install -Dm644 assets/valve/models/scientist.jrag "$GAME/models/scientist.jrag"
 ```
 
-The Scientist definition contains 15 physical bodies, generated from the
-checked-in `scientist.ragdoll.smd` and `scientist.ragdoll.qci` authoring files.
-Its authored mass is 115, inertia multiplier 10, linear damping 0.01 and
-angular damping 1.5. The QCI's `Bip02 Spine2` angular limits are not applied:
-that bone has no collision mesh in the source SMD, so the authoring tool reports
-it as an unbound directive rather than assigning it to a different physical bone.
+**Scientist asset status:** `scientist.jrag`, `scientist.ragdoll.smd`, and
+`scientist.ragdoll.qci` are retained as experimental Source-port-derived
+reference data. They were not extracted from the original GoldSrc Scientist
+model. Their 15-body structure and QCI values validate only against those
+checked-in Source-side authoring inputs; they do not establish compatibility
+with the GoldSrc `models/scientist.mdl` skeleton, reference pose, scale, or
+hitboxes. Do not install this sidecar for a GoldSrc Scientist model until those
+assets have been compared. The QCI's `Bip02 Spine2` angular limits are also
+unbound because that bone has no collision mesh in the supplied SMD.
 
 The files are loaded from the engine's active game search paths. Editing a
 `.jrag` file does not require rebuilding the SDK; restart the map/game so the
 runtime cache is rebuilt. A map reset also discards the cached definitions.
-
-The current format is a runtime definition, not a parser for Valve QC/QCI source.
-The supplied zombie definition preserves the existing SMD/QCI-derived hulls,
-bone hierarchy, joint limits and mass/damping values.
 
 ## Pose replication
 
