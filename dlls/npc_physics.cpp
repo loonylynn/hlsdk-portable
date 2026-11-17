@@ -1446,8 +1446,8 @@ namespace
 		if( !entity || entity->free || entity->serialnumber != serialNumber )
 			return;
 
-		CBaseMonster *monster =
-			static_cast<CBaseMonster *>( CBaseEntity::Instance( entity ) );
+		CBaseEntity *baseEntity = CBaseEntity::Instance( entity );
+		CBaseMonster *monster = baseEntity ? baseEntity->MyMonsterPointer() : NULL;
 		if( !monster )
 			return;
 
