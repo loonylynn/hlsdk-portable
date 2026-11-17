@@ -2876,7 +2876,7 @@ namespace
 			if( now >= ragdoll.animatedFrictionEndTime )
 			{
 				ragdoll.animatedFrictionCurrent = maximum;
-				ragdoll.animatedFrictionModTime = definition->animatedFrictionTimeHold;
+				ragdoll.animatedFrictionModTime = ragdoll.animatedFrictionTimeHold;
 				ragdoll.animatedFrictionEndTime = now + ragdoll.animatedFrictionModTime;
 				ragdoll.animatedFrictionState = RAGDOLL_FRICTION_HOLD;
 			}
