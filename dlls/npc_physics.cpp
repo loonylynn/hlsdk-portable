@@ -5269,6 +5269,26 @@ int NPCPhysics_SendRagdollImpactMark(
 		false, true, targetEntity );
 }
 
+int NPCPhysics_TraceTargetAndApplyImpact(
+	edict_t *targetEntity,
+	const float *start,
+	const float *end,
+	float maxFraction,
+	float impulseMagnitude )
+{
+	if( !targetEntity || targetEntity->free ||
+		!std::isfinite( impulseMagnitude ) || impulseMagnitude <= 0.0f )
+		return FALSE;
+
+	float hitFraction = maxFraction;
+	float hitPosition[3] = { 0.0f, 0.0f, 0.0f };
+	edict_t *hitEntity = NULL;
+	return NPCPhysics_TraceRagdollImpactInternal(
+		start, end, maxFraction, impulseMagnitude,
+		&hitFraction, hitPosition, &hitEntity,
+		true, true, targetEntity );
+}
+
 int NPCPhysics_ApplyImpactImpulseToRagdoll(
 	edict_t *targetEntity,
 	const float *impactPosition,
