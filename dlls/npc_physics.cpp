@@ -65,6 +65,7 @@ namespace
 	// Shared by moving BSP brushes and the living-actor hull proxies.
 	static constexpr ObjectLayer BRUSH_KINEMATIC_OBJECT_LAYER = 2;
 	static constexpr ObjectLayer PUSHABLE_KINEMATIC_OBJECT_LAYER = 3;
+	static constexpr ObjectLayer MOVABLE_KINEMATIC_OBJECT_LAYER = 4;
 	static constexpr uint32_t RAGDOLL_MAX_BODIES = 4096;
 	static constexpr uint32_t RAGDOLL_MAX_BODY_PAIRS = 8192;
 	static constexpr uint32_t RAGDOLL_MAX_CONTACT_CONSTRAINTS = 8192;
@@ -118,7 +119,8 @@ namespace
 		{
 			return layer == WORLD_STATIC_OBJECT_LAYER ||
 				layer == BRUSH_KINEMATIC_OBJECT_LAYER ||
-				layer == PUSHABLE_KINEMATIC_OBJECT_LAYER;
+				layer == PUSHABLE_KINEMATIC_OBJECT_LAYER ||
+				layer == MOVABLE_KINEMATIC_OBJECT_LAYER;
 		}
 	};
 
@@ -273,6 +275,7 @@ namespace
 		Vec3 halfExtents;
 		bool wasMoving;
 		bool isPushable;
+		bool isMovableObject;
 
 		NPCPhysicsActorCollider()
 			: entityIndex( -1 ),
@@ -282,7 +285,8 @@ namespace
 			  centerOffset( 0.0f, 0.0f, 0.0f ),
 			  halfExtents( 0.0f, 0.0f, 0.0f ),
 			  wasMoving( false ),
-			  isPushable( false )
+			  isPushable( false ),
+			  isMovableObject( false )
 		{
 		}
 	};
@@ -506,17 +510,19 @@ namespace
 		}
 	};
 
-	struct NPCPhysicsPendingPushableImpact
+	struct NPCPhysicsPendingMovableImpact
 	{
-		int pushableEntityIndex;
-		BodyID pushableBodyID;
+		int entityIndex;
+		BodyID bodyID;
 		Vec3 ragdollPointVelocity;
+		Vec3 pushDirection;
 		float approachSpeed;
 
-		NPCPhysicsPendingPushableImpact()
-			: pushableEntityIndex( 0 ),
-			  pushableBodyID(),
+		NPCPhysicsPendingMovableImpact()
+			: entityIndex( 0 ),
+			  bodyID(),
 			  ragdollPointVelocity( 0.0f, 0.0f, 0.0f ),
+			  pushDirection( 0.0f, 0.0f, 0.0f ),
 			  approachSpeed( 0.0f )
 		{
 		}
@@ -629,7 +635,8 @@ namespace
 			const ObjectLayer otherLayer = body1IsRagdoll ? layer2 : layer1;
 			if( otherLayer != WORLD_STATIC_OBJECT_LAYER &&
 				otherLayer != BRUSH_KINEMATIC_OBJECT_LAYER &&
-				otherLayer != PUSHABLE_KINEMATIC_OBJECT_LAYER )
+				otherLayer != PUSHABLE_KINEMATIC_OBJECT_LAYER &&
+				otherLayer != MOVABLE_KINEMATIC_OBJECT_LAYER )
 				return;
 			if( ragdollBody.GetMotionType() != EMotionType::Dynamic ||
 				manifold.mRelativeContactPointsOn1.size() == 0 )
@@ -640,7 +647,7 @@ namespace
 				return;
 
 			QueuePlayerPushLimit( body1, body2, manifold );
-			QueuePushableImpact( body1, body2, manifold );
+			QueueMovableObjectImpact( body1, body2, manifold );
 			QueueContactDiagnostic( body1, body2, manifold, false );
 
 			const RVec3 contact = body1IsRagdoll
@@ -691,7 +698,8 @@ namespace
 			event.ragdollBodyID = ragdollBody.GetID();
 			event.otherEntityIndex =
 				( otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER ||
-				  otherLayer == PUSHABLE_KINEMATIC_OBJECT_LAYER )
+				  otherLayer == PUSHABLE_KINEMATIC_OBJECT_LAYER ||
+				  otherLayer == MOVABLE_KINEMATIC_OBJECT_LAYER )
 				? static_cast<int>( otherBody.GetUserData() ) : 0;
 			event.velocityLoss = velocityLoss;
 			event.contactPoint = Vec3(
@@ -710,7 +718,7 @@ namespace
 			ContactSettings & ) override
 		{
 			QueuePlayerPushLimit( body1, body2, manifold );
-			QueuePushableImpact( body1, body2, manifold );
+			QueueMovableObjectImpact( body1, body2, manifold );
 			QueueContactDiagnostic( body1, body2, manifold, true );
 		}
 
@@ -722,11 +730,11 @@ namespace
 			return result;
 		}
 
-		std::vector<NPCPhysicsPendingPushableImpact> DrainPushableImpacts()
+		std::vector<NPCPhysicsPendingMovableImpact> DrainMovableImpacts()
 		{
 			std::lock_guard<std::mutex> lock( m_mutex );
-			std::vector<NPCPhysicsPendingPushableImpact> result;
-			result.swap( m_pushableImpacts );
+			std::vector<NPCPhysicsPendingMovableImpact> result;
+			result.swap( m_movableImpacts );
 			return result;
 		}
 
@@ -752,7 +760,7 @@ namespace
 			m_pending.clear();
 			m_contactDiagnostics.clear();
 			m_playerPushLimits.clear();
-			m_pushableImpacts.clear();
+			m_movableImpacts.clear();
 		}
 
 	private:
@@ -785,7 +793,8 @@ namespace
 			if( ( !ragdollPair &&
 				  otherLayer != WORLD_STATIC_OBJECT_LAYER &&
 				  otherLayer != BRUSH_KINEMATIC_OBJECT_LAYER &&
-				  otherLayer != PUSHABLE_KINEMATIC_OBJECT_LAYER ) ||
+				  otherLayer != PUSHABLE_KINEMATIC_OBJECT_LAYER &&
+				  otherLayer != MOVABLE_KINEMATIC_OBJECT_LAYER ) ||
 				ragdollBody.GetMotionType() != EMotionType::Dynamic ||
 				( ragdollPair && otherBody.GetMotionType() != EMotionType::Dynamic ) ||
 				manifold.mRelativeContactPointsOn1.empty() )
@@ -817,7 +826,8 @@ namespace
 			diagnostic.otherLayer = static_cast<int>( otherLayer );
 			diagnostic.otherEntityIndex = !ragdollPair &&
 				( otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER ||
-				  otherLayer == PUSHABLE_KINEMATIC_OBJECT_LAYER )
+				  otherLayer == PUSHABLE_KINEMATIC_OBJECT_LAYER ||
+				  otherLayer == MOVABLE_KINEMATIC_OBJECT_LAYER )
 				? static_cast<int>( otherBody.GetUserData() ) : 0;
 			diagnostic.penetrationDepth = manifold.mPenetrationDepth;
 			diagnostic.closingSpeed = closingSpeed;
@@ -893,7 +903,7 @@ namespace
 				m_contactDiagnostics[leastSevereIndex] = diagnostic;
 		}
 
-		void QueuePushableImpact(
+		void QueueMovableObjectImpact(
 			const Body &body1,
 			const Body &body2,
 			const ContactManifold &manifold )
@@ -906,43 +916,47 @@ namespace
 				return;
 
 			const Body &ragdollBody = body1IsRagdoll ? body1 : body2;
-			const Body &pushableBody = body1IsRagdoll ? body2 : body1;
-			if( pushableBody.GetObjectLayer() != PUSHABLE_KINEMATIC_OBJECT_LAYER ||
+			const Body &movableBody = body1IsRagdoll ? body2 : body1;
+			const ObjectLayer movableLayer = movableBody.GetObjectLayer();
+			if( ( movableLayer != PUSHABLE_KINEMATIC_OBJECT_LAYER &&
+				  movableLayer != MOVABLE_KINEMATIC_OBJECT_LAYER ) ||
 				ragdollBody.GetMotionType() != EMotionType::Dynamic ||
-				pushableBody.GetMotionType() != EMotionType::Kinematic ||
+				movableBody.GetMotionType() != EMotionType::Kinematic ||
 				manifold.mRelativeContactPointsOn1.empty() )
 				return;
 
-			const int pushableEntityIndex = static_cast<int>( pushableBody.GetUserData() );
-			if( pushableEntityIndex <= 0 || !gpGlobals ||
-				pushableEntityIndex >= gpGlobals->maxEntities )
+			const int entityIndex = static_cast<int>( movableBody.GetUserData() );
+			if( entityIndex <= 0 || !gpGlobals ||
+				entityIndex >= gpGlobals->maxEntities )
 				return;
 
 			const RVec3 contact = body1IsRagdoll
 				? manifold.GetWorldSpaceContactPointOn1( 0 )
 				: manifold.GetWorldSpaceContactPointOn2( 0 );
 			// The manifold normal points from body 1 to body 2. Orient it
-			// from the ragdoll toward the pushable and transfer momentum only
-			// while the ragdoll is approaching that surface.
+			// from the ragdoll toward the GoldSrc-owned movable entity.
 			const Vec3 pushDirection = body1IsRagdoll
 				? manifold.mWorldSpaceNormal
 				: -manifold.mWorldSpaceNormal;
 			const Vec3 ragdollVelocity = ragdollBody.GetPointVelocity( contact );
-			const Vec3 pushableVelocity = pushableBody.GetPointVelocity( contact );
+			const Vec3 movableVelocity = movableBody.GetPointVelocity( contact );
 			const float approachSpeed =
-				( ragdollVelocity - pushableVelocity ).Dot( pushDirection );
+				( ragdollVelocity - movableVelocity ).Dot( pushDirection );
 			if( !std::isfinite( approachSpeed ) || approachSpeed < 1.0f )
 				return;
 
-			NPCPhysicsPendingPushableImpact event;
-			event.pushableEntityIndex = pushableEntityIndex;
-			event.pushableBodyID = pushableBody.GetID();
+			NPCPhysicsPendingMovableImpact event;
+			event.entityIndex = entityIndex;
+			event.bodyID = movableBody.GetID();
 			event.ragdollPointVelocity = ragdollVelocity;
+			event.pushDirection = pushDirection;
 			event.approachSpeed = approachSpeed;
 
 			std::lock_guard<std::mutex> lock( m_mutex );
-			m_pushableImpacts.push_back( event );
+			m_movableImpacts.push_back( event );
 		}
+
+
 
 		void QueuePlayerPushLimit(
 			const Body &body1,
@@ -1009,7 +1023,7 @@ namespace
 		std::vector<NPCPhysicsPendingCollisionDamage> m_pending;
 		std::vector<NPCPhysicsPendingContactDiagnostic> m_contactDiagnostics;
 		std::vector<NPCPhysicsPendingPlayerPush> m_playerPushLimits;
-		std::vector<NPCPhysicsPendingPushableImpact> m_pushableImpacts;
+		std::vector<NPCPhysicsPendingMovableImpact> m_movableImpacts;
 	};
 
 	// The creation path logs restored velocities before the diagnostic helper's
@@ -2075,6 +2089,15 @@ namespace
 			return ent->v.movetype == MOVETYPE_PUSHSTEP &&
 				ent->v.solid == SOLID_BBOX;
 
+		// Tossed and bouncing bbox entities (dropped items, weapon boxes and
+		// similar props) remain GoldSrc-owned. Only bounded, non-actor entities
+		// are mirrored; arbitrary custom movement types are deliberately excluded.
+		if( !( flags & ( FL_CLIENT | FL_MONSTER ) ) &&
+			( ent->v.movetype == MOVETYPE_TOSS ||
+			  ent->v.movetype == MOVETYPE_BOUNCE ) )
+			return ent->v.solid == SOLID_BBOX ||
+				ent->v.solid == SOLID_SLIDEBOX;
+
 		if( !( flags & ( FL_CLIENT | FL_MONSTER ) ) ||
 			ent->v.deadflag != DEAD_NO || ent->v.health <= 0.0f )
 			return false;
@@ -2109,6 +2132,10 @@ namespace
 				continue;
 
 			const bool isPushable = FClassnameIs( &ent->v, "func_pushable" );
+			const bool isMovableObject = !isPushable &&
+				( ent->v.movetype == MOVETYPE_TOSS ||
+				  ent->v.movetype == MOVETYPE_BOUNCE );
+			const float minimumHalfExtent = isMovableObject ? 0.5f : 1.0f;
 			const Vec3 mins( ent->v.mins[0], ent->v.mins[1], ent->v.mins[2] );
 			const Vec3 maxs( ent->v.maxs[0], ent->v.maxs[1], ent->v.maxs[2] );
 			const Vec3 halfExtents = ( maxs - mins ) * 0.5f;
@@ -2119,8 +2146,9 @@ namespace
 				!std::isfinite( centerOffset.GetX() ) ||
 				!std::isfinite( centerOffset.GetY() ) ||
 				!std::isfinite( centerOffset.GetZ() ) ||
-				halfExtents.GetX() < 1.0f || halfExtents.GetY() < 1.0f ||
-				halfExtents.GetZ() < 1.0f ||
+				halfExtents.GetX() < minimumHalfExtent ||
+				halfExtents.GetY() < minimumHalfExtent ||
+				halfExtents.GetZ() < minimumHalfExtent ||
 				halfExtents.GetX() > 128.0f || halfExtents.GetY() > 128.0f ||
 				halfExtents.GetZ() > 128.0f )
 				continue;
@@ -2138,6 +2166,7 @@ namespace
 				const Vec3 extentDelta = halfExtents - existing.halfExtents;
 				if( existing.serialNumber != ent->serialnumber ||
 					existing.isPushable != isPushable ||
+					existing.isMovableObject != isMovableObject ||
 					extentDelta.LengthSq() > 0.0001f )
 				{
 					NPCPhysics_DestroyActorCollider( existing );
@@ -2158,8 +2187,9 @@ namespace
 					RVec3( position.GetX(), position.GetY(), position.GetZ() ),
 					Quat::sIdentity(),
 					EMotionType::Kinematic,
-					isPushable ? PUSHABLE_KINEMATIC_OBJECT_LAYER
-						: BRUSH_KINEMATIC_OBJECT_LAYER
+					isPushable ? PUSHABLE_KINEMATIC_OBJECT_LAYER :
+						( isMovableObject ? MOVABLE_KINEMATIC_OBJECT_LAYER
+							: BRUSH_KINEMATIC_OBJECT_LAYER )
 				);
 				bodySettings.mUserData = static_cast<uint64_t>( entityIndex );
 				bodySettings.mFriction = 0.65f;
@@ -2180,6 +2210,7 @@ namespace
 				collider.centerOffset = centerOffset;
 				collider.halfExtents = halfExtents;
 				collider.isPushable = isPushable;
+				collider.isMovableObject = isMovableObject;
 				g_actorColliders.push_back( collider );
 
 				ALERT(
@@ -2187,7 +2218,8 @@ namespace
 					"[NPC physics] Added kinematic hull: entity=%d type=%s half=(%.1f %.1f %.1f).\n",
 					entityIndex,
 					isPushable ? "pushable" :
-						( ( ent->v.flags & FL_CLIENT ) ? "player" : "NPC" ),
+						( isMovableObject ? "toss/bounce" :
+							( ( ent->v.flags & FL_CLIENT ) ? "player" : "NPC" ) ),
 					halfExtents.GetX(), halfExtents.GetY(), halfExtents.GetZ()
 				);
 				continue;
@@ -3992,6 +4024,8 @@ namespace
 				event.otherLayer == RAGDOLL_OBJECT_LAYER ? "ragdoll" : "kinematic";
 			if( event.otherLayer == PUSHABLE_KINEMATIC_OBJECT_LAYER )
 				otherKind = "pushable";
+			else if( event.otherLayer == MOVABLE_KINEMATIC_OBJECT_LAYER )
+				otherKind = "toss/bounce";
 			else if( event.otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER &&
 				event.otherEntityIndex > 0 &&
 				event.otherEntityIndex < gpGlobals->maxEntities )
@@ -4157,23 +4191,22 @@ namespace
 		}
 	}
 
-	static void NPCPhysics_ProcessPushableImpacts()
+	static void NPCPhysics_ProcessMovableImpacts()
 	{
-		std::vector<NPCPhysicsPendingPushableImpact> pending =
-			g_npcPhysics.contactListener.DrainPushableImpacts();
+		std::vector<NPCPhysicsPendingMovableImpact> pending =
+			g_npcPhysics.contactListener.DrainMovableImpacts();
 		if( pending.empty() )
 			return;
 
-		// Multiple articulated limbs and solver substeps may touch one box.
-		// Apply only its strongest approach once per server frame, so the
-		// response does not scale with the number of contact points.
-		std::vector<NPCPhysicsPendingPushableImpact> strongest;
+		// Multiple articulated limbs and solver substeps may touch one entity.
+		// Apply only its strongest approach once per server frame.
+		std::vector<NPCPhysicsPendingMovableImpact> strongest;
 		for( size_t i = 0; i < pending.size(); ++i )
 		{
-			const NPCPhysicsPendingPushableImpact &event = pending[i];
+			const NPCPhysicsPendingMovableImpact &event = pending[i];
 			size_t existing = strongest.size();
 			for( size_t j = 0; j < strongest.size(); ++j )
-				if( strongest[j].pushableEntityIndex == event.pushableEntityIndex )
+				if( strongest[j].entityIndex == event.entityIndex )
 				{
 					existing = j;
 					break;
@@ -4186,40 +4219,88 @@ namespace
 
 		for( size_t i = 0; i < strongest.size(); ++i )
 		{
-			const NPCPhysicsPendingPushableImpact &event = strongest[i];
-			const int colliderIndex = NPCPhysics_FindActorCollider( event.pushableEntityIndex );
+			const NPCPhysicsPendingMovableImpact &event = strongest[i];
+			const int colliderIndex = NPCPhysics_FindActorCollider( event.entityIndex );
 			if( colliderIndex < 0 )
 				continue;
 
 			const NPCPhysicsActorCollider &collider = g_actorColliders[colliderIndex];
-			if( !collider.isPushable || collider.bodyID != event.pushableBodyID )
+			if( collider.bodyID != event.bodyID )
 				continue;
 
-			edict_t *pushable = INDEXENT( event.pushableEntityIndex );
-			if( !pushable || pushable->free ||
-				pushable->serialnumber != collider.serialNumber ||
-				!FClassnameIs( &pushable->v, "func_pushable" ) ||
-				pushable->v.movetype != MOVETYPE_PUSHSTEP ||
-				pushable->v.solid != SOLID_BBOX )
+			edict_t *movable = INDEXENT( event.entityIndex );
+			if( !movable || movable->free ||
+				movable->serialnumber != collider.serialNumber ||
+				!NPCPhysics_IsActorColliderCandidate( movable ) )
 				continue;
 
-			const float pointVelocity[3] = {
-				event.ragdollPointVelocity.GetX(),
-				event.ragdollPointVelocity.GetY(),
-				event.ragdollPointVelocity.GetZ()
-			};
-			if( NPCPhysics_ApplyPushableRagdollPush( pushable, pointVelocity ) &&
-				NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			if( collider.isPushable )
 			{
+				if( !FClassnameIs( &movable->v, "func_pushable" ) ||
+					movable->v.movetype != MOVETYPE_PUSHSTEP ||
+					movable->v.solid != SOLID_BBOX )
+					continue;
+
+				const float pointVelocity[3] = {
+					event.ragdollPointVelocity.GetX(),
+					event.ragdollPointVelocity.GetY(),
+					event.ragdollPointVelocity.GetZ()
+				};
+				if( NPCPhysics_ApplyPushableRagdollPush( movable, pointVelocity ) &&
+					NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+				{
+					ALERT(
+						at_console,
+						"[NPC physics] Ragdoll pushed func_pushable: entity=%d approach=%.1f point-v=(%.1f %.1f %.1f).\n",
+						event.entityIndex, event.approachSpeed,
+						pointVelocity[0], pointVelocity[1], pointVelocity[2]
+					);
+				}
+				continue;
+			}
+
+			if( !collider.isMovableObject ||
+				( movable->v.movetype != MOVETYPE_TOSS &&
+				  movable->v.movetype != MOVETYPE_BOUNCE ) ||
+				( movable->v.solid != SOLID_BBOX &&
+				  movable->v.solid != SOLID_SLIDEBOX ) )
+				continue;
+
+			// GoldSrc remains the authoritative simulator. Feed a bounded
+			// normal velocity increment back to its toss/bounce entity instead
+			// of moving the entity from the Jolt callback or inventing angular
+			// mass/inertia for edicts that do not expose it.
+			const float impulseSpeed = (std::min)(
+				event.approachSpeed * 0.25f,
+				RAGDOLL_VELOCITY_LIMIT * 0.25f
+			);
+			if( !std::isfinite( impulseSpeed ) || impulseSpeed <= 0.0f )
+				continue;
+
+			const Vector updatedVelocity(
+				movable->v.velocity.x + event.pushDirection.GetX() * impulseSpeed,
+				movable->v.velocity.y + event.pushDirection.GetY() * impulseSpeed,
+				movable->v.velocity.z + event.pushDirection.GetZ() * impulseSpeed
+			);
+			if( !std::isfinite( updatedVelocity.x ) ||
+				!std::isfinite( updatedVelocity.y ) ||
+				!std::isfinite( updatedVelocity.z ) )
+				continue;
+
+			movable->v.velocity = updatedVelocity;
+			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 				ALERT(
 					at_console,
-					"[NPC physics] Ragdoll pushed func_pushable: entity=%d approach=%.1f point-v=(%.1f %.1f %.1f).\n",
-					event.pushableEntityIndex, event.approachSpeed,
-					pointVelocity[0], pointVelocity[1], pointVelocity[2]
+					"[NPC physics] Ragdoll pushed toss/bounce entity: entity=%d approach=%.1f delta-v=(%.1f %.1f %.1f).\n",
+					event.entityIndex, event.approachSpeed,
+					event.pushDirection.GetX() * impulseSpeed,
+					event.pushDirection.GetY() * impulseSpeed,
+					event.pushDirection.GetZ() * impulseSpeed
 				);
-			}
 		}
 	}
+
+
 
 	static void NPCPhysics_ProcessCollisionDamage()
 	{
@@ -4422,7 +4503,7 @@ namespace
 			++steps;
 		}
 
-		NPCPhysics_ProcessPushableImpacts();
+		NPCPhysics_ProcessMovableImpacts();
 		NPCPhysics_ProcessContactDiagnostics();
 		NPCPhysics_ProcessCollisionDamage();
 		NPCPhysics_RemoveGibbedRagdolls();
