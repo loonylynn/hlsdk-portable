@@ -1227,6 +1227,18 @@ void RadiusDamage( Vector vecSrc, entvars_t *pevInflictor, entvars_t *pevAttacke
 					NPCPhysics_ApplyBlastImpulse(
 						pEntity->edict(), &vecSrc[0], &vecSpot[0], flRadius, flAdjustedDamage
 					);
+
+					// Project one attached impact mark along the visible
+					// explosion-to-body path. The zero impulse is deliberate:
+					// the distributed blast force above remains the only
+					// physical response for this radius-damage event.
+					float blastMarkFraction = tr.flFraction;
+					float blastMarkPosition[3];
+					edict_t *blastMarkEntity = NULL;
+					NPCPhysics_TraceAndApplyImpact(
+						&vecSrc[0], &vecSpot[0], tr.flFraction, 0.0f,
+						&blastMarkFraction, blastMarkPosition, &blastMarkEntity
+					);
 				}
 				else if( isJoltRagdoll && CVAR_GET_FLOAT( "sv_npc_vphysics_debug" ) >= 0.5f )
 				{
