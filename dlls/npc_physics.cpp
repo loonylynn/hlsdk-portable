@@ -905,20 +905,33 @@ namespace
 		sourceUnitSettings.mContactPointPreserveLambdaMaxDistSq *= sourceScaleSquared;
 		sourceUnitSettings.mInternalEdgeRemovalVertexToleranceSq *= sourceScaleSquared;
 
-		// Articulated ragdolls can be wedged between the player hull and BSP
-		// surfaces. Give the contact/joint island more position-solver passes
-		// so deep transient contacts are corrected more completely per step.
-		sourceUnitSettings.mNumPositionSteps = 4;
+		// GoldSrc ragdolls use relatively small convex hulls in inch-sized
+		// coordinates. Tighten Jolt's default penetration allowance (0.02 m)
+		// so resting bodies do not visibly sink almost 0.8 inches into walls.
+		sourceUnitSettings.mPenetrationSlop = 0.005f * sourceScale;
+		// Apply a little more of each residual contact error per update. Keep
+		// this below 1.0 so corner contacts still converge over solver steps.
+		sourceUnitSettings.mBaumgarte = 0.3f;
+		// LinearCast bodies should not be allowed to travel as deeply into a
+		// surface before the cast is considered penetrative.
+		sourceUnitSettings.mLinearCastMaxPenetration = 0.10f;
+		// Ragdoll joint constraints also request 8 steps; match the global
+		// setting so contacts without an active joint override get the same
+		// position-solver budget.
+		sourceUnitSettings.mNumPositionSteps = 8;
 		g_npcPhysics.system->SetPhysicsSettings( sourceUnitSettings );
 		g_npcPhysics.system->SetContactListener( &g_npcPhysics.contactListener );
 
 		g_npcPhysics.system->SetGravity( Vec3( 0.0f, 0.0f, -800.0f ) );
 		ALERT(
 			at_console,
-			"[NPC physics] Jolt GoldSrc-unit scaling: units/m=%.3f max-penetration-correction=%.2f speculative-distance=%.2f position-steps=%u constraint-position-steps=%u.\n",
+			"[NPC physics] Jolt GoldSrc-unit scaling: units/m=%.3f max-penetration-correction=%.2f penetration-slop=%.2f speculative-distance=%.2f baumgarte=%.2f linear-cast-max-penetration=%.2f position-steps=%u constraint-position-steps=%u.\n",
 			sourceScale,
 			sourceUnitSettings.mMaxPenetrationDistance,
+			sourceUnitSettings.mPenetrationSlop,
 			sourceUnitSettings.mSpeculativeContactDistance,
+			sourceUnitSettings.mBaumgarte,
+			sourceUnitSettings.mLinearCastMaxPenetration,
 			sourceUnitSettings.mNumPositionSteps,
 			RAGDOLL_CONSTRAINT_POSITION_STEPS
 		);
