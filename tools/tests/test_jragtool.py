@@ -110,6 +110,26 @@ class JRAGToolTests(unittest.TestCase):
         self.assertIn("repeated node index 1", output)
         self.assertIn("using final parent -1 instead of 0", output)
 
+    def _add_helper_collision_mesh(self):
+        source = self.smd.read_text(encoding="utf-8")
+        local = [
+            (-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1),
+            (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1),
+        ]
+        world = [(-point[1] + 2, point[0], point[2]) for point in local]
+        faces = [
+            (0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7),
+            (0, 1, 5), (0, 5, 4), (3, 7, 6), (3, 6, 2),
+            (0, 4, 7), (0, 7, 3), (1, 2, 6), (1, 6, 5),
+        ]
+        triangles = []
+        for face in faces:
+            triangles.append("collision_material")
+            for vertex_index in face:
+                x, y, z = world[vertex_index]
+                triangles.append("1 {} {} {} 0 0 1 0 0".format(x, y, z))
+        self.smd.write_text(source + "\n" + "\n".join(triangles) + "\n", encoding="utf-8")
+
     def test_generate_runs_validation_and_writes_runtime_definition(self):
         output = self._generate()
         self.assertIn("Generated and validated", output)
@@ -134,6 +154,39 @@ class JRAGToolTests(unittest.TestCase):
         self.assertIn("animated_friction 10 100 0.4 1.5 0.8",
                       self.jrag.read_text(encoding="utf-8"))
 
+    def test_generate_can_author_an_empty_collision_rule_allowlist(self):
+        result, output = self._run([
+            "generate", str(self.qci), "--smd", str(self.smd),
+            "-o", str(self.jrag), "--collision-rules"
+        ])
+        self.assertEqual(result, 0, output)
+        definition = jragtool.read_jrag(self.jrag)
+        self.assertTrue(definition.collision_rules)
+        self.assertEqual(definition.collision_pairs, ())
+        self.assertIn("collision_rules 1", self.jrag.read_text(encoding="utf-8"))
+
+    def test_generate_can_author_specific_collision_pairs(self):
+        self._add_helper_collision_mesh()
+        result, output = self._run([
+            "generate", str(self.qci), "--smd", str(self.smd),
+            "-o", str(self.jrag), "--collision-pair", "1", "0"
+        ])
+        self.assertEqual(result, 0, output)
+        definition = jragtool.read_jrag(self.jrag)
+        self.assertEqual(len(definition.bodies), 2)
+        self.assertTrue(definition.collision_rules)
+        self.assertEqual(definition.collision_pairs, ((0, 1),))
+        self.assertIn("collision_rules 1\ncollision_pair 0 1",
+                      self.jrag.read_text(encoding="utf-8"))
+
+    def test_generate_rejects_collision_rules_with_disabled_self_collisions(self):
+        result, output = self._run([
+            "generate", str(self.qci), "--smd", str(self.smd),
+            "-o", str(self.jrag), "--no-self-collisions", "--collision-rules"
+        ])
+        self.assertEqual(result, 2)
+        self.assertIn("cannot be combined with self_collisions 0", output)
+
     def test_generate_can_disable_ragdoll_self_collisions(self):
         result, output = self._run([
             "generate", str(self.qci), "--smd", str(self.smd),
@@ -150,7 +203,42 @@ class JRAGToolTests(unittest.TestCase):
         contents = contents.replace("self_collisions 1\n", "", 1)
         definition = jragtool.parse_jrag_text(contents)
         self.assertTrue(definition.self_collisions)
+        self.assertFalse(definition.collision_rules)
+        self.assertEqual(definition.collision_pairs, ())
         self.assertEqual(definition.animated_friction, (0.0, 0.0, 0.0, 0.0, 0.0))
+
+    def test_parser_accepts_and_normalizes_collision_pair_indices(self):
+        self._add_helper_collision_mesh()
+        self._generate()
+        contents = self.jrag.read_text(encoding="utf-8")
+        contents = contents.replace(
+            "self_collisions 1\n",
+            "self_collisions 1\ncollision_rules 1\ncollision_pair 1 0\n", 1)
+        definition = jragtool.parse_jrag_text(contents)
+        self.assertTrue(definition.collision_rules)
+        self.assertEqual(definition.collision_pairs, ((0, 1),))
+
+    def test_parser_rejects_invalid_collision_pair_rules(self):
+        self._add_helper_collision_mesh()
+        self._generate()
+        base = self.jrag.read_text(encoding="utf-8").replace(
+            "self_collisions 1\n", "self_collisions 1\ncollision_rules 1\n", 1)
+        invalid_rules = (
+            ("collision_pair 0 0\n", "distinct and non-negative"),
+            ("collision_pair 0 2\n", "outside body_count"),
+            ("collision_pair 0 1\ncollision_pair 1 0\n", "duplicate collision_pair"),
+        )
+        for rules, message in invalid_rules:
+            with self.subTest(rules=rules):
+                with self.assertRaisesRegex(ValueError, message):
+                    jragtool.parse_jrag_text(base.replace("body_count 2\n", "body_count 2\n" + rules, 1))
+        without_marker = self.jrag.read_text(encoding="utf-8").replace(
+            "body_count 2\n", "collision_pair 0 1\nbody_count 2\n", 1)
+        with self.assertRaisesRegex(ValueError, "requires collision_rules 1"):
+            jragtool.parse_jrag_text(without_marker)
+        conflict = base.replace("self_collisions 1", "self_collisions 0", 1)
+        with self.assertRaisesRegex(ValueError, "cannot be combined"):
+            jragtool.parse_jrag_text(conflict)
 
     def test_parser_rejects_invalid_animated_friction(self):
         self._generate()
