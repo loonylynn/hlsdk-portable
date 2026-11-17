@@ -61,6 +61,11 @@ the full 15-body rig.
   physical pieces collide with one another except for directly constrained
   parent/child pairs. Set to `0` to disable all collisions between pieces of
   the same ragdoll, matching Source's `selfcollisions 0` rule.
+- `animated_friction`: optional `minimum maximum time_in time_hold time_out`
+  values. When present, the runtime ramps each angular joint's friction from
+  minimum to maximum, holds it, then ramps it back down, matching Source's
+  `animatedfriction` sequence. Friction values are Jolt angular torque limits;
+  times are seconds. Omit the directive to leave animated joint friction off.
 - `body_count`: number of physical bodies, 1–64.
 - `body "name" parent`: exact studio bone name and parent body index. Use -1
   for the single root. Bodies must be listed parent-first.
@@ -74,8 +79,15 @@ the full 15-body rig.
 
 The generator enables self-collision by default. Pass `--no-self-collisions`
 to `jragtool generate` (or `smd2jrag.py`) to emit `self_collisions 0`.
-Existing v1 files without the optional directive remain valid and default to
-self-collision enabled.
+
+To author the Source-style animated joint-friction envelope, pass five values:
+`--animated-friction MIN MAX TIME_IN TIME_HOLD TIME_OUT`. For example,
+`--animated-friction 10 100 0.4 1.5 0.8` ramps from 10 to 100 over 0.4
+seconds, holds for 1.5 seconds, then returns to 10 over 0.8 seconds. The
+default is no animated joint friction.
+
+Existing v1 files without either optional directive remain valid and retain
+the original defaults.
 
 The loader rejects invalid parent ordering, duplicate bone names, multiple roots,
 missing hulls, out-of-range limits, non-finite values, trailing directives and
