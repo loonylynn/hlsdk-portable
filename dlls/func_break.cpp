@@ -778,6 +778,22 @@ public:
 	void Precache( void );
 	void Touch ( CBaseEntity *pOther );
 	void Move( CBaseEntity *pMover, int push );
+	void ApplyRagdollPush( const Vector &velocity )
+	{
+		// Match the standard non-player CPushable::Move contribution.
+		const float factor = 0.25f;
+		pev->velocity.x += velocity.x * factor;
+		pev->velocity.y += velocity.y * factor;
+
+		const float speed = sqrt(
+			pev->velocity.x * pev->velocity.x +
+			pev->velocity.y * pev->velocity.y );
+		if( speed > MaxSpeed() && speed > 0.001f )
+		{
+			pev->velocity.x *= MaxSpeed() / speed;
+			pev->velocity.y *= MaxSpeed() / speed;
+		}
+	}
 	void KeyValue( KeyValueData *pkvd );
 	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
 	void EXPORT StopSound( void );
@@ -1027,6 +1043,23 @@ void CPushable::Move( CBaseEntity *pOther, int push )
 				STOP_SOUND( ENT( pev ), CHAN_WEAPON, m_soundNames[m_lastSound] );
 		}
 	}
+}
+
+int NPCPhysics_ApplyPushableRagdollPush( edict_t *pushable, const float *velocity )
+{
+	if( !pushable || pushable->free || !velocity ||
+		!FClassnameIs( &pushable->v, "func_pushable" ) )
+		return FALSE;
+
+	CPushable *entity = static_cast<CPushable *>( CBaseEntity::Instance( pushable ) );
+	if( !entity || entity->pev->movetype != MOVETYPE_PUSHSTEP ||
+		entity->pev->solid != SOLID_BBOX ||
+		!std::isfinite( velocity[0] ) || !std::isfinite( velocity[1] ) ||
+		!std::isfinite( velocity[2] ) )
+		return FALSE;
+
+	entity->ApplyRagdollPush( Vector( velocity[0], velocity[1], velocity[2] ) );
+	return TRUE;
 }
 
 #if 0
