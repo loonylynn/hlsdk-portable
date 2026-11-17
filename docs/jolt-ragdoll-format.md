@@ -307,6 +307,7 @@ created. The client retains up to 32 recent marks per ragdoll.
 
 This backports the core studio-decal projection and polygon-clipping behavior
 used by Source, not Source's entire `IVModelRender`/model-instance decal
-subsystem. Decals are currently limited to the hardware studio renderer and
-the existing hitscan bullet/crowbar impact hooks; projectiles and explosive
-radius impacts are not yet wired into the Jolt ragdoll path.
+subsystem. Decals are limited to the hardware studio renderer. The ragdoll
+impact hooks cover hitscan bullets, crowbar hits, crossbow bolts, hornets, and
+target-specific visible ragdoll impacts from radius-damage explosions; this
+does not imply universal support for every custom projectile or renderer.
