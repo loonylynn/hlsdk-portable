@@ -93,6 +93,8 @@ namespace
 	static constexpr int RAGDOLL_NETWORK_BODIES_PER_CHUNK = 10;
 	static constexpr float RAGDOLL_DEGREES_TO_RADIANS = 0.01745329251994329577f;
 	static constexpr float RAGDOLL_VELOCITY_LIMIT = 2000.0f;
+	// Above Source SDK's strongest supported ammo impulse (XBowBolt: ~17.4k kg*in/s).
+	static constexpr float RAGDOLL_WEAPON_IMPULSE_LIMIT = 20000.0f;
 	static constexpr float RAGDOLL_ANGULAR_VELOCITY_LIMIT = 35.0f;
 	static constexpr int RAGDOLL_DEFINITION_VERSION = 1;
 	static constexpr int RAGDOLL_DEFINITION_MAX_BODIES = 64;
@@ -5129,7 +5131,7 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 	if( applyImpulse && impulseMagnitude > 0.0f )
 	{
 		JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
-		impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
+		impulse = NPCPhysics_ClampVector( impulse, RAGDOLL_WEAPON_IMPULSE_LIMIT );
 		JPH::BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
 		// Source's client ragdoll applies a localized force to the struck physics
 		// object. Explicit activation guarantees that a sleeping Jolt limb wakes.
@@ -5320,7 +5322,7 @@ int NPCPhysics_ApplyImpactImpulseToRagdoll(
 	impulseDirection = impulseDirection * ( 1.0f / directionLength );
 
 	Vec3 impulse = impulseDirection * impulseMagnitude;
-	impulse = NPCPhysics_ClampVector( impulse, 3000.0f );
+	impulse = NPCPhysics_ClampVector( impulse, RAGDOLL_WEAPON_IMPULSE_LIMIT );
 	if( impulse.Length() <= 1.0e-3f )
 		return FALSE;
 
