@@ -2760,13 +2760,16 @@ namespace
 	{
 		if( !gpGlobals || !g_npcPhysics.initialized ||
 			!ragdoll.physicsRagdoll.GetPtr() || ragdoll.bodyCount <= 1 ||
+			ragdoll.bodyCount > RAGDOLL_DEFINITION_MAX_BODIES ||
 			ragdoll.jointErrorSince.size() != static_cast<size_t>( ragdoll.bodyCount ) )
 			return;
 
 		PhysicsSystem &system = *g_npcPhysics.system;
 		RagdollEnvironmentObjectLayerFilter environmentFilter;
-		std::vector<uint8_t> needsFix( ragdoll.bodyCount, 0 );
-		std::vector<uint8_t> corrected( ragdoll.bodyCount, 0 );
+		// Ragdoll definitions are capped at 64 parts; keep this hot path free
+		// of per-frame heap allocations.
+		uint8_t needsFix[RAGDOLL_DEFINITION_MAX_BODIES] = {};
+		uint8_t corrected[RAGDOLL_DEFINITION_MAX_BODIES] = {};
 		int recoveryCount = 0;
 
 		// Source calls RagdollSolveSeparation when VPhysics reports a ragdoll
