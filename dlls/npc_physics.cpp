@@ -25,6 +25,7 @@
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
@@ -3748,6 +3749,76 @@ namespace
 		return collector.HadHit();
 	}
 
+	// Sweep the complete child collision hull along its proposed recovery
+	// translation. Source's original separation code uses a point ray between
+	// joint anchors; this stronger check prevents a long limb from crossing a
+	// thin wall or the outside of a BSP corner while being snapped back.
+	static bool NPCPhysics_IsRagdollRecoveryPathBlocked(
+		PhysicsSystem &system,
+		BodyInterface &bodyInterface,
+		const BodyID &bodyID,
+		const Vec3 &targetPosition,
+		const RagdollEnvironmentObjectLayerFilter &environmentFilter )
+	{
+		const RefConst<Shape> shape = bodyInterface.GetShape( bodyID );
+		if( !shape.GetPtr() )
+			return true;
+
+		const RVec3 currentPositionR = bodyInterface.GetPosition( bodyID );
+		const Vec3 currentPosition(
+			float( currentPositionR.GetX() ),
+			float( currentPositionR.GetY() ),
+			float( currentPositionR.GetZ() ) );
+		const Vec3 displacement = targetPosition - currentPosition;
+		const float displacementLengthSq = displacement.LengthSq();
+		if( !std::isfinite( displacementLengthSq ) )
+			return true;
+		if( displacementLengthSq <= 0.0001f )
+			return false;
+
+		// Shape casts start at the center of mass, not the body's model-space
+		// origin. Translate the current COM transform by the same body-origin
+		// correction that SetPositionRotationAndVelocity will apply.
+		const RMat44 startTransform = bodyInterface.GetCenterOfMassTransform( bodyID );
+		ShapeCastSettings settings;
+		settings.SetBackFaceMode( EBackFaceMode::CollideWithBackFaces );
+		settings.mReturnDeepestPoint = true;
+		settings.mActiveEdgeMovementDirection = displacement;
+
+		const RShapeCast shapeCast(
+			shape.GetPtr(),
+			Vec3::sReplicate( 1.0f ),
+			startTransform,
+			displacement
+		);
+		AllHitCollisionCollector<CastShapeCollector> collector;
+		system.GetNarrowPhaseQuery().CastShape(
+			shapeCast,
+			settings,
+			startTransform.GetTranslation(),
+			collector,
+			BroadPhaseLayerFilter(),
+			environmentFilter
+		);
+
+		for( size_t hitIndex = 0; hitIndex < collector.mHits.size(); ++hitIndex )
+		{
+			const ShapeCastResult &hit = collector.mHits[hitIndex];
+			// Any obstacle encountered after the initial overlapping/touching
+			// state blocks the correction. At fraction zero, only reject motion
+			// that pushes farther into the existing contact; tangent or outward
+			// motion is allowed so a corpse resting on the floor can still recover.
+			if( hit.mFraction > 0.0001f )
+				return true;
+
+			const float motionIntoObstacle = displacement.Dot( hit.mPenetrationAxis );
+			if( !std::isfinite( motionIntoObstacle ) || motionIntoObstacle > 0.01f )
+				return true;
+		}
+
+		return false;
+	}
+
 	static void NPCPhysics_UpdateRagdollSeparation(
 		NPCPhysicsRagdoll &ragdoll, BodyInterface &bodyInterface )
 	{
@@ -3936,6 +4007,19 @@ namespace
 				{
 					// Never teleport a convex body into or through BSP/brush geometry.
 					// Mark it processed so descendants inherit the same safe refusal.
+					blocked[body] = 1;
+					corrected[body] = 1;
+					ragdoll.jointErrorSince[body] = -1.0f;
+					changed = true;
+					continue;
+				}
+
+				if( NPCPhysics_IsRagdollRecoveryPathBlocked(
+					system, bodyInterface, childID, newChildCenter,
+					environmentFilter ) )
+				{
+					// The destination is clear, but the full convex body would cross
+					// world/brush geometry on its way there. Do not snap through it.
 					blocked[body] = 1;
 					corrected[body] = 1;
 					ragdoll.jointErrorSince[body] = -1.0f;
