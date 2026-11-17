@@ -151,6 +151,7 @@ int NPCPhysics_TryCreateRagdoll( edict_t *ent );
 int NPCPhysics_RestorePersistentRagdoll( edict_t *ent );
 void NPCPhysics_SaveRagdollState( edict_t *ent );
 int NPCPhysics_IsRagdollEntity( edict_t *ent );
+int NPCPhysics_ApplyPushableRagdollPush( edict_t *pushable, const float *velocity );
 int NPCPhysics_ApplyBlastImpulse(
 	edict_t *targetEntity,
 	const float *origin,
