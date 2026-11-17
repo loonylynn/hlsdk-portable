@@ -222,6 +222,30 @@ Set it to a different non-negative number to change the delay. A negative value
 disables forced group sleep. The default is five seconds, matching Source's
 `ragdoll_sleepaftertime` default.
 
+## Ragdoll LRU retirement
+
+The server limits the number of active Jolt ragdolls using a Source-inspired
+oldest-first retirement policy. Ordinary corpses and important allies have
+separate limits. In this Half-Life 1 bridge, a corpse is classified as
+important when its `CBaseMonster::Classify()` result is
+`CLASS_PLAYER_ALLY`; all other NPC corpses use the ordinary pool.
+
+The default limits match Source's standard defaults:
+
+```text
+sv_npc_vphysics_max_ragdolls 8
+sv_npc_vphysics_max_important_ragdolls 2
+```
+
+These server cvars can be changed while playing. Lowering a limit immediately
+retires the oldest corpses in that pool on the next physics end-frame. A value
+of zero removes all corpses in that pool; a negative value disables that
+pool's limit. Retirement hides the GoldSrc carrier, releases its Jolt
+articulated body group, and schedules the entity for normal removal. The
+current implementation removes corpses immediately rather than fading them
+out, and it does not yet implement Source's low-violence or visibility-based
+retirement rules.
+
 ## Animated joint friction
 
 The runtime can reproduce Source's `animatedfriction` sequence on the ragdoll's
