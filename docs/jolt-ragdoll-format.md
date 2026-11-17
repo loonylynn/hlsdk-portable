@@ -148,6 +148,20 @@ This changes network traffic only; it does not lower the Jolt simulation rate
 or alter the physical behavior of the ragdoll.
 
 
+## Low-violence behavior
+
+The server cvar `sv_npc_vphysics_low_violence` defaults to `0`. Set it to `1`
+to force the ordinary and important ragdoll limits to zero, releasing all
+Jolt bodies and fading their frozen GoldSrc carriers using the configured
+retirement fade. The mode is server-wide.
+
+The standard GoldSrc violence cvars are honored independently. `violence_hblood`
+and `violence_ablood` suppress attached impact marks for red and alien blood,
+respectively. When `violence_hgibs` or `violence_agibs` is disabled, a death
+that would otherwise gib uses GoldSrc's normal no-gibs corpse-fade path rather
+than being handed to Jolt. Normal non-gib deaths still use the articulated
+ragdoll system when global low-violence mode is off.
+
 ## Weapon impacts
 
 Player and monster hitscan bullets and the crowbar query the Jolt collision world
