@@ -14,15 +14,25 @@ The tool currently has three commands:
   loader and compare its hull geometry and hierarchy against the source SMD.
   Passing `--qci` also verifies the mass, inertia, damping and joint limits.
 
-## Shipped Scientist example
+## Experimental Scientist Source-port reference asset
 
-The repository includes the Scientist ragdoll authoring inputs and generated sidecar:
+The repository retains a Scientist collision SMD, QCI, and generated `.jrag`
+file as an authoring-tool reference. These files came from a Source-engine
+version/port of Half-Life, not from the original GoldSrc Scientist model.
+They are **not a verified runtime sidecar for GoldSrc**. Similar model names
+do not prove matching skeleton indices, bone names, reference transforms,
+scale, or hitboxes. Do not install `scientist.jrag` alongside a GoldSrc
+`scientist.mdl` until the original GoldSrc model has been extracted and
+compared.
 
-- `assets/valve/models/scientist.ragdoll.smd`: the 15-body collision mesh and skeleton reference pose.
-- `assets/valve/models/scientist.ragdoll.qci`: the original 115-unit mass, inertia, damping and joint settings.
-- `assets/valve/models/scientist.jrag`: the runtime sidecar for `models/scientist.mdl`.
+The experimental inputs are:
 
-Generate and validate the checked-in sidecar with the same tool used by the project:
+- `assets/valve/models/scientist.ragdoll.smd`: Source-port collision mesh and skeleton reference pose.
+- `assets/valve/models/scientist.ragdoll.qci`: Source-port mass, inertia, damping and joint settings.
+- `assets/valve/models/scientist.jrag`: generated runtime-format example, not GoldSrc compatibility evidence.
+
+The commands below reproduce and validate the conversion against those
+Source-port authoring files only:
 
 ```bash
 cd ~/hlsdk-portable
@@ -46,16 +56,11 @@ directive and intentionally does not transfer its limits to `Bip02 Spine1` or
 another body, because their joint coordinate frames are not guaranteed to match.
 All other QCI limits and the head's rotational-damping override are retained.
 
-Install the sidecar next to the compiled model in the active game:
-
-```bash
-ENGINE_ROOT="/path/to/xash3d"
-GAME="$ENGINE_ROOT/valve"
-install -Dm644 assets/valve/models/scientist.jrag "$GAME/models/scientist.jrag"
-```
-
-Restart the map (or game) so the server's per-map definition cache is cleared.
-Changing only a `.jrag` file does not require rebuilding the SDK.
+Do not install this experimental sidecar for the GoldSrc Scientist. Once a
+sidecar has been generated from the matching original GoldSrc model assets,
+it can be copied beside that compiled model in the active game's `models/`
+folder. Restart the map (or game) so the server's per-map definition cache is
+cleared; changing only a `.jrag` file does not require rebuilding the SDK.
 
 ## Command reference
 
