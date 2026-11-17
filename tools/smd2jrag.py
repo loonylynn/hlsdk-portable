@@ -608,13 +608,38 @@ def _format_scalar(value: float) -> str:
 def render_jrag(qci: QCIData, bodies: Sequence[OutputBody],
                 friction: float = 0.8, restitution: float = 0.0,
                 self_collisions: bool = True,
-                animated_friction: Optional[Tuple[float, float, float, float, float]] = None) -> str:
+                animated_friction: Optional[Tuple[float, float, float, float, float]] = None,
+                collision_rules: bool = False,
+                collision_pairs: Optional[Sequence[Tuple[int, int]]] = None) -> str:
     if not math.isfinite(friction) or friction < 0:
         raise ValueError("friction must be a finite non-negative value")
     if not math.isfinite(restitution) or restitution < 0 or restitution > 1:
         raise ValueError("restitution must be between 0 and 1")
     if not bodies:
         raise ValueError("cannot write a ragdoll with no bodies")
+    collision_pairs = tuple(collision_pairs or ())
+    if collision_pairs:
+        collision_rules = True
+    if collision_rules and not self_collisions:
+        raise ValueError("explicit collision rules cannot be combined with self_collisions 0")
+    if len(collision_pairs) > len(bodies) * (len(bodies) - 1) // 2:
+        raise ValueError("collision rules contain more pairs than the body count permits")
+    normalized_pairs = []
+    seen_pairs = set()
+    for pair in collision_pairs:
+        if len(pair) != 2:
+            raise ValueError("each collision pair must contain two body indices")
+        first, second = pair
+        if not isinstance(first, int) or not isinstance(second, int):
+            raise ValueError("collision pair body indices must be integers")
+        if first < 0 or second < 0 or first >= len(bodies) or second >= len(bodies) or first == second:
+            raise ValueError("collision pair indices must be distinct valid body indices")
+        normalized = tuple(sorted((first, second)))
+        if normalized in seen_pairs:
+            raise ValueError("duplicate collision pair {} {}".format(*normalized))
+        seen_pairs.add(normalized)
+        normalized_pairs.append(normalized)
+    normalized_pairs.sort()
     if animated_friction is not None:
         if len(animated_friction) != 5 or not all(math.isfinite(value) for value in animated_friction):
             raise ValueError("animated friction requires five finite values")
@@ -635,6 +660,10 @@ def render_jrag(qci: QCIData, bodies: Sequence[OutputBody],
         "restitution {}".format(_format_scalar(restitution)),
         "self_collisions {}".format(1 if self_collisions else 0),
     ]
+    if collision_rules:
+        lines.append("collision_rules 1")
+        for first, second in normalized_pairs:
+            lines.append("collision_pair {} {}".format(first, second))
     if animated_friction is not None:
         lines.append("animated_friction {}".format(
             " ".join(_format_scalar(value) for value in animated_friction)))
@@ -661,7 +690,9 @@ def render_jrag(qci: QCIData, bodies: Sequence[OutputBody],
 def convert(qci_path: Path, smd_path: Optional[Path], output_path: Path,
             friction: float = 0.8, restitution: float = 0.0,
             self_collisions: bool = True,
-            animated_friction: Optional[Tuple[float, float, float, float, float]] = None) -> List[OutputBody]:
+            animated_friction: Optional[Tuple[float, float, float, float, float]] = None,
+            collision_rules: bool = False,
+            collision_pairs: Optional[Sequence[Tuple[int, int]]] = None) -> List[OutputBody]:
     qci = parse_qci(qci_path)
     if smd_path is None:
         collision_file = qci.collision_name
@@ -672,7 +703,8 @@ def convert(qci_path: Path, smd_path: Optional[Path], output_path: Path,
     bodies = build_bodies(smd, qci)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
-        render_jrag(qci, bodies, friction, restitution, self_collisions, animated_friction),
+        render_jrag(qci, bodies, friction, restitution, self_collisions, animated_friction,
+                    collision_rules, collision_pairs),
         encoding="utf-8")
     return bodies
 
@@ -694,6 +726,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--animated-friction", nargs=5, type=float,
                         metavar=("MIN", "MAX", "TIME_IN", "TIME_HOLD", "TIME_OUT"),
                         help="Source-style angular joint friction envelope (torque units, seconds)")
+    parser.add_argument("--collision-rules", action="store_true",
+                        help="use an explicit body-pair collision allow-list (empty means no body pairs collide)")
+    parser.add_argument("--collision-pair", nargs=2, type=int, action="append",
+                        metavar=("BODY_A", "BODY_B"),
+                        help="enable one body pair; repeat to add more pairs (implies --collision-rules)")
     args = parser.parse_args(argv)
 
     output_path = args.output or args.qci.with_suffix(".jrag")
@@ -710,7 +747,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         bodies = convert(
             args.qci, args.smd, output_path, args.friction, args.restitution,
             self_collisions=not args.no_self_collisions,
-            animated_friction=animated_friction)
+            animated_friction=animated_friction,
+            collision_rules=args.collision_rules,
+            collision_pairs=tuple(tuple(pair) for pair in (args.collision_pair or ())))
     except (OSError, ValueError) as exc:
         print("smd2jrag: error: {}".format(exc), file=sys.stderr)
         return 2
