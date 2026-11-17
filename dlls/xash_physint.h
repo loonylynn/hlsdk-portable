@@ -176,6 +176,12 @@ int NPCPhysics_TraceRagdollImpact(
 	float *hitPosition,
 	edict_t **hitEntity
 );
+int NPCPhysics_SendRagdollImpactMark(
+	edict_t *targetEntity,
+	const float *start,
+	const float *end,
+	float maxFraction
+);
 int NPCPhysics_IsExplosiveProjectile( edict_t *projectile );
 int NPCPhysics_TriggerExplosiveProjectileImpact(
 	edict_t *projectile,
