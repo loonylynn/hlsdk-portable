@@ -181,7 +181,18 @@ The runtime follows Source's default ragdoll collision policy: physical pieces
 collide with one another except for directly constrained parent/child pairs.
 The loader does not suppress additional pairs just because two authored hulls
 overlap in the initial pose. This allows non-adjacent limbs and body sections
-to make contact as the ragdoll folds and settles.
+to make contact as the ragdoll folds and settles. A model can opt out of all
+intra-ragdoll body collisions by adding `self_collisions 0` to its .jrag sidecar;
+omitting the setting keeps the Source default.
+
+When a child joint remains more than one GoldSrc unit away from its parent's
+expected anchor for 0.2 seconds, the bridge ray-checks the gap against world and
+brush collision. If geometry blocks the connection, it restores the child
+anchor, inherits the parent's point velocity, clears angular velocity, and
+propagates the correction to descendants. This is a Jolt-side approximation of
+Source's `RagdollSolveSeparation`; Jolt does not expose VPhysics' constraint
+group error state, so the bridge uses a persistent joint error plus an
+environment-blocking ray as its trigger.
 
 Ragdolls use Source-style group sleep rather than Jolt's shorter per-body
 automatic sleep timer. The server tracks movement of the ragdoll carrier
