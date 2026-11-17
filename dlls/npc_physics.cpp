@@ -1438,6 +1438,28 @@ namespace
 		g_ragdolls.clear();
 	}
 
+	// A Save operation may leave a portable snapshot in memory while play
+	// continues. Clear every field when that corpse is gibbed, hidden, or
+	// retired so a later transition cannot resurrect the stale pose.
+	static void NPCPhysics_ClearPersistentRagdollState( edict_t *entity, int serialNumber )
+	{
+		if( !entity || entity->free || entity->serialnumber != serialNumber )
+			return;
+
+		CBaseMonster *monster =
+			static_cast<CBaseMonster *>( CBaseEntity::Instance( entity ) );
+		if( !monster )
+			return;
+
+		monster->m_iNpcRagdollPersistVersion = 0;
+		monster->m_iNpcRagdollPersistBoneCount = 0;
+		monster->m_iNpcRagdollPersistBodyCount = 0;
+		memset( monster->m_flNpcRagdollPersistStudioPose, 0,
+			sizeof( monster->m_flNpcRagdollPersistStudioPose ) );
+		memset( monster->m_flNpcRagdollPersistBodyVelocity, 0,
+			sizeof( monster->m_flNpcRagdollPersistBodyVelocity ) );
+	}
+
 	static bool NPCPhysics_IsRagdollVisibleToClient( const NPCPhysicsRagdoll &ragdoll )
 	{
 		if( !ragdoll.entity || ragdoll.entity->free )
@@ -1576,19 +1598,8 @@ namespace
 		const int entityIndex = entity && !entity->free ? ENTINDEX( entity ) : -1;
 		const int networkID = ragdoll.networkID;
 		const int bodyCount = ragdoll.bodyCount;
-		// Clear transferable snapshots: a corpse retired for LRU pressure
-		// must not be resurrected if its carrier crosses a level transition.
-		if( entity && !entity->free && entity->serialnumber == ragdoll.serialNumber )
-		{
-			CBaseMonster *monster =
-				static_cast<CBaseMonster *>( CBaseEntity::Instance( entity ) );
-			if( monster )
-			{
-				monster->m_iNpcRagdollPersistVersion = 0;
-				monster->m_iNpcRagdollPersistBoneCount = 0;
-				monster->m_iNpcRagdollPersistBodyCount = 0;
-			}
-		}
+		// Retired corpses must not be reconstructed after a level transition.
+		NPCPhysics_ClearPersistentRagdollState( entity, ragdoll.serialNumber );
 
 		// Release Jolt before any GoldSrc removal callback. A visible corpse
 		// can remain as a frozen render-only carrier during the optional fade.
@@ -4007,6 +4018,14 @@ namespace
 		if( !monster )
 			return;
 
+		// Hidden/gibbed carriers are no longer valid transition targets. A
+		// previous save may have populated these fields before play continued.
+		if( ent->v.effects & EF_NODRAW )
+		{
+			NPCPhysics_ClearPersistentRagdollState( ent, ent->serialnumber );
+			return;
+		}
+
 		const bool hasPriorRagdollSnapshot =
 			monster->m_iNpcRagdollPersistVersion != 0 ||
 			monster->m_iNpcRagdollPersistBoneCount != 0 ||
@@ -4788,6 +4807,8 @@ namespace
 				ragdoll.entity->serialnumber != ragdoll.serialNumber ||
 				( ragdoll.entity->v.effects & EF_NODRAW ) )
 			{
+				NPCPhysics_ClearPersistentRagdollState(
+					ragdoll.entity, ragdoll.serialNumber );
 				NPCPhysics_DestroyRagdoll( ragdoll );
 				g_ragdolls.erase( g_ragdolls.begin() + ( i - 1 ) );
 			}
@@ -5526,6 +5547,17 @@ int NPCPhysics_HasRagdollDefinition( edict_t *ent )
 
 int NPCPhysics_RestorePersistentRagdoll( edict_t *ent )
 {
+	if( !ent || ent->free )
+		return FALSE;
+
+	// Never reconstruct a corpse whose GoldSrc carrier has already been
+	// hidden by a gib or removal path.
+	if( ent->v.effects & EF_NODRAW )
+	{
+		NPCPhysics_ClearPersistentRagdollState( ent, ent->serialnumber );
+		return FALSE;
+	}
+
 	if( !NPCPhysics_Enabled() || !NPCPhysics_IsEligibleMonster( ent ) ||
 		NPCPhysics_IsRagdollEntity( ent ) )
 		return FALSE;
