@@ -130,9 +130,9 @@ GAME="/path/to/xash3d/valve"
 install -Dm644 assets/valve/models/zombie.jrag "$GAME/models/zombie.jrag"
 ```
 
-**Scientist asset status:** `scientist.jrag`, `scientist.ragdoll.smd`, and
-`scientist.ragdoll.qci` are retained as experimental Source-port-derived
-reference data. They were not extracted from the original GoldSrc Scientist
+**Scientist asset status:** `assets/experimental/source-port-scientist/` retains
+`scientist.jrag`, `scientist.ragdoll.smd`, and `scientist.ragdoll.qci` as
+experimental Source-port-derived reference data. They were not extracted from the original GoldSrc Scientist
 model. Their 15-body structure and QCI values validate only against those
 checked-in Source-side authoring inputs; they do not establish compatibility
 with the GoldSrc `models/scientist.mdl` skeleton, reference pose, scale, or
