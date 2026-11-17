@@ -4157,7 +4157,7 @@ namespace
 			NPCPhysics_ClearPersistentRagdollState( ent, ent->serialnumber );
 			if( debug )
 				ALERT( at_console,
-					"[NPC physics] Rejected transferable ragdoll snapshot for entity %d: %s.\\n",
+					"[NPC physics] Rejected transferable ragdoll snapshot for entity %d: %s.\n",
 					ENTINDEX( ent ), invalidSnapshotReason );
 			return;
 		}
