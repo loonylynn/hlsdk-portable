@@ -607,13 +607,20 @@ def _format_scalar(value: float) -> str:
 
 def render_jrag(qci: QCIData, bodies: Sequence[OutputBody],
                 friction: float = 0.8, restitution: float = 0.0,
-                self_collisions: bool = True) -> str:
+                self_collisions: bool = True,
+                animated_friction: Optional[Tuple[float, float, float, float, float]] = None) -> str:
     if not math.isfinite(friction) or friction < 0:
         raise ValueError("friction must be a finite non-negative value")
     if not math.isfinite(restitution) or restitution < 0 or restitution > 1:
         raise ValueError("restitution must be between 0 and 1")
     if not bodies:
         raise ValueError("cannot write a ragdoll with no bodies")
+    if animated_friction is not None:
+        if len(animated_friction) != 5 or not all(math.isfinite(value) for value in animated_friction):
+            raise ValueError("animated friction requires five finite values")
+        minimum, maximum, time_in, time_hold, time_out = animated_friction
+        if minimum < 0 or maximum < minimum or min(time_in, time_hold, time_out) < 0:
+            raise ValueError("animated friction torque and times are outside their valid ranges")
 
     lines = [
         "# Jolt ragdoll definition v1",
@@ -627,9 +634,14 @@ def render_jrag(qci: QCIData, bodies: Sequence[OutputBody],
         "friction {}".format(_format_scalar(friction)),
         "restitution {}".format(_format_scalar(restitution)),
         "self_collisions {}".format(1 if self_collisions else 0),
+    ]
+    if animated_friction is not None:
+        lines.append("animated_friction {}".format(
+            " ".join(_format_scalar(value) for value in animated_friction)))
+    lines.extend([
         "body_count {}".format(len(bodies)),
         "",
-    ]
+    ])
     for body in bodies:
         lines.append("body {} {}".format(json.dumps(body.name, ensure_ascii=False), body.parent_index))
         lines.append("center {}".format(" ".join(_format_fixed(value) for value in body.center)))
@@ -648,7 +660,8 @@ def render_jrag(qci: QCIData, bodies: Sequence[OutputBody],
 
 def convert(qci_path: Path, smd_path: Optional[Path], output_path: Path,
             friction: float = 0.8, restitution: float = 0.0,
-            self_collisions: bool = True) -> List[OutputBody]:
+            self_collisions: bool = True,
+            animated_friction: Optional[Tuple[float, float, float, float, float]] = None) -> List[OutputBody]:
     qci = parse_qci(qci_path)
     if smd_path is None:
         collision_file = qci.collision_name
@@ -659,7 +672,7 @@ def convert(qci_path: Path, smd_path: Optional[Path], output_path: Path,
     bodies = build_bodies(smd, qci)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
-        render_jrag(qci, bodies, friction, restitution, self_collisions),
+        render_jrag(qci, bodies, friction, restitution, self_collisions, animated_friction),
         encoding="utf-8")
     return bodies
 
@@ -678,6 +691,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="Jolt restitution, from 0 to 1 (default: 0)")
     parser.add_argument("--no-self-collisions", action="store_true",
                         help="disable collisions between separate bodies in the same ragdoll")
+    parser.add_argument("--animated-friction", nargs=5, type=float,
+                        metavar=("MIN", "MAX", "TIME_IN", "TIME_HOLD", "TIME_OUT"),
+                        help="Source-style angular joint friction envelope (torque units, seconds)")
     args = parser.parse_args(argv)
 
     output_path = args.output or args.qci.with_suffix(".jrag")
@@ -690,9 +706,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 collision_file += ".smd"
             smd_path = qci.source_path.parent / collision_file
         smd = parse_smd(smd_path)
+        animated_friction = tuple(args.animated_friction) if args.animated_friction else None
         bodies = convert(
             args.qci, args.smd, output_path, args.friction, args.restitution,
-            self_collisions=not args.no_self_collisions)
+            self_collisions=not args.no_self_collisions,
+            animated_friction=animated_friction)
     except (OSError, ValueError) as exc:
         print("smd2jrag: error: {}".format(exc), file=sys.stderr)
         return 2
