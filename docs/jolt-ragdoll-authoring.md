@@ -210,6 +210,30 @@ Set it to a different non-negative number to change the delay. A negative value
 disables forced group sleep. The default is five seconds, matching Source's
 `ragdoll_sleepaftertime` default.
 
+## Animated joint friction
+
+The runtime can reproduce Source's `animatedfriction` sequence on the ragdoll's
+angular joints. Add an optional line to the model's `.jrag` file:
+
+```text
+animated_friction 10 100 0.4 1.5 0.8
+```
+
+The five values are minimum torque, maximum torque, ramp-in duration, hold
+duration, and ramp-out duration. Times are seconds; torque values are Jolt
+angular-friction limits. The runtime applies the same envelope to all three
+rotational axes of every connected joint and keeps the articulated ragdoll
+awake until the envelope finishes.
+
+The generator can emit the line directly:
+
+```bash
+python3 tools/jragtool.py generate model.qci --animated-friction 10 100 0.4 1.5 0.8 -o model.jrag
+```
+
+Omitting the option leaves animated joint friction disabled. Existing v1
+sidecars without the property continue to load with the same behavior.
+
 ## Tests
 
 Run the converter and CLI test suites with:
