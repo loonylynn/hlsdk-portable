@@ -162,6 +162,16 @@ that would otherwise gib uses GoldSrc's normal no-gibs corpse-fade path rather
 than being handed to Jolt. Normal non-gib deaths still use the articulated
 ragdoll system when global low-violence mode is off.
 
+## Movable pushable interactions
+
+GoldSrc `func_pushable` entities are mirrored as kinematic Jolt boxes. Their
+movement is conveyed to ragdolls through the kinematic surface velocity.
+Ragdoll impacts are deferred out of Jolt callbacks and apply one strongest
+horizontal push to the original GoldSrc entity per server frame, using the
+stock non-player factor of 0.25 and the pushable's existing maximum speed.
+GoldSrc continues to own and simulate the pushable. Arbitrary movable entities,
+vertical pushable impulses, and rotational response are not covered yet.
+
 ## Weapon impacts
 
 Player and monster hitscan bullets and the crowbar query the Jolt collision world
