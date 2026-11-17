@@ -200,6 +200,33 @@ nearer world geometry. The hit position is returned to the weapon trace so bulle
 tracers and hit handling stop at the ragdoll. Living NPCs continue using the
 original GoldSrc damage and collision path.
 
+### Direct projectile sweeps
+
+The ragdoll carrier edict is non-solid, so ordinary GoldSrc projectile touch
+callbacks cannot reliably detect a fast projectile crossing an articulated limb.
+The server therefore sweeps supported projectiles across their previous-to-current
+origin segment and limits the Jolt query by a GoldSrc trace fraction. Edict serial
+numbers protect the sweep history against entity-slot reuse.
+
+- Crossbow bolts sweep at 0.01-second think intervals. Single-player impacts use
+  the existing crossbow impulse and attached mark at the Jolt contact point.
+  Multiplayer uses a query-only intercept and keeps the existing delayed bolt
+  explosion; the subsequent radius damage supplies the blast impulse and mark.
+- RPG rockets and contact grenades using the standard
+  `CGrenade::ExplodeTouch` callback are intercepted through a synthetic contact
+  trace. The bridge invokes their original virtual touch/explode path, preserving
+  their existing explosion, damage, sound, and radius-damage behavior.
+- Hornets use a swept direct-hit query. Their native touch callback runs first,
+  preserving owner and relationship filtering; only an accepted hit receives a
+  localized Jolt impulse and attached mark.
+- Timed hand grenades, satchels, and other radius-damage explosions do not need a
+  direct projectile sweep. Their existing `RadiusDamage` path applies the
+  distributed blast impulse and now projects an attached mark onto the specific
+  visible ragdoll being processed. The mark-only query adds no second impulse.
+
+This is scoped coverage, not a universal projectile interceptor. Other custom
+projectile classes and touch callbacks still need explicit support.
+
 
 ### Weapon force model and attached impact marks
 
@@ -222,10 +249,14 @@ Server tuning cvars (default 1.0):
 - `sv_npc_vphysics_bullet_scale`: scales the Source-derived bullet impulse.
 - `sv_npc_vphysics_crowbar_scale`: scales the Source-style crowbar impulse.
 
-When a bullet or crowbar hits a bleeding Jolt ragdoll, the old GoldSrc reverse
-`TraceBleed` trace is skipped. That trace ignored monsters and could pass through
-the physics corpse to leave a decal on the floor or wall behind it. Blood
-particles still spawn at the impact point.
+When a bullet, crowbar, crossbow bolt, hornet, or visible explosion hits
+a bleeding Jolt ragdoll, the bridge sends an impact mark along the actual
+impact-to-body path. Explosion marks are constrained to the exact ragdoll being
+processed by `RadiusDamage` and do not add a second impulse. The old GoldSrc
+reverse `TraceBleed` trace remains skipped for bullet and crowbar hits because
+that trace ignored monsters and could pass through the physics corpse to leave a
+decal on the floor or wall behind it. Blood particles still spawn at direct
+impact points.
 
 The server sends the struck studio bone, mapped-bone-local hit point, and
 local impact normal to clients. The hardware studio renderer transforms the current GoldSrc studio
