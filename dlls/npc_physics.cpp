@@ -245,6 +245,22 @@ namespace
 		}
 	};
 
+	struct NPCPhysicsRetiringCorpse
+	{
+		edict_t *entity;
+		int serialNumber;
+		float startTime;
+		float duration;
+
+		NPCPhysicsRetiringCorpse()
+			: entity( NULL ),
+			  serialNumber( 0 ),
+			  startTime( 0.0f ),
+			  duration( 0.0f )
+		{
+		}
+	};
+
 	struct NPCPhysicsActorCollider
 	{
 		int entityIndex;
@@ -938,6 +954,7 @@ namespace
 
 	static NPCPhysicsWorld g_npcPhysics;
 	static std::vector<NPCPhysicsRagdoll> g_ragdolls;
+	static std::vector<NPCPhysicsRetiringCorpse> g_retiringCorpses;
 	static std::vector<NPCPhysicsCachedRagdollDefinition> g_ragdollDefinitionCache;
 	static std::vector<NPCPhysicsLivePose> g_livePoses;
 	static int g_nextRagdollID = 1;
@@ -967,6 +984,8 @@ namespace
 	static cvar_t g_svNpcVPhysicsSleepAfterTime = { "sv_npc_vphysics_sleep_after_time", "5.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsMaxRagdolls = { "sv_npc_vphysics_max_ragdolls", "8", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsMaxImportantRagdolls = { "sv_npc_vphysics_max_important_ragdolls", "2", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsFadeOnRetire = { "sv_npc_vphysics_fade_on_retire", "1", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsFadeTime = { "sv_npc_vphysics_fade_time", "2.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
@@ -1195,6 +1214,113 @@ namespace
 		g_ragdolls.clear();
 	}
 
+	static bool NPCPhysics_IsRagdollVisibleToClient( const NPCPhysicsRagdoll &ragdoll )
+	{
+		if( !ragdoll.entity || ragdoll.entity->free )
+			return false;
+
+		// Without the engine's PVS query, be conservative and retain the corpse
+		// as visible rather than evicting it based on an incomplete guess.
+		if( !g_engfuncs.pfnFindClientInPVS )
+			return true;
+
+		edict_t *client = FIND_CLIENT_IN_PVS( ragdoll.entity );
+		if( !client || client->free || !( client->v.flags & FL_CLIENT ) )
+			return false;
+
+		CBasePlayer *player = static_cast<CBasePlayer *>( CBaseEntity::Instance( client ) );
+		CBaseEntity *corpse = CBaseEntity::Instance( ragdoll.entity );
+		if( !player || !corpse )
+			return true;
+
+		return player->FInViewCone( corpse ) ? true : false;
+	}
+
+	static size_t NPCPhysics_FindOldestRagdollToRetire( bool important )
+	{
+		size_t oldestIndex = g_ragdolls.size();
+		size_t oldestInvisibleIndex = g_ragdolls.size();
+		for( size_t i = 0; i < g_ragdolls.size(); ++i )
+		{
+			const NPCPhysicsRagdoll &ragdoll = g_ragdolls[i];
+			if( ragdoll.important != important )
+				continue;
+
+			if( oldestIndex == g_ragdolls.size() )
+				oldestIndex = i;
+
+			// Like Source's server LRU, prefer a corpse outside the player's
+			// PVS or view cone, but retain oldest-first fallback when every
+			// corpse in the pool is currently visible.
+			if( oldestInvisibleIndex == g_ragdolls.size() &&
+				!NPCPhysics_IsRagdollVisibleToClient( ragdoll ) )
+				oldestInvisibleIndex = i;
+		}
+		return oldestInvisibleIndex != g_ragdolls.size()
+			? oldestInvisibleIndex : oldestIndex;
+	}
+
+	static bool NPCPhysics_StartRagdollFade( edict_t *entity, int serialNumber )
+	{
+		if( !entity || entity->free || entity->serialnumber != serialNumber ||
+			NPCPhysics_GetCvar( "sv_npc_vphysics_fade_on_retire", 1.0f ) < 0.5f )
+			return false;
+
+		float duration = NPCPhysics_GetCvar( "sv_npc_vphysics_fade_time", 2.0f );
+		if( !std::isfinite( duration ) || duration <= 0.0f )
+			return false;
+		duration = (std::min)( duration, 30.0f );
+
+		NPCPhysicsRetiringCorpse retiring;
+		retiring.entity = entity;
+		retiring.serialNumber = serialNumber;
+		retiring.startTime = gpGlobals ? gpGlobals->time : 0.0f;
+		retiring.duration = duration;
+
+		// The Jolt articulated body group is already detached. Keep only the
+		// frozen GoldSrc carrier visible while its networked alpha is reduced.
+		entity->v.effects &= ~EF_NODRAW;
+		entity->v.solid = SOLID_NOT;
+		entity->v.movetype = MOVETYPE_NONE;
+		entity->v.takedamage = DAMAGE_NO;
+		entity->v.nextthink = -1.0f;
+		entity->v.rendermode = kRenderTransTexture;
+		entity->v.renderfx = 0;
+		entity->v.renderamt = 255.0f;
+		g_retiringCorpses.push_back( retiring );
+		return true;
+	}
+
+	static void NPCPhysics_UpdateRetiringCorpses()
+	{
+		if( !gpGlobals || g_retiringCorpses.empty() )
+			return;
+
+		for( size_t i = g_retiringCorpses.size(); i > 0; --i )
+		{
+			NPCPhysicsRetiringCorpse &retiring = g_retiringCorpses[i - 1];
+			edict_t *entity = retiring.entity;
+			if( !entity || entity->free ||
+				entity->serialnumber != retiring.serialNumber ||
+				( entity->v.flags & FL_KILLME ) )
+			{
+				g_retiringCorpses.erase( g_retiringCorpses.begin() + ( i - 1 ) );
+				continue;
+			}
+
+			const float fraction = NPCPhysics_ClampUnit(
+				( gpGlobals->time - retiring.startTime ) / retiring.duration );
+			entity->v.renderamt = 255.0f * ( 1.0f - fraction );
+			if( fraction >= 1.0f )
+			{
+				CBaseEntity *baseEntity = CBaseEntity::Instance( entity );
+				if( baseEntity )
+					UTIL_Remove( baseEntity );
+				g_retiringCorpses.erase( g_retiringCorpses.begin() + ( i - 1 ) );
+			}
+		}
+	}
+
 	static int NPCPhysics_GetRagdollLimit( const char *cvarName, float fallback )
 	{
 		float value = NPCPhysics_GetCvar( cvarName, fallback );
@@ -1211,15 +1337,7 @@ namespace
 	// policy. Retire the oldest corpse from the selected importance pool.
 	static bool NPCPhysics_RetireOldestRagdoll( bool important )
 	{
-		size_t oldestIndex = g_ragdolls.size();
-		for( size_t i = 0; i < g_ragdolls.size(); ++i )
-		{
-			if( g_ragdolls[i].important == important )
-			{
-				oldestIndex = i;
-				break;
-			}
-		}
+		const size_t oldestIndex = NPCPhysics_FindOldestRagdollToRetire( important );
 		if( oldestIndex == g_ragdolls.size() )
 			return false;
 
@@ -1228,11 +1346,28 @@ namespace
 		const int entityIndex = entity && !entity->free ? ENTINDEX( entity ) : -1;
 		const int networkID = ragdoll.networkID;
 		const int bodyCount = ragdoll.bodyCount;
-		// Release Jolt before UTIL_Remove invokes the GoldSrc entity's
-		// UpdateOnRemove callback. The callback must not observe live physics
-		// state for a corpse that is already being retired.
-		NPCPhysics_DestroyRagdoll( ragdoll );
+		// Clear transferable snapshots: a corpse retired for LRU pressure
+		// must not be resurrected if its carrier crosses a level transition.
 		if( entity && !entity->free && entity->serialnumber == ragdoll.serialNumber )
+		{
+			CBaseMonster *monster =
+				static_cast<CBaseMonster *>( CBaseEntity::Instance( entity ) );
+			if( monster )
+			{
+				monster->m_iNpcRagdollPersistVersion = 0;
+				monster->m_iNpcRagdollPersistBoneCount = 0;
+				monster->m_iNpcRagdollPersistBodyCount = 0;
+			}
+		}
+
+		// Release Jolt before any GoldSrc removal callback. A visible corpse
+		// can remain as a frozen render-only carrier during the optional fade.
+		NPCPhysics_DestroyRagdoll( ragdoll );
+		const bool fading = entity && !entity->free &&
+			entity->serialnumber == ragdoll.serialNumber &&
+			NPCPhysics_StartRagdollFade( entity, ragdoll.serialNumber );
+		if( entity && !entity->free && entity->serialnumber == ragdoll.serialNumber &&
+			!fading )
 		{
 			entity->v.effects |= EF_NODRAW;
 			entity->v.solid = SOLID_NOT;
@@ -1246,9 +1381,9 @@ namespace
 		g_ragdolls.erase( g_ragdolls.begin() + oldestIndex );
 		ALERT(
 			at_console,
-			"[NPC physics] LRU retired %s ragdoll: entity=%d id=%d bodies=%d.\n",
+			"[NPC physics] LRU retired %s ragdoll: entity=%d id=%d bodies=%d mode=%s.\n",
 			important ? "important" : "ordinary",
-			entityIndex, networkID, bodyCount
+			entityIndex, networkID, bodyCount, fading ? "fade" : "remove"
 		);
 		return true;
 	}
@@ -4060,6 +4195,7 @@ namespace
 		g_npcPhysicsContactDebugEnabled =
 			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f;
 
+		NPCPhysics_UpdateRetiringCorpses();
 		NPCPhysics_RemoveGibbedRagdolls();
 		NPCPhysics_EnforceRagdollLimits();
 		if( g_ragdolls.empty() )
@@ -4786,6 +4922,8 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsSleepAfterTime );
 	CVAR_REGISTER( &g_svNpcVPhysicsMaxRagdolls );
 	CVAR_REGISTER( &g_svNpcVPhysicsMaxImportantRagdolls );
+	CVAR_REGISTER( &g_svNpcVPhysicsFadeOnRetire );
+	CVAR_REGISTER( &g_svNpcVPhysicsFadeTime );
 	CVAR_REGISTER( &g_svNpcVPhysicsDebug );
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
@@ -4874,6 +5012,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 
 void NPCPhysics_ResetMap( void )
 {
+	g_retiringCorpses.clear();
 	NPCPhysics_DestroyAllRagdolls();
 	NPCPhysics_DestroyActorColliders();
 	NPCPhysics_DestroyBrushColliders();
@@ -4893,6 +5032,7 @@ void NPCPhysics_ResetMap( void )
 
 void NPCPhysics_Shutdown( void )
 {
+	g_retiringCorpses.clear();
 	if( g_npcPhysics.system )
 		g_npcPhysics.system->SetContactListener( NULL );
 	g_npcPhysics.contactListener.Clear();
