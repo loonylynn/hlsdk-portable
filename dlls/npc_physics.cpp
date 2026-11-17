@@ -3698,9 +3698,9 @@ namespace
 
 		// Source calls RagdollSolveSeparation when VPhysics reports a ragdoll
 		// constraint-group error. Jolt has no equivalent group error flag, so
-		// use the same core signal: a joint anchor that remains >1 unit apart
-		// while a ray between its expected and actual positions is blocked by
-		// world or inline-brush geometry.
+		// use a persistent joint-anchor error plus Source's two recovery
+		// signals: directional body contact with a blocked separation ray, or
+		// a child body whose mass is less than half its parent's.
 		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
 			const RagdollBone &bone = ragdoll.bones[body];
