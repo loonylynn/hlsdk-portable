@@ -867,13 +867,15 @@ namespace
 			{
 				if( body1.GetUserData() == body2.GetUserData() )
 					return;
-				QueueSeparationContactForBody( body1, body2, manifold.mWorldSpaceNormal );
-				QueueSeparationContactForBody( body2, body1, -manifold.mWorldSpaceNormal );
+				// Jolt's normal moves body 2 out of body 1. Invert it for
+				// body 1, and keep it for body 2, so both records point outward.
+				QueueSeparationContactForBody( body1, body2, -manifold.mWorldSpaceNormal );
+				QueueSeparationContactForBody( body2, body1, manifold.mWorldSpaceNormal );
 			}
 			else if( body1IsRagdoll )
-				QueueSeparationContactForBody( body1, body2, manifold.mWorldSpaceNormal );
+				QueueSeparationContactForBody( body1, body2, -manifold.mWorldSpaceNormal );
 			else if( body2IsRagdoll )
-				QueueSeparationContactForBody( body2, body1, -manifold.mWorldSpaceNormal );
+				QueueSeparationContactForBody( body2, body1, manifold.mWorldSpaceNormal );
 		}
 
 		static bool IsContactDiagnosticMoreSevere(
