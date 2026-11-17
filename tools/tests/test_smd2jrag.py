@@ -232,6 +232,39 @@ class SMDToJRAGTests(unittest.TestCase):
         self.assertEqual(bodies[1].name, "Bip01 L Leg")
         self.assertEqual(bodies[1].parent_index, 0)
 
+    def test_render_writes_explicit_collision_pair_allowlist(self):
+        smd = smd2jrag.parse_smd(self.smd)
+        qci = smd2jrag.parse_qci(self.qci)
+        local = [
+            (-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1),
+            (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1),
+        ]
+        smd.vertices[1] = [(-point[1] + 2, point[0], point[2]) for point in local]
+        bodies = smd2jrag.build_bodies(smd, qci)
+        self.assertEqual(len(bodies), 2)
+
+        rendered = smd2jrag.render_jrag(
+            qci, bodies, collision_rules=True, collision_pairs=((1, 0),))
+        self.assertIn("collision_rules 1\ncollision_pair 0 1", rendered)
+
+    def test_render_rejects_invalid_collision_pair_definitions(self):
+        smd = smd2jrag.parse_smd(self.smd)
+        qci = smd2jrag.parse_qci(self.qci)
+        local = [
+            (-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1),
+            (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1),
+        ]
+        smd.vertices[1] = [(-point[1] + 2, point[0], point[2]) for point in local]
+        bodies = smd2jrag.build_bodies(smd, qci)
+        with self.assertRaisesRegex(ValueError, "distinct valid body indices"):
+            smd2jrag.render_jrag(qci, bodies, collision_pairs=((0, 0),))
+        with self.assertRaisesRegex(ValueError, "duplicate collision pair"):
+            smd2jrag.render_jrag(qci, bodies, collision_pairs=((0, 1), (1, 0)))
+        with self.assertRaisesRegex(ValueError, "cannot be combined"):
+            smd2jrag.render_jrag(
+                qci, bodies, self_collisions=False,
+                collision_rules=True, collision_pairs=((0, 1),))
+
     def test_qc_follows_nested_qci_includes_and_resolves_smd_relative_to_qci(self):
         model_dir = self.root / "model"
         nested_dir = model_dir / "physics" / "nested"
