@@ -3991,10 +3991,15 @@ namespace
 				const BodyID parentID = ragdoll.physicsRagdoll->GetBodyID( parent );
 				const BodyID childID = ragdoll.physicsRagdoll->GetBodyID( body );
 				const RVec3 parentPositionR = bodyInterface.GetPosition( parentID );
+				const RVec3 childPositionR = bodyInterface.GetPosition( childID );
 				const Vec3 parentPosition(
 					float( parentPositionR.GetX() ),
 					float( parentPositionR.GetY() ),
 					float( parentPositionR.GetZ() ) );
+				const Vec3 childPosition(
+					float( childPositionR.GetX() ),
+					float( childPositionR.GetY() ),
+					float( childPositionR.GetZ() ) );
 				const Quat parentRotation = bodyInterface.GetRotation( parentID ).Normalized();
 				const Quat childRotation = bodyInterface.GetRotation( childID ).Normalized();
 				const Vec3 targetAnchor =
