@@ -1264,8 +1264,10 @@ namespace
 
 	static bool NPCPhysics_StartRagdollFade( edict_t *entity, int serialNumber )
 	{
+		const float fadeEnabled =
+			NPCPhysics_GetCvar( "sv_npc_vphysics_fade_on_retire", 1.0f );
 		if( !entity || entity->free || entity->serialnumber != serialNumber ||
-			NPCPhysics_GetCvar( "sv_npc_vphysics_fade_on_retire", 1.0f ) < 0.5f )
+			!std::isfinite( fadeEnabled ) || fadeEnabled < 0.5f )
 			return false;
 
 		float duration = NPCPhysics_GetCvar( "sv_npc_vphysics_fade_time", 2.0f );
