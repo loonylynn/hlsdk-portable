@@ -144,6 +144,35 @@ The files are loaded from the engine's active game search paths. Editing a
 `.jrag` file does not require rebuilding the SDK; restart the map/game so the
 runtime cache is rebuilt. A map reset also discards the cached definitions.
 
+## Transition persistence
+
+A live articulated corpse can cross a GoldSrc level transition without losing
+its current pose or momentum. `CBaseMonster::Save` refreshes a transferable
+snapshot while the Jolt bodies are still active, and the standard monster save
+fields serialize it with the carrier entity.
+
+The snapshot stores each studio bone's position relative to the GoldSrc carrier
+origin and a normalized quaternion, plus each physical body's linear and angular
+velocity. Capture is staged in temporary buffers: all positions, quaternion
+components, and velocities must be finite, and every quaternion must have a
+usable length, before the arrays are copied into the entity and the version/count
+fields mark the snapshot valid. Saved velocities are clamped to the runtime
+linear and angular limits.
+
+On restore, the runtime checks the snapshot version, bone/body counts, finite
+values, and quaternion lengths before rebuilding the articulated bodies. The
+saved carrier-relative offsets follow the origin rebasing performed by the
+GoldSrc landmark transition. Velocities are clamped again before being applied.
+A successfully restored snapshot is consumed and cleared; a failed setup leaves
+the snapshot available for another restore attempt. A gibbed, hidden, or retired
+corpse has its transferable state cleared so it cannot reappear at a later
+transition.
+
+This preserves the authored studio pose and per-body motion across the transition;
+it does not serialize Jolt's internal solver caches or constraint warm-start
+state. The rebuilt ragdoll therefore resumes from the saved transforms and
+velocities rather than continuing the exact previous solver state.
+
 ## Pose replication
 
 Jolt simulation remains fixed-step at 120 Hz. Network pose snapshots are sent at
