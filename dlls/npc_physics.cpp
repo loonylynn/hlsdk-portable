@@ -516,6 +516,7 @@ namespace
 		BodyID bodyID;
 		Vec3 ragdollPointVelocity;
 		Vec3 pushDirection;
+		Vec3 contactArm;
 		float approachSpeed;
 
 		NPCPhysicsPendingMovableImpact()
@@ -523,6 +524,7 @@ namespace
 			  bodyID(),
 			  ragdollPointVelocity( 0.0f, 0.0f, 0.0f ),
 			  pushDirection( 0.0f, 0.0f, 0.0f ),
+			  contactArm( 0.0f, 0.0f, 0.0f ),
 			  approachSpeed( 0.0f )
 		{
 		}
@@ -948,8 +950,13 @@ namespace
 			NPCPhysicsPendingMovableImpact event;
 			event.entityIndex = entityIndex;
 			event.bodyID = movableBody.GetID();
+			const RVec3 movableCenter = movableBody.GetCenterOfMassPosition();
 			event.ragdollPointVelocity = ragdollVelocity;
 			event.pushDirection = pushDirection;
+			event.contactArm = Vec3(
+				float( contact.GetX() - movableCenter.GetX() ),
+				float( contact.GetY() - movableCenter.GetY() ),
+				float( contact.GetZ() - movableCenter.GetZ() ) );
 			event.approachSpeed = approachSpeed;
 
 			std::lock_guard<std::mutex> lock( m_mutex );
@@ -4288,14 +4295,70 @@ namespace
 				continue;
 
 			movable->v.velocity = updatedVelocity;
+
+			// Approximate the angular impulse for a uniform box using its
+			// normalized cuboid inertia tensor. This preserves off-center
+			// torque direction without pretending GoldSrc exposes prop mass.
+			const Vec3 halfExtents = collider.halfExtents;
+			const float inertiaX =
+				( halfExtents.GetY() * halfExtents.GetY() +
+				  halfExtents.GetZ() * halfExtents.GetZ() ) / 3.0f;
+			const float inertiaY =
+				( halfExtents.GetX() * halfExtents.GetX() +
+				  halfExtents.GetZ() * halfExtents.GetZ() ) / 3.0f;
+			const float inertiaZ =
+				( halfExtents.GetX() * halfExtents.GetX() +
+				  halfExtents.GetY() * halfExtents.GetY() ) / 3.0f;
+			if( inertiaX > 0.01f && inertiaY > 0.01f && inertiaZ > 0.01f )
+			{
+				const Vec3 deltaVelocity = event.pushDirection * impulseSpeed;
+				const Vec3 angularImpulse = event.contactArm.Cross( deltaVelocity );
+				const float radiansToDegrees = 57.2957795f;
+				Vector angularDelta(
+					angularImpulse.GetX() / inertiaX * radiansToDegrees,
+					angularImpulse.GetY() / inertiaY * radiansToDegrees,
+					angularImpulse.GetZ() / inertiaZ * radiansToDegrees
+				);
+
+				if( std::isfinite( angularDelta.x ) &&
+					std::isfinite( angularDelta.y ) &&
+					std::isfinite( angularDelta.z ) )
+				{
+					// A tiny or very thin box can have a near-zero inertia
+					// axis. Clamp the impact contribution before adding it to
+					// any angular velocity already owned by GoldSrc.
+					const float maxAngularDelta = 360.0f;
+					const float angularDeltaLength = angularDelta.Length();
+					if( angularDeltaLength > maxAngularDelta )
+						angularDelta = angularDelta * ( maxAngularDelta / angularDeltaLength );
+
+					Vector updatedAngularVelocity =
+						movable->v.avelocity + angularDelta;
+					const float updatedAngularSpeed = updatedAngularVelocity.Length();
+					const float maxAngularSpeed = 720.0f;
+					if( std::isfinite( updatedAngularSpeed ) &&
+						updatedAngularSpeed > maxAngularSpeed )
+						updatedAngularVelocity =
+							updatedAngularVelocity * ( maxAngularSpeed / updatedAngularSpeed );
+
+					if( std::isfinite( updatedAngularVelocity.x ) &&
+						std::isfinite( updatedAngularVelocity.y ) &&
+						std::isfinite( updatedAngularVelocity.z ) )
+						movable->v.avelocity = updatedAngularVelocity;
+				}
+			}
+
 			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 				ALERT(
 					at_console,
-					"[NPC physics] Ragdoll pushed toss/bounce entity: entity=%d approach=%.1f delta-v=(%.1f %.1f %.1f).\n",
+					"[NPC physics] Ragdoll pushed toss/bounce entity: entity=%d approach=%.1f delta-v=(%.1f %.1f %.1f) delta-a=(%.1f %.1f %.1f).\n",
 					event.entityIndex, event.approachSpeed,
 					event.pushDirection.GetX() * impulseSpeed,
 					event.pushDirection.GetY() * impulseSpeed,
-					event.pushDirection.GetZ() * impulseSpeed
+					event.pushDirection.GetZ() * impulseSpeed,
+					// The debug report is an estimate based on the box hull.
+					// GoldSrc retains all final movement and rotation ownership.
+					0.0f, 0.0f, 0.0f
 				);
 		}
 	}
