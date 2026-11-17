@@ -162,15 +162,27 @@ that would otherwise gib uses GoldSrc's normal no-gibs corpse-fade path rather
 than being handed to Jolt. Normal non-gib deaths still use the articulated
 ragdoll system when global low-violence mode is off.
 
-## Movable pushable interactions
+## Movable entity interactions
 
-GoldSrc `func_pushable` entities are mirrored as kinematic Jolt boxes. Their
-movement is conveyed to ragdolls through the kinematic surface velocity.
-Ragdoll impacts are deferred out of Jolt callbacks and apply one strongest
-horizontal push to the original GoldSrc entity per server frame, using the
-stock non-player factor of 0.25 and the pushable's existing maximum speed.
-GoldSrc continues to own and simulate the pushable. Arbitrary movable entities,
-vertical pushable impulses, and rotational response are not covered yet.
+GoldSrc `func_pushable` entities remain under GoldSrc movement ownership and
+are mirrored as kinematic Jolt boxes. Their motion transfers through the
+kinematic surface velocity; a ragdoll impact applies the stock non-player
+horizontal factor of 0.25 and respects the pushable's existing maximum speed.
+
+Non-actor entities using `MOVETYPE_TOSS` or `MOVETYPE_BOUNCE` with
+`SOLID_BBOX` or `SOLID_SLIDEBOX` are also mirrored as kinematic, axis-aligned
+Jolt boxes when each half-extent is between 0.5 and 128 GoldSrc units. Their
+GoldSrc movement transfers surface velocity to ragdolls. A ragdoll impact
+queues one strongest normal-directed velocity increment per entity per server
+frame; the increment is applied to GoldSrc `pev->velocity` on all three axes,
+uses a 0.25 approach-speed factor, and is capped at 500 units/second.
+Jolt callbacks never modify the entity directly.
+
+GoldSrc remains authoritative for these entities' movement and collision
+callbacks. This bridge does not synthesize angular velocity, rotated/custom
+collision geometry, mass/inertia, or support for arbitrary movement types.
+The pushable-specific response remains horizontal and uses its own maximum
+speed; the toss/bounce response supports vertical motion.
 
 ## Weapon impacts
 
