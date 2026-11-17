@@ -237,14 +237,34 @@ sv_npc_vphysics_max_ragdolls 8
 sv_npc_vphysics_max_important_ragdolls 2
 ```
 
-These server cvars can be changed while playing. Lowering a limit immediately
-retires the oldest corpses in that pool on the next physics end-frame. A value
-of zero removes all corpses in that pool; a negative value disables that
-pool's limit. Retirement hides the GoldSrc carrier, releases its Jolt
-articulated body group, and schedules the entity for normal removal. The
-current implementation removes corpses immediately rather than fading them
-out, and it does not yet implement Source's low-violence or visibility-based
-retirement rules.
+These server cvars can be changed while playing. Lowering a limit enforces
+it on the next physics end-frame. A value of zero retires all corpses in that
+pool; a negative value disables that pool's limit.
+
+When a corpse must be retired, the runtime first prefers the oldest corpse
+outside the player's PVS or view cone, using GoldSrc's client-in-PVS query and
+the player's inherited `FInViewCone` test. If those visibility callbacks are
+unavailable, or every candidate is visible, it falls back to the oldest corpse
+in the pool.
+
+By default, retirement releases the articulated Jolt body group immediately
+and leaves the frozen GoldSrc carrier visible for a two-second alpha fade.
+This render-only fade is updated server-side and the carrier is removed when
+the fade completes. The transferable ragdoll snapshot is cleared at retirement
+so a fading corpse cannot be restored after a level transition.
+
+Fade behavior is configurable:
+
+```text
+sv_npc_vphysics_fade_on_retire 1
+sv_npc_vphysics_fade_time 2
+```
+
+Set `sv_npc_vphysics_fade_on_retire 0` to remove retired carriers immediately.
+A non-positive fade time also selects immediate removal. Fade time is clamped
+to 30 seconds. This reproduces Source's visibility-aware LRU selection and
+server-side fade intent, but not its client-side rendering implementation or
+low-violence handling.
 
 ## Ragdoll-to-ragdoll impacts
 
