@@ -4498,34 +4498,26 @@ namespace
 				continue;
 			}
 
-			// Hornets are direct-damage projectiles. Their damage callback is
-			// still invoked normally, while this Source-style impact trace
-			// supplies the localized Jolt impulse and attached blood mark.
-			const float projectileDamage = (std::max)( 1.0f, projectile->v.dmg );
-			const float impulseMagnitude = (std::min)(
-				projectileDamage * 75.0f * 4.0f, 3000.0f );
-			if( !NPCPhysics_TraceAndApplyImpact(
+			// Query first, then let the hornet's own touch callback decide
+			// whether this is a real hit (TrackTouch may turn it away based on
+			// relationship/owner rules). Only an accepted DieTouch receives
+			// the localized Jolt impulse and attached mark.
+			if( !NPCPhysics_TraceRagdollImpact(
 				startArray, endArray, blockingTrace.flFraction,
-				impulseMagnitude, &hitFraction, hitPosition, &hitEntity ) )
+				&hitFraction, hitPosition, &hitEntity ) )
 				continue;
 
-			CBaseEntity *projectileObject = CBaseEntity::Instance( projectile );
-			CBaseEntity *targetObject = CBaseEntity::Instance( hitEntity );
-			if( !projectileObject || !targetObject )
-				continue;
-
-			const Vector impactOrigin(
-				hitPosition[0], hitPosition[1], hitPosition[2] );
-			UTIL_SetOrigin( &projectile->v, impactOrigin );
-			sweep.lastOrigin = impactOrigin;
-			projectileObject->Touch( targetObject );
-
-			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			if( NPCPhysics_TriggerHornetProjectileImpact(
+				projectile, hitEntity, startArray, endArray,
+				blockingTrace.flFraction ) &&
+				NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			{
 				ALERT(
 					at_console,
-					"[NPC projectile] Direct projectile intercepted by ragdoll: projectile=%d target=%d fraction=%.3f impulse=%.1f point=(%.1f %.1f %.1f).\n",
+					"[NPC projectile] Hornet hit ragdoll: projectile=%d target=%d fraction=%.3f point=(%.1f %.1f %.1f).\n",
 					entityIndex, ENTINDEX( hitEntity ), hitFraction,
-					impulseMagnitude, hitPosition[0], hitPosition[1], hitPosition[2] );
+					hitPosition[0], hitPosition[1], hitPosition[2] );
+			}
 		}
 
 		for( size_t i = g_projectileSweeps.size(); i > 0; --i )
