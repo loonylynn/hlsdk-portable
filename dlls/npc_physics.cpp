@@ -1308,8 +1308,10 @@ namespace
 				continue;
 			}
 
-			const float fraction = NPCPhysics_ClampUnit(
-				( gpGlobals->time - retiring.startTime ) / retiring.duration );
+			const float elapsed = gpGlobals->time - retiring.startTime;
+			const float fraction = retiring.duration > 0.0f
+				? (std::max)( 0.0f, (std::min)( 1.0f, elapsed / retiring.duration ) )
+				: 1.0f;
 			entity->v.renderamt = 255.0f * ( 1.0f - fraction );
 			if( fraction >= 1.0f )
 			{
