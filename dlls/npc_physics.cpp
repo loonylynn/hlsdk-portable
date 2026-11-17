@@ -4309,6 +4309,7 @@ namespace
 			const float inertiaZ =
 				( halfExtents.GetX() * halfExtents.GetX() +
 				  halfExtents.GetY() * halfExtents.GetY() ) / 3.0f;
+			Vector appliedAngularDelta( 0.0f, 0.0f, 0.0f );
 			if( inertiaX > 0.01f && inertiaY > 0.01f && inertiaZ > 0.01f )
 			{
 				const Vec3 deltaVelocity = event.pushDirection * impulseSpeed;
@@ -4344,7 +4345,10 @@ namespace
 					if( std::isfinite( updatedAngularVelocity.x ) &&
 						std::isfinite( updatedAngularVelocity.y ) &&
 						std::isfinite( updatedAngularVelocity.z ) )
+					{
+						appliedAngularDelta = updatedAngularVelocity - movable->v.avelocity;
 						movable->v.avelocity = updatedAngularVelocity;
+					}
 				}
 			}
 
@@ -4356,9 +4360,9 @@ namespace
 					event.pushDirection.GetX() * impulseSpeed,
 					event.pushDirection.GetY() * impulseSpeed,
 					event.pushDirection.GetZ() * impulseSpeed,
-					// The debug report is an estimate based on the box hull.
-					// GoldSrc retains all final movement and rotation ownership.
-					0.0f, 0.0f, 0.0f
+					appliedAngularDelta.x,
+					appliedAngularDelta.y,
+					appliedAngularDelta.z
 				);
 		}
 	}
