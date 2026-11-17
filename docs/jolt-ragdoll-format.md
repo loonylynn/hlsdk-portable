@@ -263,7 +263,7 @@ their independent 2000 inch/sec maximum linear velocity. This removes the old
 
 Server tuning cvars (default 1.0):
 
-- `sv_npc_vphysics_bullet_scale`: scales the Source-derived hitscan bullet impulse.
+- `sv_npc_vphysics_bullet_scale`: scales Source-derived hitscan bullet and hornet fallback impulses.
 - `sv_npc_vphysics_crowbar_scale`: scales the Source-style crowbar impulse.
 - `sv_npc_vphysics_crossbow_scale`: scales the Source `XBowBolt` impulse.
 - `sv_npc_vphysics_blast_scale`: scales the Source-style explosive impulse.
