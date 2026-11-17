@@ -81,6 +81,11 @@ namespace
 	// before invoking Source-style articulated separation recovery.
 	static constexpr float RAGDOLL_SEPARATION_PERSISTENCE = 0.20f;
 	static constexpr float RAGDOLL_JOINT_SEPARATION_DISTANCE = 1.0f;
+	static constexpr int RAGDOLL_FRICTION_NONE = 0;
+	static constexpr int RAGDOLL_FRICTION_IN = 1;
+	static constexpr int RAGDOLL_FRICTION_HOLD = 2;
+	static constexpr int RAGDOLL_FRICTION_OUT = 3;
+	static constexpr int RAGDOLL_FRICTION_OFF = 4;
 	static constexpr float RAGDOLL_ACTIVE_POSE_INTERVAL = 0.05f;
 	static constexpr float RAGDOLL_SLEEPING_POSE_INTERVAL = 0.20f;
 	static constexpr int RAGDOLL_NETWORK_BODIES_PER_CHUNK = 10;
@@ -184,6 +189,11 @@ namespace
 		float friction;
 		float restitution;
 		bool selfCollisions;
+		float animatedFrictionMinimum;
+		float animatedFrictionMaximum;
+		float animatedFrictionTimeIn;
+		float animatedFrictionTimeHold;
+		float animatedFrictionTimeOut;
 		std::vector<NPCPhysicsRagdollBodyDefinition> bodies;
 	};
 
@@ -263,7 +273,11 @@ namespace
 		int rootElement;
 		float nextPoseTime;
 		float nextCollisionDamageTime;
-		Vec3 lastSleepOrigin;
+		float animatedFrictionCurrent;
+		float animatedFrictionModTime;
+		float animatedFrictionEndTime;
+		int animatedFrictionState;
+		float lastSleepOrigin;
 		float lastOriginChangeTime;
 		std::vector<float> nextContactDebugTimes;
 		float nextPlayerPushDebugTime;
@@ -296,6 +310,10 @@ namespace
 			  rootElement( -1 ),
 			  nextPoseTime( 0.0f ),
 			  nextCollisionDamageTime( 0.0f ),
+			  animatedFrictionCurrent( 0.0f ),
+			  animatedFrictionModTime( 0.0f ),
+			  animatedFrictionEndTime( 0.0f ),
+			  animatedFrictionState( RAGDOLL_FRICTION_NONE ),
 			  lastSleepOrigin( 0.0f, 0.0f, 0.0f ),
 			  lastOriginChangeTime( 0.0f ),
 			  nextPlayerPushDebugTime( 0.0f ),
@@ -1814,6 +1832,11 @@ namespace
 
 		std::istringstream input( std::string( contents, static_cast<size_t>( length ) ) );
 		definition.selfCollisions = true; // Source's default is all non-parent/child pairs enabled.
+		definition.animatedFrictionMinimum = 0.0f;
+		definition.animatedFrictionMaximum = 0.0f;
+		definition.animatedFrictionTimeIn = 0.0f;
+		definition.animatedFrictionTimeHold = 0.0f;
+		definition.animatedFrictionTimeOut = 0.0f;
 		std::istringstream line;
 		std::string storage;
 		std::string command;
@@ -1877,6 +1900,8 @@ namespace
 		}
 
 		int bodyCount = 0;
+		bool sawSelfCollisions = false;
+		bool sawAnimatedFriction = false;
 		if( !NPCPhysics_NextJragLine( input, line, storage ) ||
 			!( line >> command ) )
 		{
@@ -1884,29 +1909,64 @@ namespace
 			return false;
 		}
 
-		// Optional Source-style model rule. Omission preserves the original
-		// v1 behavior: collisions enabled except between constrained neighbors.
-		if( command == "self_collisions" )
+		// Optional model-level Source VPhysics properties. Keep them before
+		// body_count so old v1 sidecars remain byte-for-byte compatible.
+		while( command != "body_count" )
 		{
-			int enabled = -1;
-			if( !( line >> enabled ) ||
-				!NPCPhysics_JragLineFinished( line ) ||
-				( enabled != 0 && enabled != 1 ) )
+			if( command == "self_collisions" )
 			{
-				error = "self_collisions must be 0 or 1";
+				int enabled = -1;
+				if( sawSelfCollisions ||
+					!( line >> enabled ) ||
+					!NPCPhysics_JragLineFinished( line ) ||
+					( enabled != 0 && enabled != 1 ) )
+				{
+					error = "self_collisions must appear once and be 0 or 1";
+					return false;
+				}
+				definition.selfCollisions = enabled != 0;
+				sawSelfCollisions = true;
+			}
+			else if( command == "animated_friction" )
+			{
+				if( sawAnimatedFriction ||
+					!( line >> definition.animatedFrictionMinimum
+						>> definition.animatedFrictionMaximum
+						>> definition.animatedFrictionTimeIn
+						>> definition.animatedFrictionTimeHold
+						>> definition.animatedFrictionTimeOut ) ||
+					!NPCPhysics_JragLineFinished( line ) ||
+					!std::isfinite( definition.animatedFrictionMinimum ) ||
+					!std::isfinite( definition.animatedFrictionMaximum ) ||
+					!std::isfinite( definition.animatedFrictionTimeIn ) ||
+					!std::isfinite( definition.animatedFrictionTimeHold ) ||
+					!std::isfinite( definition.animatedFrictionTimeOut ) ||
+					definition.animatedFrictionMinimum < 0.0f ||
+					definition.animatedFrictionMaximum < definition.animatedFrictionMinimum ||
+					definition.animatedFrictionTimeIn < 0.0f ||
+					definition.animatedFrictionTimeHold < 0.0f ||
+					definition.animatedFrictionTimeOut < 0.0f )
+				{
+					error = "animated_friction requires min/max torque and non-negative in/hold/out times";
+					return false;
+				}
+				sawAnimatedFriction = true;
+			}
+			else
+			{
+				error = "unknown model-level ragdoll property";
 				return false;
 			}
-			definition.selfCollisions = enabled != 0;
+
 			if( !NPCPhysics_NextJragLine( input, line, storage ) ||
 				!( line >> command ) )
 			{
-				error = "expected body_count after self_collisions";
+				error = "expected body_count after model-level ragdoll properties";
 				return false;
 			}
 		}
 
-		if( command != "body_count" ||
-			!( line >> bodyCount ) ||
+		if( !( line >> bodyCount ) ||
 			!NPCPhysics_JragLineFinished( line ) ||
 			bodyCount < 1 ||
 			bodyCount > RAGDOLL_DEFINITION_MAX_BODIES )
@@ -2195,6 +2255,10 @@ namespace
 		ragdoll.networkID = NPCPhysics_AllocateRagdollID();
 		ragdoll.studioBoneCount = header->numbones;
 		ragdoll.nextPoseTime = 0.0f;
+		ragdoll.animatedFrictionCurrent = physicsDefinition->animatedFrictionMinimum;
+		ragdoll.animatedFrictionModTime = 0.0f;
+		ragdoll.animatedFrictionEndTime = 0.0f;
+		ragdoll.animatedFrictionState = RAGDOLL_FRICTION_NONE;
 		ragdoll.lastSleepOrigin = Vec3(
 			ent->v.origin[0], ent->v.origin[1], ent->v.origin[2] );
 		ragdoll.lastOriginChangeTime = gpGlobals ? gpGlobals->time : 0.0f;
@@ -2744,6 +2808,136 @@ namespace
 		return Vec3(
 			float( position.GetX() ), float( position.GetY() ), float( position.GetZ() )
 		) - rotation * ragdoll.bones[ragdoll.rootElement].localShapeCenter;
+	}
+
+	static float NPCPhysics_ClampUnit( float value )
+	{
+		return std::max( 0.0f, std::min( 1.0f, value ) );
+	}
+
+	static void NPCPhysics_UpdateRagdollAnimatedFriction(
+		NPCPhysicsRagdoll &ragdoll, BodyInterface &bodyInterface )
+	{
+		if( !gpGlobals || !ragdoll.physicsRagdoll.GetPtr() ||
+			ragdoll.bodyCount <= 1 )
+			return;
+
+		const NPCPhysicsRagdollDefinition *definition =
+			NPCPhysics_GetRagdollDefinition( ragdoll.entity, false );
+		if( !definition )
+			return;
+
+		const float now = gpGlobals->time;
+		const float minimum = definition->animatedFrictionMinimum;
+		const float maximum = definition->animatedFrictionMaximum;
+
+		switch( ragdoll.animatedFrictionState )
+		{
+		case RAGDOLL_FRICTION_NONE:
+			if( minimum == 0.0f && maximum == 0.0f )
+			{
+				ragdoll.animatedFrictionCurrent = 0.0f;
+				ragdoll.animatedFrictionState = RAGDOLL_FRICTION_OFF;
+			}
+			else
+			{
+				ragdoll.animatedFrictionCurrent = minimum;
+				ragdoll.animatedFrictionModTime = definition->animatedFrictionTimeIn;
+				ragdoll.animatedFrictionEndTime = now + ragdoll.animatedFrictionModTime;
+				ragdoll.animatedFrictionState = RAGDOLL_FRICTION_IN;
+				if( ragdoll.animatedFrictionModTime <= 0.0f )
+				{
+					ragdoll.animatedFrictionCurrent = maximum;
+					ragdoll.animatedFrictionModTime = definition->animatedFrictionTimeHold;
+					ragdoll.animatedFrictionEndTime = now + ragdoll.animatedFrictionModTime;
+					ragdoll.animatedFrictionState = RAGDOLL_FRICTION_HOLD;
+				}
+			}
+			break;
+
+		case RAGDOLL_FRICTION_IN:
+		{
+			const float remaining = std::max( 0.0f, ragdoll.animatedFrictionEndTime - now );
+			const float duration = ragdoll.animatedFrictionModTime;
+			const float fraction = duration > 0.0f
+				? NPCPhysics_ClampUnit( 1.0f - remaining / duration ) : 1.0f;
+			ragdoll.animatedFrictionCurrent =
+				minimum + ( maximum - minimum ) * fraction;
+			if( now >= ragdoll.animatedFrictionEndTime )
+			{
+				ragdoll.animatedFrictionCurrent = maximum;
+				ragdoll.animatedFrictionModTime = definition->animatedFrictionTimeHold;
+				ragdoll.animatedFrictionEndTime = now + ragdoll.animatedFrictionModTime;
+				ragdoll.animatedFrictionState = RAGDOLL_FRICTION_HOLD;
+			}
+			break;
+		}
+
+		case RAGDOLL_FRICTION_HOLD:
+			tragdoll.animatedFrictionCurrent = maximum;
+			if( now >= ragdoll.animatedFrictionEndTime )
+			{
+				ragdoll.animatedFrictionModTime = definition->animatedFrictionTimeOut;
+				ragdoll.animatedFrictionEndTime = now + ragdoll.animatedFrictionModTime;
+				ragdoll.animatedFrictionState = RAGDOLL_FRICTION_OUT;
+				if( ragdoll.animatedFrictionModTime <= 0.0f )
+				{
+					ragdoll.animatedFrictionCurrent = minimum;
+					ragdoll.animatedFrictionState = RAGDOLL_FRICTION_OFF;
+				}
+			}
+			break;
+
+		case RAGDOLL_FRICTION_OUT:
+		{
+			const float remaining = std::max( 0.0f, ragdoll.animatedFrictionEndTime - now );
+			const float duration = ragdoll.animatedFrictionModTime;
+			const float fraction = duration > 0.0f
+				? NPCPhysics_ClampUnit( remaining / duration ) : 0.0f;
+			ragdoll.animatedFrictionCurrent =
+				minimum + ( maximum - minimum ) * fraction;
+			if( now >= ragdoll.animatedFrictionEndTime )
+			{
+				ragdoll.animatedFrictionCurrent = minimum;
+				ragdoll.animatedFrictionState = RAGDOLL_FRICTION_OFF;
+			}
+			break;
+		}
+
+		case RAGDOLL_FRICTION_OFF:
+		default:
+			break;
+		}
+
+		// Source applies the same animated angular friction to every connected
+		// ragdoll joint. Jolt exposes three independent rotational friction axes.
+		const RagdollSettings *settings = ragdoll.physicsRagdoll->GetRagdollSettings();
+		if( !settings )
+			return;
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+		{
+			const int constraintIndex = settings->GetConstraintIndexForBodyIndex( body );
+			if( constraintIndex < 0 )
+				continue;
+
+			SixDOFConstraint *joint = static_cast<SixDOFConstraint *>(
+				ragdoll.physicsRagdoll->GetConstraint( constraintIndex ) );
+			if( !joint )
+				continue;
+			joint->SetMaxFriction( SixDOFConstraintSettings::RotationX, ragdoll.animatedFrictionCurrent );
+			joint->SetMaxFriction( SixDOFConstraintSettings::RotationY, ragdoll.animatedFrictionCurrent );
+			joint->SetMaxFriction( SixDOFConstraintSettings::RotationZ, ragdoll.animatedFrictionCurrent );
+		}
+
+		if( ragdoll.animatedFrictionState == RAGDOLL_FRICTION_IN ||
+			ragdoll.animatedFrictionState == RAGDOLL_FRICTION_HOLD ||
+			ragdoll.animatedFrictionState == RAGDOLL_FRICTION_OUT )
+		{
+			// Source wakes the ragdoll while the animated motor-friction envelope
+			// is active; activate the articulated set together, not one body.
+			for( int body = 0; body < ragdoll.bodyCount; ++body )
+				bodyInterface.ActivateBody( ragdoll.physicsRagdoll->GetBodyID( body ) );
+		}
 	}
 
 	static void NPCPhysics_UpdateRagdollSleep(
@@ -3674,6 +3868,7 @@ namespace
 			}
 
 			NPCPhysics_UpdateRagdollSeparation( ragdoll, bodyInterface );
+			NPCPhysics_UpdateRagdollAnimatedFriction( ragdoll, bodyInterface );
 			NPCPhysics_UpdateRagdollSleep( ragdoll, bodyInterface );
 
 			if( gpGlobals->time >= ragdoll.nextPoseTime )
