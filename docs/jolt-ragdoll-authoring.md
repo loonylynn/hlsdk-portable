@@ -220,6 +220,28 @@ geometry and arbitrary movement types remain unsupported. The pushable-specific
 response retains its horizontal speed limit and transfers a bounded vertical
 component, clamped to the pushable's configured maximum speed.
 
+## Projectile and explosion interactions
+
+Projectile collision support is runtime-side and requires no additional
+`.jrag` fields. The server keeps per-edict sweep history with serial-number
+checks, traces the segment through GoldSrc first, and then queries articulated
+Jolt ragdoll bodies only up to the GoldSrc obstruction fraction.
+
+Direct swept interception currently covers crossbow bolts, RPG rockets, standard
+contact grenades using `CGrenade::ExplodeTouch`, and hornets. Crossbow single-
+player hits apply the existing crossbow impulse and attached impact mark;
+multiplayer crossbow bolts retain their delayed explosion behavior. RPG rockets
+and contact grenades use their existing virtual touch/explode callbacks, so
+normal radius damage remains the source of blast force. Hornets run their native
+touch rules before applying a localized impact, preserving owner and relationship
+filtering.
+
+Timed hand grenades, satchels, and other radius-damage explosions use the
+existing blast impulse path. A target-specific Jolt trace now projects an
+attached mark onto the exact visible ragdoll being processed, without applying
+a duplicate impulse. This does not automatically intercept every custom
+projectile or arbitrary touch callback; those still require explicit integration.
+
 When a child joint remains more than one GoldSrc unit away from its parent's
 expected anchor for 0.2 seconds, the bridge ray-checks the gap against world and
 brush collision. If geometry blocks the connection, it restores the child
