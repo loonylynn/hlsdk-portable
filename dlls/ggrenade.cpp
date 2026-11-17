@@ -27,6 +27,8 @@
 #include "soundent.h"
 
 #ifndef CLIENT_DLL
+#include <cmath>
+#include <cstring>
 static edict_t *g_npcPhysicsExplosiveProjectile = NULL;
 static edict_t *g_npcPhysicsExplosiveTarget = NULL;
 static TraceResult g_npcPhysicsExplosiveTrace;
@@ -216,8 +218,6 @@ int NPCPhysics_IsExplosiveProjectile( edict_t *projectile )
 	if( !entity )
 		return FALSE;
 
-	const void (CBaseEntity::*unusedTouch)( CBaseEntity * ) = NULL;
-	(void)unusedTouch;
 	void (CBaseEntity::*explodeTouch)( CBaseEntity * ) =
 		static_cast<void (CBaseEntity::*)( CBaseEntity * )>( &CGrenade::ExplodeTouch );
 	return entity->m_pfnTouch == explodeTouch;
@@ -270,11 +270,11 @@ void CGrenade::ExplodeTouch( CBaseEntity *pOther )
 	if( pOther && g_npcPhysicsExplosiveProjectile == edict() &&
 		g_npcPhysicsExplosiveTarget == pOther->edict() )
 	{
-		const TraceResult tr = g_npcPhysicsExplosiveTrace;
+		TraceResult tr = g_npcPhysicsExplosiveTrace;
 		g_npcPhysicsExplosiveProjectile = NULL;
 		g_npcPhysicsExplosiveTarget = NULL;
 		pev->enemy = pOther->edict();
-		Explode( const_cast<TraceResult *>( &tr ), DMG_BLAST );
+		Explode( &tr, DMG_BLAST );
 		return;
 	}
 #endif
