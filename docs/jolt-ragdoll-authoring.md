@@ -201,10 +201,19 @@ GoldSrc `func_pushable` entities are mirrored as kinematic Jolt box hulls.
 A moving pushable transfers its surface velocity into ragdolls, while a
 ragdoll pushing a pushable generates one deferred horizontal velocity update
 per pushable per server frame. The reverse push uses GoldSrc's stock non-player
-factor of 0.25 and the pushable's existing maximum horizontal speed. GoldSrc
-remains the owner of pushable movement; this is a bounded velocity bridge, not
-a second dynamic simulation. Vertical pushable impulses, angular response, and
-arbitrary movable entities are not included yet.
+factor of 0.25 and the pushable's existing maximum horizontal speed.
+
+Non-actor entities using `MOVETYPE_TOSS` or `MOVETYPE_BOUNCE` with
+`SOLID_BBOX` or `SOLID_SLIDEBOX` are also mirrored when their half-extents
+fall between 0.5 and 128 GoldSrc units. Ragdoll impacts are deferred until
+after Jolt simulation and apply one strongest normal-directed velocity
+increment to the original GoldSrc entity per server frame, on X/Y/Z. The
+increment uses a 0.25 approach-speed factor and is capped at 500 units/second.
+GoldSrc remains the owner of movement and touch callbacks; this is a bounded
+velocity bridge, not a second dynamic simulation. It does not synthesize
+angular velocity, rotated/custom collision geometry, or mass/inertia, and it
+does not include arbitrary movement types. The pushable-specific response
+remains horizontal and respects the pushable's existing maximum speed.
 
 When a child joint remains more than one GoldSrc unit away from its parent's
 expected anchor for 0.2 seconds, the bridge ray-checks the gap against world and
