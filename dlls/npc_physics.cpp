@@ -291,6 +291,7 @@ namespace
 		std::vector<float> nextContactDebugTimes;
 		float nextPlayerPushDebugTime;
 		bool firstPoseSendReported;
+		bool important;
 		::Vector entityOriginOffset;
 		std::vector<RagdollBone> bones;
 		std::vector<float> bodyMasses;
@@ -332,6 +333,7 @@ namespace
 			  lastOriginChangeTime( 0.0f ),
 			  nextPlayerPushDebugTime( 0.0f ),
 			  firstPoseSendReported( false ),
+			  important( false ),
 			  blastDebugBodyID(),
 			  blastDebugBodyIndex( -1 ),
 			  blastDebugBodyStartPosition( 0.0f, 0.0f, 0.0f ),
@@ -867,6 +869,8 @@ namespace
 	static cvar_t g_svNpcVPhysicsPlayerPushMass = { "sv_npc_vphysics_player_push_mass", "350", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsPlayerPushSpeed = { "sv_npc_vphysics_player_push_speed", "50", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsSleepAfterTime = { "sv_npc_vphysics_sleep_after_time", "5.0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsMaxRagdolls = { "sv_npc_vphysics_max_ragdolls", "8", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsMaxImportantRagdolls = { "sv_npc_vphysics_max_important_ragdolls", "2", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
@@ -918,6 +922,16 @@ namespace
 		return ent && !ent->free &&
 			( ent->v.flags & FL_MONSTER ) != 0 &&
 			( ent->v.flags & ( FL_CLIENT | FL_KILLME | FL_DORMANT ) ) == 0;
+	}
+
+	// Half-Life's CLASS_PLAYER_ALLY is the closest equivalent to Source's
+	// important-NPC classification. Keep those corpses in their own LRU pool.
+	static bool NPCPhysics_IsImportantRagdollEntity( edict_t *ent )
+	{
+		if( !ent || ent->free )
+			return false;
+		CBaseMonster *monster = static_cast<CBaseMonster *>( CBaseEntity::Instance( ent ) );
+		return monster && monster->Classify() == CLASS_PLAYER_ALLY;
 	}
 
 	static const NPCPhysicsRagdollDefinition *NPCPhysics_GetRagdollDefinition(
@@ -1083,6 +1097,91 @@ namespace
 		for( size_t i = 0; i < g_ragdolls.size(); ++i )
 			NPCPhysics_DestroyRagdoll( g_ragdolls[i] );
 		g_ragdolls.clear();
+	}
+
+	static int NPCPhysics_GetRagdollLimit( const char *cvarName, float fallback )
+	{
+		float value = NPCPhysics_GetCvar( cvarName, fallback );
+		if( !std::isfinite( value ) )
+			value = fallback;
+		if( value < 0.0f )
+			return -1; // Negative means unlimited.
+		if( value > static_cast<float>( RAGDOLL_MAX_BODIES ) )
+			return static_cast<int>( RAGDOLL_MAX_BODIES );
+		return static_cast<int>( value );
+	}
+
+	// The vector is kept in creation order, matching Source's LRU insertion
+	// policy. Retire the oldest corpse from the selected importance pool.
+	static bool NPCPhysics_RetireOldestRagdoll( bool important )
+	{
+		size_t oldestIndex = g_ragdolls.size();
+		for( size_t i = 0; i < g_ragdolls.size(); ++i )
+		{
+			if( g_ragdolls[i].important == important )
+			{
+				oldestIndex = i;
+				break;
+			}
+		}
+		if( oldestIndex == g_ragdolls.size() )
+			return false;
+
+		NPCPhysicsRagdoll &ragdoll = g_ragdolls[oldestIndex];
+		edict_t *entity = ragdoll.entity;
+		const int entityIndex = entity && !entity->free ? ENTINDEX( entity ) : -1;
+		const int networkID = ragdoll.networkID;
+		const int bodyCount = ragdoll.bodyCount;
+		if( entity && !entity->free && entity->serialnumber == ragdoll.serialNumber )
+		{
+			// Hide and schedule normal GoldSrc entity removal before releasing
+			// the Jolt bodies. This avoids leaving an animated carrier behind.
+			entity->v.effects |= EF_NODRAW;
+			entity->v.solid = SOLID_NOT;
+			entity->v.movetype = MOVETYPE_NONE;
+			entity->v.takedamage = DAMAGE_NO;
+			entity->v.nextthink = -1.0f;
+			CBaseEntity *baseEntity = CBaseEntity::Instance( entity );
+			if( baseEntity )
+				UTIL_Remove( baseEntity );
+		}
+
+		NPCPhysics_DestroyRagdoll( ragdoll );
+		g_ragdolls.erase( g_ragdolls.begin() + oldestIndex );
+		ALERT(
+			at_console,
+			"[NPC physics] LRU retired %s ragdoll: entity=%d id=%d bodies=%d.\\n",
+			important ? "important" : "ordinary",
+			entityIndex, networkID, bodyCount
+		);
+		return true;
+	}
+
+	static int NPCPhysics_CountRagdolls( bool important )
+	{
+		int count = 0;
+		for( size_t i = 0; i < g_ragdolls.size(); ++i )
+			if( g_ragdolls[i].important == important )
+				++count;
+		return count;
+	}
+
+	static void NPCPhysics_EnforceRagdollLimits()
+	{
+		const int ordinaryLimit = NPCPhysics_GetRagdollLimit(
+			"sv_npc_vphysics_max_ragdolls", 8.0f );
+		const int importantLimit = NPCPhysics_GetRagdollLimit(
+			"sv_npc_vphysics_max_important_ragdolls", 2.0f );
+
+		while( ordinaryLimit >= 0 &&
+			NPCPhysics_CountRagdolls( false ) > ordinaryLimit )
+			if( !NPCPhysics_RetireOldestRagdoll( false ) )
+				break;
+
+		while( importantLimit >= 0 &&
+			NPCPhysics_CountRagdolls( true ) > importantLimit )
+			if( !NPCPhysics_RetireOldestRagdoll( true ) )
+				break;
 	}
 
 	static void NPCPhysics_CaptureLivePose( edict_t *ent )
@@ -2320,6 +2419,7 @@ namespace
 		ragdoll.entity = ent;
 		ragdoll.serialNumber = ent->serialnumber;
 		ragdoll.networkID = NPCPhysics_AllocateRagdollID();
+		ragdoll.important = NPCPhysics_IsImportantRagdollEntity( ent );
 		ragdoll.studioBoneCount = header->numbones;
 		ragdoll.nextPoseTime = 0.0f;
 		ragdoll.animatedFrictionMinimum = physicsDefinition->animatedFrictionMinimum;
@@ -2863,6 +2963,7 @@ namespace
 		ent->v.avelocity = g_vecZero;
 
 		g_ragdolls.push_back( ragdoll );
+		NPCPhysics_EnforceRagdollLimits();
 		ALERT(
 			at_console,
 			hasPersistentPose
@@ -3840,6 +3941,7 @@ namespace
 			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f;
 
 		NPCPhysics_RemoveGibbedRagdolls();
+		NPCPhysics_EnforceRagdollLimits();
 		if( g_ragdolls.empty() )
 		{
 			g_npcPhysics.contactListener.Clear();
@@ -4562,6 +4664,8 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushMass );
 	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushSpeed );
 	CVAR_REGISTER( &g_svNpcVPhysicsSleepAfterTime );
+	CVAR_REGISTER( &g_svNpcVPhysicsMaxRagdolls );
+	CVAR_REGISTER( &g_svNpcVPhysicsMaxImportantRagdolls );
 	CVAR_REGISTER( &g_svNpcVPhysicsDebug );
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
