@@ -1,0 +1,53 @@
+$surfaceprop "flesh"
+
+$collisionjoints ragdoll {
+
+	$mass 115.0
+	$inertia 10.00
+	$damping 0.01
+	$rotdamping 1.50
+	$rootbone "bip02"
+
+	$jointconstrain "bip02 r leg" x limit -25.00 20.00
+	$jointconstrain "bip02 r leg" y limit -40.00 20.00
+	$jointconstrain "bip02 r leg" z limit -37.00 63.00
+
+	$jointconstrain "bip02 r leg1" z limit -95.00 4.00
+
+	$jointconstrain "bip02 l leg" x limit -25.00 20.00
+	$jointconstrain "bip02 l leg" y limit -20.00 40.00
+	$jointconstrain "bip02 l leg" z limit -37.00 63.00
+
+	$jointconstrain "bip02 l leg1" z limit -95.00 4.00
+
+	$jointconstrain "bip02 l foot" z limit -15.00 35.00
+
+	$jointconstrain "bip02 spine2" x limit -60.00 60.00
+	$jointconstrain "bip02 spine2" y limit -25.00 25.00
+	$jointconstrain "bip02 spine2" z limit -25.00 30.00
+
+	$jointconstrain "bip02 r arm1" y limit -45.00 64.00
+	$jointconstrain "bip02 r arm1" z limit -73.00 12.00
+
+	$jointconstrain "bip02 r arm2" z limit -120.00 4.00
+
+	$jointconstrain "bip02 l arm1" y limit -67.00 30.00
+	$jointconstrain "bip02 l arm1" z limit -73.00 12.00
+
+	$jointconstrain "bip02 l arm2" z limit -120.00 4.00
+
+	$jointconstrain "bip02 l hand" x limit -60.00 60.00
+	$jointconstrain "bip02 l hand" z limit -57.00 70.00
+
+	$jointrotdamping "bip02 head" 5.00
+	$jointconstrain "bip02 head" x limit -20.00 20.00
+	$jointconstrain "bip02 head" y limit -25.00 25.00
+	$jointconstrain "bip02 head" z limit -13.00 30.00
+
+	$jointconstrain "bip02 r hand" x limit -60.00 60.00
+	$jointconstrain "bip02 r hand" z limit -57.00 70.00
+
+	$jointconstrain "bip02 r foot" z limit -15.00 35.00
+
+}
+$sequence ragdoll 		"ragdoll_pose" 		FPS 30 		activity ACT_DIERAGDOLL 1
