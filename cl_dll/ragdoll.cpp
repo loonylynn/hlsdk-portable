@@ -789,6 +789,29 @@ void Ragdoll_DebugRenderGate( int entityIndex, int ragdollMarker, int hardwareRe
 	entry.renderGateReported = true;
 }
 
+void Ragdoll_ReportAppliedBones( int entityIndex, int appliedBoneCount, int totalStudioBones )
+{
+	if( entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES || appliedBoneCount <= 0 )
+		return;
+
+	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
+	if( !entry.active || entry.ragdollID <= 0 || entry.renderReported )
+		return;
+
+	char message[192];
+	snprintf(
+		message,
+		sizeof( message ),
+		"[NPC ragdoll] Physics bones applied: entity %d, ID %d, bones=%d/%d.\n",
+		entityIndex,
+		entry.ragdollID,
+		appliedBoneCount,
+		totalStudioBones
+	);
+	ConsolePrint( message );
+	entry.renderReported = true;
+}
+
 int Ragdoll_GetBoneTransform(
 	int entityIndex,
 	int boneIndex,
@@ -814,20 +837,6 @@ int Ragdoll_GetBoneTransform(
 	{
 		Ragdoll_ClearEntity( entityIndex );
 		return 0;
-	}
-
-	if( !entry.renderReported )
-	{
-		char message[128];
-		snprintf(
-			message,
-			sizeof( message ),
-			"[NPC ragdoll] Applying articulated pose for entity %d, ID %d.\n",
-			entityIndex,
-			entry.ragdollID
-		);
-		ConsolePrint( message );
-		entry.renderReported = true;
 	}
 
 	const ragdoll_bone_pose_t &bone = entry.bones[boneIndex];
