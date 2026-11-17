@@ -162,7 +162,7 @@ void CCrossbowBolt::Spawn()
 
 	SetTouch( &CCrossbowBolt::BoltTouch );
 	SetThink( &CCrossbowBolt::BubbleThink );
-	pev->nextthink = gpGlobals->time + 0.2f;
+	pev->nextthink = gpGlobals->time + 0.01f;
 }
 
 void CCrossbowBolt::Precache()
