@@ -181,8 +181,9 @@ Jolt callbacks never modify the entity directly.
 GoldSrc remains authoritative for these entities' movement and collision
 callbacks. This bridge does not synthesize angular velocity, rotated/custom
 collision geometry, mass/inertia, or support for arbitrary movement types.
-The pushable-specific response remains horizontal and uses its own maximum
-speed; the toss/bounce response supports vertical motion.
+The pushable-specific response retains its horizontal speed limit and now
+also transfers a bounded vertical component, clamped to the pushable's
+configured maximum speed. The toss/bounce response supports vertical motion.
 
 ## Weapon impacts
 
