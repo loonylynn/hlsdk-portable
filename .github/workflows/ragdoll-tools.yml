@@ -6,12 +6,18 @@ on:
       - 'tools/smd2jrag.py'
       - 'tools/jragtool.py'
       - 'tools/tests/**'
+      - 'assets/valve/models/*.jrag'
+      - 'assets/valve/models/*.ragdoll.qci'
+      - 'assets/valve/models/*.ragdoll.smd'
       - '.github/workflows/ragdoll-tools.yml'
   pull_request:
     paths:
       - 'tools/smd2jrag.py'
       - 'tools/jragtool.py'
       - 'tools/tests/**'
+      - 'assets/valve/models/*.jrag'
+      - 'assets/valve/models/*.ragdoll.qci'
+      - 'assets/valve/models/*.ragdoll.smd'
       - '.github/workflows/ragdoll-tools.yml'
 
 jobs:
@@ -28,3 +34,9 @@ jobs:
         run: python -m py_compile tools/smd2jrag.py tools/jragtool.py
       - name: Run authoring tool tests
         run: python -m unittest discover -s tools/tests -v
+      - name: Validate shipped Scientist ragdoll
+        run: |
+          python tools/jragtool.py validate \
+            assets/valve/models/scientist.jrag \
+            assets/valve/models/scientist.ragdoll.smd \
+            --qci assets/valve/models/scientist.ragdoll.qci
