@@ -5662,9 +5662,7 @@ int NPCPhysics_RestorePersistentRagdoll( edict_t *ent )
 		return FALSE;
 	}
 
-	monster->m_iNpcRagdollPersistVersion = 0;
-	monster->m_iNpcRagdollPersistBoneCount = 0;
-	monster->m_iNpcRagdollPersistBodyCount = 0;
+	NPCPhysics_ClearPersistentRagdollState( ent, ent->serialnumber );
 	return TRUE;
 }
 
