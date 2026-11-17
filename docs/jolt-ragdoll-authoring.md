@@ -185,6 +185,18 @@ to make contact as the ragdoll folds and settles. A model can opt out of all
 intra-ragdoll body collisions by adding `self_collisions 0` to its .jrag sidecar;
 omitting the setting keeps the Source default.
 
+For models that contain a Source `collisionrules` block, use an explicit
+body-pair allow-list instead. Add `collision_rules 1` and repeat
+`collision_pair BODY_A BODY_B` in the `.jrag` file. The pair numbers are
+zero-based indices in the physical body list, in the same order shown by
+`jragtool inspect` and `jragtool generate`; they are not SMD skeleton bone IDs.
+Only listed pairs collide with one another. A rules marker without any pairs
+intentionally disables all ragdoll body-to-body collisions. The authoring
+commands accept repeatable `--collision-pair BODY_A BODY_B` options, which
+implicitly enable the rules marker, or `--collision-rules` by itself for an
+empty allow-list. Explicit rules and `--no-self-collisions` are mutually
+exclusive.
+
 When a child joint remains more than one GoldSrc unit away from its parent's
 expected anchor for 0.2 seconds, the bridge ray-checks the gap against world and
 brush collision. If geometry blocks the connection, it restores the child
