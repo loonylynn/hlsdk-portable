@@ -14,37 +14,44 @@ The tool currently has three commands:
   loader and compare its hull geometry and hierarchy against the source SMD.
   Passing `--qci` also verifies the mass, inertia, damping and joint limits.
 
-## Scientist example
+## Shipped Scientist example
 
-The Scientist source set contains `ragdoll.smd` and `ragdoll.qci`. The QCI
-declares `$collisionjoints ragdoll`, so the converter resolves the matching
-SMD in the same directory automatically.
+The repository includes the Scientist ragdoll authoring inputs and generated sidecar:
+
+- `assets/valve/models/scientist.ragdoll.smd`: the 15-body collision mesh and skeleton reference pose.
+- `assets/valve/models/scientist.ragdoll.qci`: the original 115-unit mass, inertia, damping and joint settings.
+- `assets/valve/models/scientist.jrag`: the runtime sidecar for `models/scientist.mdl`.
+
+Generate and validate the checked-in sidecar with the same tool used by the project:
 
 ```bash
 cd ~/hlsdk-portable
+ASSETS="assets/valve/models"
 
-SCIENTIST="/media/lucasg/wii_gamecube hdd/Scientist"
+python3 tools/jragtool.py inspect "$ASSETS/scientist.ragdoll.smd" \
+    --qci "$ASSETS/scientist.ragdoll.qci"
 
-# 1. Inspect the skeleton and collision meshes before generating anything.
-python3 tools/jragtool.py inspect "$SCIENTIST/ragdoll.smd" \
-    --qci "$SCIENTIST/ragdoll.qci"
+python3 tools/jragtool.py generate "$ASSETS/scientist.ragdoll.qci" \
+    --smd "$ASSETS/scientist.ragdoll.smd" \
+    --output "$ASSETS/scientist.jrag"
 
-# 2. Generate the Scientist runtime sidecar.
-python3 tools/jragtool.py generate "$SCIENTIST/ragdoll.qci" \
-    --output "$SCIENTIST/scientist.jrag"
-
-# 3. Validate the generated file against both authoring sources.
-python3 tools/jragtool.py validate "$SCIENTIST/scientist.jrag" \
-    "$SCIENTIST/ragdoll.smd" --qci "$SCIENTIST/ragdoll.qci"
+python3 tools/jragtool.py validate "$ASSETS/scientist.jrag" \
+    "$ASSETS/scientist.ragdoll.smd" --qci "$ASSETS/scientist.ragdoll.qci"
 ```
 
-Install the validated sidecar next to the compiled model in the active game:
+The source collision mesh produces 15 physical bodies with eight hull vertices each.
+One QCI directive, the angular limit for `Bip02 Spine2`, targets a skeleton bone
+with no collision mesh in the SMD. The generator reports this as an unbound
+directive and intentionally does not transfer its limits to `Bip02 Spine1` or
+another body, because their joint coordinate frames are not guaranteed to match.
+All other QCI limits and the head's rotational-damping override are retained.
+
+Install the sidecar next to the compiled model in the active game:
 
 ```bash
-SCIENTIST="/media/lucasg/wii_gamecube hdd/Scientist"
-ENGINE_ROOT="/media/lucasg/wii_gamecube hdd/HALF-LIFE PROJECT/xash3d-fwgs-linux-i386"
+ENGINE_ROOT="/path/to/xash3d"
 GAME="$ENGINE_ROOT/valve"
-install -Dm644 "$SCIENTIST/scientist.jrag" "$GAME/models/scientist.jrag"
+install -Dm644 assets/valve/models/scientist.jrag "$GAME/models/scientist.jrag"
 ```
 
 Restart the map (or game) so the server's per-map definition cache is cleared.
