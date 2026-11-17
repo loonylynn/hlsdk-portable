@@ -6,6 +6,7 @@ void Ragdoll_ClearAll( void );
 int Ragdoll_MessageHandler( const char *name, int size, void *buffer );
 int Ragdoll_ImpactMessageHandler( const char *name, int size, void *buffer );
 void Ragdoll_DebugRenderGate( int entityIndex, int ragdollMarker, int hardwareRenderer );
+void Ragdoll_ReportAppliedBones( int entityIndex, int appliedBoneCount, int totalStudioBones );
 int Ragdoll_HasFreshPose( int entityIndex );
 int Ragdoll_GetBoneTransform( int entityIndex, int boneIndex, float transform[3][4] );
 int Ragdoll_TraceLine(
