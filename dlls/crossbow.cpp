@@ -132,6 +132,7 @@ class CCrossbowBolt : public CBaseEntity
 
 public:
 	static CCrossbowBolt *BoltCreate( void );
+	void SetSweepOrigin( const Vector &origin ) { m_sweepStart = origin; }
 };
 
 LINK_ENTITY_TO_CLASS( crossbow_bolt, CCrossbowBolt )
@@ -607,6 +608,7 @@ void CCrossbow::FireBolt()
 
 	CCrossbowBolt *pBolt = CCrossbowBolt::BoltCreate();
 	pBolt->pev->origin = vecSrc;
+	pBolt->SetSweepOrigin( vecSrc );
 	pBolt->pev->angles = anglesAim;
 	pBolt->pev->owner = m_pPlayer->edict();
 
