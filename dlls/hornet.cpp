@@ -25,6 +25,12 @@
 #include	"hornet.h"
 #include	"gamerules.h"
 
+#if !CLIENT_DLL
+#include "xash_physint.h"
+#include <algorithm>
+#include <cmath>
+#endif
+
 int iHornetTrail;
 int iHornetPuff;
 
