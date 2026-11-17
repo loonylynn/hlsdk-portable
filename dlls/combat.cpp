@@ -611,6 +611,27 @@ void CBaseMonster::Killed( entvars_t *pevAttacker, int iGib )
 	else if( HasAlienGibs() )
 		violenceAllowsGibs = CVAR_GET_FLOAT( "violence_agibs" ) != 0.0f;
 
+	// Identify the exact NPC and lethal-damage source at the physics handoff.
+	// This is deliberately gated by the ragdoll debug cvar to avoid normal-play
+	// console noise. Scripted SCRIPT_EVENT_DEAD paths do not pass through here.
+	if( hasJoltRagdoll && CVAR_GET_FLOAT( "sv_npc_vphysics_debug" ) >= 0.5f )
+	{
+		const char *attackerClassname = pevAttacker
+			? STRING( pevAttacker->classname ) : "<none>";
+		ALERT(
+			at_console,
+			"[NPC physics] Lethal ragdoll handoff: entity=%d classname='%s' model='%s' attacker='%s' gib=%d should-gib=%d violence-gibs=%d health=%.1f.\\n",
+			ENTINDEX( ENT( pev ) ),
+			STRING( pev->classname ),
+			STRING( pev->model ),
+			attackerClassname,
+			iGib,
+			shouldGib ? 1 : 0,
+			violenceAllowsGibs ? 1 : 0,
+			pev->health
+		);
+	}
+
 	// Do not let a Jolt rig bypass GoldSrc low-violence gib suppression.
 	// CallGibMonster() already selects the stock corpse-fade path when the
 	// relevant human/alien gib cvar is disabled.
