@@ -5054,7 +5054,8 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 	float *hitPosition,
 	edict_t **hitEntity,
 	bool applyImpulse,
-	bool sendImpactMark )
+	bool sendImpactMark,
+	edict_t *requiredTarget )
 {
 	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
 		!start || !end || !hitFraction || !hitPosition || !hitEntity ||
@@ -5120,7 +5121,8 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 			break;
 	}
 
-	if( !foundRagdollBody || !targetEntity )
+	if( !foundRagdollBody || !targetEntity ||
+		( requiredTarget && targetEntity != requiredTarget ) )
 	{
 		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 			ALERT(
@@ -5233,7 +5235,7 @@ int NPCPhysics_TraceAndApplyImpact(
 {
 	return NPCPhysics_TraceRagdollImpactInternal(
 		start, end, maxFraction, impulseMagnitude,
-		hitFraction, hitPosition, hitEntity, true, true );
+		hitFraction, hitPosition, hitEntity, true, true, NULL );
 }
 
 int NPCPhysics_TraceRagdollImpact(
@@ -5246,7 +5248,25 @@ int NPCPhysics_TraceRagdollImpact(
 {
 	return NPCPhysics_TraceRagdollImpactInternal(
 		start, end, maxFraction, 0.0f,
-		hitFraction, hitPosition, hitEntity, false, false );
+		hitFraction, hitPosition, hitEntity, false, false, NULL );
+}
+
+int NPCPhysics_SendRagdollImpactMark(
+	edict_t *targetEntity,
+	const float *start,
+	const float *end,
+	float maxFraction )
+{
+	if( !targetEntity || targetEntity->free )
+		return FALSE;
+
+	float hitFraction = maxFraction;
+	float hitPosition[3] = { 0.0f, 0.0f, 0.0f };
+	edict_t *hitEntity = NULL;
+	return NPCPhysics_TraceRagdollImpactInternal(
+		start, end, maxFraction, 0.0f,
+		&hitFraction, hitPosition, &hitEntity,
+		false, true, targetEntity );
 }
 
 int NPCPhysics_ApplyImpactImpulseToRagdoll(
