@@ -246,6 +246,25 @@ current implementation removes corpses immediately rather than fading them
 out, and it does not yet implement Source's low-violence or visibility-based
 retirement rules.
 
+## Ragdoll-to-ragdoll impacts
+
+When two different Jolt ragdolls collide, the contact listener estimates the
+post-contact velocity for both contacted bodies and queues a separate impact
+event for each corpse. Damage is based on that body's own loss of velocity
+along the contact normal; the same relative closing-speed value is not blindly
+applied to both sides. Contacts between two bodies belonging to the same
+articulated ragdoll are excluded from this gameplay-damage path.
+
+Impact events are processed after the Jolt simulation callback has returned.
+The existing `sv_npc_vphysics_impact_damage_scale` controls the damage scale,
+and the strongest impact per target corpse is retained per server frame so
+multiple limb contacts do not multiply damage. The opposing corpse is used as
+the attacker when it is still registered; if it has already been retired or
+gibbed, worldspawn is used as the safe fallback.
+
+With `sv_npc_vphysics_debug 1`, contact diagnostics identify these contacts
+as `other=ragdoll` and include the opposing ragdoll network ID.
+
 ## Animated joint friction
 
 The runtime can reproduce Source's `animatedfriction` sequence on the ragdoll's
