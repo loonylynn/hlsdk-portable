@@ -605,8 +605,16 @@ void CBaseMonster::Killed( entvars_t *pevAttacker, int iGib )
 	const BOOL shouldGib = ShouldGibMonster( iGib );
 	const BOOL hasJoltRagdoll = ( pev->flags & FL_MONSTER ) &&
 		iGib != GIB_ALWAYS && NPCPhysics_HasRagdollDefinition( ENT( pev ) );
+	BOOL violenceAllowsGibs = TRUE;
+	if( HasHumanGibs() )
+		violenceAllowsGibs = CVAR_GET_FLOAT( "violence_hgibs" ) != 0.0f;
+	else if( HasAlienGibs() )
+		violenceAllowsGibs = CVAR_GET_FLOAT( "violence_agibs" ) != 0.0f;
 
-	if( shouldGib && !hasJoltRagdoll )
+	// Do not let a Jolt rig bypass GoldSrc low-violence gib suppression.
+	// CallGibMonster() already selects the stock corpse-fade path when the
+	// relevant human/alien gib cvar is disabled.
+	if( shouldGib && ( !hasJoltRagdoll || !violenceAllowsGibs ) )
 	{
 		CallGibMonster();
 		return;
