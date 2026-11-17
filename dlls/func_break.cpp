@@ -28,6 +28,8 @@
 #include "explode.h"
 #include "game.h"
 
+#include <cmath>
+
 extern DLL_GLOBAL Vector	g_vecAttackDir;
 
 // =================== FUNC_Breakable ==============================================
