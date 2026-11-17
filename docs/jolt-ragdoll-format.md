@@ -179,11 +179,15 @@ uses a 0.25 approach-speed factor, and is capped at 500 units/second.
 Jolt callbacks never modify the entity directly.
 
 GoldSrc remains authoritative for these entities' movement and collision
-callbacks. This bridge does not synthesize angular velocity, rotated/custom
-collision geometry, mass/inertia, or support for arbitrary movement types.
-The pushable-specific response retains its horizontal speed limit and now
-also transfers a bounded vertical component, clamped to the pushable's
-configured maximum speed. The toss/bounce response supports vertical motion.
+callbacks. Toss/bounce impacts also add a bounded angular-velocity change for
+off-center contacts. The bridge estimates a uniform-box inertia tensor from
+the mirrored half-extents, caps the added angular speed at 360 degrees/second,
+and caps total angular speed at 720 degrees/second before writing
+`pev->avelocity`. This is an approximation: GoldSrc does not expose a
+consistent mass/inertia model for arbitrary edicts. Pushables retain their
+horizontal speed limit and transfer a bounded vertical component, clamped to
+their configured maximum speed. Rotated/custom collision geometry and
+arbitrary movement types remain unsupported.
 
 ## Weapon impacts
 
