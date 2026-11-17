@@ -471,8 +471,10 @@ int NPCPhysics_TriggerHornetProjectileImpact(
 		modelIndexBeforeTouch == 0 || projectile->v.modelindex != 0 )
 		return FALSE;
 
-	const float damage = (std::max)( 1.0f, projectile->v.dmg );
-	const float impulseMagnitude = (std::min)( damage * 300.0f, 3000.0f );
+	// Hornets have no Source SDK ammo entry. GuessDamageForce() maps a
+	// generic DMG_BULLET hit to SMG1, so use that documented fallback force.
+	const float impulseMagnitude =
+		NPCPhysics_CalculateSourceBulletImpulse( 200.0f, 1225.0f );
 	if( !std::isfinite( impulseMagnitude ) || impulseMagnitude <= 0.0f )
 		return FALSE;
 
