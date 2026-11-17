@@ -273,6 +273,11 @@ namespace
 		int rootElement;
 		float nextPoseTime;
 		float nextCollisionDamageTime;
+		float animatedFrictionMinimum;
+		float animatedFrictionMaximum;
+		float animatedFrictionTimeIn;
+		float animatedFrictionTimeHold;
+		float animatedFrictionTimeOut;
 		float animatedFrictionCurrent;
 		float animatedFrictionModTime;
 		float animatedFrictionEndTime;
@@ -310,6 +315,11 @@ namespace
 			  rootElement( -1 ),
 			  nextPoseTime( 0.0f ),
 			  nextCollisionDamageTime( 0.0f ),
+			  animatedFrictionMinimum( 0.0f ),
+			  animatedFrictionMaximum( 0.0f ),
+			  animatedFrictionTimeIn( 0.0f ),
+			  animatedFrictionTimeHold( 0.0f ),
+			  animatedFrictionTimeOut( 0.0f ),
 			  animatedFrictionCurrent( 0.0f ),
 			  animatedFrictionModTime( 0.0f ),
 			  animatedFrictionEndTime( 0.0f ),
@@ -2255,6 +2265,11 @@ namespace
 		ragdoll.networkID = NPCPhysics_AllocateRagdollID();
 		ragdoll.studioBoneCount = header->numbones;
 		ragdoll.nextPoseTime = 0.0f;
+		ragdoll.animatedFrictionMinimum = physicsDefinition->animatedFrictionMinimum;
+		ragdoll.animatedFrictionMaximum = physicsDefinition->animatedFrictionMaximum;
+		ragdoll.animatedFrictionTimeIn = physicsDefinition->animatedFrictionTimeIn;
+		ragdoll.animatedFrictionTimeHold = physicsDefinition->animatedFrictionTimeHold;
+		ragdoll.animatedFrictionTimeOut = physicsDefinition->animatedFrictionTimeOut;
 		ragdoll.animatedFrictionCurrent = physicsDefinition->animatedFrictionMinimum;
 		ragdoll.animatedFrictionModTime = 0.0f;
 		ragdoll.animatedFrictionEndTime = 0.0f;
@@ -2822,14 +2837,9 @@ namespace
 			ragdoll.bodyCount <= 1 )
 			return;
 
-		const NPCPhysicsRagdollDefinition *definition =
-			NPCPhysics_GetRagdollDefinition( ragdoll.entity, false );
-		if( !definition )
-			return;
-
 		const float now = gpGlobals->time;
-		const float minimum = definition->animatedFrictionMinimum;
-		const float maximum = definition->animatedFrictionMaximum;
+		const float minimum = ragdoll.animatedFrictionMinimum;
+		const float maximum = ragdoll.animatedFrictionMaximum;
 
 		switch( ragdoll.animatedFrictionState )
 		{
@@ -2842,13 +2852,13 @@ namespace
 			else
 			{
 				ragdoll.animatedFrictionCurrent = minimum;
-				ragdoll.animatedFrictionModTime = definition->animatedFrictionTimeIn;
+				ragdoll.animatedFrictionModTime = ragdoll.animatedFrictionTimeIn;
 				ragdoll.animatedFrictionEndTime = now + ragdoll.animatedFrictionModTime;
 				ragdoll.animatedFrictionState = RAGDOLL_FRICTION_IN;
 				if( ragdoll.animatedFrictionModTime <= 0.0f )
 				{
 					ragdoll.animatedFrictionCurrent = maximum;
-					ragdoll.animatedFrictionModTime = definition->animatedFrictionTimeHold;
+					ragdoll.animatedFrictionModTime = ragdoll.animatedFrictionTimeHold;
 					ragdoll.animatedFrictionEndTime = now + ragdoll.animatedFrictionModTime;
 					ragdoll.animatedFrictionState = RAGDOLL_FRICTION_HOLD;
 				}
@@ -2877,7 +2887,7 @@ namespace
 			tragdoll.animatedFrictionCurrent = maximum;
 			if( now >= ragdoll.animatedFrictionEndTime )
 			{
-				ragdoll.animatedFrictionModTime = definition->animatedFrictionTimeOut;
+				ragdoll.animatedFrictionModTime = ragdoll.animatedFrictionTimeOut;
 				ragdoll.animatedFrictionEndTime = now + ragdoll.animatedFrictionModTime;
 				ragdoll.animatedFrictionState = RAGDOLL_FRICTION_OUT;
 				if( ragdoll.animatedFrictionModTime <= 0.0f )
@@ -2949,6 +2959,17 @@ namespace
 
 		const float sleepAfterTime = NPCPhysics_GetCvar(
 			"sv_npc_vphysics_sleep_after_time", 5.0f );
+		if( ragdoll.animatedFrictionState == RAGDOLL_FRICTION_IN ||
+			ragdoll.animatedFrictionState == RAGDOLL_FRICTION_HOLD ||
+			ragdoll.animatedFrictionState == RAGDOLL_FRICTION_OUT )
+		{
+			ragdoll.lastSleepOrigin = Vec3(
+				ragdoll.entity->v.origin[0],
+				ragdoll.entity->v.origin[1],
+				ragdoll.entity->v.origin[2] );
+			ragdoll.lastOriginChangeTime = gpGlobals->time;
+			return;
+		}
 		// A negative delay disables forced sleep. Jolt auto-sleep is disabled
 		// for ragdoll parts so the complete articulated body remains in sync.
 		if( sleepAfterTime < 0.0f )
