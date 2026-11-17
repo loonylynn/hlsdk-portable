@@ -44,6 +44,7 @@ class RuntimeDefinition:
     friction: float
     restitution: float
     bodies: List[RuntimeBody]
+    self_collisions: bool = True
 
 
 def _next_record(lines: Sequence[str], cursor: int, source: str):
@@ -114,7 +115,19 @@ def parse_jrag_text(contents: str, source: str = "<memory>") -> RuntimeDefinitio
     if restitution < 0 or restitution > 1:
         raise ValueError("{}: restitution must be between 0 and 1".format(source))
 
-    values, cursor = _record(lines, cursor, source, "body_count", 1)
+    next_tokens, next_line, cursor = _next_record(lines, cursor, source)
+    self_collisions = True
+    if next_tokens is not None and next_tokens[0] == "self_collisions":
+        if len(next_tokens) != 2 or next_tokens[1] not in ("0", "1"):
+            raise ValueError("{}:{}: self_collisions must be 0 or 1".format(
+                source, next_line))
+        self_collisions = next_tokens[1] == "1"
+        next_tokens, next_line, cursor = _next_record(lines, cursor, source)
+
+    if next_tokens is None or len(next_tokens) != 2 or next_tokens[0] != "body_count":
+        raise ValueError("{}:{}: expected 'body_count' with 1 value".format(
+            source, next_line or "EOF"))
+    values = next_tokens[1:]
     try:
         body_count = int(values[0], 10)
     except ValueError as exc:
@@ -203,6 +216,7 @@ def parse_jrag_text(contents: str, source: str = "<memory>") -> RuntimeDefinitio
         friction=friction,
         restitution=restitution,
         bodies=bodies,
+        self_collisions=self_collisions,
     )
 
 
@@ -414,6 +428,8 @@ def _build_parser() -> argparse.ArgumentParser:
                                  help="Jolt friction (default: 0.8)")
     generate_parser.add_argument("--restitution", type=float, default=0.0,
                                  help="Jolt restitution from 0 to 1 (default: 0)")
+    generate_parser.add_argument("--no-self-collisions", action="store_true",
+                                 help="disable collisions between separate bodies in this ragdoll")
 
     validate_parser = commands.add_parser("validate", help="validate a .jrag against its source SMD")
     validate_parser.add_argument("jrag", type=Path, help="runtime .jrag file")
@@ -441,7 +457,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 print("WARNING: {}".format(warning))
             bodies = converter.convert(
                 args.source, args.smd, args.output,
-                friction=args.friction, restitution=args.restitution)
+                friction=args.friction, restitution=args.restitution,
+                self_collisions=not args.no_self_collisions)
             definition, _bone_count = validate_definition(
                 args.output, smd_path, args.source)
             print("Generated and validated {} ({} rigid bodies).".format(
