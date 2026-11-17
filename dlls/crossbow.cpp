@@ -128,6 +128,7 @@ class CCrossbowBolt : public CBaseEntity
 	TraceResult m_sweepTrace;
 	Vector m_sweepStart;
 	BOOL m_sweepTracePending;
+	float m_flNextBubbleTime;
 
 public:
 	static CCrossbowBolt *BoltCreate( void );
@@ -154,6 +155,7 @@ void CCrossbowBolt::Spawn()
 	pev->gravity = 0.5f;
 	m_sweepTracePending = FALSE;
 	m_sweepStart = pev->origin;
+	m_flNextBubbleTime = gpGlobals->time + 0.1f;
 
 	SET_MODEL( ENT( pev ), "models/crossbow_bolt.mdl" );
 
@@ -306,7 +308,7 @@ void CCrossbowBolt::BubbleThink( void )
 #if !CLIENT_DLL
 	if( pev->solid == SOLID_BBOX && pev->movetype == MOVETYPE_FLY )
 	{
-		const Vector sweepStart = pev->oldorigin;
+		const Vector sweepStart = m_sweepStart;
 		const Vector sweepEnd = pev->origin;
 		const float segmentLength = ( sweepEnd - sweepStart ).Length();
 		if( segmentLength > 0.001f && segmentLength <= 512.0f )
@@ -354,11 +356,13 @@ void CCrossbowBolt::BubbleThink( void )
 			}
 		}
 	}
+	m_sweepStart = pev->origin;
 #endif
 
-	if( pev->waterlevel == 0 )
+	if( pev->waterlevel == 0 || gpGlobals->time < m_flNextBubbleTime )
 		return;
 
+	m_flNextBubbleTime = gpGlobals->time + 0.1f;
 	UTIL_BubbleTrail( pev->origin - pev->velocity * 0.1f, pev->origin, 1 );
 }
 
