@@ -24,6 +24,8 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/ObjectLayer.h>
@@ -83,6 +85,14 @@ namespace
 	// before invoking Source-style articulated separation recovery.
 	static constexpr float RAGDOLL_SEPARATION_PERSISTENCE = 0.20f;
 	static constexpr float RAGDOLL_JOINT_SEPARATION_DISTANCE = 1.0f;
+	// Never snap an articulated part across a large gap or while the pair is
+	// still moving quickly. The solver must first be given a chance to settle.
+	static constexpr float RAGDOLL_MAX_JOINT_RECOVERY_DISTANCE = 4.0f;
+	static constexpr float RAGDOLL_RECOVERY_MAX_LINEAR_SPEED = 50.0f;
+	static constexpr float RAGDOLL_RECOVERY_MAX_ANGULAR_SPEED = 5.0f;
+	// Forced sleep is based on every linked body, not just the root carrier.
+	static constexpr float RAGDOLL_SLEEP_LINEAR_SPEED_SQ = 4.0f;
+	static constexpr float RAGDOLL_SLEEP_ANGULAR_SPEED_SQ = 0.01f;
 	static constexpr int RAGDOLL_FRICTION_NONE = 0;
 	static constexpr int RAGDOLL_FRICTION_IN = 1;
 	static constexpr int RAGDOLL_FRICTION_HOLD = 2;
@@ -3662,26 +3672,39 @@ namespace
 			ragdoll.lastOriginChangeTime = gpGlobals->time;
 		ragdoll.lastSleepOrigin = currentOrigin;
 
-		const float stationaryTime = gpGlobals->time - ragdoll.lastOriginChangeTime;
-		if( stationaryTime < sleepAfterTime )
-			return;
-
 		std::vector<BodyID> bodyIDs;
 		bodyIDs.reserve( ragdoll.bodyCount );
 		bool anyActive = false;
+		bool anyBodyMoving = false;
 		for( int body = 0; body < ragdoll.bodyCount; ++body )
 		{
 			const BodyID bodyID = ragdoll.physicsRagdoll->GetBodyID( body );
 			bodyIDs.push_back( bodyID );
 			if( bodyInterface.IsActive( bodyID ) )
 				anyActive = true;
+
+			// The carrier origin follows the root body and can remain nearly
+			// stationary while hands, feet or other articulated parts are still
+			// moving. Every body must settle before the whole island is slept.
+			const Vec3 linearVelocity = bodyInterface.GetLinearVelocity( bodyID );
+			const Vec3 angularVelocity = bodyInterface.GetAngularVelocity( bodyID );
+			if( linearVelocity.LengthSq() > RAGDOLL_SLEEP_LINEAR_SPEED_SQ ||
+				angularVelocity.LengthSq() > RAGDOLL_SLEEP_ANGULAR_SPEED_SQ )
+				anyBodyMoving = true;
 		}
 
-		if( !anyActive )
+		if( anyBodyMoving )
+		{
+			ragdoll.lastOriginChangeTime = gpGlobals->time;
+			return;
+		}
+
+		const float stationaryTime = gpGlobals->time - ragdoll.lastOriginChangeTime;
+		if( stationaryTime < sleepAfterTime || !anyActive )
 			return;
 
-		// Source sleeps the ragdoll as a unit after its origin has remained
-		// within one map unit per axis for ragdoll_sleepaftertime (5 seconds).
+		// Sleep the articulated island only after all its bodies have stayed
+		// below the linear and angular velocity thresholds for the full delay.
 		bodyInterface.DeactivateBodies( bodyIDs.data(), static_cast<int>( bodyIDs.size() ) );
 		ALERT(
 			at_console,
@@ -3690,6 +3713,39 @@ namespace
 		);
 		// Start a fresh settle window if an impact wakes the ragdoll again.
 		ragdoll.lastOriginChangeTime = gpGlobals->time;
+	}
+
+	static bool NPCPhysics_IsRagdollPlacementBlocked(
+		PhysicsSystem &system,
+		BodyInterface &bodyInterface,
+		const BodyID &bodyID,
+		const Vec3 &position,
+		const Quat &rotation,
+		const RagdollEnvironmentObjectLayerFilter &environmentFilter )
+	{
+		const RefConst<Shape> shape = bodyInterface.GetShape( bodyID );
+		if( !shape.GetPtr() )
+			return true;
+
+		const RVec3 targetPosition( position.GetX(), position.GetY(), position.GetZ() );
+		const RMat44 targetTransform =
+			RMat44::sRotationTranslation( rotation, targetPosition );
+		CollideShapeSettings settings;
+		// A recovery destination must be clear from either side of a BSP face;
+		// otherwise a small snap could put a thin limb beyond a wall triangle.
+		settings.mBackFaceMode = EBackFaceMode::CollideWithBackFaces;
+		AnyHitCollisionCollector<CollideShapeCollector> collector;
+		system.GetNarrowPhaseQuery().CollideShape(
+			shape.GetPtr(),
+			Vec3::sReplicate( 1.0f ),
+			targetTransform,
+			settings,
+			targetPosition,
+			collector,
+			BroadPhaseLayerFilter(),
+			environmentFilter
+		);
+		return collector.HadHit();
 	}
 
 	static void NPCPhysics_UpdateRagdollSeparation(
@@ -3707,6 +3763,7 @@ namespace
 		// of per-frame heap allocations.
 		uint8_t needsFix[RAGDOLL_DEFINITION_MAX_BODIES] = {};
 		uint8_t corrected[RAGDOLL_DEFINITION_MAX_BODIES] = {};
+		uint8_t blocked[RAGDOLL_DEFINITION_MAX_BODIES] = {};
 		int recoveryCount = 0;
 
 		// Source calls RagdollSolveSeparation when VPhysics reports a ragdoll
@@ -3742,10 +3799,30 @@ namespace
 			const Vec3 separation = actualChildAnchor - expectedChildAnchor;
 			const float separationLengthSq = separation.LengthSq();
 
+			const float maxRecoveryDistanceSq =
+				RAGDOLL_MAX_JOINT_RECOVERY_DISTANCE * RAGDOLL_MAX_JOINT_RECOVERY_DISTANCE;
 			if( !std::isfinite( separationLengthSq ) ||
 				separationLengthSq <=
-					RAGDOLL_JOINT_SEPARATION_DISTANCE * RAGDOLL_JOINT_SEPARATION_DISTANCE )
+					RAGDOLL_JOINT_SEPARATION_DISTANCE * RAGDOLL_JOINT_SEPARATION_DISTANCE ||
+				separationLengthSq > maxRecoveryDistanceSq )
 			{
+				// Large anchor errors are not safe to repair by teleportation.
+				// Leave them to the solver rather than snapping across geometry.
+				ragdoll.jointErrorSince[body] = -1.0f;
+				continue;
+			}
+
+			const float recoveryLinearSpeedSq =
+				RAGDOLL_RECOVERY_MAX_LINEAR_SPEED * RAGDOLL_RECOVERY_MAX_LINEAR_SPEED;
+			const float recoveryAngularSpeedSq =
+				RAGDOLL_RECOVERY_MAX_ANGULAR_SPEED * RAGDOLL_RECOVERY_MAX_ANGULAR_SPEED;
+			if( bodyInterface.GetLinearVelocity( parentID ).LengthSq() > recoveryLinearSpeedSq ||
+				bodyInterface.GetLinearVelocity( childID ).LengthSq() > recoveryLinearSpeedSq ||
+				bodyInterface.GetAngularVelocity( parentID ).LengthSq() > recoveryAngularSpeedSq ||
+				bodyInterface.GetAngularVelocity( childID ).LengthSq() > recoveryAngularSpeedSq )
+			{
+				// Do not run separation recovery during a real impact or while
+				// the articulated pair is still being driven into a corner.
 				ragdoll.jointErrorSince[body] = -1.0f;
 				continue;
 			}
@@ -3829,6 +3906,16 @@ namespace
 					continue;
 				if( needsFix[parent] && !corrected[parent] )
 					continue;
+				if( needsFix[parent] && blocked[parent] )
+				{
+					// A descendant must not be snapped when its parent could not be
+					// placed safely; doing so would pull the chain through the wall.
+					blocked[body] = 1;
+					corrected[body] = 1;
+					ragdoll.jointErrorSince[body] = -1.0f;
+					changed = true;
+					continue;
+				}
 
 				const BodyID parentID = ragdoll.physicsRagdoll->GetBodyID( parent );
 				const BodyID childID = ragdoll.physicsRagdoll->GetBodyID( body );
@@ -3843,6 +3930,18 @@ namespace
 					parentPosition + parentRotation * bone.parentLocalJointAnchor;
 				const Vec3 newChildCenter =
 					targetAnchor + childRotation * bone.localShapeCenter;
+				if( NPCPhysics_IsRagdollPlacementBlocked(
+					system, bodyInterface, childID, newChildCenter,
+					childRotation, environmentFilter ) )
+				{
+					// Never teleport a convex body into or through BSP/brush geometry.
+					// Mark it processed so descendants inherit the same safe refusal.
+					blocked[body] = 1;
+					corrected[body] = 1;
+					ragdoll.jointErrorSince[body] = -1.0f;
+					changed = true;
+					continue;
+				}
 				const RVec3 targetAnchorR(
 					targetAnchor.GetX(), targetAnchor.GetY(), targetAnchor.GetZ() );
 				const Vec3 inheritedVelocity =
