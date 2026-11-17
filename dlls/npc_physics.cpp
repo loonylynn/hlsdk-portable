@@ -1228,7 +1228,9 @@ namespace
 		if( !client || client->free || !( client->v.flags & FL_CLIENT ) )
 			return false;
 
-		CBasePlayer *player = static_cast<CBasePlayer *>( CBaseEntity::Instance( client ) );
+		CBaseEntity *clientEntity = CBaseEntity::Instance( client );
+		CBaseMonster *player = clientEntity
+			? clientEntity->MyMonsterPointer() : NULL;
 		CBaseEntity *corpse = CBaseEntity::Instance( ragdoll.entity );
 		if( !player || !corpse )
 			return true;
