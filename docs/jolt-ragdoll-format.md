@@ -116,19 +116,32 @@ The loader rejects invalid parent ordering, duplicate bone names, multiple roots
 missing hulls, out-of-range limits, non-finite values, trailing directives and
 files larger than 1 MiB.
 
-## Installing the shipped zombie rig
+## Installing the shipped model rigs
 
-Copy `assets/valve/models/zombie.jrag` into the active game's `models/` folder.
-For a typical installation:
+The repository currently ships two model-specific runtime definitions:
+
+- `zombie.jrag` for `models/zombie.mdl`.
+- `scientist.jrag` for `models/scientist.mdl`.
+
+Copy the sidecars into the active game's `models/` folder. For a typical
+installation:
 
 ```bash
 GAME="/path/to/xash3d/valve"
 install -Dm644 assets/valve/models/zombie.jrag "$GAME/models/zombie.jrag"
+install -Dm644 assets/valve/models/scientist.jrag "$GAME/models/scientist.jrag"
 ```
 
-The file is loaded from the engine's active game search paths. It does not require
-rebuilding the SDK when you edit physics values or hulls; restart the map/game so
-the runtime cache is rebuilt. A map reset also discards the cached definitions.
+The Scientist definition contains 15 physical bodies, generated from the
+checked-in `scientist.ragdoll.smd` and `scientist.ragdoll.qci` authoring files.
+Its authored mass is 115, inertia multiplier 10, linear damping 0.01 and
+angular damping 1.5. The QCI's `Bip02 Spine2` angular limits are not applied:
+that bone has no collision mesh in the source SMD, so the authoring tool reports
+it as an unbound directive rather than assigning it to a different physical bone.
+
+The files are loaded from the engine's active game search paths. Editing a
+`.jrag` file does not require rebuilding the SDK; restart the map/game so the
+runtime cache is rebuilt. A map reset also discards the cached definitions.
 
 The current format is a runtime definition, not a parser for Valve QC/QCI source.
 The supplied zombie definition preserves the existing SMD/QCI-derived hulls,
