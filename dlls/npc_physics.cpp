@@ -530,6 +530,20 @@ namespace
 		}
 	};
 
+	struct NPCPhysicsProjectileSweep
+	{
+		int entityIndex;
+		int serialNumber;
+		Vec3 lastOrigin;
+
+		NPCPhysicsProjectileSweep()
+			: entityIndex( -1 ),
+			  serialNumber( 0 ),
+			  lastOrigin( 0.0f, 0.0f, 0.0f )
+		{
+		}
+	};
+
 	class NPCPhysicsContactListener final : public ContactListener
 	{
 	public:
@@ -1066,6 +1080,7 @@ namespace
 	static std::vector<NPCPhysicsRetiringCorpse> g_retiringCorpses;
 	static std::vector<NPCPhysicsCachedRagdollDefinition> g_ragdollDefinitionCache;
 	static std::vector<NPCPhysicsLivePose> g_livePoses;
+	static std::vector<NPCPhysicsProjectileSweep> g_projectileSweeps;
 	static int g_nextRagdollID = 1;
 	static int g_msgRagdollPose = 0;
 	static int g_msgRagdollImpact = 0;
@@ -4374,6 +4389,154 @@ namespace
 
 
 
+	static void NPCPhysics_ProcessProjectileSweeps()
+	{
+		if( !g_npcPhysics.initialized || !gpGlobals || g_ragdolls.empty() )
+		{
+			g_projectileSweeps.clear();
+			return;
+		}
+
+		std::vector<int> presentEntities;
+		presentEntities.reserve( 16 );
+
+		for( int entityIndex = 1; entityIndex < gpGlobals->maxEntities; ++entityIndex )
+		{
+			edict_t *projectile = INDEXENT( entityIndex );
+			if( !projectile || projectile->free ||
+				( projectile->v.flags & ( FL_KILLME | FL_DORMANT ) ) ||
+				projectile->v.solid != SOLID_BBOX )
+				continue;
+
+			const bool explosive = NPCPhysics_IsExplosiveProjectile( projectile ) != FALSE;
+			const bool hornet = FClassnameIs( &projectile->v, "hornet" ) &&
+				projectile->v.movetype == MOVETYPE_FLY;
+			if( !explosive && !hornet )
+				continue;
+
+			if( projectile->v.movetype != MOVETYPE_FLY &&
+				projectile->v.movetype != MOVETYPE_BOUNCE )
+				continue;
+
+			const Vec3 currentOrigin(
+				projectile->v.origin[0],
+				projectile->v.origin[1],
+				projectile->v.origin[2] );
+			if( !std::isfinite( currentOrigin.GetX() ) ||
+				!std::isfinite( currentOrigin.GetY() ) ||
+				!std::isfinite( currentOrigin.GetZ() ) )
+				continue;
+
+			presentEntities.push_back( entityIndex );
+			int sweepIndex = -1;
+			for( size_t i = 0; i < g_projectileSweeps.size(); ++i )
+			{
+				if( g_projectileSweeps[i].entityIndex == entityIndex )
+				{
+					sweepIndex = static_cast<int>( i );
+					break;
+				}
+			}
+
+			if( sweepIndex < 0 ||
+				g_projectileSweeps[sweepIndex].serialNumber != projectile->serialnumber )
+			{
+				NPCPhysicsProjectileSweep sweep;
+				sweep.entityIndex = entityIndex;
+				sweep.serialNumber = projectile->serialnumber;
+				sweep.lastOrigin = currentOrigin;
+				if( sweepIndex < 0 )
+					g_projectileSweeps.push_back( sweep );
+				else
+					g_projectileSweeps[sweepIndex] = sweep;
+				continue;
+			}
+
+			NPCPhysicsProjectileSweep &sweep = g_projectileSweeps[sweepIndex];
+			const Vec3 start = sweep.lastOrigin;
+			const Vec3 end = currentOrigin;
+			sweep.lastOrigin = currentOrigin;
+
+			const Vec3 displacement = end - start;
+			const float segmentLength = displacement.Length();
+			if( !std::isfinite( segmentLength ) ||
+				segmentLength <= 0.01f || segmentLength > 512.0f )
+				continue;
+
+			// Respect the ordinary GoldSrc trace first. Jolt then tests the
+			// same swept segment against articulated ragdoll bodies and its
+			// BSP/inline-brush world, without letting a projectile hit through
+			// a nearer living actor or solid prop.
+			TraceResult blockingTrace;
+			UTIL_TraceLine(
+				start, end, dont_ignore_monsters, projectile, &blockingTrace );
+
+			float hitFraction = blockingTrace.flFraction;
+			float hitPosition[3] = { 0.0f, 0.0f, 0.0f };
+			edict_t *hitEntity = NULL;
+			const float startArray[3] = { start.GetX(), start.GetY(), start.GetZ() };
+			const float endArray[3] = { end.GetX(), end.GetY(), end.GetZ() };
+
+			if( explosive )
+			{
+				if( !NPCPhysics_TraceRagdollImpact(
+					startArray, endArray, blockingTrace.flFraction,
+					&hitFraction, hitPosition, &hitEntity ) )
+					continue;
+
+				if( NPCPhysics_TriggerExplosiveProjectileImpact(
+					projectile, hitEntity, startArray, endArray,
+					hitFraction, hitPosition ) )
+				{
+					if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+						ALERT(
+							at_console,
+							"[NPC projectile] Explosive projectile intercepted by ragdoll: projectile=%d target=%d fraction=%.3f point=(%.1f %.1f %.1f).\n",
+							entityIndex, ENTINDEX( hitEntity ), hitFraction,
+							hitPosition[0], hitPosition[1], hitPosition[2] );
+				}
+				continue;
+			}
+
+			// Hornets are direct-damage projectiles. Their damage callback is
+			// still invoked normally, while this Source-style impact trace
+			// supplies the localized Jolt impulse and attached blood mark.
+			const float projectileDamage = (std::max)( 1.0f, projectile->v.dmg );
+			const float impulseMagnitude = (std::min)(
+				projectileDamage * 75.0f * 4.0f, 3000.0f );
+			if( !NPCPhysics_TraceAndApplyImpact(
+				startArray, endArray, blockingTrace.flFraction,
+				impulseMagnitude, &hitFraction, hitPosition, &hitEntity ) )
+				continue;
+
+			CBaseEntity *projectileObject = CBaseEntity::Instance( projectile );
+			CBaseEntity *targetObject = CBaseEntity::Instance( hitEntity );
+			if( !projectileObject || !targetObject )
+				continue;
+
+			const Vector impactOrigin(
+				hitPosition[0], hitPosition[1], hitPosition[2] );
+			UTIL_SetOrigin( &projectile->v, impactOrigin );
+			sweep.lastOrigin = impactOrigin;
+			projectileObject->Touch( targetObject );
+
+			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+				ALERT(
+					at_console,
+					"[NPC projectile] Direct projectile intercepted by ragdoll: projectile=%d target=%d fraction=%.3f impulse=%.1f point=(%.1f %.1f %.1f).\n",
+					entityIndex, ENTINDEX( hitEntity ), hitFraction,
+					impulseMagnitude, hitPosition[0], hitPosition[1], hitPosition[2] );
+		}
+
+		for( size_t i = g_projectileSweeps.size(); i > 0; --i )
+		{
+			if( std::find(
+					presentEntities.begin(), presentEntities.end(),
+					g_projectileSweeps[i - 1].entityIndex ) == presentEntities.end() )
+				g_projectileSweeps.erase( g_projectileSweeps.begin() + ( i - 1 ) );
+		}
+	}
+
 	static void NPCPhysics_ProcessCollisionDamage()
 	{
 		std::vector<NPCPhysicsPendingCollisionDamage> pending =
@@ -4535,6 +4698,7 @@ namespace
 		if( g_ragdolls.empty() )
 		{
 			g_npcPhysics.contactListener.Clear();
+			g_projectileSweeps.clear();
 			NPCPhysics_DestroyActorColliders();
 			return;
 		}
@@ -4576,6 +4740,7 @@ namespace
 		}
 
 		NPCPhysics_ProcessMovableImpacts();
+		NPCPhysics_ProcessProjectileSweeps();
 		NPCPhysics_ProcessContactDiagnostics();
 		NPCPhysics_ProcessCollisionDamage();
 		NPCPhysics_RemoveGibbedRagdolls();
@@ -5379,6 +5544,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 void NPCPhysics_ResetMap( void )
 {
 	g_retiringCorpses.clear();
+	g_projectileSweeps.clear();
 	NPCPhysics_DestroyAllRagdolls();
 	NPCPhysics_DestroyActorColliders();
 	NPCPhysics_DestroyBrushColliders();
@@ -5399,6 +5565,7 @@ void NPCPhysics_ResetMap( void )
 void NPCPhysics_Shutdown( void )
 {
 	g_retiringCorpses.clear();
+	g_projectileSweeps.clear();
 	if( g_npcPhysics.system )
 		g_npcPhysics.system->SetContactListener( NULL );
 	g_npcPhysics.contactListener.Clear();
