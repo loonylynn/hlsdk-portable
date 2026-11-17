@@ -95,7 +95,7 @@ To author an explicit Source-style collision allow-list, pass
 to enable. For example:
 
 ```bash
-python3 tools/jragtool.py generate model.qci --collision-pair 0 4 \\
+python3 tools/jragtool.py generate model.qci --collision-pair 0 4 \
     --collision-pair 2 5 -o model.jrag
 ```
 
