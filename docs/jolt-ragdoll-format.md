@@ -25,6 +25,7 @@ linear_damping 0.01
 angular_damping 1.5
 friction 0.8
 restitution 0
+self_collisions 1
 body_count 1
 
 body "Bip01 Pelvis" -1
@@ -56,6 +57,10 @@ the full 15-body rig.
   the asset value.
 - `inertia_multiplier`, `linear_damping`, `angular_damping`: Jolt body settings.
 - `friction`, `restitution`: material settings for all bodies.
+- `self_collisions`: optional `0` or `1`; defaults to `1`. When enabled,
+  physical pieces collide with one another except for directly constrained
+  parent/child pairs. Set to `0` to disable all collisions between pieces of
+  the same ragdoll, matching Source's `selfcollisions 0` rule.
 - `body_count`: number of physical bodies, 1–64.
 - `body "name" parent`: exact studio bone name and parent body index. Use -1
   for the single root. Bodies must be listed parent-first.
@@ -66,6 +71,11 @@ the full 15-body rig.
 - `hull` and `point`: convex collision hull vertices in bone-local space;
   4–32 points are accepted.
 - `end_body` and `end`: required terminators.
+
+The generator enables self-collision by default. Pass `--no-self-collisions`
+to `jragtool generate` (or `smd2jrag.py`) to emit `self_collisions 0`.
+Existing v1 files without the optional directive remain valid and default to
+self-collision enabled.
 
 The loader rejects invalid parent ordering, duplicate bone names, multiple roots,
 missing hulls, out-of-range limits, non-finite values, trailing directives and
