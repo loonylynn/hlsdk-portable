@@ -46,6 +46,8 @@ class RuntimeDefinition:
     bodies: List[RuntimeBody]
     self_collisions: bool = True
     animated_friction: Tuple[float, float, float, float, float] = (0.0, 0.0, 0.0, 0.0, 0.0)
+    collision_rules: bool = False
+    collision_pairs: Tuple[Tuple[int, int], ...] = ()
 
 
 def _next_record(lines: Sequence[str], cursor: int, source: str):
@@ -119,7 +121,10 @@ def parse_jrag_text(contents: str, source: str = "<memory>") -> RuntimeDefinitio
     next_tokens, next_line, cursor = _next_record(lines, cursor, source)
     self_collisions = True
     animated_friction = (0.0, 0.0, 0.0, 0.0, 0.0)
+    collision_rules = False
+    collision_pairs = []
     saw_self_collisions = False
+    saw_collision_rules = False
     saw_animated_friction = False
 
     while next_tokens is not None and next_tokens[0] != "body_count":
@@ -129,6 +134,31 @@ def parse_jrag_text(contents: str, source: str = "<memory>") -> RuntimeDefinitio
                     source, next_line))
             self_collisions = next_tokens[1] == "1"
             saw_self_collisions = True
+        elif next_tokens[0] == "collision_rules":
+            if saw_collision_rules or len(next_tokens) != 2 or next_tokens[1] != "1":
+                raise ValueError("{}:{}: collision_rules must appear once and be 1".format(
+                    source, next_line))
+            collision_rules = True
+            saw_collision_rules = True
+        elif next_tokens[0] == "collision_pair":
+            if not collision_rules or len(next_tokens) != 3:
+                raise ValueError("{}:{}: collision_pair requires collision_rules 1 and two body indices".format(
+                    source, next_line))
+            try:
+                first, second = (int(value, 10) for value in next_tokens[1:])
+            except ValueError as exc:
+                raise ValueError("{}:{}: collision_pair indices must be integers".format(
+                    source, next_line)) from exc
+            if first < 0 or second < 0 or first == second:
+                raise ValueError("{}:{}: collision_pair indices must be distinct and non-negative".format(
+                    source, next_line))
+            pair = tuple(sorted((first, second)))
+            if pair in collision_pairs:
+                raise ValueError("{}:{}: duplicate collision_pair {} {}".format(
+                    source, next_line, pair[0], pair[1]))
+            if len(collision_pairs) >= MAX_BODIES * (MAX_BODIES - 1) // 2:
+                raise ValueError("{}:{}: too many collision_pair entries".format(source, next_line))
+            collision_pairs.append(pair)
         elif next_tokens[0] == "animated_friction":
             if saw_animated_friction or len(next_tokens) != 6:
                 raise ValueError("{}:{}: animated_friction requires min, max, in, hold and out values".format(
@@ -157,6 +187,11 @@ def parse_jrag_text(contents: str, source: str = "<memory>") -> RuntimeDefinitio
         raise ValueError("{}: body_count must be an integer".format(source)) from exc
     if body_count < 1 or body_count > MAX_BODIES:
         raise ValueError("{}: body_count must be between 1 and {}".format(source, MAX_BODIES))
+    if collision_rules and not self_collisions:
+        raise ValueError("{}: collision_rules cannot be combined with self_collisions 0".format(source))
+    for first, second in collision_pairs:
+        if first >= body_count or second >= body_count:
+            raise ValueError("{}: collision_pair body index is outside body_count".format(source))
 
     bodies: List[RuntimeBody] = []
     names = set()
@@ -241,6 +276,8 @@ def parse_jrag_text(contents: str, source: str = "<memory>") -> RuntimeDefinitio
         bodies=bodies,
         self_collisions=self_collisions,
         animated_friction=animated_friction,
+        collision_rules=collision_rules,
+        collision_pairs=tuple(collision_pairs),
     )
 
 
@@ -457,6 +494,11 @@ def _build_parser() -> argparse.ArgumentParser:
     generate_parser.add_argument("--animated-friction", nargs=5, type=float,
                                  metavar=("MIN", "MAX", "TIME_IN", "TIME_HOLD", "TIME_OUT"),
                                  help="Source-style angular joint friction envelope (torque units, seconds)")
+    generate_parser.add_argument("--collision-rules", action="store_true",
+                                 help="use an explicit body-pair collision allow-list (empty means no body pairs collide)")
+    generate_parser.add_argument("--collision-pair", nargs=2, type=int, action="append",
+                                 metavar=("BODY_A", "BODY_B"),
+                                 help="enable one body pair; repeat to add more pairs (implies --collision-rules)")
 
     validate_parser = commands.add_parser("validate", help="validate a .jrag against its source SMD")
     validate_parser.add_argument("jrag", type=Path, help="runtime .jrag file")
@@ -486,7 +528,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args.source, args.smd, args.output,
                 friction=args.friction, restitution=args.restitution,
                 self_collisions=not args.no_self_collisions,
-                animated_friction=tuple(args.animated_friction) if args.animated_friction else None)
+                animated_friction=tuple(args.animated_friction) if args.animated_friction else None,
+                collision_rules=args.collision_rules,
+                collision_pairs=tuple(tuple(pair) for pair in (args.collision_pair or ())))
             definition, _bone_count = validate_definition(
                 args.output, smd_path, args.source)
             print("Generated and validated {} ({} rigid bodies).".format(
