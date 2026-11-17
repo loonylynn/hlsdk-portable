@@ -607,7 +607,7 @@ namespace
 					manifold.mRelativeContactPointsOn1.empty() )
 					return;
 
-				QueueContactDiagnostic( body1, body2, manifold, false );
+				QueueContactDiagnostic( body1, body2, manifold );
 
 				const RVec3 contact = manifold.GetWorldSpaceContactPointOn1( 0 );
 				const Vec3 normal = manifold.mWorldSpaceNormal;
@@ -699,7 +699,7 @@ namespace
 
 			QueuePlayerPushLimit( body1, body2, manifold );
 			QueueMovableObjectImpact( body1, body2, manifold );
-			QueueContactDiagnostic( body1, body2, manifold, false );
+			QueueContactDiagnostic( body1, body2, manifold );
 
 			const RVec3 contact = body1IsRagdoll
 				? manifold.GetWorldSpaceContactPointOn1( 0 )
@@ -771,7 +771,7 @@ namespace
 			QueueSeparationContacts( body1, body2, manifold );
 			QueuePlayerPushLimit( body1, body2, manifold );
 			QueueMovableObjectImpact( body1, body2, manifold );
-			QueueContactDiagnostic( body1, body2, manifold, true );
+			QueueContactDiagnostic( body1, body2, manifold );
 		}
 
 		void OnContactRemoved( const SubShapeIDPair &pair ) override
@@ -959,8 +959,7 @@ namespace
 		void QueueContactDiagnostic(
 			const Body &body1,
 			const Body &body2,
-			const ContactManifold &manifold,
-			bool persisted )
+			const ContactManifold &manifold )
 		{
 			const ObjectLayer layer1 = body1.GetObjectLayer();
 			const ObjectLayer layer2 = body2.GetObjectLayer();
