@@ -4330,24 +4330,29 @@ namespace
 					// any angular velocity already owned by GoldSrc.
 					const float maxAngularDelta = 360.0f;
 					const float angularDeltaLength = angularDelta.Length();
-					if( angularDeltaLength > maxAngularDelta )
-						angularDelta = angularDelta * ( maxAngularDelta / angularDeltaLength );
-
-					Vector updatedAngularVelocity =
-						movable->v.avelocity + angularDelta;
-					const float updatedAngularSpeed = updatedAngularVelocity.Length();
-					const float maxAngularSpeed = 720.0f;
-					if( std::isfinite( updatedAngularSpeed ) &&
-						updatedAngularSpeed > maxAngularSpeed )
-						updatedAngularVelocity =
-							updatedAngularVelocity * ( maxAngularSpeed / updatedAngularSpeed );
-
-					if( std::isfinite( updatedAngularVelocity.x ) &&
-						std::isfinite( updatedAngularVelocity.y ) &&
-						std::isfinite( updatedAngularVelocity.z ) )
+					if( std::isfinite( angularDeltaLength ) )
 					{
-						appliedAngularDelta = updatedAngularVelocity - movable->v.avelocity;
-						movable->v.avelocity = updatedAngularVelocity;
+						if( angularDeltaLength > maxAngularDelta )
+							angularDelta = angularDelta * ( maxAngularDelta / angularDeltaLength );
+
+						Vector updatedAngularVelocity =
+							movable->v.avelocity + angularDelta;
+						const float updatedAngularSpeed = updatedAngularVelocity.Length();
+						const float maxAngularSpeed = 720.0f;
+						if( std::isfinite( updatedAngularSpeed ) )
+						{
+							if( updatedAngularSpeed > maxAngularSpeed )
+								updatedAngularVelocity =
+									updatedAngularVelocity * ( maxAngularSpeed / updatedAngularSpeed );
+
+							if( std::isfinite( updatedAngularVelocity.x ) &&
+								std::isfinite( updatedAngularVelocity.y ) &&
+								std::isfinite( updatedAngularVelocity.z ) )
+							{
+								appliedAngularDelta = updatedAngularVelocity - movable->v.avelocity;
+								movable->v.avelocity = updatedAngularVelocity;
+							}
+						}
 					}
 				}
 			}
