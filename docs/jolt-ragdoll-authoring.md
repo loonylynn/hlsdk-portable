@@ -250,13 +250,19 @@ a duplicate impulse. This does not automatically intercept every custom
 projectile or arbitrary touch callback; those still require explicit integration.
 
 When a child joint remains more than one GoldSrc unit away from its parent's
-expected anchor for 0.2 seconds, the bridge ray-checks the gap against world and
-brush collision. If geometry blocks the connection, it restores the child
-anchor, inherits the parent's point velocity, clears angular velocity, and
-propagates the correction to descendants. This is a Jolt-side approximation of
-Source's `RagdollSolveSeparation`; Jolt does not expose VPhysics' constraint
-group error state, so the bridge uses a persistent joint error plus an
-environment-blocking ray as its trigger.
+expected anchor for 0.2 seconds, the bridge applies Source's two separation
+signals. Normally, the child must have an active contact whose outward normal
+faces the direction it needs to move, and a ray between the expected and actual
+anchors must be blocked by environment geometry. Source's small-body fallback
+is also retained: a child with less than half its parent's mass can be corrected
+without the contact-and-ray test. The bridge then restores the child anchor
+while preserving orientation, inherits the parent's point velocity, clears the
+child's angular velocity, and propagates the correction to descendants.
+
+This approximates Source's `RagdollSolveSeparation`, including the directional
+contact test and child/parent mass-ratio heuristic. Jolt does not expose
+VPhysics' articulated constraint-group error state, so the bridge substitutes
+a 0.2-second persistent joint-anchor error as the trigger.
 
 Ragdolls use Source-style group sleep rather than Jolt's shorter per-body
 automatic sleep timer. The server tracks movement of the ragdoll carrier
