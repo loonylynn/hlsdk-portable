@@ -730,6 +730,31 @@ int Ragdoll_TraceLine(
 	return 1;
 }
 
+/*
+ * Used by the engine to choose the client studio renderer only while an
+ * authoritative ragdoll snapshot is complete and fresh. This keeps the
+ * built-in renderer for ordinary entities without losing simulated poses.
+ */
+int Ragdoll_HasFreshPose( int entityIndex )
+{
+	if( entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES )
+		return 0;
+
+	ragdoll_entity_pose_t &entry = g_RagdollPoses[entityIndex];
+	if( !entry.active || entry.ragdollID <= 0 || !entry.initialSnapshotComplete ||
+		entry.bodyCount <= 0 || entry.receivedBodyCount < entry.bodyCount )
+		return 0;
+
+	const float now = (float)gEngfuncs.GetClientTime();
+	if( now < entry.lastUpdateTime || now - entry.lastUpdateTime > RAGDOLL_STALE_TIMEOUT )
+	{
+		Ragdoll_ClearEntity( entityIndex );
+		return 0;
+	}
+
+	return 1;
+}
+
 void Ragdoll_DebugRenderGate( int entityIndex, int ragdollMarker, int hardwareRenderer )
 {
 	if( entityIndex <= 0 || entityIndex >= MAX_RAGDOLL_ENTITIES )
