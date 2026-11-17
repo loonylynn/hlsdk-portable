@@ -325,7 +325,6 @@ namespace
 		int animatedFrictionState;
 		Vec3 lastSleepOrigin;
 		float lastOriginChangeTime;
-		std::vector<float> nextContactDebugTimes;
 		float nextPlayerPushDebugTime;
 		bool firstPoseSendReported;
 		bool important;
@@ -3085,11 +3084,6 @@ namespace
 		ragdoll.bodyCount = static_cast<int>( physicsDefinition->bodies.size() );
 		if( ragdoll.bodyCount < 1 || ragdoll.bodyCount > RAGDOLL_DEFINITION_MAX_BODIES )
 			return NPCPhysics_RagdollSetupFailed( "loaded ragdoll definition has an invalid body count" );
-		// Six contact channels per body: world, ragdoll pair, and
-		// brush/actor, each split into added and persisted callbacks.
-		ragdoll.nextContactDebugTimes.assign(
-			static_cast<size_t>( ragdoll.bodyCount ) * 6, 0.0f );
-
 		std::vector<int> rigStudioBones( ragdoll.bodyCount, -1 );
 		std::vector<int> studioBoneToRig( ragdoll.studioBoneCount, -1 );
 		for( int body = 0; body < ragdoll.bodyCount; ++body )
