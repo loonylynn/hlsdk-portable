@@ -175,6 +175,30 @@ The runtime format currently limits definitions to 64 physical bodies, 32 hull
 points per body, and 64 UTF-8 bytes per bone name. Bone names are matched
 case-insensitively while preserving their original spelling in the output.
 
+## Runtime collision and sleep behavior
+
+The runtime follows Source's default ragdoll collision policy: physical pieces
+collide with one another except for directly constrained parent/child pairs.
+The loader does not suppress additional pairs just because two authored hulls
+overlap in the initial pose. This allows non-adjacent limbs and body sections
+to make contact as the ragdoll folds and settles.
+
+Ragdolls use Source-style group sleep rather than Jolt's shorter per-body
+automatic sleep timer. The server tracks movement of the ragdoll carrier
+origin; movement greater than one GoldSrc unit on any axis restarts the
+stationary timer. After five seconds without such movement, all bodies in the
+articulated ragdoll are deactivated together.
+
+The delay is controlled live with:
+
+```text
+sv_npc_vphysics_sleep_after_time 5
+```
+
+Set it to a different non-negative number to change the delay. A negative value
+disables forced group sleep. The default is five seconds, matching Source's
+`ragdoll_sleepaftertime` default.
+
 ## Tests
 
 Run the converter and CLI test suites with:
