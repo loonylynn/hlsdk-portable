@@ -4151,7 +4151,7 @@ namespace
 				event.otherLayer == WORLD_STATIC_OBJECT_LAYER ? 0 :
 				event.otherLayer == RAGDOLL_OBJECT_LAYER ? 2 : 4 ) +
 				( event.persisted ? 1 : 0 );
-			const size_t debugSlot = static_cast<size_t>( bodyIndex ) * 4 +
+			const size_t debugSlot = static_cast<size_t>( bodyIndex ) * 6 +
 				static_cast<size_t>( debugChannel );
 			if( debugSlot >= ragdoll->nextContactDebugTimes.size() )
 				continue;
