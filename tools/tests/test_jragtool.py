@@ -231,7 +231,7 @@ class JRAGToolTests(unittest.TestCase):
         for rules, message in invalid_rules:
             with self.subTest(rules=rules):
                 with self.assertRaisesRegex(ValueError, message):
-                    jragtool.parse_jrag_text(base.replace("body_count 2\n", "body_count 2\n" + rules, 1))
+                    jragtool.parse_jrag_text(base.replace("collision_rules 1\n", "collision_rules 1\n" + rules, 1))
         without_marker = self.jrag.read_text(encoding="utf-8").replace(
             "body_count 2\n", "collision_pair 0 1\nbody_count 2\n", 1)
         with self.assertRaisesRegex(ValueError, "requires collision_rules 1"):
