@@ -27,6 +27,7 @@
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/ObjectLayer.h>
+#include <Jolt/Physics/Collision/GroupFilterTable.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/EstimateCollisionResponse.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -182,6 +183,7 @@ namespace
 		float angularDamping;
 		float friction;
 		float restitution;
+		bool selfCollisions;
 		std::vector<NPCPhysicsRagdollBodyDefinition> bodies;
 	};
 
@@ -1811,6 +1813,7 @@ namespace
 		}
 
 		std::istringstream input( std::string( contents, static_cast<size_t>( length ) ) );
+		definition.selfCollisions = true; // Source's default is all non-parent/child pairs enabled.
 		std::istringstream line;
 		std::string storage;
 		std::string command;
@@ -1875,8 +1878,35 @@ namespace
 
 		int bodyCount = 0;
 		if( !NPCPhysics_NextJragLine( input, line, storage ) ||
-			!( line >> command >> bodyCount ) ||
-			command != "body_count" ||
+			!( line >> command ) )
+		{
+			error = "expected body_count after global physics properties";
+			return false;
+		}
+
+		// Optional Source-style model rule. Omission preserves the original
+		// v1 behavior: collisions enabled except between constrained neighbors.
+		if( command == "self_collisions" )
+		{
+			int enabled = -1;
+			if( !( line >> enabled ) ||
+				!NPCPhysics_JragLineFinished( line ) ||
+				( enabled != 0 && enabled != 1 ) )
+			{
+				error = "self_collisions must be 0 or 1";
+				return false;
+			}
+			definition.selfCollisions = enabled != 0;
+			if( !NPCPhysics_NextJragLine( input, line, storage ) ||
+				!( line >> command ) )
+			{
+				error = "expected body_count after self_collisions";
+				return false;
+			}
+		}
+
+		if( command != "body_count" ||
+			!( line >> bodyCount ) ||
 			!NPCPhysics_JragLineFinished( line ) ||
 			bodyCount < 1 ||
 			bodyCount > RAGDOLL_DEFINITION_MAX_BODIES )
@@ -2558,6 +2588,23 @@ namespace
 			return NPCPhysics_RagdollSetupFailed( "Jolt could not stabilize the authored ragdoll" );
 		settings->CalculateConstraintPriorities();
 		settings->DisableParentChildCollisions();
+		if( !physicsDefinition->selfCollisions )
+		{
+			// Source's selfcollisions=0 disables every pair of ragdoll pieces,
+			// not just directly constrained neighbors. Use a shared Jolt group
+			// filter and keep each body in its own subgroup.
+			Ref<GroupFilterTable> selfCollisionFilter =
+				new GroupFilterTable( static_cast<uint>( ragdoll.bodyCount ) );
+			for( int first = 0; first < ragdoll.bodyCount; ++first )
+				for( int second = first + 1; second < ragdoll.bodyCount; ++second )
+					selfCollisionFilter->DisableCollision(
+						static_cast<uint>( first ), static_cast<uint>( second ) );
+			for( int body = 0; body < ragdoll.bodyCount; ++body )
+			{
+				settings->mParts[body].mCollisionGroup.SetGroupFilter( selfCollisionFilter.GetPtr() );
+				settings->mParts[body].mCollisionGroup.SetSubGroupID( static_cast<uint>( body ) );
+			}
+		}
 		settings->CalculateBodyIndexToConstraintIndex();
 
 		ragdoll.physicsRagdoll = settings->CreateRagdoll(
