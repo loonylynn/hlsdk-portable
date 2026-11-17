@@ -3540,9 +3540,10 @@ namespace
 		ALERT(
 			at_console,
 			hasPersistentPose
-				? "[NPC physics] Restored articulated Jolt ragdoll: entity=%d model='%s' id=%d bodies=%d studio-bones=%d.\n"
-				: "[NPC physics] Created articulated Jolt ragdoll: entity=%d model='%s' id=%d bodies=%d studio-bones=%d.\n",
+				? "[NPC physics] Restored articulated Jolt ragdoll: entity=%d classname='%s' model='%s' id=%d bodies=%d studio-bones=%d.\n"
+				: "[NPC physics] Created articulated Jolt ragdoll: entity=%d classname='%s' model='%s' id=%d bodies=%d studio-bones=%d.\n",
 			ENTINDEX( ent ),
+			STRING( ent->v.classname ),
 			STRING( ent->v.model ),
 			ragdoll.networkID,
 			ragdoll.bodyCount,
