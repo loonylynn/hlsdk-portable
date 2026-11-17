@@ -25,6 +25,12 @@
 #include "weapons.h"
 #include "nodes.h"
 #include "soundent.h"
+
+#ifndef CLIENT_DLL
+static edict_t *g_npcPhysicsExplosiveProjectile = NULL;
+static edict_t *g_npcPhysicsExplosiveTarget = NULL;
+static TraceResult g_npcPhysicsExplosiveTrace;
+#endif
 #include "decals.h"
 #include "game.h"
 
@@ -198,8 +204,80 @@ void CGrenade::Detonate( void )
 //
 // Contact grenade, explode when it touches something
 // 
+#ifndef CLIENT_DLL
+int NPCPhysics_IsExplosiveProjectile( edict_t *projectile )
+{
+	if( !projectile || projectile->free ||
+		( !FClassnameIs( &projectile->v, "rpg_rocket" ) &&
+		  !FClassnameIs( &projectile->v, "grenade" ) ) )
+		return FALSE;
+
+	CBaseEntity *entity = CBaseEntity::Instance( projectile );
+	if( !entity )
+		return FALSE;
+
+	const void (CBaseEntity::*unusedTouch)( CBaseEntity * ) = NULL;
+	(void)unusedTouch;
+	void (CBaseEntity::*explodeTouch)( CBaseEntity * ) =
+		static_cast<void (CBaseEntity::*)( CBaseEntity * )>( &CGrenade::ExplodeTouch );
+	return entity->m_pfnTouch == explodeTouch;
+}
+
+int NPCPhysics_TriggerExplosiveProjectileImpact(
+	edict_t *projectile,
+	edict_t *target,
+	const float *start,
+	const float *end,
+	float hitFraction,
+	const float *hitPosition )
+{
+	if( !NPCPhysics_IsExplosiveProjectile( projectile ) ||
+		!target || target->free || !start || !end || !hitPosition ||
+		!std::isfinite( hitFraction ) )
+		return FALSE;
+
+	CBaseEntity *projectileObject = CBaseEntity::Instance( projectile );
+	CBaseEntity *targetObject = CBaseEntity::Instance( target );
+	if( !projectileObject || !targetObject )
+		return FALSE;
+
+	Vector direction( end[0] - start[0], end[1] - start[1], end[2] - start[2] );
+	const float directionLength = direction.Length();
+	if( !std::isfinite( directionLength ) || directionLength <= 0.001f )
+		return FALSE;
+	direction = direction / directionLength;
+
+	memset( &g_npcPhysicsExplosiveTrace, 0, sizeof( g_npcPhysicsExplosiveTrace ) );
+	g_npcPhysicsExplosiveTrace.flFraction = hitFraction;
+	g_npcPhysicsExplosiveTrace.vecEndPos =
+		Vector( hitPosition[0], hitPosition[1], hitPosition[2] );
+	g_npcPhysicsExplosiveTrace.vecPlaneNormal = -direction;
+	g_npcPhysicsExplosiveTrace.pHit = target;
+	g_npcPhysicsExplosiveProjectile = projectile;
+	g_npcPhysicsExplosiveTarget = target;
+
+	projectileObject->Touch( targetObject );
+
+	g_npcPhysicsExplosiveProjectile = NULL;
+	g_npcPhysicsExplosiveTarget = NULL;
+	return TRUE;
+}
+#endif
+
 void CGrenade::ExplodeTouch( CBaseEntity *pOther )
 {
+#ifndef CLIENT_DLL
+	if( pOther && g_npcPhysicsExplosiveProjectile == edict() &&
+		g_npcPhysicsExplosiveTarget == pOther->edict() )
+	{
+		const TraceResult tr = g_npcPhysicsExplosiveTrace;
+		g_npcPhysicsExplosiveProjectile = NULL;
+		g_npcPhysicsExplosiveTarget = NULL;
+		pev->enemy = pOther->edict();
+		Explode( const_cast<TraceResult *>( &tr ), DMG_BLAST );
+		return;
+	}
+#endif
 	TraceResult tr;
 	Vector vecSpot;// trace starts here!
 
