@@ -312,7 +312,7 @@ namespace
 		float animatedFrictionModTime;
 		float animatedFrictionEndTime;
 		int animatedFrictionState;
-		float lastSleepOrigin;
+		Vec3 lastSleepOrigin;
 		float lastOriginChangeTime;
 		std::vector<float> nextContactDebugTimes;
 		float nextPlayerPushDebugTime;
@@ -3559,7 +3559,7 @@ namespace
 		}
 
 		case RAGDOLL_FRICTION_HOLD:
-			tragdoll.animatedFrictionCurrent = maximum;
+			ragdoll.animatedFrictionCurrent = maximum;
 			if( now >= ragdoll.animatedFrictionEndTime )
 			{
 				ragdoll.animatedFrictionModTime = ragdoll.animatedFrictionTimeOut;
@@ -4499,7 +4499,7 @@ namespace
 			if( !std::isfinite( impulseSpeed ) || impulseSpeed <= 0.0f )
 				continue;
 
-			const Vector updatedVelocity(
+			const ::Vector updatedVelocity(
 				movable->v.velocity.x + event.pushDirection.GetX() * impulseSpeed,
 				movable->v.velocity.y + event.pushDirection.GetY() * impulseSpeed,
 				movable->v.velocity.z + event.pushDirection.GetZ() * impulseSpeed
@@ -4524,13 +4524,13 @@ namespace
 			const float inertiaZ =
 				( halfExtents.GetX() * halfExtents.GetX() +
 				  halfExtents.GetY() * halfExtents.GetY() ) / 3.0f;
-			Vector appliedAngularDelta( 0.0f, 0.0f, 0.0f );
+			::Vector appliedAngularDelta( 0.0f, 0.0f, 0.0f );
 			if( inertiaX > 0.01f && inertiaY > 0.01f && inertiaZ > 0.01f )
 			{
 				const Vec3 deltaVelocity = event.pushDirection * impulseSpeed;
 				const Vec3 angularImpulse = event.contactArm.Cross( deltaVelocity );
 				const float radiansToDegrees = 57.2957795f;
-				Vector angularDelta(
+				::Vector angularDelta(
 					angularImpulse.GetX() / inertiaX * radiansToDegrees,
 					angularImpulse.GetY() / inertiaY * radiansToDegrees,
 					angularImpulse.GetZ() / inertiaZ * radiansToDegrees
@@ -4550,7 +4550,7 @@ namespace
 						if( angularDeltaLength > maxAngularDelta )
 							angularDelta = angularDelta * ( maxAngularDelta / angularDeltaLength );
 
-						Vector updatedAngularVelocity =
+						::Vector updatedAngularVelocity =
 							movable->v.avelocity + angularDelta;
 						const float updatedAngularSpeed = updatedAngularVelocity.Length();
 						const float maxAngularSpeed = 720.0f;
@@ -4668,8 +4668,10 @@ namespace
 			// BSP/inline-brush world, without letting a projectile hit through
 			// a nearer living actor or solid prop.
 			TraceResult blockingTrace;
+			const ::Vector traceStart( start.GetX(), start.GetY(), start.GetZ() );
+			const ::Vector traceEnd( end.GetX(), end.GetY(), end.GetZ() );
 			UTIL_TraceLine(
-				start, end, dont_ignore_monsters, projectile, &blockingTrace );
+				traceStart, traceEnd, dont_ignore_monsters, projectile, &blockingTrace );
 
 			float hitFraction = blockingTrace.flFraction;
 			float hitPosition[3] = { 0.0f, 0.0f, 0.0f };
