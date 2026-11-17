@@ -45,6 +45,7 @@ class RuntimeDefinition:
     restitution: float
     bodies: List[RuntimeBody]
     self_collisions: bool = True
+    animated_friction: Tuple[float, float, float, float, float] = (0.0, 0.0, 0.0, 0.0, 0.0)
 
 
 def _next_record(lines: Sequence[str], cursor: int, source: str):
@@ -117,11 +118,33 @@ def parse_jrag_text(contents: str, source: str = "<memory>") -> RuntimeDefinitio
 
     next_tokens, next_line, cursor = _next_record(lines, cursor, source)
     self_collisions = True
-    if next_tokens is not None and next_tokens[0] == "self_collisions":
-        if len(next_tokens) != 2 or next_tokens[1] not in ("0", "1"):
-            raise ValueError("{}:{}: self_collisions must be 0 or 1".format(
-                source, next_line))
-        self_collisions = next_tokens[1] == "1"
+    animated_friction = (0.0, 0.0, 0.0, 0.0, 0.0)
+    saw_self_collisions = False
+    saw_animated_friction = False
+
+    while next_tokens is not None and next_tokens[0] != "body_count":
+        if next_tokens[0] == "self_collisions":
+            if saw_self_collisions or len(next_tokens) != 2 or next_tokens[1] not in ("0", "1"):
+                raise ValueError("{}:{}: self_collisions must appear once and be 0 or 1".format(
+                    source, next_line))
+            self_collisions = next_tokens[1] == "1"
+            saw_self_collisions = True
+        elif next_tokens[0] == "animated_friction":
+            if saw_animated_friction or len(next_tokens) != 6:
+                raise ValueError("{}:{}: animated_friction requires min, max, in, hold and out values".format(
+                    source, next_line))
+            animated_friction = tuple(
+                _read_number(value, source, "animated_friction")
+                for value in next_tokens[1:]
+            )
+            minimum, maximum, time_in, time_hold, time_out = animated_friction
+            if minimum < 0 or maximum < minimum or min(time_in, time_hold, time_out) < 0:
+                raise ValueError("{}:{}: animated_friction values are outside their valid ranges".format(
+                    source, next_line))
+            saw_animated_friction = True
+        else:
+            raise ValueError("{}:{}: unknown model-level ragdoll property {!r}".format(
+                source, next_line, next_tokens[0]))
         next_tokens, next_line, cursor = _next_record(lines, cursor, source)
 
     if next_tokens is None or len(next_tokens) != 2 or next_tokens[0] != "body_count":
@@ -217,6 +240,7 @@ def parse_jrag_text(contents: str, source: str = "<memory>") -> RuntimeDefinitio
         restitution=restitution,
         bodies=bodies,
         self_collisions=self_collisions,
+        animated_friction=animated_friction,
     )
 
 
@@ -430,6 +454,9 @@ def _build_parser() -> argparse.ArgumentParser:
                                  help="Jolt restitution from 0 to 1 (default: 0)")
     generate_parser.add_argument("--no-self-collisions", action="store_true",
                                  help="disable collisions between separate bodies in this ragdoll")
+    generate_parser.add_argument("--animated-friction", nargs=5, type=float,
+                                 metavar=("MIN", "MAX", "TIME_IN", "TIME_HOLD", "TIME_OUT"),
+                                 help="Source-style angular joint friction envelope (torque units, seconds)")
 
     validate_parser = commands.add_parser("validate", help="validate a .jrag against its source SMD")
     validate_parser.add_argument("jrag", type=Path, help="runtime .jrag file")
@@ -458,7 +485,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             bodies = converter.convert(
                 args.source, args.smd, args.output,
                 friction=args.friction, restitution=args.restitution,
-                self_collisions=not args.no_self_collisions)
+                self_collisions=not args.no_self_collisions,
+                animated_friction=tuple(args.animated_friction) if args.animated_friction else None)
             definition, _bone_count = validate_definition(
                 args.output, smd_path, args.source)
             print("Generated and validated {} ({} rigid bodies).".format(
