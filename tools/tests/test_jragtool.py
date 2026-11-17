@@ -134,7 +134,7 @@ class JRAGToolTests(unittest.TestCase):
     def test_legacy_jrag_without_self_collision_setting_defaults_to_enabled(self):
         self._generate()
         contents = self.jrag.read_text(encoding="utf-8")
-        contents = contents.replace("self_collisions 1\\n", "", 1)
+        contents = contents.replace("self_collisions 1\n", "", 1)
         definition = jragtool.parse_jrag_text(contents)
         self.assertTrue(definition.self_collisions)
 
