@@ -4020,6 +4020,15 @@ namespace
 				{
 					// The destination is clear, but the full convex body would cross
 					// world/brush geometry on its way there. Do not snap through it.
+					if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+						ALERT(
+							at_console,
+							"[NPC physics] Ragdoll recovery refused by swept environment check: entity=%d id=%d body=%d parent=%d delta=(%.2f %.2f %.2f).\\n",
+							ENTINDEX( ragdoll.entity ), ragdoll.networkID, body, parent,
+							newChildCenter.GetX() - childPosition.GetX(),
+							newChildCenter.GetY() - childPosition.GetY(),
+							newChildCenter.GetZ() - childPosition.GetZ()
+						);
 					blocked[body] = 1;
 					corrected[body] = 1;
 					ragdoll.jointErrorSince[body] = -1.0f;
