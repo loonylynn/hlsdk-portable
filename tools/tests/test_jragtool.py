@@ -119,7 +119,20 @@ class JRAGToolTests(unittest.TestCase):
         self.assertEqual(definition.bodies[0].joint_min, (-25.0, -1.0e30, -1.0e30))
         self.assertEqual(definition.bodies[0].angular_damping_override, 5.0)
         self.assertTrue(definition.self_collisions)
+        self.assertEqual(definition.animated_friction, (0.0, 0.0, 0.0, 0.0, 0.0))
         self.assertIn("self_collisions 1", self.jrag.read_text(encoding="utf-8"))
+
+    def test_generate_can_author_animated_joint_friction(self):
+        result, output = self._run([
+            "generate", str(self.qci), "--smd", str(self.smd),
+            "-o", str(self.jrag),
+            "--animated-friction", "10", "100", "0.4", "1.5", "0.8"
+        ])
+        self.assertEqual(result, 0, output)
+        definition = jragtool.read_jrag(self.jrag)
+        self.assertEqual(definition.animated_friction, (10.0, 100.0, 0.4, 1.5, 0.8))
+        self.assertIn("animated_friction 10 100 0.4 1.5 0.8",
+                      self.jrag.read_text(encoding="utf-8"))
 
     def test_generate_can_disable_ragdoll_self_collisions(self):
         result, output = self._run([
@@ -131,12 +144,24 @@ class JRAGToolTests(unittest.TestCase):
         self.assertFalse(definition.self_collisions)
         self.assertIn("self_collisions 0", self.jrag.read_text(encoding="utf-8"))
 
-    def test_legacy_jrag_without_self_collision_setting_defaults_to_enabled(self):
+    def test_legacy_jrag_without_optional_rules_uses_source_defaults(self):
         self._generate()
         contents = self.jrag.read_text(encoding="utf-8")
         contents = contents.replace("self_collisions 1\n", "", 1)
         definition = jragtool.parse_jrag_text(contents)
         self.assertTrue(definition.self_collisions)
+        self.assertEqual(definition.animated_friction, (0.0, 0.0, 0.0, 0.0, 0.0))
+
+    def test_parser_rejects_invalid_animated_friction(self):
+        self._generate()
+        contents = self.jrag.read_text(encoding="utf-8")
+        contents = contents.replace(
+            "self_collisions 1\n",
+            "animated_friction 20 10 0.4 1.5 0.8\nself_collisions 1\n",
+            1,
+        )
+        with self.assertRaisesRegex(ValueError, "animated_friction values"):
+            jragtool.parse_jrag_text(contents)
 
     def test_validate_with_qci_checks_geometry_and_authoring_values(self):
         self._generate()
