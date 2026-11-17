@@ -2306,24 +2306,6 @@ namespace
 				bodyDefinition.localShapeCenter.y,
 				bodyDefinition.localShapeCenter.z );
 			bone.parentLocalJointAnchor = Vec3::sZero();
-			if( bone.parentElementIndex >= 0 )
-			{
-				const RagdollBone &parentBone = ragdoll.bones[bone.parentElementIndex];
-				const int parentStudioBone = parentBone.studioBoneIndex;
-				const Vec3 parentBoneOrigin(
-					bonePositions[parentStudioBone][0],
-					bonePositions[parentStudioBone][1],
-					bonePositions[parentStudioBone][2] );
-				const Vec3 childJointOrigin(
-					bonePositions[bone.studioBoneIndex][0],
-					bonePositions[bone.studioBoneIndex][1],
-					bonePositions[bone.studioBoneIndex][2] );
-				const Quat parentRotation = boneRotations[parentStudioBone];
-				const Vec3 parentBodyCenter =
-					parentBoneOrigin + parentRotation * parentBone.localShapeCenter;
-				bone.parentLocalJointAnchor =
-					parentRotation.Conjugated() * ( childJointOrigin - parentBodyCenter );
-			}
 			ragdoll.bones.push_back( bone );
 			if( bone.parentElementIndex < 0 )
 			{
@@ -2332,6 +2314,37 @@ namespace
 				ragdoll.rootElement = body;
 			}
 		}
+
+		// Resolve parent-space joint anchors only after every physical body has
+		// been built. The authoring format does not require a parent-first body
+		// order, so computing these during the first pass could read a parent
+		// entry that has not been appended yet.
+		for( int body = 0; body < ragdoll.bodyCount; ++body )
+		{
+			RagdollBone &bone = ragdoll.bones[body];
+			const int parent = bone.parentElementIndex;
+			if( parent < 0 )
+				continue;
+			if( parent >= ragdoll.bodyCount || parent == body )
+				return NPCPhysics_RagdollSetupFailed( "external rig contains an invalid physical parent index" );
+
+			const RagdollBone &parentBone = ragdoll.bones[parent];
+			const int parentStudioBone = parentBone.studioBoneIndex;
+			const Vec3 parentBoneOrigin(
+				bonePositions[parentStudioBone][0],
+				bonePositions[parentStudioBone][1],
+				bonePositions[parentStudioBone][2] );
+			const Vec3 childJointOrigin(
+				bonePositions[bone.studioBoneIndex][0],
+				bonePositions[bone.studioBoneIndex][1],
+				bonePositions[bone.studioBoneIndex][2] );
+			const Quat parentRotation = boneRotations[parentStudioBone];
+			const Vec3 parentBodyCenter =
+				parentBoneOrigin + parentRotation * parentBone.localShapeCenter;
+			bone.parentLocalJointAnchor =
+				parentRotation.Conjugated() * ( childJointOrigin - parentBodyCenter );
+		}
+
 		if( ragdoll.rootElement < 0 )
 			return NPCPhysics_RagdollSetupFailed( "external rig has no root body" );
 		ragdoll.jointErrorSince.resize( ragdoll.bodyCount, -1.0f );
