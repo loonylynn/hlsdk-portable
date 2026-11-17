@@ -985,6 +985,7 @@ namespace
 	static cvar_t g_svNpcVPhysicsMaxRagdolls = { "sv_npc_vphysics_max_ragdolls", "8", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsMaxImportantRagdolls = { "sv_npc_vphysics_max_important_ragdolls", "2", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsFadeOnRetire = { "sv_npc_vphysics_fade_on_retire", "1", FCVAR_SERVER };
+static cvar_t g_svNpcVPhysicsLowViolence = { "sv_npc_vphysics_low_violence", "0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsFadeTime = { "sv_npc_vphysics_fade_time", "2.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
@@ -1405,10 +1406,19 @@ namespace
 
 	static void NPCPhysics_EnforceRagdollLimits()
 	{
-		const int ordinaryLimit = NPCPhysics_GetRagdollLimit(
+		int ordinaryLimit = NPCPhysics_GetRagdollLimit(
 			"sv_npc_vphysics_max_ragdolls", 8.0f );
-		const int importantLimit = NPCPhysics_GetRagdollLimit(
+		int importantLimit = NPCPhysics_GetRagdollLimit(
 			"sv_npc_vphysics_max_important_ragdolls", 2.0f );
+
+		// Source low-violence mode fades every server ragdoll instead of
+		// retaining a physics corpse. Force both pools to zero, even when
+		// the ordinary per-pool limits have been configured as unlimited.
+		if( NPCPhysics_GetCvar( "sv_npc_vphysics_low_violence", 0.0f ) >= 0.5f )
+		{
+			ordinaryLimit = 0;
+			importantLimit = 0;
+		}
 
 		while( ordinaryLimit >= 0 &&
 			NPCPhysics_CountRagdolls( false ) > ordinaryLimit )
@@ -4667,7 +4677,7 @@ int NPCPhysics_TraceAndApplyImpact(
 				targetBodyIndex, hit.mFraction, bloodColor, g_msgRagdollImpact
 			);
 
-		if( bloodColor != DONT_BLEED )
+		if( UTIL_ShouldShowBlood( bloodColor ) )
 		{
 			const RagdollBone &bone = targetRagdoll->bones[targetBodyIndex];
 			if( bone.studioBoneIndex >= 0 &&
@@ -4712,7 +4722,7 @@ int NPCPhysics_TraceAndApplyImpact(
 				ALERT( at_console, "[NPC decals] Hit body has invalid studio bone %d.\n", bone.studioBoneIndex );
 		}
 		else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
-			ALERT( at_console, "[NPC decals] Ragdoll blood color is DONT_BLEED; no mark sent.\n" );
+			ALERT( at_console, "[NPC decals] Blood mark suppressed by blood color or violence cvar.\n" );
 	}
 	else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT( at_console, "[NPC decals] Impact usermessage is not registered or body index is invalid.\n" );
@@ -4929,6 +4939,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsMaxRagdolls );
 	CVAR_REGISTER( &g_svNpcVPhysicsMaxImportantRagdolls );
 	CVAR_REGISTER( &g_svNpcVPhysicsFadeOnRetire );
+	CVAR_REGISTER( &g_svNpcVPhysicsLowViolence );
 	CVAR_REGISTER( &g_svNpcVPhysicsFadeTime );
 	CVAR_REGISTER( &g_svNpcVPhysicsDebug );
 
