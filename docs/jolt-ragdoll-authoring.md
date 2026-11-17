@@ -213,7 +213,8 @@ GoldSrc remains the owner of movement and touch callbacks; this is a bounded
 velocity bridge, not a second dynamic simulation. It does not synthesize
 angular velocity, rotated/custom collision geometry, or mass/inertia, and it
 does not include arbitrary movement types. The pushable-specific response
-remains horizontal and respects the pushable's existing maximum speed.
+retains its horizontal speed limit and now transfers a bounded vertical
+component, clamped to the pushable's configured maximum speed.
 
 When a child joint remains more than one GoldSrc unit away from its parent's
 expected anchor for 0.2 seconds, the bridge ray-checks the gap against world and
