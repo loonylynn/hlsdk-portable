@@ -94,6 +94,8 @@ namespace
 	static constexpr float RAGDOLL_ANGULAR_VELOCITY_LIMIT = 35.0f;
 	static constexpr int RAGDOLL_DEFINITION_VERSION = 1;
 	static constexpr int RAGDOLL_DEFINITION_MAX_BODIES = 64;
+	static constexpr int RAGDOLL_DEFINITION_MAX_BODY_PAIRS =
+		RAGDOLL_DEFINITION_MAX_BODIES * ( RAGDOLL_DEFINITION_MAX_BODIES - 1 ) / 2;
 	static constexpr int RAGDOLL_DEFINITION_MAX_HULL_POINTS = 32;
 	static constexpr int RAGDOLL_DEFINITION_MAX_FILE_BYTES = 1024 * 1024;
 
@@ -1964,7 +1966,7 @@ namespace
 					!( line >> first >> second ) ||
 					!NPCPhysics_JragLineFinished( line ) ||
 					first < 0 || second < 0 || first == second ||
-					definition.collisionPairs.size() >= 2016 )
+					definition.collisionPairs.size() >= RAGDOLL_DEFINITION_MAX_BODY_PAIRS )
 				{
 					error = "collision_pair requires collision_rules 1 and two distinct non-negative body indices";
 					return false;
