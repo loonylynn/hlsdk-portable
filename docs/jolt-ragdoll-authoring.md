@@ -210,10 +210,14 @@ after Jolt simulation and apply one strongest normal-directed velocity
 increment to the original GoldSrc entity per server frame, on X/Y/Z. The
 increment uses a 0.25 approach-speed factor and is capped at 500 units/second.
 GoldSrc remains the owner of movement and touch callbacks; this is a bounded
-velocity bridge, not a second dynamic simulation. It does not synthesize
-angular velocity, rotated/custom collision geometry, or mass/inertia, and it
-does not include arbitrary movement types. The pushable-specific response
-retains its horizontal speed limit and now transfers a bounded vertical
+velocity bridge, not a second dynamic simulation. Off-center toss/bounce
+impacts also add bounded angular velocity to GoldSrc `pev->avelocity`, using
+a uniform-box inertia estimate from the mirrored half-extents. The impact
+angular increment is capped at 360 degrees/second and total angular speed at
+720 degrees/second. This is only an approximation because arbitrary GoldSrc
+edicts do not expose a consistent mass/inertia model. Rotated/custom collision
+geometry and arbitrary movement types remain unsupported. The pushable-specific
+response retains its horizontal speed limit and transfers a bounded vertical
 component, clamped to the pushable's configured maximum speed.
 
 When a child joint remains more than one GoldSrc unit away from its parent's
