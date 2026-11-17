@@ -125,6 +125,9 @@ class CCrossbowBolt : public CBaseEntity
 	void EXPORT ExplodeThink( void );
 
 	int m_iTrail;
+	TraceResult m_sweepTrace;
+	Vector m_sweepStart;
+	BOOL m_sweepTracePending;
 
 public:
 	static CCrossbowBolt *BoltCreate( void );
@@ -149,6 +152,8 @@ void CCrossbowBolt::Spawn()
 	pev->solid = SOLID_BBOX;
 
 	pev->gravity = 0.5f;
+	m_sweepTracePending = FALSE;
+	m_sweepStart = pev->origin;
 
 	SET_MODEL( ENT( pev ), "models/crossbow_bolt.mdl" );
 
@@ -181,7 +186,8 @@ void CCrossbowBolt::BoltTouch( CBaseEntity *pOther )
 	SetTouch( NULL );
 	SetThink( NULL );
 
-	TraceResult tr = UTIL_GetGlobalTrace();
+	const bool hasSweepTrace = m_sweepTracePending;
+	TraceResult tr = hasSweepTrace ? m_sweepTrace : UTIL_GetGlobalTrace();
 	entvars_t *pevOwner = VARS( pev->owner );
 	NPCPhysicsPendingCrossbowImpact pendingCrossbowImpact;
 	pendingCrossbowImpact.entity = NULL;
@@ -189,14 +195,16 @@ void CCrossbowBolt::BoltTouch( CBaseEntity *pOther )
 	pendingCrossbowImpact.impulseMagnitude = 0.0f;
 	const Vector impactDirection = pev->velocity.Normalize();
 	const Vector impactEnd = tr.vecEndPos;
-	Vector impactStart = pev->oldorigin;
+	Vector impactStart = hasSweepTrace ? m_sweepStart : pev->oldorigin;
 	const float segmentLength = ( impactEnd - impactStart ).Length();
 	if( segmentLength > 256.0f || segmentLength <= 0.001f )
 		impactStart = impactEnd - impactDirection * 64.0f;
-	// Direct SP bolts use HL2's XBowBolt impulse. MP explosive bolts use
-	// a trace-only intercept and receive force from the existing RadiusDamage.
+	// BubbleThink already performed the Jolt trace for a swept collision.
+	// Ordinary GoldSrc contacts still perform the original intercept here.
 	const float impactMultiplier = g_pGameRules->IsMultiplayer() ? 0.0f : 1.0f;
-	if( NPCPhysics_TraceCrossbowImpact( impactStart, impactEnd, 1.0f, impactMultiplier, &tr ) )
+	if( !hasSweepTrace &&
+		NPCPhysics_TraceCrossbowImpact(
+			impactStart, impactEnd, 1.0f, impactMultiplier, &tr ) )
 	{
 		CBaseEntity *ragdollHit = CBaseEntity::Instance( tr.pHit );
 		if( ragdollHit )
@@ -290,7 +298,63 @@ void CCrossbowBolt::BoltTouch( CBaseEntity *pOther )
 
 void CCrossbowBolt::BubbleThink( void )
 {
-	pev->nextthink = gpGlobals->time + 0.1f;
+	// Sweep the previous physics-frame segment, not the full interval between
+	// bubble thinks. This makes narrow ragdoll limbs hittable even though their
+	// carrier edict is SOLID_NOT to GoldSrc projectiles.
+	pev->nextthink = gpGlobals->time + 0.01f;
+
+#if !CLIENT_DLL
+	if( pev->solid == SOLID_BBOX && pev->movetype == MOVETYPE_FLY )
+	{
+		const Vector sweepStart = pev->oldorigin;
+		const Vector sweepEnd = pev->origin;
+		const float segmentLength = ( sweepEnd - sweepStart ).Length();
+		if( segmentLength > 0.001f && segmentLength <= 512.0f )
+		{
+			TraceResult sweptTrace;
+			UTIL_TraceLine(
+				sweepStart, sweepEnd, dont_ignore_monsters, ENT( pev ), &sweptTrace );
+
+			BOOL hitRagdoll = FALSE;
+			if( g_pGameRules->IsMultiplayer() )
+			{
+				float hitFraction = sweptTrace.flFraction;
+				float hitPosition[3] = { 0.0f, 0.0f, 0.0f };
+				edict_t *hitEntity = NULL;
+				if( NPCPhysics_TraceRagdollImpact(
+					&sweepStart[0], &sweepEnd[0], sweptTrace.flFraction,
+					&hitFraction, hitPosition, &hitEntity ) )
+				{
+					sweptTrace.flFraction = hitFraction;
+					sweptTrace.vecEndPos =
+						Vector( hitPosition[0], hitPosition[1], hitPosition[2] );
+					sweptTrace.pHit = hitEntity;
+					sweptTrace.vecPlaneNormal = -( sweepEnd - sweepStart ).Normalize();
+					hitRagdoll = TRUE;
+				}
+			}
+			else
+			{
+				hitRagdoll = NPCPhysics_TraceCrossbowImpact(
+					sweepStart, sweepEnd, sweptTrace.flFraction, 1.0f, &sweptTrace );
+			}
+
+			if( hitRagdoll && sweptTrace.pHit )
+			{
+				CBaseEntity *ragdollHit = CBaseEntity::Instance( sweptTrace.pHit );
+				if( ragdollHit )
+				{
+					m_sweepTrace = sweptTrace;
+					m_sweepStart = sweepStart;
+					m_sweepTracePending = TRUE;
+					BoltTouch( ragdollHit );
+					m_sweepTracePending = FALSE;
+					return;
+				}
+			}
+		}
+	}
+#endif
 
 	if( pev->waterlevel == 0 )
 		return;
