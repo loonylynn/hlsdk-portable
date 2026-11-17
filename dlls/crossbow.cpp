@@ -28,9 +28,8 @@
 #include <cmath>
 static float NPCPhysics_GetCrossbowImpulseMagnitude()
 {
-	const float massPounds = 0.002285f * 800.0f / 16.0f;
-	const float massKilograms = massPounds * 0.45359237f;
-	return 8000.0f * 12.0f * massKilograms * 3.5f;
+	// Source SDK's XBowBolt ammo definition: 800 grains at 8000 ft/s.
+	return NPCPhysics_CalculateSourceBulletImpulse( 800.0f, 8000.0f );
 }
 struct NPCPhysicsPendingCrossbowImpact
 {
