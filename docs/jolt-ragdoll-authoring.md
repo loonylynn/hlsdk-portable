@@ -197,6 +197,15 @@ implicitly enable the rules marker, or `--collision-rules` by itself for an
 empty allow-list. Explicit rules and `--no-self-collisions` are mutually
 exclusive.
 
+GoldSrc `func_pushable` entities are mirrored as kinematic Jolt box hulls.
+A moving pushable transfers its surface velocity into ragdolls, while a
+ragdoll pushing a pushable generates one deferred horizontal velocity update
+per pushable per server frame. The reverse push uses GoldSrc's stock non-player
+factor of 0.25 and the pushable's existing maximum horizontal speed. GoldSrc
+remains the owner of pushable movement; this is a bounded velocity bridge, not
+a second dynamic simulation. Vertical pushable impulses, angular response, and
+arbitrary movable entities are not included yet.
+
 When a child joint remains more than one GoldSrc unit away from its parent's
 expected anchor for 0.2 seconds, the bridge ray-checks the gap against world and
 brush collision. If geometry blocks the connection, it restores the child
