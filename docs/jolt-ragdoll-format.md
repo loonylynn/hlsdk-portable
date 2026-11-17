@@ -57,10 +57,19 @@ the full 15-body rig.
   the asset value.
 - `inertia_multiplier`, `linear_damping`, `angular_damping`: Jolt body settings.
 - `friction`, `restitution`: material settings for all bodies.
-- `self_collisions`: optional `0` or `1`; defaults to `1`. When enabled,
-  physical pieces collide with one another except for directly constrained
-  parent/child pairs. Set to `0` to disable all collisions between pieces of
-  the same ragdoll, matching Source's `selfcollisions 0` rule.
+- `self_collisions`: optional `0` or `1`; defaults to `1`. Without an explicit
+  `collision_rules` block, enabled means every body pair can collide except
+  directly constrained parent/child pairs. Set to `0` to disable all collisions
+  between pieces of the same ragdoll, matching Source's `selfcollisions 0` rule.
+- `collision_rules 1`: optional explicit body-pair allow-list, matching a
+  Source `collisionrules` block. When present, all ragdoll body pairs start
+  disabled and only pairs named by `collision_pair` are enabled. An empty list
+  therefore disables all body-to-body collisions. This directive cannot be
+  combined with `self_collisions 0`.
+- `collision_pair A B`: repeatable pair of distinct, zero-based **body indices**
+  from the `body_count` / `body` order. Pair order is irrelevant; duplicates and
+  indices outside `body_count` are rejected. These are physical-body indices,
+  not studio skeleton-bone indices.
 - `animated_friction`: optional `minimum maximum time_in time_hold time_out`
   values. When present, the runtime ramps each angular joint's friction from
   minimum to maximum, holds it, then ramps it back down, matching Source's
@@ -77,8 +86,22 @@ the full 15-body rig.
   4–32 points are accepted.
 - `end_body` and `end`: required terminators.
 
-The generator enables self-collision by default. Pass `--no-self-collisions`
-to `jragtool generate` (or `smd2jrag.py`) to emit `self_collisions 0`.
+The generator enables Source's default self-collision behavior. Pass
+`--no-self-collisions` to `jragtool generate` (or `smd2jrag.py`) to emit
+`self_collisions 0`.
+
+To author an explicit Source-style collision allow-list, pass
+`--collision-rules` and repeat `--collision-pair BODY_A BODY_B` for every pair
+to enable. For example:
+
+```bash
+python3 tools/jragtool.py generate model.qci --collision-pair 0 4 \\
+    --collision-pair 2 5 -o model.jrag
+```
+
+A pair option implies `--collision-rules`. Use `--collision-rules` by itself
+for an empty allow-list, where no two ragdoll bodies collide. The pair indices
+are the zero-based body indices printed by `jragtool inspect` / `generate`.
 
 To author the Source-style animated joint-friction envelope, pass five values:
 `--animated-friction MIN MAX TIME_IN TIME_HOLD TIME_OUT`. For example,
@@ -86,7 +109,7 @@ To author the Source-style animated joint-friction envelope, pass five values:
 seconds, holds for 1.5 seconds, then returns to 10 over 0.8 seconds. The
 default is no animated joint friction.
 
-Existing v1 files without either optional directive remain valid and retain
+Existing v1 files without these optional directives remain valid and retain
 the original defaults.
 
 The loader rejects invalid parent ordering, duplicate bone names, multiple roots,
