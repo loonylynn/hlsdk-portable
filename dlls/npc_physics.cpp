@@ -349,6 +349,7 @@ namespace
 	{
 		uint64_t ragdollID;
 		BodyID ragdollBodyID;
+		uint64_t otherRagdollID;
 		int otherEntityIndex;
 		float velocityLoss;
 		Vec3 contactPoint;
@@ -356,6 +357,7 @@ namespace
 		NPCPhysicsPendingCollisionDamage()
 			: ragdollID( 0 ),
 			  ragdollBodyID(),
+			  otherRagdollID( 0 ),
 			  otherEntityIndex( 0 ),
 			  velocityLoss( 0.0f ),
 			  contactPoint( 0.0f, 0.0f, 0.0f )
@@ -367,6 +369,7 @@ namespace
 	{
 		uint64_t ragdollID;
 		BodyID ragdollBodyID;
+		uint64_t otherRagdollID;
 		int otherLayer;
 		int otherEntityIndex;
 		float penetrationDepth;
@@ -391,6 +394,7 @@ namespace
 		NPCPhysicsPendingContactDiagnostic()
 			: ragdollID( 0 ),
 			  ragdollBodyID(),
+			  otherRagdollID( 0 ),
 			  otherLayer( 0 ),
 			  otherEntityIndex( 0 ),
 			  penetrationDepth( 0.0f ),
@@ -496,9 +500,92 @@ namespace
 			const bool body1IsRagdoll = layer1 == RAGDOLL_OBJECT_LAYER;
 			const bool body2IsRagdoll = layer2 == RAGDOLL_OBJECT_LAYER;
 
-			// This pass models Source's ragdoll-vs-world/brush/actor impact path.
-			// Ragdoll-vs-ragdoll damage is deliberately left out for now.
-			if( body1IsRagdoll == body2IsRagdoll )
+			// Handle articulated-ragdoll pairs separately from world/brush
+			// impacts. Bodies from the same ragdoll share one user-data ID;
+			// those are self-collisions, not inter-ragdoll gameplay impacts.
+			if( body1IsRagdoll && body2IsRagdoll )
+			{
+				const uint64_t ragdollID1 = body1.GetUserData();
+				const uint64_t ragdollID2 = body2.GetUserData();
+				if( ragdollID1 == 0 || ragdollID2 == 0 ||
+					ragdollID1 == ragdollID2 ||
+					body1.GetMotionType() != EMotionType::Dynamic ||
+					body2.GetMotionType() != EMotionType::Dynamic ||
+					manifold.mRelativeContactPointsOn1.empty() )
+					return;
+
+				QueueContactDiagnostic( body1, body2, manifold, false );
+
+				const RVec3 contact = manifold.GetWorldSpaceContactPointOn1( 0 );
+				const Vec3 normal = manifold.mWorldSpaceNormal;
+				const Vec3 velocity1Before = body1.GetPointVelocity( contact );
+				const Vec3 velocity2Before = body2.GetPointVelocity( contact );
+				const Vec3 relativeVelocityBefore = velocity2Before - velocity1Before;
+				const float closingSpeedBefore =
+					(std::max)( 0.0f, -relativeVelocityBefore.Dot( normal ) );
+				if( manifold.mPenetrationDepth < 0.0f || closingSpeedBefore < 1.0f )
+					return;
+
+				CollisionEstimationResult estimate;
+				EstimateCollisionResponse(
+					body1, body2, manifold, estimate,
+					settings.mCombinedFriction, settings.mCombinedRestitution,
+					1.0f, 2 );
+
+				const RVec3 center1 = body1.GetCenterOfMassPosition();
+				const RVec3 center2 = body2.GetCenterOfMassPosition();
+				const Vec3 offset1(
+					float( contact.GetX() - center1.GetX() ),
+					float( contact.GetY() - center1.GetY() ),
+					float( contact.GetZ() - center1.GetZ() ) );
+				const Vec3 offset2(
+					float( contact.GetX() - center2.GetX() ),
+					float( contact.GetY() - center2.GetY() ),
+					float( contact.GetZ() - center2.GetZ() ) );
+				const Vec3 velocity1After = estimate.mLinearVelocity1 +
+					estimate.mAngularVelocity1.Cross( offset1 );
+				const Vec3 velocity2After = estimate.mLinearVelocity2 +
+					estimate.mAngularVelocity2.Cross( offset2 );
+
+				// Measure each corpse's own normal velocity change. A fast,
+				// heavy corpse can transfer very little speed loss to itself
+				// while sharply decelerating a lighter corpse, so do not apply
+				// one shared relative-speed value to both victims.
+				const float velocityLoss1 = (std::max)(
+					0.0f, ( velocity1Before - velocity1After ).Dot( normal ) );
+				const float velocityLoss2 = (std::max)(
+					0.0f, ( velocity2After - velocity2Before ).Dot( normal ) );
+				if( !std::isfinite( velocityLoss1 ) ||
+					!std::isfinite( velocityLoss2 ) ||
+					( velocityLoss1 < 1.0f && velocityLoss2 < 1.0f ) )
+					return;
+
+				NPCPhysicsPendingCollisionDamage event1;
+				event1.ragdollID = ragdollID1;
+				event1.ragdollBodyID = body1.GetID();
+				event1.otherRagdollID = ragdollID2;
+				event1.velocityLoss = velocityLoss1;
+				event1.contactPoint = Vec3(
+					float( contact.GetX() ),
+					float( contact.GetY() ),
+					float( contact.GetZ() ) );
+
+				NPCPhysicsPendingCollisionDamage event2;
+				event2.ragdollID = ragdollID2;
+				event2.ragdollBodyID = body2.GetID();
+				event2.otherRagdollID = ragdollID1;
+				event2.velocityLoss = velocityLoss2;
+				event2.contactPoint = event1.contactPoint;
+
+				std::lock_guard<std::mutex> lock( m_mutex );
+				if( velocityLoss1 >= 1.0f )
+					m_pending.push_back( event1 );
+				if( velocityLoss2 >= 1.0f )
+					m_pending.push_back( event2 );
+				return;
+			}
+
+			if( !body1IsRagdoll && !body2IsRagdoll )
 				return;
 
 			const Body &ragdollBody = body1IsRagdoll ? body1 : body2;
@@ -638,20 +725,26 @@ namespace
 			const ObjectLayer layer2 = body2.GetObjectLayer();
 			const bool body1IsRagdoll = layer1 == RAGDOLL_OBJECT_LAYER;
 			const bool body2IsRagdoll = layer2 == RAGDOLL_OBJECT_LAYER;
-			if( body1IsRagdoll == body2IsRagdoll )
+			if( !body1IsRagdoll && !body2IsRagdoll )
 				return;
 
+			const bool ragdollPair = body1IsRagdoll && body2IsRagdoll;
 			const Body &ragdollBody = body1IsRagdoll ? body1 : body2;
 			const Body &otherBody = body1IsRagdoll ? body2 : body1;
 			const ObjectLayer otherLayer = body1IsRagdoll ? layer2 : layer1;
-			if( ( otherLayer != WORLD_STATIC_OBJECT_LAYER &&
+			if( ( !ragdollPair &&
+				  otherLayer != WORLD_STATIC_OBJECT_LAYER &&
 				  otherLayer != BRUSH_KINEMATIC_OBJECT_LAYER ) ||
 				ragdollBody.GetMotionType() != EMotionType::Dynamic ||
-				manifold.mRelativeContactPointsOn1.size() == 0 )
+				( ragdollPair && otherBody.GetMotionType() != EMotionType::Dynamic ) ||
+				manifold.mRelativeContactPointsOn1.empty() )
 				return;
 
 			const uint64_t ragdollID = ragdollBody.GetUserData();
-			if( ragdollID == 0 || !g_npcPhysicsContactDebugEnabled )
+			const uint64_t otherRagdollID = ragdollPair ? otherBody.GetUserData() : 0;
+			if( ragdollID == 0 ||
+				( ragdollPair && ( otherRagdollID == 0 || otherRagdollID == ragdollID ) ) ||
+				!g_npcPhysicsContactDebugEnabled )
 				return;
 
 			const RVec3 contact = body1IsRagdoll
@@ -669,8 +762,10 @@ namespace
 			NPCPhysicsPendingContactDiagnostic diagnostic;
 			diagnostic.ragdollID = ragdollID;
 			diagnostic.ragdollBodyID = ragdollBody.GetID();
+			diagnostic.otherRagdollID = otherRagdollID;
 			diagnostic.otherLayer = static_cast<int>( otherLayer );
-			diagnostic.otherEntityIndex = otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER
+			diagnostic.otherEntityIndex = !ragdollPair &&
+				otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER
 				? static_cast<int>( otherBody.GetUserData() ) : 0;
 			diagnostic.penetrationDepth = manifold.mPenetrationDepth;
 			diagnostic.closingSpeed = closingSpeed;
@@ -713,6 +808,7 @@ namespace
 					existing.ragdollBodyID != diagnostic.ragdollBodyID ||
 					existing.otherLayer != diagnostic.otherLayer ||
 					existing.otherEntityIndex != diagnostic.otherEntityIndex ||
+					existing.otherRagdollID != diagnostic.otherRagdollID ||
 					existing.persisted != diagnostic.persisted )
 					continue;
 
@@ -2512,9 +2608,10 @@ namespace
 		ragdoll.bodyCount = static_cast<int>( physicsDefinition->bodies.size() );
 		if( ragdoll.bodyCount < 1 || ragdoll.bodyCount > RAGDOLL_DEFINITION_MAX_BODIES )
 			return NPCPhysics_RagdollSetupFailed( "loaded ragdoll definition has an invalid body count" );
-		// Four contact channels per body: world/brush x added/persisted.
+		// Six contact channels per body: world, ragdoll pair, and
+		// brush/actor, each split into added and persisted callbacks.
 		ragdoll.nextContactDebugTimes.assign(
-			static_cast<size_t>( ragdoll.bodyCount ) * 4, 0.0f );
+			static_cast<size_t>( ragdoll.bodyCount ) * 6, 0.0f );
 
 		std::vector<int> rigStudioBones( ragdoll.bodyCount, -1 );
 		std::vector<int> studioBoneToRig( ragdoll.studioBoneCount, -1 );
@@ -3628,7 +3725,9 @@ namespace
 			// Source keeps static world geometry distinct from moving brush
 			// and actor hull contacts. Throttle each body/channel separately
 			// so one busy limb cannot hide another body's penetration data.
-			const int debugChannel = ( event.otherLayer == WORLD_STATIC_OBJECT_LAYER ? 0 : 2 ) +
+			const int debugChannel = (
+				event.otherLayer == WORLD_STATIC_OBJECT_LAYER ? 0 :
+				event.otherLayer == RAGDOLL_OBJECT_LAYER ? 2 : 4 ) +
 				( event.persisted ? 1 : 0 );
 			const size_t debugSlot = static_cast<size_t>( bodyIndex ) * 4 +
 				static_cast<size_t>( debugChannel );
@@ -3639,7 +3738,8 @@ namespace
 				continue;
 
 			const char *otherKind = event.otherLayer == WORLD_STATIC_OBJECT_LAYER
-				? "world" : "kinematic";
+				? "world" :
+				event.otherLayer == RAGDOLL_OBJECT_LAYER ? "ragdoll" : "kinematic";
 			if( event.otherLayer == BRUSH_KINEMATIC_OBJECT_LAYER &&
 				event.otherEntityIndex > 0 &&
 				event.otherEntityIndex < gpGlobals->maxEntities )
@@ -3664,10 +3764,11 @@ namespace
 
 			ALERT(
 				at_console,
-				"[NPC physics] Contact %s: ent=%d id=%d body=%d bone='%s' other=%s/%d samples=%u jolt-depth=%.3f closing=%.1f point=(%.1f %.1f %.1f) ragdoll-normal=(%.2f %.2f %.2f) subshape-ragdoll=%u subshape-other=%u.\n",
+				"[NPC physics] Contact %s: ent=%d id=%d body=%d bone='%s' other=%s/%d other-ragdoll-id=%llu samples=%u jolt-depth=%.3f closing=%.1f point=(%.1f %.1f %.1f) ragdoll-normal=(%.2f %.2f %.2f) subshape-ragdoll=%u subshape-other=%u.\n",
 				event.persisted ? "persisted" : "added",
 				ENTINDEX( ragdoll->entity ), ragdoll->networkID, bodyIndex, boneName,
-				otherKind, event.otherEntityIndex, event.sampleCount,
+				otherKind, event.otherEntityIndex,
+				static_cast<unsigned long long>( event.otherRagdollID ), event.sampleCount,
 				event.penetrationDepth, event.closingSpeed,
 				event.contactPoint.GetX(), event.contactPoint.GetY(), event.contactPoint.GetZ(),
 				event.normal.GetX(), event.normal.GetY(), event.normal.GetZ(),
@@ -3811,9 +3912,9 @@ namespace
 		if( pending.empty() || !NPCPhysics_Enabled() )
 			return;
 
-		// One strongest impact per corpse per server frame. This collapses
-		// multi-point manifolds and prevents a single landing from multiplying
-		// damage by the number of contact points and articulated bones.
+		// One strongest impact per target corpse per server frame. This
+		// collapses multi-point manifolds and multiple limb-pair contacts, so
+		// one ragdoll collision cannot multiply damage by its contact count.
 		std::vector<NPCPhysicsPendingCollisionDamage> strongest;
 		for( size_t i = 0; i < pending.size(); ++i )
 		{
@@ -3865,7 +3966,27 @@ namespace
 			// pointer and free flag directly instead of using FNullEnt.
 			if( !attacker || attacker->free )
 				attacker = NULL;
-			if( attackerIndex > 0 && attackerIndex < gpGlobals->maxEntities )
+
+			if( event.otherRagdollID != 0 )
+			{
+				// Resolve the opposing corpse only after simulation. An LRU
+				// retirement or gib during this frame may have removed it,
+				// in which case the safe worldspawn fallback remains in use.
+				for( size_t r = 0; r < g_ragdolls.size(); ++r )
+				{
+					NPCPhysicsRagdoll &other = g_ragdolls[r];
+					if( other.networkID != static_cast<int>( event.otherRagdollID ) ||
+						!other.addedToPhysicsSystem || !other.physicsRagdoll.GetPtr() ||
+						!other.entity || other.entity->free ||
+						other.entity->serialnumber != other.serialNumber ||
+						( other.entity->v.effects & EF_NODRAW ) ||
+						( other.entity->v.flags & FL_KILLME ) )
+						continue;
+					attacker = other.entity;
+					break;
+				}
+			}
+			else if( attackerIndex > 0 && attackerIndex < gpGlobals->maxEntities )
 			{
 				edict_t *candidate = INDEXENT( attackerIndex );
 				if( !FNullEnt( candidate ) && !candidate->free )
