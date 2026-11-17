@@ -473,8 +473,11 @@ int NPCPhysics_TriggerHornetProjectileImpact(
 
 	// Hornets have no Source SDK ammo entry. GuessDamageForce() maps a
 	// generic DMG_BULLET hit to SMG1, so use that documented fallback force.
+	float bulletScale = CVAR_GET_FLOAT( "sv_npc_vphysics_bullet_scale" );
+	if( !std::isfinite( bulletScale ) || bulletScale < 0.0f )
+		bulletScale = 0.0f;
 	const float impulseMagnitude =
-		NPCPhysics_CalculateSourceBulletImpulse( 200.0f, 1225.0f );
+		NPCPhysics_CalculateSourceBulletImpulse( 200.0f, 1225.0f ) * bulletScale;
 	if( !std::isfinite( impulseMagnitude ) || impulseMagnitude <= 0.0f )
 		return FALSE;
 
