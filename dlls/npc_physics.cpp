@@ -3533,14 +3533,18 @@ namespace
 		ALERT(
 			at_console,
 			hasPersistentPose
-				? "[NPC physics] Restored articulated Jolt ragdoll: entity=%d classname='%s' model='%s' id=%d bodies=%d studio-bones=%d.\n"
-				: "[NPC physics] Created articulated Jolt ragdoll: entity=%d classname='%s' model='%s' id=%d bodies=%d studio-bones=%d.\n",
+				? "[NPC physics] Restored articulated Jolt ragdoll: entity=%d classname='%s' model='%s' id=%d bodies=%d studio-bones=%d source=persistent-restore health=%.1f deadflag=%d movetype=%d iuser4=%d.\n"
+				: "[NPC physics] Created articulated Jolt ragdoll: entity=%d classname='%s' model='%s' id=%d bodies=%d studio-bones=%d source=lethal-handoff health=%.1f deadflag=%d movetype=%d iuser4=%d.\n",
 			ENTINDEX( ent ),
 			STRING( ent->v.classname ),
 			STRING( ent->v.model ),
 			ragdoll.networkID,
 			ragdoll.bodyCount,
-			ragdoll.studioBoneCount
+			ragdoll.studioBoneCount,
+			ent->v.health,
+			ent->v.deadflag,
+			ent->v.movetype,
+			ent->v.iuser4
 		);
 		return true;
 	}
