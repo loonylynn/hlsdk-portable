@@ -412,7 +412,11 @@ namespace
 		float penetrationDepth;
 		float closingSpeed;
 		unsigned int sampleCount;
-		bool persisted;
+		BodyID body1ID;
+		BodyID body2ID;
+		uint32_t body1SubShapeID;
+		uint32_t body2SubShapeID;
+		bool removed;
 		Vec3 contactPoint;
 		Vec3 normal;
 		Vec3 ragdollCenterOfMass;
@@ -437,7 +441,11 @@ namespace
 			  penetrationDepth( 0.0f ),
 			  closingSpeed( 0.0f ),
 			  sampleCount( 0 ),
-			  persisted( false ),
+			  body1ID(),
+			  body2ID(),
+			  body1SubShapeID( 0xFFFFFFFFu ),
+			  body2SubShapeID( 0xFFFFFFFFu ),
+			  removed( false ),
 			  contactPoint( 0.0f, 0.0f, 0.0f ),
 			  normal( 0.0f, 0.0f, 0.0f ),
 			  ragdollCenterOfMass( 0.0f, 0.0f, 0.0f ),
@@ -767,6 +775,11 @@ namespace
 			QueueContactDiagnostic( body1, body2, manifold, true );
 		}
 
+		void OnContactRemoved( const SubShapeIDPair &pair ) override
+		{
+			QueueRemovedContactDiagnostic( pair );
+		}
+
 		std::vector<NPCPhysicsPendingPlayerPush> DrainPlayerPushLimits()
 		{
 			std::lock_guard<std::mutex> lock( m_mutex );
@@ -829,6 +842,7 @@ namespace
 			m_pending.clear();
 			m_separationContacts.clear();
 			m_contactDiagnostics.clear();
+			m_activeContactDiagnostics.clear();
 			m_playerPushLimits.clear();
 			m_movableImpacts.clear();
 		}
@@ -898,6 +912,51 @@ namespace
 			return a.closingSpeed > b.closingSpeed;
 		}
 
+		static bool IsSameContactDiagnostic(
+			const NPCPhysicsPendingContactDiagnostic &contact,
+			const BodyID &body1ID, const BodyID &body2ID,
+			uint32_t subShapeID1, uint32_t subShapeID2 )
+		{
+			return contact.body1ID == body1ID &&
+				contact.body2ID == body2ID &&
+				contact.body1SubShapeID == subShapeID1 &&
+				contact.body2SubShapeID == subShapeID2;
+		}
+
+		void QueuePendingContactDiagnostic(
+			const NPCPhysicsPendingContactDiagnostic &diagnostic )
+		{
+			const size_t maxPendingContactDiagnostics = 512;
+			if( m_contactDiagnostics.size() >= maxPendingContactDiagnostics )
+				m_contactDiagnostics.erase( m_contactDiagnostics.begin() );
+			m_contactDiagnostics.push_back( diagnostic );
+		}
+
+		void QueueRemovedContactDiagnostic( const SubShapeIDPair &pair )
+		{
+			const BodyID &body1ID = pair.GetBody1ID();
+			const BodyID &body2ID = pair.GetBody2ID();
+			const uint32_t subShapeID1 = pair.GetSubShapeID1().GetValue();
+			const uint32_t subShapeID2 = pair.GetSubShapeID2().GetValue();
+
+			std::lock_guard<std::mutex> lock( m_mutex );
+			for( size_t i = 0; i < m_activeContactDiagnostics.size(); ++i )
+			{
+				NPCPhysicsPendingContactDiagnostic &active =
+					m_activeContactDiagnostics[i];
+				if( !IsSameContactDiagnostic(
+						active, body1ID, body2ID, subShapeID1, subShapeID2 ) )
+					continue;
+
+				NPCPhysicsPendingContactDiagnostic ended = active;
+				ended.removed = true;
+				QueuePendingContactDiagnostic( ended );
+				m_activeContactDiagnostics.erase(
+					m_activeContactDiagnostics.begin() + i );
+				return;
+			}
+		}
+
 		void QueueContactDiagnostic(
 			const Body &body1,
 			const Body &body2,
@@ -957,7 +1016,11 @@ namespace
 			diagnostic.penetrationDepth = manifold.mPenetrationDepth;
 			diagnostic.closingSpeed = closingSpeed;
 			diagnostic.sampleCount = 1;
-			diagnostic.persisted = persisted;
+			diagnostic.body1ID = body1.GetID();
+			diagnostic.body2ID = body2.GetID();
+			diagnostic.body1SubShapeID = manifold.mSubShapeID1.GetValue();
+			diagnostic.body2SubShapeID = manifold.mSubShapeID2.GetValue();
+			diagnostic.removed = false;
 			diagnostic.contactPoint = Vec3(
 				float( contact.GetX() ),
 				float( contact.GetY() ),
@@ -984,48 +1047,36 @@ namespace
 				diagnostic.otherBoundsMin, diagnostic.otherBoundsMax,
 				diagnostic.otherShapeSubType );
 
-			// Retain the deepest contact per ragdoll body, opposing entity/layer
-			// and callback stage; aggregating by ragdoll alone hid individual limbs.
-			const size_t maxContactDiagnostics = 256;
+			// Track one record per exact body/subshape contact. Persisted callbacks
+			// refresh the last-known details and sample count without printing;
+			// OnContactRemoved emits the matching end transition.
+			const size_t maxActiveContactDiagnostics = 4096;
 			std::lock_guard<std::mutex> lock( m_mutex );
-			for( size_t i = 0; i < m_contactDiagnostics.size(); ++i )
+			for( size_t i = 0; i < m_activeContactDiagnostics.size(); ++i )
 			{
-				NPCPhysicsPendingContactDiagnostic &existing = m_contactDiagnostics[i];
-				if( existing.ragdollID != diagnostic.ragdollID ||
-					existing.ragdollBodyID != diagnostic.ragdollBodyID ||
-					existing.otherLayer != diagnostic.otherLayer ||
-					existing.otherEntityIndex != diagnostic.otherEntityIndex ||
-					existing.otherRagdollID != diagnostic.otherRagdollID ||
-					existing.persisted != diagnostic.persisted )
+				NPCPhysicsPendingContactDiagnostic &active =
+					m_activeContactDiagnostics[i];
+				if( !IsSameContactDiagnostic(
+						active, diagnostic.body1ID, diagnostic.body2ID,
+						diagnostic.body1SubShapeID, diagnostic.body2SubShapeID ) )
 					continue;
 
-				if( existing.sampleCount < 0xFFFFFFFFu )
-					++existing.sampleCount;
-				if( IsContactDiagnosticMoreSevere( diagnostic, existing ) )
+				if( active.sampleCount < 0xFFFFFFFFu )
+					++active.sampleCount;
+				if( IsContactDiagnosticMoreSevere( diagnostic, active ) )
 				{
-					diagnostic.sampleCount = existing.sampleCount;
-					existing = diagnostic;
+					diagnostic.sampleCount = active.sampleCount;
+					active = diagnostic;
 				}
 				return;
 			}
 
-			if( m_contactDiagnostics.size() < maxContactDiagnostics )
-			{
-				m_contactDiagnostics.push_back( diagnostic );
-				return;
-			}
+			if( m_activeContactDiagnostics.size() < maxActiveContactDiagnostics )
+				m_activeContactDiagnostics.push_back( diagnostic );
 
-			size_t leastSevereIndex = 0;
-			for( size_t i = 1; i < m_contactDiagnostics.size(); ++i )
-			{
-				if( IsContactDiagnosticMoreSevere(
-						m_contactDiagnostics[leastSevereIndex],
-						m_contactDiagnostics[i] ) )
-					leastSevereIndex = i;
-			}
-			if( IsContactDiagnosticMoreSevere(
-					diagnostic, m_contactDiagnostics[leastSevereIndex] ) )
-				m_contactDiagnostics[leastSevereIndex] = diagnostic;
+			// A persisted callback can be the first one observed after debugging
+			// is enabled mid-contact, so treat that first observation as a begin.
+			QueuePendingContactDiagnostic( diagnostic );
 		}
 
 		void QueueMovableObjectImpact(
@@ -1153,6 +1204,7 @@ namespace
 		std::vector<NPCPhysicsPendingCollisionDamage> m_pending;
 		std::vector<NPCPhysicsPendingSeparationContact> m_separationContacts;
 		std::vector<NPCPhysicsPendingContactDiagnostic> m_contactDiagnostics;
+		std::vector<NPCPhysicsPendingContactDiagnostic> m_activeContactDiagnostics;
 		std::vector<NPCPhysicsPendingPlayerPush> m_playerPushLimits;
 		std::vector<NPCPhysicsPendingMovableImpact> m_movableImpacts;
 	};
