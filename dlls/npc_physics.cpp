@@ -4023,7 +4023,7 @@ namespace
 					if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 						ALERT(
 							at_console,
-							"[NPC physics] Ragdoll recovery refused by swept environment check: entity=%d id=%d body=%d parent=%d delta=(%.2f %.2f %.2f).\\n",
+							"[NPC physics] Ragdoll recovery refused by swept environment check: entity=%d id=%d body=%d parent=%d delta=(%.2f %.2f %.2f).\n",
 							ENTINDEX( ragdoll.entity ), ragdoll.networkID, body, parent,
 							newChildCenter.GetX() - childPosition.GetX(),
 							newChildCenter.GetY() - childPosition.GetY(),
