@@ -606,7 +606,8 @@ def _format_scalar(value: float) -> str:
 
 
 def render_jrag(qci: QCIData, bodies: Sequence[OutputBody],
-                friction: float = 0.8, restitution: float = 0.0) -> str:
+                friction: float = 0.8, restitution: float = 0.0,
+                self_collisions: bool = True) -> str:
     if not math.isfinite(friction) or friction < 0:
         raise ValueError("friction must be a finite non-negative value")
     if not math.isfinite(restitution) or restitution < 0 or restitution > 1:
@@ -625,6 +626,7 @@ def render_jrag(qci: QCIData, bodies: Sequence[OutputBody],
         "angular_damping {}".format(_format_scalar(qci.angular_damping)),
         "friction {}".format(_format_scalar(friction)),
         "restitution {}".format(_format_scalar(restitution)),
+        "self_collisions {}".format(1 if self_collisions else 0),
         "body_count {}".format(len(bodies)),
         "",
     ]
@@ -645,7 +647,8 @@ def render_jrag(qci: QCIData, bodies: Sequence[OutputBody],
 
 
 def convert(qci_path: Path, smd_path: Optional[Path], output_path: Path,
-            friction: float = 0.8, restitution: float = 0.0) -> List[OutputBody]:
+            friction: float = 0.8, restitution: float = 0.0,
+            self_collisions: bool = True) -> List[OutputBody]:
     qci = parse_qci(qci_path)
     if smd_path is None:
         collision_file = qci.collision_name
@@ -655,7 +658,9 @@ def convert(qci_path: Path, smd_path: Optional[Path], output_path: Path,
     smd = parse_smd(smd_path)
     bodies = build_bodies(smd, qci)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(render_jrag(qci, bodies, friction, restitution), encoding="utf-8")
+    output_path.write_text(
+        render_jrag(qci, bodies, friction, restitution, self_collisions),
+        encoding="utf-8")
     return bodies
 
 
@@ -671,6 +676,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="Jolt friction (default: 0.8; not encoded by Valve's QCI directives)")
     parser.add_argument("--restitution", type=float, default=0.0,
                         help="Jolt restitution, from 0 to 1 (default: 0)")
+    parser.add_argument("--no-self-collisions", action="store_true",
+                        help="disable collisions between separate bodies in the same ragdoll")
     args = parser.parse_args(argv)
 
     output_path = args.output or args.qci.with_suffix(".jrag")
@@ -683,7 +690,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 collision_file += ".smd"
             smd_path = qci.source_path.parent / collision_file
         smd = parse_smd(smd_path)
-        bodies = convert(args.qci, args.smd, output_path, args.friction, args.restitution)
+        bodies = convert(
+            args.qci, args.smd, output_path, args.friction, args.restitution,
+            self_collisions=not args.no_self_collisions)
     except (OSError, ValueError) as exc:
         print("smd2jrag: error: {}".format(exc), file=sys.stderr)
         return 2
