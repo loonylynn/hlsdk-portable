@@ -1021,12 +1021,14 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 		std::string variable, action;
 		bool optional = false, negate = false;
 		if (!ParseExpression(elements[i].expression, variable, action, optional, negate))
+		{
 			if (scopeDepth > 0)
 			{
 				continueScope = scopeDepth - 1;
 				continue;
 			}
 			return false;
+		}
 
 		if (action == "scope in")
 		{
@@ -1035,7 +1037,8 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 		}
 		if (action == "scope out")
 		{
-			--scopeDepth;
+			if (scopeDepth > 0)
+				--scopeDepth;
 			if (continueScope == scopeDepth)
 				continueScope = -1;
 			continue;
@@ -1059,35 +1062,41 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 			m_flLockTime = gHUD.m_flTime;
 			continue;
 		}
-		if (action == "present start")
-			continue;
-		if (action == "present end")
+		if (action == "present start" || action == "present end")
 			continue;
 		if (action == "present complete")
 		{
-			ParamValue value;
-			value.type = ParamValue::VALUE_BOOLEAN;
-			value.integer = m_bStarted ? 1 : 0;
-			if (negate ? value.integer != 0 : value.integer == 0)
-				continue;
-			if (scopeDepth > 0)
+			const bool complete = m_bStarted;
+			if (negate ? complete : !complete)
 			{
-				continueScope = scopeDepth - 1;
-				continue;
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
 			}
-			return false;
+			continue;
 		}
 		if (action == "reference open")
 		{
-			if (!GetGameInstructor().IsLessonOfSameTypeOpen(this))
-				return negate;
+			std::string referenceName = elements[i].parameter;
+			const size_t split = referenceName.find(' ');
+			if (split != std::string::npos)
+				referenceName = referenceName.substr(split + 1);
+			const CScriptedIconLesson *reference = GetGameInstructor().GetLesson(referenceName.c_str());
+			bool isOpen = reference && GetGameInstructor().IsLessonOfSameTypeOpen(reference);
 			if (negate)
-				if (scopeDepth > 0)
+				isOpen = !isOpen;
+			if (!isOpen)
 			{
-				continueScope = scopeDepth - 1;
-				continue;
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
 			}
-			return false;
 			continue;
 		}
 
@@ -1118,68 +1127,89 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 		if (action == "set")
 		{
 			if (!SetVariable(*this, variable, parameter))
-				if (scopeDepth > 0)
 			{
-				continueScope = scopeDepth - 1;
-				continue;
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
 			}
-			return false;
 			continue;
 		}
 
 		ParamValue current = GetVariable(*this, variable);
 		if (current.type == ParamValue::VALUE_NONE)
+		{
 			if (scopeDepth > 0)
 			{
 				continueScope = scopeDepth - 1;
 				continue;
 			}
 			return false;
+		}
 
 		if (action == "add" || action == "subtract" || action == "multiply")
 		{
 			if (current.type == ParamValue::VALUE_STRING)
-				if (scopeDepth > 0)
 			{
-				continueScope = scopeDepth - 1;
-				continue;
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
 			}
-			return false;
-			const float a = current.type == ParamValue::VALUE_FLOAT ? current.number : (float)current.integer;
-			const float b = parameter.type == ParamValue::VALUE_FLOAT ? parameter.number : (float)parameter.integer;
-			ParamValue result;
+
 			if (current.type == ParamValue::VALUE_FLOAT)
 			{
-				result.type = ParamValue::VALUE_FLOAT;
-				result.number = action == "add" ? a + b : action == "subtract" ? a - b : a * b;
+				const float a = current.number;
+				const float b = parameter.type == ParamValue::VALUE_FLOAT ?
+					parameter.number : (float)parameter.integer;
+				current.number = action == "add" ? a + b : action == "subtract" ? a - b : a * b;
 			}
 			else
 			{
-				result.type = current.type;
-				result.integer = (int)(action == "add" ? a + b : action == "subtract" ? a - b : a * b);
+				const int a = current.integer;
+				const int b = parameter.type == ParamValue::VALUE_FLOAT ?
+					(int)parameter.number : parameter.integer;
+				current.integer = action == "add" ? a + b : action == "subtract" ? a - b : a * b;
 			}
-			if (!SetVariable(*this, variable, result))
-				if (scopeDepth > 0)
+			if (!SetVariable(*this, variable, current))
 			{
-				continueScope = scopeDepth - 1;
-				continue;
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
 			}
-			return false;
 			continue;
 		}
 
 		if (action == "get distance")
 		{
-			ParamValue distance;
-			distance.type = ParamValue::VALUE_INTEGER;
-			distance.integer = EntityDistance(m_iLocalPlayer, parameter.integer);
-			if (!SetVariable(*this, variable, distance))
-				if (scopeDepth > 0)
+			if (current.type != ParamValue::VALUE_ENTITY || parameter.type != ParamValue::VALUE_ENTITY)
 			{
-				continueScope = scopeDepth - 1;
-				continue;
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
 			}
-			return false;
+			ParamValue distance;
+			distance.type = ParamValue::VALUE_FLOAT;
+			distance.number = (float)EntityDistance(current.integer, parameter.integer);
+			if (!SetVariable(*this, "output", distance))
+			{
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
+			}
 			continue;
 		}
 
@@ -1187,24 +1217,26 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 			action == "has bit" || action == "bit count is" || action == "bit count less than")
 		{
 			if (!CompareValues(current, parameter, action, negate))
-				if (scopeDepth > 0)
 			{
-				continueScope = scopeDepth - 1;
-				continue;
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
 			}
-			return false;
 			continue;
 		}
 
 		if (scopeDepth > 0)
-			{
-				continueScope = scopeDepth - 1;
-				continue;
-			}
-			return false;
+		{
+			continueScope = scopeDepth - 1;
+			continue;
+		}
+		return false;
 	}
 
-	return true;
+	return scopeDepth == 0;
 }
 
 void CScriptedIconLesson::OnOpen()
