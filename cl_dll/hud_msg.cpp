@@ -21,6 +21,8 @@
 #include "parsemsg.h"
 #include "r_efx.h"
 
+#include <stdio.h>
+
 #define MAX_CLIENTS 32
 
 extern BEAM *pBeam;
