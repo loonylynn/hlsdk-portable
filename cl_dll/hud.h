@@ -622,8 +622,8 @@ public:
 	int Redraw( float flTime, int intermission );
 	int UpdateClientData( client_data_t *cdata, float time );
 
-	// Single active instructor hint. Target entity index is retained for future
-	// target-aware presentation; the first pass draws the caption at a fixed HUD anchor.
+	// Single active instructor hint, optionally anchored to a world target.
+	// Automatic pushable hints can also display a move/hold action sprite.
 	bool m_bInstructorHintActive;
 	int m_iInstructorHintId;
 	int m_iInstructorHintTarget;
