@@ -328,7 +328,7 @@ int CHud::Redraw( float flTime, int intermission )
 
 			// Source counts a lesson only after its icon has remained on-screen
 			// for at least 1.5 seconds, rather than when it is merely opened.
-			if( m_bInstructorHintManaged )
+			if( m_bInstructorHintManaged && !m_bInstructorManagedDisplayCounted )
 			{
 				const bool countsAsVisible = !m_bInstructorHintHasTargetPosition || ( hasTarget && !targetOffscreen );
 				if( countsAsVisible )
@@ -336,7 +336,10 @@ int CHud::Redraw( float flTime, int intermission )
 					if( m_flInstructorManagedVisibleSince <= 0.0f )
 						m_flInstructorManagedVisibleSince = flTime;
 					else if( flTime - m_flInstructorManagedVisibleSince >= 1.5f )
+					{
 						GameInstructor_MarkDisplayed( m_szInstructorHintName );
+						m_bInstructorManagedDisplayCounted = true;
+					}
 				}
 				else
 				{
