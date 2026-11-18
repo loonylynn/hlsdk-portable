@@ -1045,6 +1045,8 @@ void CPushable::Move( CBaseEntity *pOther, int push )
 		{
 			CBasePlayer *pPlayer = (CBasePlayer *)pOther;
 			pPlayer->SetPushableInstructorHintAction( this, push ? 1 : 2 );
+			pPlayer->FireInstructorEvent( push ? "player_pushable_push" : "player_pushable_pull",
+				this, "pushable", STRING( pev->classname ), 0, 0.0f );
 		}
 
 		if( push || pushablemode.value != 0 )
