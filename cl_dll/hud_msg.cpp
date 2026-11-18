@@ -71,15 +71,25 @@ void HUD_SyncInstructorLocatorTarget( CHud *hud )
 	{
 		if( hud->m_iInstructorLocatorTargetHandle >= 0 )
 		{
-			hud->m_InstructorLocatorPanel.RemoveTarget(
-				hud->m_iInstructorLocatorTargetHandle, hud->m_flTime, 0.3f );
-			hud->m_iInstructorLocatorTargetHandle = -1;
+			if( hud->m_InstructorLocatorPanel.GetTargetFromHandle( hud->m_iInstructorLocatorTargetHandle ) )
+				hud->m_InstructorLocatorPanel.RemoveTarget(
+					hud->m_iInstructorLocatorTargetHandle, hud->m_flTime, 0.3f );
+			else
+				hud->m_iInstructorLocatorTargetHandle = -1;
 		}
 		return;
 	}
 
-	if( hud->m_iInstructorLocatorTargetHandle < 0 ||
-		!hud->m_InstructorLocatorPanel.GetTargetFromHandle( hud->m_iInstructorLocatorTargetHandle ) )
+	CInstructorLocatorTarget *existingTarget =
+		hud->m_InstructorLocatorPanel.GetTargetFromHandle( hud->m_iInstructorLocatorTargetHandle );
+	if( existingTarget && existingTarget->m_bRemoveWhenFadedOut )
+	{
+		existingTarget->Deactivate( true, hud->m_flTime, 0.0f );
+		hud->m_iInstructorLocatorTargetHandle = -1;
+		existingTarget = NULL;
+	}
+
+	if( !existingTarget )
 	{
 		hud->m_iInstructorLocatorTargetHandle =
 			hud->m_InstructorLocatorPanel.AddTarget( hud->m_scrinfo.iWidth, hud->m_scrinfo.iHeight, hud->m_flTime );
@@ -112,9 +122,14 @@ void HUD_SyncInstructorLocatorTarget( CHud *hud )
 		target->m_vecOrigin[1] = hud->m_vecInstructorHintTargetOrigin[1];
 		target->m_vecOrigin[2] = hud->m_vecInstructorHintTargetOrigin[2];
 	}
-	target->m_bVisible = hud->m_bInstructorHintTargetVisible;
 	target->m_bOccluded = hud->m_bInstructorHintOccluded;
-	target->m_iEffectsFlags = hud->m_iInstructorHintFlags;
+	const bool forceCaption = ( hud->m_iInstructorHintFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
+	const bool shouldBeVisible = hud->m_bInstructorHintTargetVisible &&
+		( !hud->m_bInstructorHintOccluded || forceCaption );
+	target->SetVisible( shouldBeVisible, hud->m_flTime, 0.18f );
+	const int animationFlags = target->m_iEffectsFlags &
+		( LOCATOR_ICON_FX_FADE_IN | LOCATOR_ICON_FX_FADE_OUT );
+	target->m_iEffectsFlags = hud->m_iInstructorHintFlags | animationFlags;
 	target->m_flRange = hud->m_flInstructorHintRange;
 	target->SetCaptionColor( hud->m_iInstructorHintColorR,
 		hud->m_iInstructorHintColorG, hud->m_iInstructorHintColorB );
@@ -141,7 +156,6 @@ static void HUD_ClearInstructorHint( CHud *hud )
 	if( hud->m_iInstructorLocatorTargetHandle >= 0 )
 	{
 		hud->m_InstructorLocatorPanel.RemoveTarget( hud->m_iInstructorLocatorTargetHandle, hud->m_flTime, 0.3f );
-		hud->m_iInstructorLocatorTargetHandle = -1;
 	}
 	hud->m_bInstructorHintActive = false;
 	hud->m_bInstructorHintManaged = false;
