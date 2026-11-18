@@ -493,7 +493,7 @@ static void HUD_AddInstructorBindingChoice( CHud *hud, const char *keyName )
 		hud->m_iInstructorHintBindingChoicesCount >= MAX_INSTRUCTOR_BINDING_CHOICES )
 		return;
 	for( int i = 0; i < hud->m_iInstructorHintBindingChoicesCount; ++i )
-		if( Q_stricmp( hud->m_szInstructorHintBindingChoices[i], keyName ) == 0 )
+		if( stricmp( hud->m_szInstructorHintBindingChoices[i], keyName ) == 0 )
 			return;
 	char *choice = hud->m_szInstructorHintBindingChoices[hud->m_iInstructorHintBindingChoicesCount++];
 	strncpy( choice, keyName, MAX_INSTRUCTOR_BINDING_NAME - 1 );
@@ -510,7 +510,7 @@ static void HUD_UpdateInstructorBindingChoices( CHud *hud, float flTime )
 	for( int i = 0; i < oldCount && i < MAX_INSTRUCTOR_BINDING_CHOICES; ++i )
 		strncpy( oldChoices[i], hud->m_szInstructorHintBindingChoices[i], MAX_INSTRUCTOR_BINDING_NAME - 1 );
 
-	const bool bindingChanged = Q_stricmp( hud->m_szInstructorHintBindingCache, hud->m_szInstructorHintBinding ) != 0;
+	const bool bindingChanged = stricmp( hud->m_szInstructorHintBindingCache, hud->m_szInstructorHintBinding ) != 0;
 	strncpy( hud->m_szInstructorHintBindingCache, hud->m_szInstructorHintBinding, sizeof( hud->m_szInstructorHintBindingCache ) - 1 );
 	hud->m_szInstructorHintBindingCache[sizeof( hud->m_szInstructorHintBindingCache ) - 1] = '\0';
 	hud->m_iInstructorHintBindingChoicesCount = 0;
@@ -570,7 +570,7 @@ static void HUD_UpdateInstructorBindingChoices( CHud *hud, float flTime )
 	bool choicesChanged = oldCount != hud->m_iInstructorHintBindingChoicesCount;
 	if( !choicesChanged )
 		for( int i = 0; i < oldCount; ++i )
-			if( Q_stricmp( oldChoices[i], hud->m_szInstructorHintBindingChoices[i] ) != 0 )
+			if( stricmp( oldChoices[i], hud->m_szInstructorHintBindingChoices[i] ) != 0 )
 			{
 				choicesChanged = true;
 				break;
@@ -603,7 +603,7 @@ static bool HUD_IsInstructorControllerBinding( const char *keyName )
 		"LTRIGGER", "RTRIGGER", "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT"
 	};
 	for( size_t i = 0; i < sizeof( keys ) / sizeof( keys[0] ); ++i )
-		if( Q_stricmp( keyName, keys[i] ) == 0 ) return true;
+		if( stricmp( keyName, keys[i] ) == 0 ) return true;
 	return false;
 }
 
@@ -617,47 +617,47 @@ static HSPRITE HUD_GetInstructorBindingImage( CHud *hud, const char *keyName,
 		snprintf( displayName, displayNameSize, "NONE" );
 		return hud ? hud->m_hInstructorHintKeyWideSprite : 0;
 	}
-	if( Q_stricmp( keyName, "MOUSE1" ) == 0 )
+	if( stricmp( keyName, "MOUSE1" ) == 0 )
 	{
 		if( hud->m_hInstructorHintKeyMouseLeftSprite ) return hud->m_hInstructorHintKeyMouseLeftSprite;
 		snprintf( displayName, displayNameSize, "M1" ); return 0;
 	}
-	if( Q_stricmp( keyName, "MOUSE2" ) == 0 )
+	if( stricmp( keyName, "MOUSE2" ) == 0 )
 	{
 		if( hud->m_hInstructorHintKeyMouseRightSprite ) return hud->m_hInstructorHintKeyMouseRightSprite;
 		snprintf( displayName, displayNameSize, "M2" ); return 0;
 	}
-	if( Q_stricmp( keyName, "MOUSE3" ) == 0 )
+	if( stricmp( keyName, "MOUSE3" ) == 0 )
 	{
 		if( hud->m_hInstructorHintKeyMouseThreeSprite ) return hud->m_hInstructorHintKeyMouseThreeSprite;
 		snprintf( displayName, displayNameSize, "M3" ); return 0;
 	}
-	if( Q_stricmp( keyName, "MWHEELUP" ) == 0 )
+	if( stricmp( keyName, "MWHEELUP" ) == 0 )
 	{
 		if( hud->m_hInstructorHintKeyMouseWheelUpSprite ) return hud->m_hInstructorHintKeyMouseWheelUpSprite;
 		snprintf( displayName, displayNameSize, "MW+" ); return 0;
 	}
-	if( Q_stricmp( keyName, "MWHEELDOWN" ) == 0 )
+	if( stricmp( keyName, "MWHEELDOWN" ) == 0 )
 	{
 		if( hud->m_hInstructorHintKeyMouseWheelDownSprite ) return hud->m_hInstructorHintKeyMouseWheelDownSprite;
 		snprintf( displayName, displayNameSize, "MW-" ); return 0;
 	}
-	if( Q_stricmp( keyName, "UPARROW" ) == 0 )
+	if( stricmp( keyName, "UPARROW" ) == 0 )
 	{
 		if( hud->m_hInstructorHintKeyUpSprite ) return hud->m_hInstructorHintKeyUpSprite;
 		snprintf( displayName, displayNameSize, "UP" ); return 0;
 	}
-	if( Q_stricmp( keyName, "DOWNARROW" ) == 0 )
+	if( stricmp( keyName, "DOWNARROW" ) == 0 )
 	{
 		if( hud->m_hInstructorHintKeyDownSprite ) return hud->m_hInstructorHintKeyDownSprite;
 		snprintf( displayName, displayNameSize, "DN" ); return 0;
 	}
-	if( Q_stricmp( keyName, "LEFTARROW" ) == 0 )
+	if( stricmp( keyName, "LEFTARROW" ) == 0 )
 	{
 		if( hud->m_hInstructorHintKeyLeftSprite ) return hud->m_hInstructorHintKeyLeftSprite;
 		snprintf( displayName, displayNameSize, "LT" ); return 0;
 	}
-	if( Q_stricmp( keyName, "RIGHTARROW" ) == 0 )
+	if( stricmp( keyName, "RIGHTARROW" ) == 0 )
 	{
 		if( hud->m_hInstructorHintKeyRightSprite ) return hud->m_hInstructorHintKeyRightSprite;
 		snprintf( displayName, displayNameSize, "RT" ); return 0;
@@ -677,12 +677,12 @@ static HSPRITE HUD_GetInstructorBindingImage( CHud *hud, const char *keyName,
 	}
 	upper[length] = '\0';
 	const bool useGeneric = length <= 2 ||
-		Q_stricmp( upper, "SEMICOLON" ) == 0 || Q_stricmp( upper, "INS" ) == 0 ||
-		Q_stricmp( upper, "DEL" ) == 0 || Q_stricmp( upper, "HOME" ) == 0 ||
-		Q_stricmp( upper, "END" ) == 0 || Q_stricmp( upper, "PGUP" ) == 0 ||
-		Q_stricmp( upper, "PGDN" ) == 0 || Q_stricmp( upper, "PAUSE" ) == 0 ||
-		Q_stricmp( upper, "F10" ) == 0 || Q_stricmp( upper, "F11" ) == 0 ||
-		Q_stricmp( upper, "F12" ) == 0;
+		stricmp( upper, "SEMICOLON" ) == 0 || stricmp( upper, "INS" ) == 0 ||
+		stricmp( upper, "DEL" ) == 0 || stricmp( upper, "HOME" ) == 0 ||
+		stricmp( upper, "END" ) == 0 || stricmp( upper, "PGUP" ) == 0 ||
+		stricmp( upper, "PGDN" ) == 0 || stricmp( upper, "PAUSE" ) == 0 ||
+		stricmp( upper, "F10" ) == 0 || stricmp( upper, "F11" ) == 0 ||
+		stricmp( upper, "F12" ) == 0;
 	HUD_FormatInstructorKeyName( keyName, displayName, displayNameSize );
 	return useGeneric ? hud->m_hInstructorHintKeyGenericSprite : hud->m_hInstructorHintKeyWideSprite;
 }
@@ -966,7 +966,7 @@ int CHud::Redraw( float flTime, int intermission )
 			const char *requestedBindingIcon = targetOffscreen ?
 				m_szInstructorHintIconOffscreen : m_szInstructorHintIconOnscreen;
 			const bool sourceBindingIcon = requestedBindingIcon &&
-				Q_stricmp( requestedBindingIcon, "use_binding" ) == 0;
+				stricmp( requestedBindingIcon, "use_binding" ) == 0;
 			int sourceBindingIconHeight = 0;
 			int sourceBindingIconWidth = 0;
 			if( sourceBindingIcon )
