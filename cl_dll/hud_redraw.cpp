@@ -548,14 +548,8 @@ int CHud::Redraw( float flTime, int intermission )
 
 					if( locatorSprite )
 					{
-						// A restrained halo keeps transparent sprite art readable
-						// without turning the locator into a boxed HUD panel.
-						const int halo = 2 + (int)( pulse * 2.0f );
-						FillRGBA( markerX - locatorIconWidth / 2 - halo,
-							markerY - locatorIconHeight / 2 - halo,
-							locatorIconWidth + halo * 2, locatorIconHeight + halo * 2,
-							locatorR, locatorG, locatorB,
-							( locatorAlpha / 5 ) + (int)( pulse * 12.0f ) );
+						// Keep the sprite's transparent palette pixels fully clear.
+						// Do not draw a rectangular backing/halo behind the locator.
 
 						const int spriteR = locatorR * locatorAlpha / 255;
 						const int spriteG = locatorG * locatorAlpha / 255;
