@@ -349,6 +349,257 @@ int CHud::Redraw( float flTime, int intermission )
 			}
 
 
+			// A target-backed hint is a world-space locator, not a tutorial card.
+			// Keep its icon attached to the projected target and place only a compact
+			// caption tag beside it. Fixed/no-target lessons retain the HUD card path.
+			const bool worldLocator = hasTarget && !m_bInstructorHintFixedPosition;
+			if( worldLocator )
+			{
+				if( !( targetOffscreen && ( m_iInstructorHintFlags & 0x00000200 ) ) )
+				{
+					float centerX = ScreenWidth * 0.5f;
+					float centerY = ScreenHeight * 0.5f;
+					float locatorX = targetX;
+					float locatorY = targetY;
+					const int locatorEdgeMargin = 22;
+
+					if( targetOffscreen )
+					{
+						float dx = targetX - centerX;
+						float dy = targetY - centerY;
+						if( fabsf( dx ) < 1.0f && fabsf( dy ) < 1.0f )
+							dy = 1.0f;
+
+						const float left = (float)locatorEdgeMargin;
+						const float right = (float)( ScreenWidth - locatorEdgeMargin );
+						const float top = (float)locatorEdgeMargin;
+						const float bottom = (float)( ScreenHeight - locatorEdgeMargin );
+						float tx = 1000000.0f;
+						float ty = 1000000.0f;
+
+						if( dx > 0.001f )
+							tx = ( right - centerX ) / dx;
+						else if( dx < -0.001f )
+							tx = ( left - centerX ) / dx;
+
+						if( dy > 0.001f )
+							ty = ( bottom - centerY ) / dy;
+						else if( dy < -0.001f )
+							ty = ( top - centerY ) / dy;
+
+						float t = tx < ty ? tx : ty;
+						if( t < 0.0f || t > 1000000.0f )
+							t = 0.0f;
+
+						locatorX = centerX + dx * t;
+						locatorY = centerY + dy * t;
+					}
+
+					// The Source locator's pulse/shake options affect the marker,
+					// not a full-screen panel.
+					const int pulseFlags = m_iInstructorHintFlags & 0x00000007;
+					const float pulseRate = ( pulseFlags & 0x4 ) ? 5.0f :
+						( ( pulseFlags & 0x2 ) ? 2.5f : 1.0f );
+					const float pulse = pulseFlags ?
+						( 0.5f + 0.5f * sinf( flTime * pulseRate * 6.28318f ) ) : 0.0f;
+
+					const int shakeFlags = m_iInstructorHintFlags & 0x000000C0;
+					if( shakeFlags )
+					{
+						const float shakeRate = ( shakeFlags & 0x80 ) ? 22.0f : 10.0f;
+						locatorX += sinf( flTime * shakeRate ) * 2.0f;
+						locatorY += cosf( flTime * shakeRate * 0.83f ) * 1.5f;
+					}
+
+					if( locatorX < locatorEdgeMargin ) locatorX = (float)locatorEdgeMargin;
+					if( locatorX > ScreenWidth - locatorEdgeMargin ) locatorX = (float)( ScreenWidth - locatorEdgeMargin );
+					if( locatorY < locatorEdgeMargin ) locatorY = (float)locatorEdgeMargin;
+					if( locatorY > ScreenHeight - locatorEdgeMargin ) locatorY = (float)( ScreenHeight - locatorEdgeMargin );
+
+					const int markerX = (int)locatorX;
+					const int markerY = (int)locatorY;
+
+					HSPRITE locatorSprite = targetOffscreen ?
+						m_hInstructorHintOffscreenSprite : m_hInstructorHintOnscreenSprite;
+					if( m_iInstructorHintId == -1 )
+					{
+						locatorSprite = 0;
+						if( m_iInstructorHintIconMode == 2 )
+							locatorSprite = m_hInstructorHintHoldSprite;
+						else if( m_iInstructorHintIconMode == 1 )
+							locatorSprite = m_hInstructorHintMoveSprite;
+					}
+
+					int locatorIconWidth = locatorSprite ? SPR_Width( locatorSprite, 0 ) : 0;
+					int locatorIconHeight = locatorSprite ? SPR_Height( locatorSprite, 0 ) : 0;
+					if( locatorIconWidth <= 0 || locatorIconHeight <= 0 ||
+						locatorIconWidth > 64 || locatorIconHeight > 64 )
+					{
+						locatorSprite = 0;
+						locatorIconWidth = 0;
+						locatorIconHeight = 0;
+					}
+
+					int locatorR = m_iInstructorHintColorR;
+					int locatorG = m_iInstructorHintColorG;
+					int locatorB = m_iInstructorHintColorB;
+
+					int locatorAlpha = 220;
+					const int alphaFlags = m_iInstructorHintFlags & 0x00000038;
+					if( alphaFlags )
+					{
+						const float alphaRate = ( alphaFlags & 0x20 ) ? 5.0f :
+							( ( alphaFlags & 0x10 ) ? 2.5f : 1.0f );
+						locatorAlpha = 150 + (int)( 105.0f *
+							( 0.5f + 0.5f * sinf( flTime * alphaRate * 6.28318f ) ) );
+					}
+					if( m_bInstructorHintManaged && m_flInstructorManagedVisibleSince > 0.0f )
+					{
+						float fade = ( flTime - m_flInstructorManagedVisibleSince ) / 0.18f;
+						if( fade < 0.0f ) fade = 0.0f;
+						if( fade > 1.0f ) fade = 1.0f;
+						locatorAlpha = (int)( locatorAlpha * ( 0.25f + 0.75f * fade ) );
+					}
+
+					const int markerHalfWidth = locatorSprite ? locatorIconWidth / 2 : 10;
+					const int markerHalfHeight = locatorSprite ? locatorIconHeight / 2 : 10;
+
+					if( locatorSprite )
+					{
+						// A restrained halo keeps transparent sprite art readable
+						// without turning the locator into a boxed HUD panel.
+						const int halo = 2 + (int)( pulse * 2.0f );
+						FillRGBA( markerX - locatorIconWidth / 2 - halo,
+							markerY - locatorIconHeight / 2 - halo,
+							locatorIconWidth + halo * 2, locatorIconHeight + halo * 2,
+							locatorR, locatorG, locatorB,
+							( locatorAlpha / 5 ) + (int)( pulse * 12.0f ) );
+
+						const int spriteR = locatorR * locatorAlpha / 255;
+						const int spriteG = locatorG * locatorAlpha / 255;
+						const int spriteB = locatorB * locatorAlpha / 255;
+						SPR_Set( locatorSprite, spriteR, spriteG, spriteB );
+						SPR_DrawAdditive( 0,
+							markerX - locatorIconWidth / 2,
+							markerY - locatorIconHeight / 2, NULL );
+					}
+					else if( targetOffscreen )
+					{
+						// If the requested Source icon has no GoldSrc .spr
+						// counterpart, fall back to a direction marker.
+						const float dx = targetX - centerX;
+						const float dy = targetY - centerY;
+						const char *arrow = fabsf( dx ) > fabsf( dy ) ?
+							( dx < 0.0f ? "<" : ">" ) :
+							( dy < 0.0f ? "^" : "v" );
+						FillRGBA( markerX - 10, markerY - 10, 20, 20, 5, 7, 10, locatorAlpha );
+						DrawHudString( markerX - 4, markerY - 8, markerX + 10,
+							arrow, locatorR, locatorG, locatorB );
+					}
+					else
+					{
+						// Sprite-free on-screen fallback: a small reticle, not
+						// the PS2 interaction brackets and not a tutorial card.
+						FillRGBA( markerX - 9, markerY - 9, 18, 18, 5, 7, 10, locatorAlpha / 2 );
+						FillRGBA( markerX - 8, markerY - 8, 16, 1, locatorR, locatorG, locatorB, locatorAlpha );
+						FillRGBA( markerX - 8, markerY + 7, 16, 1, locatorR, locatorG, locatorB, locatorAlpha );
+						FillRGBA( markerX - 8, markerY - 7, 1, 14, locatorR, locatorG, locatorB, locatorAlpha );
+						FillRGBA( markerX + 7, markerY - 7, 1, 14, locatorR, locatorG, locatorB, locatorAlpha );
+						FillRGBA( markerX - 2, markerY - 2, 5, 5, locatorR, locatorG, locatorB, locatorAlpha );
+					}
+
+					// The caption follows the icon as a compact locator label.
+					// Binding text is shown in a small key chip on the same line.
+					char locatorBinding[80];
+					locatorBinding[0] = '\0';
+					if( m_szInstructorHintBinding[0] )
+						snprintf( locatorBinding, sizeof( locatorBinding ), "%s", m_szInstructorHintBinding );
+
+					const int locatorCaptionWidth = DrawHudStringLen( m_szInstructorHintCaption );
+					const int locatorBindingWidth = DrawHudStringLen( locatorBinding );
+					const bool hasLocatorText = locatorCaptionWidth > 0 || locatorBindingWidth > 0;
+
+					if( hasLocatorText )
+					{
+						const int locatorKeyWidth = locatorBindingWidth > 0 ? locatorBindingWidth + 10 : 0;
+						const int maxLabelWidth = Q_max( 32, ScreenWidth - 24 );
+						int labelWidth = locatorCaptionWidth + locatorKeyWidth + 24;
+						if( labelWidth < 44 ) labelWidth = 44;
+						if( labelWidth > maxLabelWidth ) labelWidth = maxLabelWidth;
+						const int labelHeight = 20;
+						int labelX = markerX - labelWidth / 2;
+						int labelY = markerY + markerHalfHeight + 7;
+
+						if( targetOffscreen )
+						{
+							if( markerX <= locatorEdgeMargin + 2 )
+							{
+								labelX = markerX + markerHalfWidth + 6;
+								labelY = markerY - labelHeight / 2;
+							}
+							else if( markerX >= ScreenWidth - locatorEdgeMargin - 2 )
+							{
+								labelX = markerX - markerHalfWidth - labelWidth - 6;
+								labelY = markerY - labelHeight / 2;
+							}
+							else if( markerY <= locatorEdgeMargin + 2 )
+							{
+								labelY = markerY + markerHalfHeight + 6;
+							}
+							else
+							{
+								labelY = markerY - markerHalfHeight - labelHeight - 6;
+							}
+						}
+						else if( labelY + labelHeight > ScreenHeight - 8 )
+						{
+							labelY = markerY - markerHalfHeight - labelHeight - 7;
+						}
+
+						const int minLabelX = 8;
+						const int minLabelY = 8;
+						const int maxLabelX = Q_max( minLabelX, ScreenWidth - labelWidth - 8 );
+						const int maxLabelY = Q_max( minLabelY, ScreenHeight - labelHeight - 8 );
+						if( labelX < minLabelX ) labelX = minLabelX;
+						if( labelX > maxLabelX ) labelX = maxLabelX;
+						if( labelY < minLabelY ) labelY = minLabelY;
+						if( labelY > maxLabelY ) labelY = maxLabelY;
+
+						if( !targetOffscreen )
+						{
+							FillRGBA( markerX - 1, markerY + markerHalfHeight + 1,
+								2, 6, locatorR, locatorG, locatorB, locatorAlpha / 2 );
+							if( labelY < markerY )
+								FillRGBA( markerX - 1, labelY + labelHeight,
+									2, Q_max( 1, markerY - markerHalfHeight - labelY - labelHeight ),
+									locatorR, locatorG, locatorB, locatorAlpha / 2 );
+						}
+
+						FillRGBA( labelX, labelY, labelWidth, labelHeight, 5, 7, 10, locatorAlpha * 3 / 4 );
+						FillRGBA( labelX, labelY, labelWidth, 1, locatorR, locatorG, locatorB, locatorAlpha * 3 / 4 );
+						FillRGBA( labelX, labelY + labelHeight - 1, labelWidth, 1, 0, 0, 0, locatorAlpha );
+
+						const int labelTextY = labelY + 5;
+						const int labelTextX = labelX + 8;
+						const int keyX = labelX + labelWidth - locatorKeyWidth - 5;
+						const int captionRight = locatorKeyWidth > 0 ? keyX - 6 : labelX + labelWidth - 6;
+						if( locatorCaptionWidth > 0 )
+							DrawHudString( labelTextX, labelTextY, captionRight,
+								m_szInstructorHintCaption, locatorR, locatorG, locatorB );
+
+						if( locatorKeyWidth > 0 )
+						{
+							const int keyY = labelY + 2;
+							FillRGBA( keyX, keyY, locatorKeyWidth, 16, 12, 15, 19, locatorAlpha );
+							FillRGBA( keyX, keyY, locatorKeyWidth, 1, locatorR, locatorG, locatorB, locatorAlpha / 2 );
+							DrawHudString( keyX + 5, keyY + 4, keyX + locatorKeyWidth - 3,
+								locatorBinding, locatorR, locatorG, locatorB );
+						}
+					}
+				}
+			}
+			else
+			{
 			// LOCATOR_ICON_FX_NO_OFFSCREEN deactivates the locator when it leaves
 			// the viewport; don't leave a floating caption behind.
 			if( !( targetOffscreen && ( m_iInstructorHintFlags & 0x00000200 ) ) )
@@ -603,6 +854,7 @@ int CHud::Redraw( float flTime, int intermission )
 					DrawHudString( keyTextX, panelY + textOffsetY + 32, textAreaRight,
 						bindingText, hintR, hintG, hintB );
 				}
+			}
 			}
 			}
 		}
