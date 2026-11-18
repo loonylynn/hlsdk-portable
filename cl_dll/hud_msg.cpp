@@ -38,7 +38,7 @@ extern float g_lastFOV;			// Vit_amiN
 // GoldSrc sprite path. Only simple filename characters are accepted.
 static HSPRITE HUD_LoadInstructorHintSprite( const char *iconName )
 {
-	if( !iconName || !iconName[0] || Q_stricmp( iconName, "use_binding" ) == 0 )
+	if( !iconName || !iconName[0] || stricmp( iconName, "use_binding" ) == 0 )
 		return 0;
 
 	char path[96];
