@@ -244,7 +244,7 @@ BOOL CEnvInstructorHint::IsTargetVisible( CBasePlayer *pPlayer, CBaseEntity *pTa
 	if( !m_bAllowNoDrawTarget && ( pTarget->pev->effects & EF_NODRAW ) )
 		return FALSE;
 
-	if( m_flRange > 0.0f && pPlayer )
+	if( m_flRange > 0.0f && pPlayer && pTarget != pPlayer )
 	{
 		Vector eye = pPlayer->pev->origin + pPlayer->pev->view_ofs;
 		if( ( targetOrigin - eye ).Length() > m_flRange )
