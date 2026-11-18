@@ -638,6 +638,7 @@ public:
 	float m_vecInstructorHintTargetOrigin[3];
 	float m_flInstructorHintEndTime;
 	float m_flInstructorHintRange;
+	float m_flInstructorHintNextOcclusionTest;
 	float m_flInstructorHintIconOffset;
 	int m_iInstructorHintIconMode; // 0 = normal, 1 = move, 2 = hold
 	int m_iInstructorHintFlags;    // LOCATOR_ICON_FX_* compatible bits
@@ -666,6 +667,7 @@ public:
 		m_iInstructorHintTarget(0), m_bInstructorHintHasTargetPosition(false),
 		m_bInstructorHintTargetVisible(false), m_bInstructorHintOccluded(false),
 		m_flInstructorHintEndTime(0.0f), m_flInstructorHintRange(0.0f),
+		m_flInstructorHintNextOcclusionTest(0.0f),
 		m_flInstructorHintIconOffset(0.0f),
 		m_iInstructorHintIconMode(0), m_iInstructorHintFlags(0),
 		m_iInstructorHintColorR(255), m_iInstructorHintColorG(255), m_iInstructorHintColorB(255),
