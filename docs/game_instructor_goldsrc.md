@@ -193,6 +193,14 @@ authored left/down sprite files are required. If a directional sprite cannot be
 loaded, that directional indicator is skipped; the main locator's existing
 GoldSrc sprite/text fallback remains available.
 
+## Managed locator occlusion
+
+Map-authored `env_instructor_hint` continues to receive server-side line-of-sight
+updates. Client-scheduled managed lessons now perform a local player trace from
+the player's eye to their target every 0.25 seconds. The target entity itself
+does not count as an obstruction, and the `force_caption` flag retains its
+Source-style override behavior.
+
 ## Keyboard binding keycap
 
 The original `icon_key_generic.spr` is loaded as an optional keyboard keycap.
