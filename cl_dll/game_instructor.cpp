@@ -750,7 +750,7 @@ bool CBaseLesson::IsTimedOut(float now)
 	if (m_flTimeout <= 0.0f)
 		return false;
 
-	float startTime = m_flStartTime;
+	float startTime = m_bStarted ? m_flStartTime : m_flInitTime;
 	if (root->IsLearned())
 	{
 		if (!m_bBumpWithTimeoutWhenLearned)
@@ -760,12 +760,9 @@ bool CBaseLesson::IsTimedOut(float now)
 		}
 		startTime = m_flInitTime;
 	}
-
-	if (startTime <= 0.0f)
+	else if (!m_bStarted && !m_bCanTimeoutWhileInactive)
 	{
-		if (!m_bCanTimeoutWhileInactive)
-			return false;
-		startTime = m_flInitTime;
+		return false;
 	}
 
 	if (startTime + m_flTimeout < now)
