@@ -2284,18 +2284,18 @@ void CEnvInstructorHint::HintThink( void )
 		return;
 	}
 
-	if( pPlayer && pTarget )
+	if( pPlayer && ( pTarget || m_bStatic ) )
 	{
 		Vector targetOrigin = InstructorHintTargetOrigin( pTarget );
 		targetOrigin.z += m_flIconOffset;
 
-		BOOL bOccluded = InstructorHintIsOccluded( pPlayer, pTarget, targetOrigin );
+		BOOL bOccluded = pTarget ? InstructorHintIsOccluded( pPlayer, pTarget, targetOrigin ) : FALSE;
 		BOOL bTargetVisible = IsTargetVisible( pPlayer, pTarget, targetOrigin );
 
 		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pPlayer->pev );
 			WRITE_BYTE( 2 ); // target/visibility update
 			WRITE_SHORT( ENTINDEX( edict() ) );
-			WRITE_SHORT( ENTINDEX( pTarget->edict() ) );
+			WRITE_SHORT( pTarget ? ENTINDEX( pTarget->edict() ) : 0 );
 			WRITE_COORD( targetOrigin.x );
 			WRITE_COORD( targetOrigin.y );
 			WRITE_COORD( targetOrigin.z );
