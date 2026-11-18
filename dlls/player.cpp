@@ -59,6 +59,7 @@ extern cvar_t hl2_sprintspeed;
 extern cvar_t hl2_suitpower_drain;
 extern cvar_t hl2_suitpower_recharge;
 extern cvar_t hl2_suitpower_start_minimum;
+extern cvar_t pushablemode;
 
 // the world node graph
 extern CGraph WorldGraph;
