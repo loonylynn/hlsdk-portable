@@ -276,17 +276,6 @@ int CHud::Redraw( float flTime, int intermission )
 			int captionWidth = DrawHudStringLen( m_szInstructorHintCaption );
 			int bindingWidth = DrawHudStringLen( bindingText );
 
-			// Project the current world target before selecting its on/off-screen icon.
-			float targetX = 0.0f, targetY = 0.0f;
-			bool targetBehind = false;
-			const bool hasTarget = m_bInstructorHintHasTargetPosition &&
-				HUD_GetInstructorHintScreenPosition( m_vecInstructorHintTargetOrigin,
-					&targetX, &targetY, &targetBehind );
-			const int edgeMargin = 24;
-			const bool targetOffscreen = hasTarget && ( targetBehind ||
-				targetX < edgeMargin || targetX > ScreenWidth - edgeMargin ||
-				targetY < edgeMargin || targetY > ScreenHeight - edgeMargin );
-
 			// Managed lessons follow the current client entity transform. The
 			// server-side env_instructor_hint path continues to supply its own
 			// authoritative position and visibility updates.
@@ -300,6 +289,17 @@ int CHud::Redraw( float flTime, int intermission )
 					m_vecInstructorHintTargetOrigin[2] = managedTarget->origin[2] + m_flInstructorHintIconOffset;
 				}
 			}
+
+			// Project the current world target before selecting its on/off-screen icon.
+			float targetX = 0.0f, targetY = 0.0f;
+			bool targetBehind = false;
+			const bool hasTarget = m_bInstructorHintHasTargetPosition &&
+				HUD_GetInstructorHintScreenPosition( m_vecInstructorHintTargetOrigin,
+					&targetX, &targetY, &targetBehind );
+			const int edgeMargin = 24;
+			const bool targetOffscreen = hasTarget && ( targetBehind ||
+				targetX < edgeMargin || targetX > ScreenWidth - edgeMargin ||
+				targetY < edgeMargin || targetY > ScreenHeight - edgeMargin );
 
 			// Source counts a lesson only after its icon has remained on-screen
 			// for at least 1.5 seconds, rather than when it is merely opened.
