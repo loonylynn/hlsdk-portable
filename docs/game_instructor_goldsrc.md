@@ -1,0 +1,165 @@
+# GoldSrc Game Instructor lesson manager
+
+This is a GoldSrc/Xash3D adaptation of Valve's public Source `C_GameInstructor`,
+`CBaseLesson`, and `CScriptedIconLesson` architecture. It is not a byte-for-byte
+Source port: Source engine events, entity handles, KeyValues, VGUI2, locator
+handles, and save systems do not exist in this client DLL. The adapted manager
+keeps the lesson-definition/runtime-opportunity model and maps engine-facing
+parts to GoldSrc.
+
+## Script files and load order
+
+The client loads:
+
+1. `valve/scripts/mod_lessons.txt`
+2. `valve/scripts/instructor_lessons.txt`
+
+Mod lessons are read first; a lesson name already defined there wins over the
+same name in the common file. Both files use Source-style KeyValues syntax.
+The repository includes empty manifests so the feature is inert until lessons
+are added.
+
+A lesson definition contains settings and event rules. Event sections are
+`open`, `close`, `success`, `onopen`, and `update`. Rules are evaluated in
+order. A failed test aborts the current rule; `scope in` / `scope out` provide
+conditional groups in the same way as Source lesson scripts.
+
+## Example: teach the player to fire
+
+Add this inside the top-level object in `instructor_lessons.txt`:
+
+```text
+"Basic weapon fire"
+{
+    "instance_type" "1"
+    "priority" "80"
+    "timeout" "20"
+    "success_limit" "1"
+    "caption" "Press attack to fire"
+    "binding" "+attack"
+
+    "open"
+    {
+        "instructor_primaryattack"
+        {
+            "local_player is" "player userid"
+            "icon_target set" "player local_player"
+        }
+    }
+
+    "success"
+    {
+        "use_primaryattack"
+        {
+            "local_player is" "player userid"
+            "void close" "void"
+        }
+    }
+}
+```
+
+The example uses the existing one-card HUD panel and needs no icon sprite.
+To show an icon, provide the named GoldSrc sprite as
+`valve/sprites/<icon-name>.spr` and use the same basename in
+`onscreen_icon` / `offscreen_icon`.
+
+## Lesson properties
+
+Implemented properties include:
+
+- Instance policy: `instance_type` (0 multiple, 1 single-open, 2 fixed-replace,
+  3 single-active), `replace_key`, `fixed_instances_max`,
+  `replace_only_when_stopped`.
+- Scheduling and lifetime: `priority`, `timeout`, `lock_duration`,
+  `update_interval`, `display_limit`, `success_limit`,
+  `can_open_when_dead`, `bump_with_timeout_when_learned`,
+  `can_timeout_while_inactive`.
+- Lesson grouping: `group`, repeated `prereq` entries, and
+  `GroupConVarToggle` with `convar` and `group` fields.
+- Text and locator presentation: `caption`, `caption_param`, `binding`,
+  `gamepad_binding`, `onscreen_icon`, `offscreen_icon`, `caption_color`,
+  `range`, `icon_offset`, `flags`, `no_icon_target`,
+  `allow_nodraw_target`, `visible`, `no_offscreen`, `force_caption`,
+  `fixed_position`, `fixed_position_x`, and `fixed_position_y`.
+
+The following Source metadata is accepted but is not rendered by the GoldSrc
+HUD: `vgui_target_name`, `vgui_target_lookup`, `vgui_target_edge`,
+`icon_relative_offset`, and `show_when_occluded`. The HUD has no equivalent
+VGUI target anchors or full Source-style target occlusion trace.
+
+Lesson variables exposed to rules are:
+`local_player`, `entity1`, `entity2`, `icon_target`, `integer1`,
+`integer2`, `output`, `float1`, `float2`, `string1`, `string2`,
+`caption`, `caption_param`, `binding`, `gamepad_binding`,
+`onscreen_icon`, `offscreen_icon`, `replace_key`, `group`, `range`,
+`timeout`, `priority`, `flags`, `visible`, `no_offscreen`,
+`force_caption`, `no_icon_target`, `allow_nodraw_target`,
+`show_when_occluded`, `fixed_position`, `fixed_position_x`,
+`fixed_position_y`, `icon_offset`, `icon_relative_offset`,
+`caption_color`, `start_sound`, `vgui_target_name`,
+`vgui_target_lookup`, `vgui_target_edge`, `lock_duration`,
+`update_interval`, `can_open_when_dead`,
+`bump_with_timeout_when_learned`, and `can_timeout_while_inactive`.
+
+## Rule actions and parameter types
+
+The adapted evaluator supports:
+
+- Control: `scope in`, `scope out`, `close`, `success`, `lock`,
+  `present complete`, `present start`, `present end`, and `reference open`.
+- Values: `set`, `add`, `subtract`, `multiply`, `is`, `less than`,
+  `has prefix`, `has bit`, `bit count is`, `bit count less than`,
+  `get distance`, `get angular distance`, `classname is`,
+  `modelname is`, `get use target`, and `use target is`.
+- Parameter types: `void`, `string`, `bool`, `float`, `int`, `integer`,
+  `short`, `long`, `player`, `entity`, and `convar`.
+- Prefix an action with `?` to make an unavailable optional parameter non-fatal;
+  prefix it with `!` to invert a comparison.
+
+`get distance` and `get angular distance` write their result to `output`.
+`classname is` can compare the entity carried by the current event;
+`modelname is` compares a client entity's model path. `get use target` and
+`use target is` are supported when processing the `player_use` event.
+
+The client-side archived counters are stored as
+`gameinstructor_<lesson>_display` and
+`gameinstructor_<lesson>_success` cvars. Set
+`gameinstructor_enable 0` to disable lesson scheduling.
+
+## GoldSrc gameplay events currently published
+
+The server-to-client `InstructorEvent` message currently emits:
+
+- `player_spawn`, `player_death`, `player_jump`, `player_use`
+- `use_primaryattack`, `use_secondaryattack`, `use_reload`
+- `instructor_primaryattack` when a weapon is acquired
+- `player_pushable_push`, `player_pushable_pull` when a pushable actually moves
+
+The message carries one event entity index, classname, targetname, field name,
+string value, integer value, and float value. This is a bounded single-player
+event bridge, not the full Source `IGameEvent` registry or its game-specific
+event schemas.
+
+## Deliberate GoldSrc differences
+
+- Multiple lesson opportunities, prerequisites, counters, and priority
+  arbitration are retained, but the HUD can render only one managed lesson card
+  at a time.
+- Map-authored `env_instructor_hint` messages continue to own the existing
+  hint/locator card directly and take precedence over scripted lessons. The
+  PS2 interaction brackets and automatic pushable move/hold prompt remain
+  separate systems.
+- Source VGUI2 target anchoring, true Source locator target handles, the full
+  Source hint/lesson event payload, split-screen/player swapping, team and
+  input-device filters, and Source game-specific weapon/ammo/health actions
+  are not implemented.
+- `present start/end` do not run Source's VGUI animation lifecycle;
+  `present complete` maps to the lesson having been displayed.
+- Sprite names map to GoldSrc `.spr` files. Source `.vmt/.vtf` art is not
+  converted or bundled.
+- Counter cvars provide persistence; this is not Source's full saved-game
+  lesson-state integration.
+
+This separation keeps existing GoldSrc behavior intact while allowing map
+authors and mod code to drive a scripted lesson manager with familiar Source
+lesson definitions and rules.
