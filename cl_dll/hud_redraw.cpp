@@ -1080,7 +1080,8 @@ int CHud::Redraw( float flTime, int intermission )
 							markerY - anchorY > 1 || anchorY - markerY > 1 )
 							HUD_DrawInstructorLocatorTether( anchorX, anchorY,
 								markerX, markerY, locatorTarget->m_iCaptionColorR,
-								locatorTarget->m_iCaptionColorG, locatorTarget->m_iCaptionColorB, 150 );
+								locatorTarget->m_iCaptionColorG, locatorTarget->m_iCaptionColorB,
+								locatorTarget->GetRenderAlpha( 150 ) );
 					}
 
 					HSPRITE locatorSprite = sourceBindingIcon ? instructorBindingSprite :
@@ -1109,6 +1110,9 @@ int CHud::Redraw( float flTime, int intermission )
 					int locatorB = locatorTarget->m_iCaptionColorB;
 
 					int locatorAlpha = locatorTarget->GetRenderAlpha( 220 );
+					const int locatorTextR = locatorR * locatorAlpha / 255;
+					const int locatorTextG = locatorG * locatorAlpha / 255;
+					const int locatorTextB = locatorB * locatorAlpha / 255;
 
 					// A 20% increase keeps the 32x32 art compact while making
 					// the locator easier to pick out at normal gameplay distance.
@@ -1167,7 +1171,7 @@ int CHud::Redraw( float flTime, int intermission )
 						FillRGBA( markerX - 10, markerY - 10, 20, 20, 5, 7, 10, locatorAlpha );
 						if( !hasDirectionalLocatorSprites )
 							DrawHudString( markerX - 4, markerY - 8, markerX + 10,
-								arrow, locatorR, locatorG, locatorB );
+								arrow, locatorTextR, locatorTextG, locatorTextB );
 					}
 					else if( !sourceBindingIcon )
 					{
@@ -1239,7 +1243,7 @@ int CHud::Redraw( float flTime, int intermission )
 								( locatorTarget->m_drawArrowDirection == INSTRUCTOR_LOCATOR_ARROW_RIGHT ? ">" :
 								( locatorTarget->m_drawArrowDirection == INSTRUCTOR_LOCATOR_ARROW_UP ? "^" : "v" ) );
 							DrawHudString( markerX - 4, markerY - 8, markerX + 10,
-								arrow, locatorR, locatorG, locatorB );
+								arrow, locatorTextR, locatorTextG, locatorTextB );
 						}
 						}
 					}
@@ -1335,7 +1339,7 @@ int CHud::Redraw( float flTime, int intermission )
 						const int captionRight = locatorKeyWidth > 0 ? keyX - 6 : labelX + labelWidth - 6;
 						if( locatorCaptionWidth > 0 )
 							DrawHudString( labelTextX, labelTextY, captionRight,
-								locatorTarget->m_szCaption, locatorR, locatorG, locatorB );
+								locatorTarget->m_szCaption, locatorTextR, locatorTextG, locatorTextB );
 
 						if( locatorKeyWidth > 0 )
 						{
@@ -1369,7 +1373,7 @@ int CHud::Redraw( float flTime, int intermission )
 					if( keyTextX < keyX + 3 )
 						keyTextX = keyX + 3;
 					DrawHudString( keyTextX, keyY + 4, keyX + locatorKeyWidth - 3,
-						locatorBinding, locatorR, locatorG, locatorB );
+						locatorBinding, locatorTextR, locatorTextG, locatorTextB );
 						}
 					}
 
@@ -1390,7 +1394,7 @@ int CHud::Redraw( float flTime, int intermission )
 								captionX = Q_max( 8, ScreenWidth - sourceCaptionWidth - 8 );
 							DrawHudString( captionX, markerY - fontHeight / 2 - 1,
 								Q_min( ScreenWidth - 8, captionX + sourceCaptionWidth + 4 ),
-								locatorTarget->m_szCaption, locatorR, locatorG, locatorB );
+								locatorTarget->m_szCaption, locatorTextR, locatorTextG, locatorTextB );
 						}
 					}
 				}
@@ -1562,6 +1566,10 @@ int CHud::Redraw( float flTime, int intermission )
 			int hintR = locatorTarget->m_iCaptionColorR;
 			int hintG = locatorTarget->m_iCaptionColorG;
 			int hintB = locatorTarget->m_iCaptionColorB;
+			int hintTextR = hintR * panelAlpha / 255;
+			int hintTextG = hintG * panelAlpha / 255;
+			int hintTextB = hintB * panelAlpha / 255;
+			const int whiteText = 245 * panelAlpha / 255;
 
 			if( managedCard )
 			{
@@ -1572,6 +1580,9 @@ int CHud::Redraw( float flTime, int intermission )
 					hintR = 112;
 					hintG = 180;
 					hintB = 255;
+					hintTextR = hintR * panelAlpha / 255;
+					hintTextG = hintG * panelAlpha / 255;
+					hintTextB = hintB * panelAlpha / 255;
 				}
 
 				FillRGBA( panelX + 2, panelY + 3, panelWidth, panelHeight, 0, 0, 0, panelAlpha / 2 );
@@ -1599,7 +1610,7 @@ int CHud::Redraw( float flTime, int intermission )
 					FillRGBA( iconX - 5, iconY - 5, iconWidth + 10, iconHeight + 10, 31, 39, 52, panelAlpha );
 					FillRGBA( iconX - 5, iconY - 5, iconWidth + 10, 1, hintR, hintG, hintB, panelAlpha );
 				}
-				SPR_Set( hintIcon, hintR, hintG, hintB );
+				SPR_Set( hintIcon, hintTextR, hintTextG, hintTextB );
 				SPR_DrawAdditive( 0, iconX, iconY, NULL );
 				textAreaX = iconX + iconWidth + 12;
 			}
@@ -1612,9 +1623,9 @@ int CHud::Redraw( float flTime, int intermission )
 			if( managedCard )
 			{
 				DrawHudString( textAreaX, panelY + 9, textAreaRight,
-					"INSTRUCTION", hintR, hintG, hintB );
+					"INSTRUCTION", hintTextR, hintTextG, hintTextB );
 				DrawHudString( textAreaX, panelY + 31, textAreaRight,
-					locatorTarget->m_szCaption, 245, 247, 250 );
+					locatorTarget->m_szCaption, whiteText, whiteText, whiteText );
 
 				if( bindingText[0] )
 				{
@@ -1647,7 +1658,7 @@ int CHud::Redraw( float flTime, int intermission )
 					if( keyTextX < keyX + 3 )
 						keyTextX = keyX + 3;
 					DrawHudString( keyTextX, keyY + 6, keyX + keyChipWidth - 5,
-						bindingText, hintR, hintG, hintB );
+						bindingText, hintTextR, hintTextG, hintTextB );
 				}
 			}
 			else
@@ -1657,7 +1668,7 @@ int CHud::Redraw( float flTime, int intermission )
 					textX = textAreaX;
 				const int textOffsetY = ( panelHeight - basePanelHeight ) / 2;
 				DrawHudString( textX, panelY + textOffsetY + 9, textAreaRight,
-					locatorTarget->m_szCaption, 245, 245, 245 );
+					locatorTarget->m_szCaption, whiteText, whiteText, whiteText );
 
 				if( bindingText[0] )
 				{
@@ -1665,7 +1676,7 @@ int CHud::Redraw( float flTime, int intermission )
 					if( keyTextX < textAreaX )
 						keyTextX = textAreaX;
 					DrawHudString( keyTextX, panelY + textOffsetY + 32, textAreaRight,
-						bindingText, hintR, hintG, hintB );
+						bindingText, hintTextR, hintTextG, hintTextB );
 				}
 			}
 			}
