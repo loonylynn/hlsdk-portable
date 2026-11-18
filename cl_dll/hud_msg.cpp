@@ -329,6 +329,7 @@ void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 	if( lessonChanged )
 	{
 		gHUD.m_flInstructorManagedVisibleSince = 0.0f;
+		gHUD.m_bInstructorManagedDisplayCounted = false;
 		strncpy( gHUD.m_szInstructorHintName, lessonName ? lessonName : "",
 			sizeof( gHUD.m_szInstructorHintName ) - 1 );
 		gHUD.m_szInstructorHintName[sizeof( gHUD.m_szInstructorHintName ) - 1] = '\0';
