@@ -646,6 +646,8 @@ public:
 	int m_iInstructorHintColorB;
 	HSPRITE m_hInstructorHintMoveSprite;
 	HSPRITE m_hInstructorHintHoldSprite;
+	HSPRITE m_hInstructorHintArrowRightSprite;
+	HSPRITE m_hInstructorHintArrowUpSprite;
 	HSPRITE m_hInstructorHintOnscreenSprite;
 	HSPRITE m_hInstructorHintOffscreenSprite;
 	char m_szInstructorHintIconOnscreen[64];
@@ -667,6 +669,7 @@ public:
 		m_iInstructorHintIconMode(0), m_iInstructorHintFlags(0),
 		m_iInstructorHintColorR(255), m_iInstructorHintColorG(255), m_iInstructorHintColorB(255),
 		m_hInstructorHintMoveSprite(0), m_hInstructorHintHoldSprite(0),
+		m_hInstructorHintArrowRightSprite(0), m_hInstructorHintArrowUpSprite(0),
 		m_hInstructorHintOnscreenSprite(0), m_hInstructorHintOffscreenSprite(0)
 	{
 		m_vecInstructorHintTargetOrigin[0] = 0.0f;
