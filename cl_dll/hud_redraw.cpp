@@ -174,13 +174,13 @@ int CHud::Redraw( float flTime, int intermission )
 			m_iInstructorHintId = 0;
 			m_iInstructorHintTarget = 0;
 			m_flInstructorHintEndTime = 0.0f;
-			m_szInstructorHintCaption[0] = '\\0';
-			m_szInstructorHintBinding[0] = '\\0';
+			m_szInstructorHintCaption[0] = '\0';
+			m_szInstructorHintBinding[0] = '\0';
 		}
 		else
 		{
 			char bindingText[80];
-			bindingText[0] = '\\0';
+			bindingText[0] = '\0';
 			if( m_szInstructorHintBinding[0] )
 				snprintf( bindingText, sizeof( bindingText ), "[ %s ]", m_szInstructorHintBinding );
 
