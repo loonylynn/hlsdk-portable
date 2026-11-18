@@ -310,7 +310,8 @@ int CHud::Redraw( float flTime, int intermission )
 			char bindingText[80];
 			bindingText[0] = '\0';
 			if( m_szInstructorHintBinding[0] )
-				snprintf( bindingText, sizeof( bindingText ), "[ %s ]", m_szInstructorHintBinding );
+				snprintf( bindingText, sizeof( bindingText ),
+					m_bInstructorHintManaged ? "%s" : "[ %s ]", m_szInstructorHintBinding );
 
 			int captionWidth = DrawHudStringLen( m_szInstructorHintCaption );
 			int bindingWidth = DrawHudStringLen( bindingText );
@@ -376,17 +377,22 @@ int CHud::Redraw( float flTime, int intermission )
 				iconHeight = 0;
 			}
 
-			const int contentTextWidth = Q_max( captionWidth, bindingWidth );
+			const bool managedCard = m_bInstructorHintManaged;
+			const int keyChipWidth = ( managedCard && bindingText[0] ) ? bindingWidth + 18 : 0;
+			const int contentTextWidth = managedCard ?
+				captionWidth + ( keyChipWidth ? keyChipWidth + 12 : 0 ) :
+				Q_max( captionWidth, bindingWidth );
 			const int contentWidth = contentTextWidth + ( hintIcon ? iconWidth + 12 : 0 );
-			int panelWidth = contentWidth + 36;
+			int panelWidth = contentWidth + ( managedCard ? 44 : 36 );
 			const int maxPanelWidth = Q_max( 1, ScreenWidth - 24 );
 			if( panelWidth > maxPanelWidth )
 				panelWidth = maxPanelWidth;
-			if( panelWidth < 180 && maxPanelWidth >= 180 )
-				panelWidth = 180;
+			const int minPanelWidth = managedCard ? 224 : 180;
+			if( panelWidth < minPanelWidth && maxPanelWidth >= minPanelWidth )
+				panelWidth = minPanelWidth;
 
-			const int basePanelHeight = bindingText[0] ? 58 : 42;
-			const int panelHeight = Q_max( basePanelHeight, iconHeight + 16 );
+			const int basePanelHeight = managedCard ? 62 : ( bindingText[0] ? 58 : 42 );
+			const int panelHeight = Q_max( basePanelHeight, iconHeight + ( managedCard ? 24 : 16 ) );
 			int panelX = ( ScreenWidth - panelWidth ) / 2;
 			int panelY = ScreenHeight - panelHeight - 30;
 
@@ -504,38 +510,99 @@ int CHud::Redraw( float flTime, int intermission )
 			if( m_iInstructorHintFlags & 0x000000C0 )
 				panelX += (int)( sinf( flTime * ( ( m_iInstructorHintFlags & 0x80 ) ? 22.0f : 10.0f ) ) * 3.0f );
 
-			const int hintR = m_iInstructorHintColorR;
-			const int hintG = m_iInstructorHintColorG;
-			const int hintB = m_iInstructorHintColorB;
-			FillRGBA( panelX, panelY, panelWidth, panelHeight, 8, 10, 14, panelAlpha );
-			FillRGBA( panelX, panelY, 3, panelHeight, hintR, hintG, hintB, 255 );
+			int hintR = m_iInstructorHintColorR;
+			int hintG = m_iInstructorHintColorG;
+			int hintB = m_iInstructorHintColorB;
 
-			int textAreaX = panelX + 14;
+			if( managedCard )
+			{
+				// A Source-inspired layered card: subtle drop shadow, inset face,
+				// crisp edge and a restrained locator-color accent.
+				if( hintR == 255 && hintG == 255 && hintB == 255 )
+				{
+					hintR = 112;
+					hintG = 180;
+					hintB = 255;
+				}
+
+				// Fade the managed card in without changing the map-authored hint path.
+				if( m_flInstructorManagedVisibleSince > 0.0f )
+				{
+					float fade = ( flTime - m_flInstructorManagedVisibleSince ) / 0.18f;
+					if( fade < 0.0f ) fade = 0.0f;
+					if( fade > 1.0f ) fade = 1.0f;
+					panelAlpha = (int)( panelAlpha * ( 0.25f + 0.75f * fade ) );
+				}
+
+				FillRGBA( panelX + 2, panelY + 3, panelWidth, panelHeight, 0, 0, 0, panelAlpha / 2 );
+				FillRGBA( panelX, panelY, panelWidth, panelHeight, 4, 6, 10, panelAlpha );
+				FillRGBA( panelX + 1, panelY + 1, panelWidth - 2, panelHeight - 2, 19, 24, 33, panelAlpha );
+				FillRGBA( panelX + 1, panelY + 1, panelWidth - 2, 1, 74, 86, 104, panelAlpha );
+				FillRGBA( panelX + 1, panelY + panelHeight - 2, panelWidth - 2, 1, 5, 7, 11, panelAlpha );
+				FillRGBA( panelX + 1, panelY + 1, 3, panelHeight - 2, hintR, hintG, hintB, panelAlpha );
+				FillRGBA( panelX + 5, panelY + 5, 1, panelHeight - 10, hintR, hintG, hintB, panelAlpha / 3 );
+			}
+			else
+			{
+				// Preserve the established env_instructor_hint / pushable styling.
+				FillRGBA( panelX, panelY, panelWidth, panelHeight, 8, 10, 14, panelAlpha );
+				FillRGBA( panelX, panelY, 3, panelHeight, hintR, hintG, hintB, 255 );
+			}
+
+			int textAreaX = panelX + ( managedCard ? 16 : 14 );
 			if( hintIcon )
 			{
 				const int iconX = panelX + 12;
 				const int iconY = panelY + ( panelHeight - iconHeight ) / 2;
-				SPR_Set( hintIcon, m_iInstructorHintColorR, m_iInstructorHintColorG, m_iInstructorHintColorB );
+				if( managedCard )
+				{
+					FillRGBA( iconX - 5, iconY - 5, iconWidth + 10, iconHeight + 10, 31, 39, 52, panelAlpha );
+					FillRGBA( iconX - 5, iconY - 5, iconWidth + 10, 1, hintR, hintG, hintB, panelAlpha );
+				}
+				SPR_Set( hintIcon, hintR, hintG, hintB );
 				SPR_DrawAdditive( 0, iconX, iconY, NULL );
-				textAreaX = iconX + iconWidth + 10;
+				textAreaX = iconX + iconWidth + 12;
 			}
 
-			const int textAreaRight = panelX + panelWidth - 10;
+			const int keyX = panelX + panelWidth - keyChipWidth - 12;
+			const int textAreaRight = ( managedCard && keyChipWidth ) ?
+				keyX - 10 : panelX + panelWidth - ( managedCard ? 14 : 10 );
 			const int textAreaWidth = Q_max( 1, textAreaRight - textAreaX );
-			int textX = textAreaX + ( textAreaWidth - captionWidth ) / 2;
-			if( textX < textAreaX )
-				textX = textAreaX;
-			const int textOffsetY = ( panelHeight - basePanelHeight ) / 2;
-			DrawHudString( textX, panelY + textOffsetY + 9, textAreaRight,
-				m_szInstructorHintCaption, 245, 245, 245 );
 
-			if( bindingText[0] )
+			if( managedCard )
 			{
-				int keyX = textAreaX + ( textAreaWidth - bindingWidth ) / 2;
-				if( keyX < textAreaX )
-					keyX = textAreaX;
-				DrawHudString( keyX, panelY + textOffsetY + 32, textAreaRight,
-					bindingText, m_iInstructorHintColorR, m_iInstructorHintColorG, m_iInstructorHintColorB );
+				DrawHudString( textAreaX, panelY + 9, textAreaRight,
+					"INSTRUCTION", hintR, hintG, hintB );
+				DrawHudString( textAreaX, panelY + 31, textAreaRight,
+					m_szInstructorHintCaption, 245, 247, 250 );
+
+				if( bindingText[0] )
+				{
+					const int keyY = panelY + 22;
+					FillRGBA( keyX, keyY, keyChipWidth, 22, 10, 14, 21, panelAlpha );
+					FillRGBA( keyX, keyY, keyChipWidth, 1, hintR, hintG, hintB, panelAlpha );
+					FillRGBA( keyX, keyY + 21, keyChipWidth, 1, 63, 73, 89, panelAlpha );
+					DrawHudString( keyX + 8, keyY + 6, keyX + keyChipWidth - 5,
+						bindingText, hintR, hintG, hintB );
+				}
+			}
+			else
+			{
+				int textX = textAreaX + ( textAreaWidth - captionWidth ) / 2;
+				if( textX < textAreaX )
+					textX = textAreaX;
+				const int textOffsetY = ( panelHeight - basePanelHeight ) / 2;
+				DrawHudString( textX, panelY + textOffsetY + 9, textAreaRight,
+					m_szInstructorHintCaption, 245, 245, 245 );
+
+				if( bindingText[0] )
+				{
+					int keyTextX = textAreaX + ( textAreaWidth - bindingWidth ) / 2;
+					if( keyTextX < textAreaX )
+						keyTextX = textAreaX;
+					DrawHudString( keyTextX, panelY + textOffsetY + 32, textAreaRight,
+						bindingText, hintR, hintG, hintB );
+				}
 			}
 			}
 		}
