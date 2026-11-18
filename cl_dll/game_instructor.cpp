@@ -291,9 +291,13 @@ namespace
 		lesson->m_OnscreenIcon = ChildString(node, "onscreen_icon");
 		lesson->m_OffscreenIcon = ChildString(node, "offscreen_icon");
 		lesson->m_CaptionColor = ChildString(node, "caption_color", "255,255,255");
+		lesson->m_VguiTargetName = ChildString(node, "vgui_target_name");
+		lesson->m_VguiTargetLookup = ChildString(node, "vgui_target_lookup");
+		lesson->m_iVguiTargetEdge = ChildInt(node, "vgui_target_edge");
 		lesson->m_iFlags = ChildInt(node, "flags");
 		lesson->m_flRange = ChildFloat(node, "range");
 		lesson->m_flIconOffset = ChildFloat(node, "icon_offset");
+		lesson->m_flRelativeIconOffset = ChildFloat(node, "icon_relative_offset");
 		lesson->m_bNoIconTarget = ChildBool(node, "no_icon_target");
 		lesson->m_bAllowNodrawTarget = ChildBool(node, "allow_nodraw_target");
 		lesson->m_bVisible = ChildBool(node, "visible", true);
@@ -721,6 +725,8 @@ CIconLesson::CIconLesson(const char *name, bool definition)
 	  m_flFixedY(0.0f)
 {
 	m_CaptionColor = "255,255,255";
+	m_iVguiTargetEdge = 0;
+	m_flRelativeIconOffset = 0.0f;
 }
 
 CScriptedIconLesson::CScriptedIconLesson(const char *name, bool definition)
@@ -777,9 +783,13 @@ CScriptedIconLesson::CScriptedIconLesson(const CScriptedIconLesson &definition)
 	m_OnscreenIcon = definition.m_OnscreenIcon;
 	m_OffscreenIcon = definition.m_OffscreenIcon;
 	m_CaptionColor = definition.m_CaptionColor;
+	m_VguiTargetName = definition.m_VguiTargetName;
+	m_VguiTargetLookup = definition.m_VguiTargetLookup;
+	m_iVguiTargetEdge = definition.m_iVguiTargetEdge;
 	m_iFlags = definition.m_iFlags;
 	m_flRange = definition.m_flRange;
 	m_flIconOffset = definition.m_flIconOffset;
+	m_flRelativeIconOffset = definition.m_flRelativeIconOffset;
 	m_bNoIconTarget = definition.m_bNoIconTarget;
 	m_bAllowNodrawTarget = definition.m_bAllowNodrawTarget;
 	m_bVisible = definition.m_bVisible;
@@ -791,7 +801,6 @@ CScriptedIconLesson::CScriptedIconLesson(const CScriptedIconLesson &definition)
 	m_flFixedY = definition.m_flFixedY;
 	m_StartSound = definition.m_StartSound;
 	m_Prerequisites = definition.m_Prerequisites;
-	m_InitTime = definition.m_flInitTime;
 	m_flInitTime = definition.m_flInitTime;
 	m_OpenEvents = definition.m_OpenEvents;
 	m_CloseEvents = definition.m_CloseEvents;
@@ -1477,7 +1486,10 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 	HUD_SetManagedInstructorHint(lesson->m_Name.c_str(), caption,
 		lesson->m_Binding.c_str(), lesson->m_OnscreenIcon.c_str(),
 		lesson->m_OffscreenIcon.c_str(), lesson->m_iIconTarget, 0.0f,
-		lesson->m_iFlags, r, g, b, lesson->m_flRange, lesson->m_flIconOffset, lesson->m_bForceCaption);
+		lesson->m_iFlags | (lesson->m_bNoOffscreen ? 0x00000200 : 0) |
+			(lesson->m_bAllowNodrawTarget ? 0x00010000 : 0), r, g, b, lesson->m_flRange,
+			lesson->m_flIconOffset, lesson->m_bForceCaption,
+		lesson->m_bFixedPosition, lesson->m_flFixedX, lesson->m_flFixedY);
 	m_bManagedLessonVisible = true;
 }
 
