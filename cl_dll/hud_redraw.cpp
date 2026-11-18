@@ -80,9 +80,9 @@ static void HUD_DrawInstructorLocatorTether( int x0, int y0, int x1, int y1,
 }
 
 // Resolve a world point to HUD viewport coordinates. TriAPI's WorldToScreen
-// returns viewport-relative pixels and reports points behind the view
-// separately; mirror those coordinates so the offscreen ray points toward
-// the target rather than through the camera.
+// returns normalized device coordinates and reports points behind the view
+// separately; convert to pixels and mirror behind-camera directions so the
+// offscreen ray points toward the target rather than through the camera.
 static bool HUD_GetInstructorHintScreenPosition( const float *worldOrigin, float *screenX, float *screenY, bool *behind )
 {
 	if( !worldOrigin || !screenX || !screenY || !behind || !gEngfuncs.pTriAPI ||
