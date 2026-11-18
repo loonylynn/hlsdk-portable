@@ -251,7 +251,7 @@ int CHud::Redraw( float flTime, int intermission )
 			m_vecInstructorHintTargetOrigin[1] = 0.0f;
 			m_vecInstructorHintTargetOrigin[2] = 0.0f;
 			m_flInstructorHintEndTime = 0.0f;
-			m_iInstructorHintRange = 0.0f;
+			m_flInstructorHintRange = 0.0f;
 			m_iInstructorHintIconMode = 0;
 			m_iInstructorHintFlags = 0;
 			m_hInstructorHintOnscreenSprite = 0;
