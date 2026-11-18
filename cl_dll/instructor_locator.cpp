@@ -135,7 +135,7 @@ void CInstructorLocatorTarget::CalculateEdgePosition( int screenWidth, int scree
 		m_iconX = (int)( (float)m_centerX + dx * t );
 		m_iconY = (int)( (float)m_centerY + dy * t );
 
-		if( tx < ty )
+		if( tx <= ty )
 			m_drawArrowDirection = dx < 0.0f ?
 				INSTRUCTOR_LOCATOR_ARROW_LEFT : INSTRUCTOR_LOCATOR_ARROW_RIGHT;
 		else
