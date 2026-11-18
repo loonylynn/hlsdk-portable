@@ -62,7 +62,7 @@ static HSPRITE HUD_LoadInstructorHintSprite( const char *iconName )
 }
 
 
-static void HUD_SyncInstructorLocatorTarget( CHud *hud )
+void HUD_SyncInstructorLocatorTarget( CHud *hud )
 {
 	if( !hud )
 		return;
@@ -92,6 +92,12 @@ static void HUD_SyncInstructorLocatorTarget( CHud *hud )
 
 	target->Update( hud->m_InstructorLocatorPanel.GetFrameCount() );
 	target->m_iEntityIndex = hud->m_iInstructorHintTarget;
+	target->m_bFixedPosition = hud->m_bInstructorHintFixedPosition;
+	target->m_iHintId = hud->m_iInstructorHintId;
+	target->m_iIconMode = hud->m_iInstructorHintIconMode;
+	target->m_bManaged = hud->m_bInstructorHintManaged;
+	target->m_flVisibleSince = hud->m_flInstructorManagedVisibleSince;
+	target->m_flIconOffset = hud->m_flInstructorHintIconOffset;
 	target->m_bOriginInScreenspace =
 		hud->m_bInstructorHintFixedPosition || !hud->m_bInstructorHintHasTargetPosition;
 	if( target->m_bOriginInScreenspace )
@@ -113,6 +119,18 @@ static void HUD_SyncInstructorLocatorTarget( CHud *hud )
 	target->m_offsetY = (int)hud->m_flInstructorHintIconOffset;
 	target->SetCaptionColor( hud->m_iInstructorHintColorR,
 		hud->m_iInstructorHintColorG, hud->m_iInstructorHintColorB );
+	target->m_iBindingChoicesCount = hud->m_iInstructorHintBindingChoicesCount;
+	if( target->m_iBindingChoicesCount < 0 ) target->m_iBindingChoicesCount = 0;
+	if( target->m_iBindingChoicesCount > MAX_INSTRUCTOR_LOCATOR_BINDINGS )
+		target->m_iBindingChoicesCount = MAX_INSTRUCTOR_LOCATOR_BINDINGS;
+	target->m_iBindingTick = hud->m_iInstructorHintBindingTick;
+	target->m_flNextBindingTick = hud->m_flInstructorHintNextBindingTick;
+	for( int i = 0; i < target->m_iBindingChoicesCount; ++i )
+	{
+		strncpy( target->m_szBindingChoices[i], hud->m_szInstructorHintBindingChoices[i],
+			sizeof( target->m_szBindingChoices[i] ) - 1 );
+		target->m_szBindingChoices[i][sizeof( target->m_szBindingChoices[i] ) - 1] = '\0';
+	}
 	target->SetCaptionText( hud->m_szInstructorHintCaption );
 	target->SetBinding( hud->m_szInstructorHintBinding );
 	target->SetOnscreenIconName( hud->m_szInstructorHintIconOnscreen );
