@@ -183,6 +183,15 @@ string value, integer value, and float value. This is a bounded single-player
 event bridge, not the full Source `IGameEvent` registry or its game-specific
 event schemas.
 
+## Locator direction sprites
+
+The HUD can use the original `icon_arrow_right.spr` and
+`icon_arrow_up.spr` assets as the directional indicators around offscreen
+targets. The opposite directions are rendered by mirroring the same sprite at
+draw time: horizontal flip for left and vertical flip for down. No separately
+authored left/down sprite files are required. If either original sprite is
+missing, the locator keeps its text-arrow fallback.
+
 ## Deliberate GoldSrc differences
 
 - Multiple lesson opportunities, prerequisites, counters, and priority
