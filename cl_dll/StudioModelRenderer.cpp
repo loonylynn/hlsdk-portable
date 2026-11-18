@@ -41,6 +41,7 @@ static vec3_t g_BlobShadowStudioOrigin = { 0.0f, 0.0f, 0.0f };
 static int g_BlobShadowStudioEntity = -1;
 
 static cvar_t *cl_blobshadows = NULL;
+static cvar_t *cl_engine_stencil_shadows = NULL;
 static cvar_t *cl_blobshadows_opacity = NULL;
 static cvar_t *cl_ragdoll_bloodmarks = NULL;
 static cvar_t *cl_ragdoll_bloodmarks_debug = NULL;
@@ -272,6 +273,10 @@ static void StudioDrawBlobShadow( cl_entity_t *entity, const vec3_t modelOrigin 
 	int numVerts;
 	int i, j, k, n;
 	triangleapi_t *tri = gEngfuncs.pTriAPI;
+
+	/* Do not layer the legacy blob mark under the engine stencil volume. */
+	if( cl_engine_stencil_shadows && cl_engine_stencil_shadows->value > 0.0f )
+		return;
 
 	if( !cl_blobshadows || cl_blobshadows->value <= 0.0f )
 		return;
@@ -579,6 +584,7 @@ void CStudioModelRenderer::Init( void )
 	m_pCvarHiModels			= IEngineStudio.GetCvar( "cl_himodels" );
 	m_pCvarDeveloper		= IEngineStudio.GetCvar( "developer" );
 	m_pCvarDrawEntities		= IEngineStudio.GetCvar( "r_drawentities" );
+	cl_engine_stencil_shadows = IEngineStudio.GetCvar( "r_shadows" );
 
 	if( !cl_blobshadows )
 		cl_blobshadows = CVAR_CREATE( "cl_blobshadows", "1", FCVAR_ARCHIVE );
@@ -2244,7 +2250,8 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 
 			IEngineStudio.GL_SetRenderMode( rendermode );
 			IEngineStudio.StudioDrawPoints();
-			IEngineStudio.GL_StudioDrawShadow();
+			if( !cl_engine_stencil_shadows || cl_engine_stencil_shadows->value >= 2.0f )
+				IEngineStudio.GL_StudioDrawShadow();
 		}
 
 	}
