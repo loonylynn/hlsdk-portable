@@ -91,6 +91,7 @@ public:
 	bool m_bCanTimeoutWhileInactive;
 	bool m_bDisabled;
 	bool m_bWasDisplayed;
+	bool m_bSuccessCounted;
 	bool m_bCloseRequested;
 	bool m_bStarted;
 	std::string m_CloseReason;
@@ -196,6 +197,7 @@ public:
 	void StopAllLessons();
 	void MarkDisplayed(const char *name);
 	void MarkSucceeded(const char *name);
+	void MarkSucceeded(CScriptedIconLesson *lesson);
 	void EvaluateLessonsForGameRules();
 	void SetLessonGroupEnabled(const char *group, bool enabled);
 	void DumpOpenOpportunities() const;
