@@ -51,6 +51,7 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 			m_vecInstructorHintTargetOrigin[1] = 0.0f;
 			m_vecInstructorHintTargetOrigin[2] = 0.0f;
 			m_flInstructorHintEndTime = 0.0f;
+			m_iInstructorHintIconMode = 0;
 			m_szInstructorHintCaption[0] = '\0';
 			m_szInstructorHintBinding[0] = '\0';
 		}
@@ -65,6 +66,7 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 		const float x = READ_COORD();
 		const float y = READ_COORD();
 		const float z = READ_COORD();
+		const int iconMode = READ_BYTE();
 
 		if( m_bInstructorHintActive && hintId == m_iInstructorHintId )
 		{
@@ -73,6 +75,19 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 			m_vecInstructorHintTargetOrigin[0] = x;
 			m_vecInstructorHintTargetOrigin[1] = y;
 			m_vecInstructorHintTargetOrigin[2] = z;
+			m_iInstructorHintIconMode = iconMode;
+
+			// The automatic pushable hint changes its copy with the action icon.
+			if( hintId == -1 )
+			{
+				const char *caption = iconMode == 2 ?
+					"Hold USE and move backward to pull" : "Move into it to push";
+				const char *binding = iconMode == 2 ? "USE" : "";
+				strncpy( m_szInstructorHintCaption, caption, sizeof( m_szInstructorHintCaption ) - 1 );
+				m_szInstructorHintCaption[sizeof( m_szInstructorHintCaption ) - 1] = '\0';
+				strncpy( m_szInstructorHintBinding, binding, sizeof( m_szInstructorHintBinding ) - 1 );
+				m_szInstructorHintBinding[sizeof( m_szInstructorHintBinding ) - 1] = '\0';
+			}
 		}
 		return 1;
 	}
@@ -94,8 +109,20 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 	const char *binding = READ_STRING();
 	strncpy( m_szInstructorHintBinding, binding ? binding : "", sizeof( m_szInstructorHintBinding ) - 1 );
 	m_szInstructorHintBinding[sizeof( m_szInstructorHintBinding ) - 1] = '\0';
+	const int iconMode = READ_BYTE();
 
 	m_iInstructorHintId = hintId;
+	m_iInstructorHintIconMode = iconMode;
+	if( hintId == -1 )
+	{
+		const char *pushableCaption = iconMode == 2 ?
+			"Hold USE and move backward to pull" : "Move into it to push";
+		const char *pushableBinding = iconMode == 2 ? "USE" : "";
+		strncpy( m_szInstructorHintCaption, pushableCaption, sizeof( m_szInstructorHintCaption ) - 1 );
+		m_szInstructorHintCaption[sizeof( m_szInstructorHintCaption ) - 1] = '\0';
+		strncpy( m_szInstructorHintBinding, pushableBinding, sizeof( m_szInstructorHintBinding ) - 1 );
+		m_szInstructorHintBinding[sizeof( m_szInstructorHintBinding ) - 1] = '\0';
+	}
 	m_flInstructorHintEndTime = timeoutTenths > 0 ? m_flTime + ( timeoutTenths * 0.1f ) : 0.0f;
 	m_bInstructorHintActive = ( m_szInstructorHintCaption[0] != '\0' || m_szInstructorHintBinding[0] != '\0' );
 	return 1;
@@ -124,6 +151,7 @@ int CHud::MsgFunc_ResetHUD( const char *pszName, int iSize, void *pbuf )
 	m_vecInstructorHintTargetOrigin[1] = 0.0f;
 	m_vecInstructorHintTargetOrigin[2] = 0.0f;
 	m_flInstructorHintEndTime = 0.0f;
+	m_iInstructorHintIconMode = 0;
 	m_szInstructorHintCaption[0] = '\0';
 	m_szInstructorHintBinding[0] = '\0';
 
