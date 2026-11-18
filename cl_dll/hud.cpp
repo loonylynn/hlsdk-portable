@@ -95,7 +95,7 @@ float g_hud_text_color[3];
 // Re-load optional GoldSrc instructor sprites after video-mode changes.
 static HSPRITE HUD_ReloadInstructorHintSprite( const char *iconName )
 {
-	if( !iconName || !iconName[0] || Q_stricmp( iconName, "use_binding" ) == 0 )
+	if( !iconName || !iconName[0] || stricmp( iconName, "use_binding" ) == 0 )
 		return 0;
 
 	char safeName[64];
