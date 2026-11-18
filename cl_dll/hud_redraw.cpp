@@ -825,6 +825,9 @@ int CHud::Redraw( float flTime, int intermission )
 		m_flInstructorHintNextOcclusionTest = flTime + 0.25f;
 	}
 
+	// Refresh the locator model after dynamic target-origin and occlusion updates.
+	HUD_SyncInstructorLocatorTarget( this );
+
 	m_flTimeDelta = (double)( m_flTime - m_fOldTime );
 	static float m_flShotTime = 0;
 
@@ -891,10 +894,13 @@ int CHud::Redraw( float flTime, int intermission )
 		}
 	}
 
-	// Source-style instructor hint presentation. The PS2 world-space bracket
-	// remains unchanged; this panel follows a scripted target in screen space.
-	if( m_bInstructorHintActive && m_bInstructorHintTargetVisible &&
-		( !m_bInstructorHintOccluded || ( m_iInstructorHintFlags & 0x00000400 ) ) &&
+	// Source-style instructor hint presentation now consumes the locator model.
+	// The PS2 world-space bracket remains a separate, unchanged HUD element.
+	CInstructorLocatorTarget *locatorTarget =
+		m_InstructorLocatorPanel.GetTargetFromHandle( m_iInstructorLocatorTargetHandle );
+	if( locatorTarget && locatorTarget->m_isActive && locatorTarget->m_bVisible &&
+		( !locatorTarget->m_bOccluded ||
+			( locatorTarget->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) ) &&
 		!intermission && m_pCvarDraw && m_pCvarDraw->value &&
 		!( m_iHideHUDDisplay & HIDEHUD_ALL ) )
 	{
@@ -926,16 +932,16 @@ int CHud::Redraw( float flTime, int intermission )
 		else
 		{
 			char resolvedBinding[64];
-			HUD_ResolveInstructorBinding( m_szInstructorHintBinding,
+			HUD_ResolveInstructorBinding( locatorTarget->m_szBinding,
 				resolvedBinding, sizeof( resolvedBinding ) );
 
 			char bindingText[80];
 			bindingText[0] = '\0';
 			if( resolvedBinding[0] )
 				snprintf( bindingText, sizeof( bindingText ),
-					m_bInstructorHintManaged ? "%s" : "[ %s ]", resolvedBinding );
+					locatorTarget->m_bManaged ? "%s" : "[ %s ]", resolvedBinding );
 
-			int captionWidth = DrawHudStringLen( m_szInstructorHintCaption );
+			int captionWidth = DrawHudStringLen( locatorTarget->m_szCaption );
 			int bindingWidth = DrawHudStringLen( bindingText );
 
 			// Project the current world target before selecting its on/off-screen icon.
@@ -945,15 +951,15 @@ int CHud::Redraw( float flTime, int intermission )
 			bool entityAnchorBehind = false;
 			float locatorWorldOrigin[3] =
 			{
-				m_vecInstructorHintTargetOrigin[0],
-				m_vecInstructorHintTargetOrigin[1],
-				m_vecInstructorHintTargetOrigin[2] + m_flInstructorHintIconOffset
+				locatorTarget->m_vecOrigin[0],
+				locatorTarget->m_vecOrigin[1],
+				locatorTarget->m_vecOrigin[2] + locatorTarget->m_flIconOffset
 			};
-			const bool hasTarget = m_bInstructorHintHasTargetPosition &&
+			const bool hasTarget = (!locatorTarget->m_bOriginInScreenspace) &&
 				HUD_GetInstructorHintScreenPosition( locatorWorldOrigin,
 					&targetX, &targetY, &targetBehind );
-			const bool hasEntityAnchor = m_bInstructorHintHasTargetPosition &&
-				HUD_GetInstructorHintScreenPosition( m_vecInstructorHintTargetOrigin,
+			const bool hasEntityAnchor = (!locatorTarget->m_bOriginInScreenspace) &&
+				HUD_GetInstructorHintScreenPosition( locatorTarget->m_vecOrigin,
 					&entityAnchorX, &entityAnchorY, &entityAnchorBehind );
 			const int edgeMargin = 24;
 			const bool targetOffscreen = hasTarget && ( targetBehind ||
@@ -965,7 +971,7 @@ int CHud::Redraw( float flTime, int intermission )
 			instructorBindingGlyph[0] = '\0';
 			HSPRITE instructorBindingSprite = 0;
 			const char *requestedBindingIcon = targetOffscreen ?
-				m_szInstructorHintIconOffscreen : m_szInstructorHintIconOnscreen;
+				locatorTarget->m_szOffscreenIcon : locatorTarget->m_szOnscreenIcon;
 			const bool sourceBindingIcon = requestedBindingIcon &&
 				stricmp( requestedBindingIcon, "use_binding" ) == 0;
 			int sourceBindingIconHeight = 0;
@@ -973,8 +979,20 @@ int CHud::Redraw( float flTime, int intermission )
 			if( sourceBindingIcon )
 			{
 				HUD_UpdateInstructorBindingChoices( this, flTime );
-				const char *keyName = m_iInstructorHintBindingChoicesCount > 0 ?
-					m_szInstructorHintBindingChoices[m_iInstructorHintBindingTick % m_iInstructorHintBindingChoicesCount] : NULL;
+				// Binding cycling is presentation state owned by the locator target.
+				locatorTarget->m_iBindingChoicesCount = m_iInstructorHintBindingChoicesCount;
+				if( locatorTarget->m_iBindingChoicesCount > MAX_INSTRUCTOR_LOCATOR_BINDINGS )
+					locatorTarget->m_iBindingChoicesCount = MAX_INSTRUCTOR_LOCATOR_BINDINGS;
+				locatorTarget->m_iBindingTick = m_iInstructorHintBindingTick;
+				locatorTarget->m_flNextBindingTick = m_flInstructorHintNextBindingTick;
+				for( int i = 0; i < locatorTarget->m_iBindingChoicesCount; ++i )
+				{
+					strncpy( locatorTarget->m_szBindingChoices[i], locatorTarget->m_szBindingChoices[i],
+						sizeof( locatorTarget->m_szBindingChoices[i] ) - 1 );
+					locatorTarget->m_szBindingChoices[i][sizeof( locatorTarget->m_szBindingChoices[i] ) - 1] = '\0';
+				}
+				const char *keyName = locatorTarget->m_iBindingChoicesCount > 0 ?
+					locatorTarget->m_szBindingChoices[locatorTarget->m_iBindingTick % locatorTarget->m_iBindingChoicesCount] : NULL;
 				instructorBindingSprite = HUD_GetInstructorBindingImage( this, keyName,
 					instructorBindingGlyph, sizeof( instructorBindingGlyph ) );
 				sourceBindingIconHeight = Q_max( 1, (int)( ScreenWidth * 0.04f ) );
@@ -983,14 +1001,14 @@ int CHud::Redraw( float flTime, int intermission )
 
 			// Source counts a lesson only after its icon has remained on-screen
 			// for at least 1.5 seconds, rather than when it is merely opened.
-			if( m_bInstructorHintManaged && !m_bInstructorManagedDisplayCounted )
+			if( locatorTarget->m_bManaged && !m_bInstructorManagedDisplayCounted )
 			{
-				const bool countsAsVisible = !m_bInstructorHintHasTargetPosition || ( hasTarget && !targetOffscreen );
+				const bool countsAsVisible = !(!locatorTarget->m_bOriginInScreenspace) || ( hasTarget && !targetOffscreen );
 				if( countsAsVisible )
 				{
-					if( m_flInstructorManagedVisibleSince <= 0.0f )
-						m_flInstructorManagedVisibleSince = flTime;
-					else if( flTime - m_flInstructorManagedVisibleSince >= 1.5f )
+					if( locatorTarget->m_flVisibleSince <= 0.0f )
+						locatorTarget->m_flVisibleSince = flTime;
+					else if( flTime - locatorTarget->m_flVisibleSince >= 1.5f )
 					{
 						GameInstructor_MarkDisplayed( m_szInstructorHintName );
 						m_bInstructorManagedDisplayCounted = true;
@@ -998,7 +1016,7 @@ int CHud::Redraw( float flTime, int intermission )
 				}
 				else
 				{
-					m_flInstructorManagedVisibleSince = 0.0f;
+					locatorTarget->m_flVisibleSince = 0.0f;
 				}
 			}
 
@@ -1006,10 +1024,10 @@ int CHud::Redraw( float flTime, int intermission )
 			// A target-backed hint is a world-space locator, not a tutorial card.
 			// Keep its icon attached to the projected target and place only a compact
 			// caption tag beside it. Fixed/no-target lessons retain the HUD card path.
-			const bool worldLocator = hasTarget && !m_bInstructorHintFixedPosition;
+			const bool worldLocator = hasTarget && !locatorTarget->m_bFixedPosition;
 			if( worldLocator )
 			{
-				if( !( targetOffscreen && ( m_iInstructorHintFlags & 0x00000200 ) ) )
+				if( !( targetOffscreen && ( locatorTarget->m_iEffectsFlags & 0x00000200 ) ) )
 				{
 					float centerX = ScreenWidth * 0.5f;
 					float centerY = ScreenHeight * 0.5f;
@@ -1067,13 +1085,13 @@ int CHud::Redraw( float flTime, int intermission )
 
 					// The Source locator's pulse/shake options affect the marker,
 					// not a full-screen panel.
-					const int pulseFlags = m_iInstructorHintFlags & 0x00000007;
+					const int pulseFlags = locatorTarget->m_iEffectsFlags & 0x00000007;
 					const float pulseRate = ( pulseFlags & 0x4 ) ? 5.0f :
 						( ( pulseFlags & 0x2 ) ? 2.5f : 1.0f );
 					const float pulse = pulseFlags ?
 						( 0.5f + 0.5f * sinf( flTime * pulseRate * 6.28318f ) ) : 0.0f;
 
-					const int shakeFlags = m_iInstructorHintFlags & 0x000000C0;
+					const int shakeFlags = locatorTarget->m_iEffectsFlags & 0x000000C0;
 					if( shakeFlags )
 					{
 						const float shakeRate = ( shakeFlags & 0x80 ) ? 22.0f : 10.0f;
@@ -1114,18 +1132,18 @@ int CHud::Redraw( float flTime, int intermission )
 						if( markerX - anchorX > 1 || anchorX - markerX > 1 ||
 							markerY - anchorY > 1 || anchorY - markerY > 1 )
 							HUD_DrawInstructorLocatorTether( anchorX, anchorY,
-								markerX, markerY, m_iInstructorHintColorR,
-								m_iInstructorHintColorG, m_iInstructorHintColorB, 150 );
+								markerX, markerY, locatorTarget->m_iCaptionColorR,
+								locatorTarget->m_iCaptionColorG, locatorTarget->m_iCaptionColorB, 150 );
 					}
 
 					HSPRITE locatorSprite = sourceBindingIcon ? instructorBindingSprite :
 						( targetOffscreen ? m_hInstructorHintOffscreenSprite : m_hInstructorHintOnscreenSprite );
-					if( !sourceBindingIcon && m_iInstructorHintId == -1 )
+					if( !sourceBindingIcon && locatorTarget->m_iHintId == -1 )
 					{
 						locatorSprite = 0;
-						if( m_iInstructorHintIconMode == 2 )
+						if( locatorTarget->m_iIconMode == 2 )
 							locatorSprite = m_hInstructorHintHoldSprite;
-						else if( m_iInstructorHintIconMode == 1 )
+						else if( locatorTarget->m_iIconMode == 1 )
 							locatorSprite = m_hInstructorHintMoveSprite;
 					}
 
@@ -1139,12 +1157,12 @@ int CHud::Redraw( float flTime, int intermission )
 						locatorIconHeight = 0;
 					}
 
-					int locatorR = m_iInstructorHintColorR;
-					int locatorG = m_iInstructorHintColorG;
-					int locatorB = m_iInstructorHintColorB;
+					int locatorR = locatorTarget->m_iCaptionColorR;
+					int locatorG = locatorTarget->m_iCaptionColorG;
+					int locatorB = locatorTarget->m_iCaptionColorB;
 
 					int locatorAlpha = 220;
-					const int alphaFlags = m_iInstructorHintFlags & 0x00000038;
+					const int alphaFlags = locatorTarget->m_iEffectsFlags & 0x00000038;
 					if( alphaFlags )
 					{
 						const float alphaRate = ( alphaFlags & 0x20 ) ? 5.0f :
@@ -1152,9 +1170,9 @@ int CHud::Redraw( float flTime, int intermission )
 						locatorAlpha = 150 + (int)( 105.0f *
 							( 0.5f + 0.5f * sinf( flTime * alphaRate * 6.28318f ) ) );
 					}
-					if( m_bInstructorHintManaged && m_flInstructorManagedVisibleSince > 0.0f )
+					if( locatorTarget->m_bManaged && locatorTarget->m_flVisibleSince > 0.0f )
 					{
-						float fade = ( flTime - m_flInstructorManagedVisibleSince ) / 0.18f;
+						float fade = ( flTime - locatorTarget->m_flVisibleSince ) / 0.18f;
 						if( fade < 0.0f ) fade = 0.0f;
 						if( fade > 1.0f ) fade = 1.0f;
 						locatorAlpha = (int)( locatorAlpha * ( 0.25f + 0.75f * fade ) );
@@ -1183,7 +1201,7 @@ int CHud::Redraw( float flTime, int intermission )
 						const int spriteG = locatorG * locatorAlpha / 255;
 						const int spriteB = locatorB * locatorAlpha / 255;
 						SPR_Set( locatorSprite, spriteR, spriteG, spriteB );
-						if( m_iInstructorHintId == -1 )
+						if( locatorTarget->m_iHintId == -1 )
 						{
 							HUD_DrawInstructorLocatorSprite( locatorSprite,
 								markerX - locatorDrawWidth / 2,
@@ -1299,7 +1317,7 @@ int CHud::Redraw( float flTime, int intermission )
 					if( resolvedBinding[0] )
 						snprintf( locatorBinding, sizeof( locatorBinding ), "%s", resolvedBinding );
 
-					const int locatorCaptionWidth = DrawHudStringLen( m_szInstructorHintCaption );
+					const int locatorCaptionWidth = DrawHudStringLen( locatorTarget->m_szCaption );
 					const int locatorBindingWidth = DrawHudStringLen( locatorBinding );
 					const bool locatorUsesGenericKey = m_hInstructorHintKeyGenericSprite &&
 						locatorBinding[0] && locatorBinding[1] && !locatorBinding[2] ? true :
@@ -1383,7 +1401,7 @@ int CHud::Redraw( float flTime, int intermission )
 						const int captionRight = locatorKeyWidth > 0 ? keyX - 6 : labelX + labelWidth - 6;
 						if( locatorCaptionWidth > 0 )
 							DrawHudString( labelTextX, labelTextY, captionRight,
-								m_szInstructorHintCaption, locatorR, locatorG, locatorB );
+								locatorTarget->m_szCaption, locatorR, locatorG, locatorB );
 
 						if( locatorKeyWidth > 0 )
 						{
@@ -1425,7 +1443,7 @@ int CHud::Redraw( float flTime, int intermission )
 					{
 						HUD_DrawInstructorBindingName( markerX, markerY,
 							instructorBindingGlyph, locatorAlpha );
-						const int sourceCaptionWidth = DrawHudStringLen( m_szInstructorHintCaption );
+						const int sourceCaptionWidth = DrawHudStringLen( locatorTarget->m_szCaption );
 						if( !targetOffscreen && sourceCaptionWidth > 0 )
 						{
 							const int fontHeight = m_scrinfo.iCharHeight > 0 ? m_scrinfo.iCharHeight :
@@ -1438,7 +1456,7 @@ int CHud::Redraw( float flTime, int intermission )
 								captionX = Q_max( 8, ScreenWidth - sourceCaptionWidth - 8 );
 							DrawHudString( captionX, markerY - fontHeight / 2 - 1,
 								Q_min( ScreenWidth - 8, captionX + sourceCaptionWidth + 4 ),
-								m_szInstructorHintCaption, locatorR, locatorG, locatorB );
+								locatorTarget->m_szCaption, locatorR, locatorG, locatorB );
 						}
 					}
 				}
@@ -1447,21 +1465,21 @@ int CHud::Redraw( float flTime, int intermission )
 			{
 			// LOCATOR_ICON_FX_NO_OFFSCREEN deactivates the locator when it leaves
 			// the viewport; don't leave a floating caption behind.
-			if( !( targetOffscreen && ( m_iInstructorHintFlags & 0x00000200 ) ) )
+			if( !( targetOffscreen && ( locatorTarget->m_iEffectsFlags & 0x00000200 ) ) )
 			{
 			// Source has distinct icon_onscreen and icon_offscreen resources.
 			// Automatic pushable guidance retains its own move/hold fallback sprites.
 			HSPRITE hintIcon = targetOffscreen ?
 				m_hInstructorHintOffscreenSprite : m_hInstructorHintOnscreenSprite;
-			if( m_iInstructorHintId == -1 )
+			if( locatorTarget->m_iHintId == -1 )
 			{
 				hintIcon = 0;
-				if( m_iInstructorHintIconMode == 2 )
+				if( locatorTarget->m_iIconMode == 2 )
 					hintIcon = m_hInstructorHintHoldSprite;
-				else if( m_iInstructorHintIconMode == 1 )
+				else if( locatorTarget->m_iIconMode == 1 )
 					hintIcon = m_hInstructorHintMoveSprite;
 			}
-			if( targetOffscreen && ( m_iInstructorHintFlags & 0x00000200 ) )
+			if( targetOffscreen && ( locatorTarget->m_iEffectsFlags & 0x00000200 ) )
 				hintIcon = 0;
 
 			int iconWidth = hintIcon ? SPR_Width( hintIcon, 0 ) : 0;
@@ -1473,7 +1491,7 @@ int CHud::Redraw( float flTime, int intermission )
 				iconHeight = 0;
 			}
 
-			const bool managedCard = m_bInstructorHintManaged;
+			const bool managedCard = locatorTarget->m_bManaged;
 			const bool cardUsesGenericKey = m_hInstructorHintKeyGenericSprite &&
 				bindingText[0] && bindingText[1] && !bindingText[2] ? true :
 				( m_hInstructorHintKeyGenericSprite && bindingText[0] && !bindingText[1] );
@@ -1504,10 +1522,10 @@ int CHud::Redraw( float flTime, int intermission )
 			int panelX = ( ScreenWidth - panelWidth ) / 2;
 			int panelY = ScreenHeight - panelHeight - 30;
 
-			if( m_bInstructorHintFixedPosition )
+			if( locatorTarget->m_bFixedPosition )
 			{
-				panelX = (int)( m_flInstructorHintFixedX * ScreenWidth - panelWidth * 0.5f );
-				panelY = (int)( m_flInstructorHintFixedY * ScreenHeight - panelHeight * 0.5f );
+				panelX = (int)( locatorTarget->m_vecOrigin[0] * ScreenWidth - panelWidth * 0.5f );
+				panelY = (int)( locatorTarget->m_vecOrigin[1] * ScreenHeight - panelHeight * 0.5f );
 			}
 			else if( hasTarget )
 			{
@@ -1566,7 +1584,7 @@ int CHud::Redraw( float flTime, int intermission )
 
 					FillRGBA( arrowX - 12, arrowY - 12, 24, 24, 8, 10, 14, 225 );
 					DrawHudString( arrowX - 4, arrowY - 7, arrowX + 12,
-						arrow, m_iInstructorHintColorR, m_iInstructorHintColorG, m_iInstructorHintColorB );
+						arrow, locatorTarget->m_iCaptionColorR, locatorTarget->m_iCaptionColorG, locatorTarget->m_iCaptionColorB );
 
 					if( arrowX <= edgeMargin + 2 )
 				{
@@ -1602,25 +1620,25 @@ int CHud::Redraw( float flTime, int intermission )
 
 			// Approximate Source locator FX flags using the GoldSrc HUD primitives.
 			int panelAlpha = 205;
-			const int alphaFlags = m_iInstructorHintFlags & 0x00000038;
+			const int alphaFlags = locatorTarget->m_iEffectsFlags & 0x00000038;
 			if( alphaFlags )
 			{
 				const float alphaRate = ( alphaFlags & 0x20 ) ? 5.0f :
 					( ( alphaFlags & 0x10 ) ? 2.5f : 1.0f );
 				panelAlpha = 150 + (int)( 105.0f * ( 0.5f + 0.5f * sinf( flTime * alphaRate * 6.28318f ) ) );
 			}
-			if( m_iInstructorHintFlags & 0x00000007 )
+			if( locatorTarget->m_iEffectsFlags & 0x00000007 )
 			{
-				const float pulseRate = ( m_iInstructorHintFlags & 0x4 ) ? 5.0f :
-					( ( m_iInstructorHintFlags & 0x2 ) ? 2.5f : 1.0f );
+				const float pulseRate = ( locatorTarget->m_iEffectsFlags & 0x4 ) ? 5.0f :
+					( ( locatorTarget->m_iEffectsFlags & 0x2 ) ? 2.5f : 1.0f );
 				panelAlpha = Q_min( 255, panelAlpha + (int)( 28.0f * ( 0.5f + 0.5f * sinf( flTime * pulseRate * 6.28318f ) ) ) );
 			}
-			if( m_iInstructorHintFlags & 0x000000C0 )
-				panelX += (int)( sinf( flTime * ( ( m_iInstructorHintFlags & 0x80 ) ? 22.0f : 10.0f ) ) * 3.0f );
+			if( locatorTarget->m_iEffectsFlags & 0x000000C0 )
+				panelX += (int)( sinf( flTime * ( ( locatorTarget->m_iEffectsFlags & 0x80 ) ? 22.0f : 10.0f ) ) * 3.0f );
 
-			int hintR = m_iInstructorHintColorR;
-			int hintG = m_iInstructorHintColorG;
-			int hintB = m_iInstructorHintColorB;
+			int hintR = locatorTarget->m_iCaptionColorR;
+			int hintG = locatorTarget->m_iCaptionColorG;
+			int hintB = locatorTarget->m_iCaptionColorB;
 
 			if( managedCard )
 			{
@@ -1634,9 +1652,9 @@ int CHud::Redraw( float flTime, int intermission )
 				}
 
 				// Fade the managed card in without changing the map-authored hint path.
-				if( m_flInstructorManagedVisibleSince > 0.0f )
+				if( locatorTarget->m_flVisibleSince > 0.0f )
 				{
-					float fade = ( flTime - m_flInstructorManagedVisibleSince ) / 0.18f;
+					float fade = ( flTime - locatorTarget->m_flVisibleSince ) / 0.18f;
 					if( fade < 0.0f ) fade = 0.0f;
 					if( fade > 1.0f ) fade = 1.0f;
 					panelAlpha = (int)( panelAlpha * ( 0.25f + 0.75f * fade ) );
@@ -1682,7 +1700,7 @@ int CHud::Redraw( float flTime, int intermission )
 				DrawHudString( textAreaX, panelY + 9, textAreaRight,
 					"INSTRUCTION", hintR, hintG, hintB );
 				DrawHudString( textAreaX, panelY + 31, textAreaRight,
-					m_szInstructorHintCaption, 245, 247, 250 );
+					locatorTarget->m_szCaption, 245, 247, 250 );
 
 				if( bindingText[0] )
 				{
@@ -1725,7 +1743,7 @@ int CHud::Redraw( float flTime, int intermission )
 					textX = textAreaX;
 				const int textOffsetY = ( panelHeight - basePanelHeight ) / 2;
 				DrawHudString( textX, panelY + textOffsetY + 9, textAreaRight,
-					m_szInstructorHintCaption, 245, 245, 245 );
+					locatorTarget->m_szCaption, 245, 245, 245 );
 
 				if( bindingText[0] )
 				{
