@@ -567,11 +567,13 @@ int CHud::Redraw( float flTime, int intermission )
 
 						if( !targetOffscreen )
 						{
-							FillRGBA( markerX - 1, markerY + markerHalfHeight + 1,
-								2, 6, locatorR, locatorG, locatorB, locatorAlpha / 2 );
 							if( labelY < markerY )
 								FillRGBA( markerX - 1, labelY + labelHeight,
 									2, Q_max( 1, markerY - markerHalfHeight - labelY - labelHeight ),
+									locatorR, locatorG, locatorB, locatorAlpha / 2 );
+							else
+								FillRGBA( markerX - 1, markerY + markerHalfHeight + 1,
+									2, Q_max( 1, labelY - markerY - markerHalfHeight - 1 ),
 									locatorR, locatorG, locatorB, locatorAlpha / 2 );
 						}
 
