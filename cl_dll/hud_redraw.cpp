@@ -362,7 +362,12 @@ int CHud::Redraw( float flTime, int intermission )
 			int panelX = ( ScreenWidth - panelWidth ) / 2;
 			int panelY = ScreenHeight - panelHeight - 30;
 
-			if( hasTarget )
+			if( m_bInstructorHintFixedPosition )
+			{
+				panelX = (int)( m_flInstructorHintFixedX * ScreenWidth - panelWidth * 0.5f );
+				panelY = (int)( m_flInstructorHintFixedY * ScreenHeight - panelHeight * 0.5f );
+			}
+			else if( hasTarget )
 			{
 				const float centerX = ScreenWidth * 0.5f;
 				const float centerY = ScreenHeight * 0.5f;
