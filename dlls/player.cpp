@@ -38,6 +38,8 @@
 #include "pm_shared.h"
 #include "hltv.h"
 
+#include <stdio.h>
+
 // #define DUCKFIX
 
 extern DLL_GLOBAL ULONG g_ulModelIndexPlayer;
