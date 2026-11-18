@@ -39,6 +39,7 @@
 #include "hltv.h"
 
 #include <stdio.h>
+#include <string.h>
 
 // #define DUCKFIX
 
@@ -2434,7 +2435,12 @@ void CBasePlayer::FireInstructorEvent( const char *eventName, CBaseEntity *pEnti
 		WRITE_STRING( fieldName ? fieldName : "" );
 		WRITE_STRING( stringValue ? stringValue : "" );
 		WRITE_LONG( integerValue );
-		WRITE_FLOAT( floatValue );
+		// The GoldSrc server API has no WRITE_FLOAT. Preserve the IEEE-754
+		// payload as four raw bytes; the client decodes this with READ_FLOAT.
+		static_assert( sizeof( int ) == sizeof( float ), "InstructorEvent requires 32-bit int and float" );
+		int floatBits;
+		memcpy( &floatBits, &floatValue, sizeof( floatBits ) );
+		WRITE_LONG( floatBits );
 	MESSAGE_END();
 }
 
