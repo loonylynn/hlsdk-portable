@@ -2250,7 +2250,8 @@ void CStudioModelRenderer::StudioRenderFinal_Hardware( void )
 
 			IEngineStudio.GL_SetRenderMode( rendermode );
 			IEngineStudio.StudioDrawPoints();
-			IEngineStudio.GL_StudioDrawShadow();
+			if( !cl_engine_stencil_shadows || cl_engine_stencil_shadows->value >= 2.0f )
+				IEngineStudio.GL_StudioDrawShadow();
 		}
 
 	}
