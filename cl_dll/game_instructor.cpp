@@ -981,9 +981,14 @@ static bool CompareValues(const ParamValue &left, const ParamValue &right, const
 	}
 	else if (action == "less than")
 	{
-		const float a = left.type == ParamValue::VALUE_FLOAT ? left.number : (float)left.integer;
-		const float b = right.type == ParamValue::VALUE_FLOAT ? right.number : (float)right.integer;
-		result = a < b;
+		if (left.type == ParamValue::VALUE_STRING || right.type == ParamValue::VALUE_STRING)
+			result = left.string < right.string;
+		else
+		{
+			const float a = left.type == ParamValue::VALUE_FLOAT ? left.number : (float)left.integer;
+			const float b = right.type == ParamValue::VALUE_FLOAT ? right.number : (float)right.integer;
+			result = a < b;
+		}
 	}
 	else if (action == "has prefix")
 	{
@@ -1063,7 +1068,7 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 			continue;
 		if (action == "present complete")
 		{
-			const bool complete = m_bStarted;
+			const bool complete = m_bWasDisplayed;
 			if (negate ? complete : !complete)
 			{
 				if (scopeDepth > 0)
