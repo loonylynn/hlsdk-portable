@@ -203,6 +203,8 @@ public:
 	int		m_iActiveInstructorHintId;
 	int		m_iUseableInstructorHintTarget;
 	BOOL	m_bUseableInstructorHintActive;
+	int		m_iUseableInstructorHintIconMode;
+	float	m_flUseableInstructorHintActionTime;
 
 	char m_szTeamName[TEAM_NAME_LENGTH];
 
@@ -301,6 +303,7 @@ public:
 	void ClearUseableHighlight( void );
 	void UpdatePushableInstructorHint( CBaseEntity *pObject );
 	void ClearPushableInstructorHint( void );
+	void SetPushableInstructorHintAction( CBaseEntity *pObject, int iconMode );
 
 	void CheckSuitUpdate();
 	void SetSuitUpdate( const char *name, int fgroup, int iNoRepeat );
