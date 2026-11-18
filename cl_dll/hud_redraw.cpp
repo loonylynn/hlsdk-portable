@@ -558,12 +558,23 @@ int CHud::Redraw( float flTime, int intermission )
 						const int spriteG = locatorG * locatorAlpha / 255;
 						const int spriteB = locatorB * locatorAlpha / 255;
 						SPR_Set( locatorSprite, spriteR, spriteG, spriteB );
-						// ALPHATEST sprites reserve palette index 255 as a hole.
-						// Additive drawing blends the blue key color into the scene;
-						// DrawHoles skips that palette entry completely.
-						SPR_DrawHoles( 0,
-							markerX - locatorIconWidth / 2,
-							markerY - locatorIconHeight / 2, NULL );
+						if( m_iInstructorHintId == -1 )
+						{
+							// The built-in move/hold sprites retain their original
+							// additive treatment.
+							SPR_DrawAdditive( 0,
+								markerX - locatorIconWidth / 2,
+								markerY - locatorIconHeight / 2, NULL );
+						}
+						else
+						{
+							// Scripted ALPHATEST sprites reserve palette index 255
+							// as a hole. Additive drawing blends the blue key color
+							// into the scene; DrawHoles skips that palette entry.
+							SPR_DrawHoles( 0,
+								markerX - locatorIconWidth / 2,
+								markerY - locatorIconHeight / 2, NULL );
+						}
 					}
 					else if( targetOffscreen )
 					{
