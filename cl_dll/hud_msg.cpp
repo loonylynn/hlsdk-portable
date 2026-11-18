@@ -75,6 +75,7 @@ static void HUD_ClearInstructorHint( CHud *hud )
 	hud->m_bInstructorHintHasTargetPosition = false;
 	hud->m_bInstructorHintTargetVisible = false;
 	hud->m_bInstructorHintOccluded = false;
+	hud->m_flInstructorHintNextOcclusionTest = 0.0f;
 	hud->m_vecInstructorHintTargetOrigin[0] = 0.0f;
 	hud->m_vecInstructorHintTargetOrigin[1] = 0.0f;
 	hud->m_vecInstructorHintTargetOrigin[2] = 0.0f;
@@ -130,6 +131,8 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 
 		if( m_bInstructorHintActive && hintId == m_iInstructorHintId )
 		{
+			if( m_iInstructorHintTarget != targetIndex )
+				m_flInstructorHintNextOcclusionTest = 0.0f;
 			m_iInstructorHintTarget = targetIndex;
 			m_bInstructorHintHasTargetPosition =
 				( targetIndex > 0 ) && !( m_iInstructorHintFlags & 0x00000100 );
@@ -212,6 +215,7 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 	// single-panel equivalent of the game's replace-key/lesson arbitration.
 	m_iInstructorHintId = hintId;
 	m_iInstructorHintTarget = targetIndex;
+	m_flInstructorHintNextOcclusionTest = 0.0f;
 	m_iInstructorHintFlags = flags;
 	m_bInstructorHintHasTargetPosition =
 		( targetIndex > 0 ) && !( flags & 0x00000100 );
@@ -312,6 +316,7 @@ void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 
 	const bool lessonChanged = !gHUD.m_bInstructorHintManaged ||
 		strcmp( gHUD.m_szInstructorHintName, lessonName ? lessonName : "" ) != 0;
+	const bool instructorTargetChanged = gHUD.m_iInstructorHintTarget != targetIndex;
 	const bool onscreenIconChanged = strcmp( gHUD.m_szInstructorHintIconOnscreen,
 		onscreenIcon ? onscreenIcon : "" ) != 0;
 	const bool offscreenIconChanged = strcmp( gHUD.m_szInstructorHintIconOffscreen,
@@ -321,6 +326,8 @@ void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 	gHUD.m_bInstructorHintManaged = true;
 	gHUD.m_iInstructorHintId = 0;
 	gHUD.m_iInstructorHintTarget = targetIndex;
+	if( lessonChanged || instructorTargetChanged )
+		gHUD.m_flInstructorHintNextOcclusionTest = 0.0f;
 	gHUD.m_bInstructorHintFixedPosition = fixedPosition;
 	gHUD.m_flInstructorHintFixedX = fixedX;
 	gHUD.m_flInstructorHintFixedY = fixedY;
