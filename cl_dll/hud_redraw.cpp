@@ -963,9 +963,10 @@ int CHud::Redraw( float flTime, int intermission )
 				HUD_GetInstructorHintScreenPosition( locatorTarget->m_vecOrigin,
 					&entityAnchorX, &entityAnchorY, &entityAnchorBehind );
 			const int edgeMargin = 24;
-			const bool targetOffscreen = hasTarget && ( targetBehind ||
-				targetX < edgeMargin || targetX > ScreenWidth - edgeMargin ||
-				targetY < edgeMargin || targetY > ScreenHeight - edgeMargin );
+			if( hasTarget )
+				locatorTarget->UpdateProjection( targetX, targetY, targetBehind,
+					ScreenWidth, ScreenHeight, edgeMargin );
+			const bool targetOffscreen = hasTarget && !locatorTarget->m_bOnscreen;
 
 			// "use_binding" is a virtual icon: the resolved key art becomes the locator.
 			char instructorBindingGlyph[32];
@@ -1035,10 +1036,6 @@ int CHud::Redraw( float flTime, int intermission )
 			{
 				if( !( targetOffscreen && ( locatorTarget->m_iEffectsFlags & 0x00000200 ) ) )
 				{
-					float centerX = ScreenWidth * 0.5f;
-					float centerY = ScreenHeight * 0.5f;
-					float locatorX = targetX;
-					float locatorY = targetY;
 					const bool hasDirectionalLocatorSprites =
 						m_hInstructorHintArrowRightSprite && m_hInstructorHintArrowUpSprite;
 					const int locatorArrowDrawSize = 24;
@@ -1047,47 +1044,14 @@ int CHud::Redraw( float flTime, int intermission )
 						( sourceBindingIcon ?
 							sourceBindingIconHeight / 2 + 3 + locatorArrowDrawSize + locatorArrowGap :
 							22 + locatorArrowDrawSize + locatorArrowGap ) : 22;
-					enum
-					{
-						INSTRUCTOR_ARROW_NONE,
-						INSTRUCTOR_ARROW_LEFT,
-						INSTRUCTOR_ARROW_RIGHT,
-						INSTRUCTOR_ARROW_UP,
-						INSTRUCTOR_ARROW_DOWN
-					};
-					int locatorArrowDirection = INSTRUCTOR_ARROW_NONE;
 
-					if( targetOffscreen )
-					{
-						float dx = targetX - centerX;
-						float dy = targetY - centerY;
-						if( fabsf( dx ) < 1.0f && fabsf( dy ) < 1.0f )
-							dy = 1.0f;
-
-						const float left = (float)locatorEdgeMargin;
-						const float right = (float)( ScreenWidth - locatorEdgeMargin );
-						const float top = (float)locatorEdgeMargin;
-						const float bottom = (float)( ScreenHeight - locatorEdgeMargin );
-						float tx = 1000000.0f;
-						float ty = 1000000.0f;
-
-						if( dx > 0.001f )
-							tx = ( right - centerX ) / dx;
-						else if( dx < -0.001f )
-							tx = ( left - centerX ) / dx;
-
-						if( dy > 0.001f )
-							ty = ( bottom - centerY ) / dy;
-						else if( dy < -0.001f )
-							ty = ( top - centerY ) / dy;
-
-						float t = tx < ty ? tx : ty;
-						if( t < 0.0f || t > 1000000.0f )
-							t = 0.0f;
-
-						locatorX = centerX + dx * t;
-						locatorY = centerY + dy * t;
-					}
+					// Projection and edge placement belong to the target model.
+					// The renderer adds only transient pulse/shake offsets.
+					locatorTarget->CalculateEdgePosition( ScreenWidth, ScreenHeight, locatorEdgeMargin );
+					const float centerX = (float)locatorTarget->m_centerX;
+					const float centerY = (float)locatorTarget->m_centerY;
+					float locatorX = (float)locatorTarget->m_iconX;
+					float locatorY = (float)locatorTarget->m_iconY;
 
 					// The Source locator's pulse/shake options affect the marker,
 					// not a full-screen panel.
@@ -1109,18 +1073,6 @@ int CHud::Redraw( float flTime, int intermission )
 					if( locatorX > ScreenWidth - locatorEdgeMargin ) locatorX = (float)( ScreenWidth - locatorEdgeMargin );
 					if( locatorY < locatorEdgeMargin ) locatorY = (float)locatorEdgeMargin;
 					if( locatorY > ScreenHeight - locatorEdgeMargin ) locatorY = (float)( ScreenHeight - locatorEdgeMargin );
-
-					if( targetOffscreen && hasDirectionalLocatorSprites )
-					{
-						if( locatorX <= locatorEdgeMargin + 0.5f )
-							locatorArrowDirection = INSTRUCTOR_ARROW_LEFT;
-						else if( locatorX >= ScreenWidth - locatorEdgeMargin - 0.5f )
-							locatorArrowDirection = INSTRUCTOR_ARROW_RIGHT;
-						else if( locatorY <= locatorEdgeMargin + 0.5f )
-							locatorArrowDirection = INSTRUCTOR_ARROW_UP;
-						else
-							locatorArrowDirection = INSTRUCTOR_ARROW_DOWN;
-					}
 
 					const int markerX = (int)locatorX;
 					const int markerY = (int)locatorY;
@@ -1232,11 +1184,10 @@ int CHud::Redraw( float flTime, int intermission )
 					{
 						// If the requested Source icon has no GoldSrc .spr
 						// counterpart, fall back to a direction marker.
-						const float dx = targetX - centerX;
-						const float dy = targetY - centerY;
-						const char *arrow = fabsf( dx ) > fabsf( dy ) ?
-							( dx < 0.0f ? "<" : ">" ) :
-							( dy < 0.0f ? "^" : "v" );
+						const int direction = locatorTarget->m_drawArrowDirection;
+						const char *arrow = direction == INSTRUCTOR_LOCATOR_ARROW_LEFT ? "<" :
+							( direction == INSTRUCTOR_LOCATOR_ARROW_RIGHT ? ">" :
+							( direction == INSTRUCTOR_LOCATOR_ARROW_UP ? "^" : "v" ) );
 						FillRGBA( markerX - 10, markerY - 10, 20, 20, 5, 7, 10, locatorAlpha );
 						if( !hasDirectionalLocatorSprites )
 							DrawHudString( markerX - 4, markerY - 8, markerX + 10,
@@ -1257,7 +1208,8 @@ int CHud::Redraw( float flTime, int intermission )
 					// Source's locator draws a separate direction indicator beside
 					// the offscreen target icon. Reuse the two supplied originals:
 				// left = horizontally flipped right; down = vertically flipped up.
-					if( targetOffscreen && locatorArrowDirection != INSTRUCTOR_ARROW_NONE )
+					if( targetOffscreen && hasDirectionalLocatorSprites &&
+						locatorTarget->m_drawArrowDirection != INSTRUCTOR_LOCATOR_ARROW_NONE )
 					{
 						HSPRITE arrowSprite = 0;
 						bool flipArrowX = false;
@@ -1267,25 +1219,25 @@ int CHud::Redraw( float flTime, int intermission )
 						const int arrowWidth = locatorArrowDrawSize;
 					const int arrowHeight = locatorArrowDrawSize;
 
-						switch( locatorArrowDirection )
+						switch( locatorTarget->m_drawArrowDirection )
 						{
-						case INSTRUCTOR_ARROW_LEFT:
+						case INSTRUCTOR_LOCATOR_ARROW_LEFT:
 							arrowSprite = m_hInstructorHintArrowRightSprite;
 							flipArrowX = true;
 							arrowX = markerX - markerHalfWidth - locatorArrowGap - arrowWidth;
 							arrowY = markerY - arrowHeight / 2;
 							break;
-						case INSTRUCTOR_ARROW_RIGHT:
+						case INSTRUCTOR_LOCATOR_ARROW_RIGHT:
 							arrowSprite = m_hInstructorHintArrowRightSprite;
 							arrowX = markerX + markerHalfWidth + locatorArrowGap;
 							arrowY = markerY - arrowHeight / 2;
 							break;
-						case INSTRUCTOR_ARROW_UP:
+						case INSTRUCTOR_LOCATOR_ARROW_UP:
 							arrowSprite = m_hInstructorHintArrowUpSprite;
 							arrowX = markerX - arrowWidth / 2;
 							arrowY = markerY - markerHalfHeight - locatorArrowGap - arrowHeight;
 							break;
-						case INSTRUCTOR_ARROW_DOWN:
+						case INSTRUCTOR_LOCATOR_ARROW_DOWN:
 							arrowSprite = m_hInstructorHintArrowUpSprite;
 							flipArrowY = true;
 							arrowX = markerX - arrowWidth / 2;
@@ -1307,9 +1259,9 @@ int CHud::Redraw( float flTime, int intermission )
 							flipArrowX, flipArrowY );
 						if( !arrowDrawn )
 						{
-							const char *arrow = locatorArrowDirection == INSTRUCTOR_ARROW_LEFT ? "<" :
-								( locatorArrowDirection == INSTRUCTOR_ARROW_RIGHT ? ">" :
-								( locatorArrowDirection == INSTRUCTOR_ARROW_UP ? "^" : "v" ) );
+							const char *arrow = locatorTarget->m_drawArrowDirection == INSTRUCTOR_LOCATOR_ARROW_LEFT ? "<" :
+								( locatorTarget->m_drawArrowDirection == INSTRUCTOR_LOCATOR_ARROW_RIGHT ? ">" :
+								( locatorTarget->m_drawArrowDirection == INSTRUCTOR_LOCATOR_ARROW_UP ? "^" : "v" ) );
 							DrawHudString( markerX - 4, markerY - 8, markerX + 10,
 								arrow, locatorR, locatorG, locatorB );
 						}
