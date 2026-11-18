@@ -1,6 +1,6 @@
 # GoldSrc `env_instructor_hint` backport
 
-This is a GoldSrc/Xash3D single-player port of the public Source `CEnvInstructorHint` entity contract and a subset of the Source locator presentation rules. It intentionally keeps the Half-Life user-message transport and the existing PS2-style world-space use brackets.
+This is a GoldSrc/Xash3D single-player port of the public Source `CEnvInstructorHint` entity contract and a subset of the Source locator presentation rules. Target-following hints render as compact world-space locators; static hints remain screen-space prompts. The Half-Life user-message transport and existing PS2-style world-space use brackets remain independent.
 
 ## Supported keyvalues
 
@@ -37,7 +37,7 @@ Use the entity like a GoldSrc `func_button` target:
 - `USE_SET`: show when the value is greater than 0.5, otherwise end.
 - `USE_TOGGLE`: toggle the current state.
 
-The entity ID owns the active HUD panel. A map hint takes priority over the automatic `func_pushable` prompt. Hints are ended when their activator dies or their timeout expires.
+The entity ID owns the active instructor presentation. A map hint takes priority over the automatic `func_pushable` prompt. Hints are ended when their activator dies or their timeout expires.
 
 ## Pushable action prompt
 
@@ -46,8 +46,8 @@ The move/hold icon is now selected from actual pushable velocity changes in `CPu
 ## Deliberate GoldSrc differences
 
 - This is a single active HUD panel, not the full Source `C_GameInstructor` lesson manager with multiple concurrent lessons, priorities, display counters, scripted prerequisites, sounds, or persistence.
-- The HUD uses GoldSrc sprite files and a custom user message rather than Source game events, VGUI locator panels, and VTF materials.
-- Locator pulse/alpha/shake flags are approximated with GoldSrc HUD drawing; their exact Source animation curves and layout/decluttering behavior are not reproduced.
+- Target-backed hints use a projected world-space icon and a small caption tag, with an edge marker when the target is off-screen. Static hints keep a screen-space prompt. The HUD uses GoldSrc sprite files and a custom user message rather than Source game events, VGUI locator panels, and VTF materials.
+- Locator pulse/alpha/shake flags are approximated with GoldSrc HUD drawing; the halo and movement are not pixel-identical to Source's animation curves, and Source's VGUI layout/decluttering behavior is not reproduced.
 - Controller-specific button localization and engine binding lookup are not included; `hint_binding` is drawn as literal text.
 - The existing PS2 brackets remain a separate world-space interaction marker and are not replaced by the Source locator.
 
