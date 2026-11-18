@@ -18,6 +18,7 @@
 
 #include "hud.h"
 #include "cl_util.h"
+#include "game_instructor.h"
 #include "parsemsg.h"
 #include "r_efx.h"
 
@@ -63,6 +64,8 @@ static HSPRITE HUD_LoadInstructorHintSprite( const char *iconName )
 static void HUD_ClearInstructorHint( CHud *hud )
 {
 	hud->m_bInstructorHintActive = false;
+	hud->m_bInstructorHintManaged = false;
+	hud->m_flInstructorManagedVisibleSince = 0.0f;
 	hud->m_iInstructorHintId = 0;
 	hud->m_iInstructorHintTarget = 0;
 	hud->m_bInstructorHintHasTargetPosition = false;
@@ -195,6 +198,11 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 	strncpy( replaceKey, readString ? readString : "", sizeof( replaceKey ) - 1 );
 	replaceKey[sizeof( replaceKey ) - 1] = '\0';
 
+	// Server-authored hints have precedence over scripted client lessons.
+	// The manager resumes once this explicit hint ends or times out.
+	m_bInstructorHintManaged = false;
+	m_flInstructorManagedVisibleSince = 0.0f;
+
 	// A new Source hint replaces the currently displayed hint. This is the
 	// single-panel equivalent of the game's replace-key/lesson arbitration.
 	m_iInstructorHintId = hintId;
@@ -246,6 +254,111 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 		m_hInstructorHintOnscreenSprite || m_hInstructorHintOffscreenSprite );
 	return 1;
 }
+int CHud::MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf )
+{
+	BEGIN_READ( pbuf, iSize );
+
+	InstructorEventData event;
+	memset( &event, 0, sizeof( event ) );
+
+	const char *readString = READ_STRING();
+	strncpy( event.name, readString ? readString : "", sizeof( event.name ) - 1 );
+	event.entityIndex = READ_SHORT();
+
+	readString = READ_STRING();
+	strncpy( event.className, readString ? readString : "", sizeof( event.className ) - 1 );
+	readString = READ_STRING();
+	strncpy( event.targetName, readString ? readString : "", sizeof( event.targetName ) - 1 );
+	readString = READ_STRING();
+	strncpy( event.fieldName, readString ? readString : "", sizeof( event.fieldName ) - 1 );
+	readString = READ_STRING();
+	strncpy( event.stringValue, readString ? readString : "", sizeof( event.stringValue ) - 1 );
+
+	event.userId = 1; // This project is single-player; the local player is the sole recipient.
+	event.integerValue = READ_LONG();
+	event.floatValue = READ_FLOAT();
+
+	GameInstructor_FireEvent( event );
+	return 1;
+}
+
+// The Source manager can keep many opportunities open, but this GoldSrc port
+// intentionally renders the highest-priority lesson through the existing HUD card.
+void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
+	const char *binding, const char *onscreenIcon, const char *offscreenIcon,
+	int targetIndex, float timeout, int flags, int colorR, int colorG, int colorB,
+	float range, bool forceCaption )
+{
+	(void)timeout;
+
+	// A map-authored env_instructor_hint currently owns the card.
+	if( gHUD.m_bInstructorHintActive && !gHUD.m_bInstructorHintManaged )
+		return;
+
+	const bool lessonChanged = !gHUD.m_bInstructorHintManaged ||
+		strcmp( gHUD.m_szInstructorHintName, lessonName ? lessonName : "" ) != 0;
+	const bool onscreenIconChanged = strcmp( gHUD.m_szInstructorHintIconOnscreen,
+		onscreenIcon ? onscreenIcon : "" ) != 0;
+	const bool offscreenIconChanged = strcmp( gHUD.m_szInstructorHintIconOffscreen,
+		offscreenIcon ? offscreenIcon : "" ) != 0;
+
+	gHUD.m_bInstructorHintActive = true;
+	gHUD.m_bInstructorHintManaged = true;
+	gHUD.m_iInstructorHintId = 0;
+	gHUD.m_iInstructorHintTarget = targetIndex;
+	gHUD.m_bInstructorHintHasTargetPosition = targetIndex > 0;
+	gHUD.m_bInstructorHintTargetVisible = true;
+	gHUD.m_bInstructorHintOccluded = false;
+	gHUD.m_flInstructorHintEndTime = 0.0f;
+	gHUD.m_flInstructorHintRange = range;
+	gHUD.m_iInstructorHintFlags = flags | ( forceCaption ? 0x00000400 : 0 );
+	gHUD.m_iInstructorHintIconMode = 0;
+	gHUD.m_iInstructorHintColorR = colorR;
+	gHUD.m_iInstructorHintColorG = colorG;
+	gHUD.m_iInstructorHintColorB = colorB;
+
+	if( lessonChanged )
+	{
+		gHUD.m_flInstructorManagedVisibleSince = 0.0f;
+		strncpy( gHUD.m_szInstructorHintName, lessonName ? lessonName : "",
+			sizeof( gHUD.m_szInstructorHintName ) - 1 );
+		gHUD.m_szInstructorHintName[sizeof( gHUD.m_szInstructorHintName ) - 1] = '\0';
+	}
+	strncpy( gHUD.m_szInstructorHintCaption, caption ? caption : "",
+		sizeof( gHUD.m_szInstructorHintCaption ) - 1 );
+	gHUD.m_szInstructorHintCaption[sizeof( gHUD.m_szInstructorHintCaption ) - 1] = '\0';
+	strncpy( gHUD.m_szInstructorHintBinding, binding ? binding : "",
+		sizeof( gHUD.m_szInstructorHintBinding ) - 1 );
+	gHUD.m_szInstructorHintBinding[sizeof( gHUD.m_szInstructorHintBinding ) - 1] = '\0';
+
+	if( onscreenIconChanged )
+	{
+		strncpy( gHUD.m_szInstructorHintIconOnscreen, onscreenIcon ? onscreenIcon : "",
+			sizeof( gHUD.m_szInstructorHintIconOnscreen ) - 1 );
+		gHUD.m_szInstructorHintIconOnscreen[sizeof( gHUD.m_szInstructorHintIconOnscreen ) - 1] = '\0';
+		gHUD.m_hInstructorHintOnscreenSprite = HUD_LoadInstructorHintSprite( gHUD.m_szInstructorHintIconOnscreen );
+	}
+	if( offscreenIconChanged )
+	{
+		strncpy( gHUD.m_szInstructorHintIconOffscreen, offscreenIcon ? offscreenIcon : "",
+			sizeof( gHUD.m_szInstructorHintIconOffscreen ) - 1 );
+		gHUD.m_szInstructorHintIconOffscreen[sizeof( gHUD.m_szInstructorHintIconOffscreen ) - 1] = '\0';
+		gHUD.m_hInstructorHintOffscreenSprite = HUD_LoadInstructorHintSprite( gHUD.m_szInstructorHintIconOffscreen );
+	}
+}
+
+void HUD_ClearManagedInstructorHint()
+{
+	if( gHUD.m_bInstructorHintManaged )
+		HUD_ClearInstructorHint( &gHUD );
+}
+
+void HUD_PlayInstructorSound( const char *soundName )
+{
+	if( soundName && soundName[0] && gEngfuncs.pfnPlaySoundByName )
+		gEngfuncs.pfnPlaySoundByName( soundName, 1.0f );
+}
+
 int CHud::MsgFunc_ResetHUD( const char *pszName, int iSize, void *pbuf )
 {
 	ASSERT( iSize == 0 );
