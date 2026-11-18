@@ -569,6 +569,8 @@ void CHud::VidInit( void )
 	// Optional action sprites used by the automatic func_pushable hint.
 	m_hInstructorHintMoveSprite = SPR_Load( "sprites/icon_move.spr" );
 	m_hInstructorHintHoldSprite = SPR_Load( "sprites/icon_hold.spr" );
+	m_hInstructorHintArrowRightSprite = SPR_Load( "sprites/icon_arrow_right.spr" );
+	m_hInstructorHintArrowUpSprite = SPR_Load( "sprites/icon_arrow_up.spr" );
 
 	// Map-authored hints use Source-style icon identifiers mapped to optional
 	// GoldSrc sprites: e.g. hint_icon_onscreen "icon_interact" loads
