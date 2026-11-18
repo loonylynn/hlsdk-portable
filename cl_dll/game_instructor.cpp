@@ -15,6 +15,9 @@
 #ifndef _WIN32
 #include <strings.h>
 #endif
+#ifndef _WIN32
+#include <strings.h>
+#endif
 #include <algorithm>
 
 #ifndef FCVAR_ARCHIVE
@@ -29,6 +32,20 @@
 
 namespace
 {
+	bool StringEqualNoCase(const char *a, const char *b)
+	{
+		if (!a || !b)
+			return a == b;
+		while (*a && *b)
+		{
+			if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
+				return false;
+			++a;
+			++b;
+		}
+		return *a == *b;
+	}
+
 	struct KVNode
 	{
 		std::string name;
@@ -184,7 +201,7 @@ namespace
 	{
 		for (size_t i = 0; i < node.children.size(); ++i)
 		{
-			if (!stricmp(node.children[i].name.c_str(), name))
+			if (!StringEqualNoCase(node.children[i].name.c_str(), name))
 				return &node.children[i];
 		}
 		return NULL;
@@ -213,9 +230,9 @@ namespace
 		const KVNode *child = FindChild(node, name);
 		if (!child)
 			return fallback;
-		if (!stricmp(child->value.c_str(), "true") || !stricmp(child->value.c_str(), "yes"))
+		if (!StringEqualNoCase(child->value.c_str(), "true") || !StringEqualNoCase(child->value.c_str(), "yes"))
 			return true;
-		if (!stricmp(child->value.c_str(), "false") || !stricmp(child->value.c_str(), "no"))
+		if (!StringEqualNoCase(child->value.c_str(), "false") || !StringEqualNoCase(child->value.c_str(), "no"))
 			return false;
 		return atoi(child->value.c_str()) != 0;
 	}
@@ -315,7 +332,7 @@ namespace
 		lesson->m_Prerequisites.clear();
 		for (size_t i = 0; i < node.children.size(); ++i)
 		{
-			if (!stricmp(node.children[i].name.c_str(), "prereq"))
+			if (!StringEqualNoCase(node.children[i].name.c_str(), "prereq"))
 				lesson->m_Prerequisites.push_back(node.children[i].value);
 		}
 
@@ -601,7 +618,7 @@ namespace
 		if (typeName == "bool" || typeName == "boolean")
 		{
 			value.type = ParamValue::VALUE_BOOLEAN;
-			value.integer = (!stricmp(paramName.c_str(), "true") || !stricmp(paramName.c_str(), "yes") || atoi(paramName.c_str()) != 0) ? 1 : 0;
+			value.integer = (!StringEqualNoCase(paramName.c_str(), "true") || !StringEqualNoCase(paramName.c_str(), "yes") || atoi(paramName.c_str()) != 0) ? 1 : 0;
 			return true;
 		}
 
@@ -905,7 +922,7 @@ void CScriptedIconLesson::InitFromKeys(const std::string &text)
 
 	for (size_t i = 0; i < root.children.size(); ++i)
 	{
-		if (!stricmp(root.children[i].name.c_str(), m_Name.c_str()))
+		if (!StringEqualNoCase(root.children[i].name.c_str(), m_Name.c_str()))
 		{
 			ParseLessonDefinition(this, root.children[i]);
 			return;
@@ -1303,7 +1320,7 @@ void C_GameInstructor::ReadLessonsFromFile(const char *fileName)
 	for (size_t i = 0; i < root.children.size(); ++i)
 	{
 		const KVNode &node = root.children[i];
-		if (!stricmp(node.name.c_str(), "GroupConVarToggle"))
+		if (!StringEqualNoCase(node.name.c_str(), "GroupConVarToggle"))
 		{
 			std::pair<std::string, std::string> toggle;
 			toggle.first = ChildString(node, "convar");
@@ -1313,7 +1330,7 @@ void C_GameInstructor::ReadLessonsFromFile(const char *fileName)
 			continue;
 		}
 
-		if (!stricmp(node.name.c_str(), "version number") || node.name.empty())
+		if (!StringEqualNoCase(node.name.c_str(), "version number") || node.name.empty())
 			continue;
 		if (GetLesson(node.name.c_str()))
 			continue;
@@ -1336,7 +1353,7 @@ const CScriptedIconLesson *C_GameInstructor::GetLesson(const char *name) const
 		return NULL;
 	for (size_t i = 0; i < m_Lessons.size(); ++i)
 	{
-		if (!stricmp(m_Lessons[i]->m_Name.c_str(), name))
+		if (!StringEqualNoCase(m_Lessons[i]->m_Name.c_str(), name))
 			return m_Lessons[i];
 	}
 	return NULL;
@@ -1348,7 +1365,7 @@ bool C_GameInstructor::IsLessonOfSameTypeOpen(const CScriptedIconLesson *lesson)
 		return false;
 	for (size_t i = 0; i < m_OpenOpportunities.size(); ++i)
 	{
-		if (!stricmp(m_OpenOpportunities[i]->m_Name.c_str(), lesson->m_Name.c_str()))
+		if (!StringEqualNoCase(m_OpenOpportunities[i]->m_Name.c_str(), lesson->m_Name.c_str()))
 			return true;
 	}
 	return false;
@@ -1442,7 +1459,7 @@ void C_GameInstructor::MarkDisplayed(const char *name)
 	for (size_t i = 0; i < m_OpenOpportunities.size(); ++i)
 	{
 		CScriptedIconLesson *lesson = m_OpenOpportunities[i];
-		if (!stricmp(lesson->m_Name.c_str(), name) && !lesson->m_bWasDisplayed)
+		if (!StringEqualNoCase(lesson->m_Name.c_str(), name) && !lesson->m_bWasDisplayed)
 		{
 			lesson->MarkDisplayed();
 			if (lesson->m_pRoot)
@@ -1458,7 +1475,7 @@ void C_GameInstructor::MarkSucceeded(const char *name)
 	for (size_t i = 0; i < m_Lessons.size(); ++i)
 	{
 		CScriptedIconLesson *lesson = m_Lessons[i];
-		if (!stricmp(lesson->m_Name.c_str(), name))
+		if (!StringEqualNoCase(lesson->m_Name.c_str(), name))
 		{
 			lesson->MarkSucceeded();
 			SaveCounts(lesson);
@@ -1511,7 +1528,7 @@ void C_GameInstructor::SetLessonGroupEnabled(const char *group, bool enabled)
 		return;
 	for (size_t i = 0; i < m_Lessons.size(); ++i)
 	{
-		if (!stricmp(m_Lessons[i]->m_Group.c_str(), group))
+		if (!StringEqualNoCase(m_Lessons[i]->m_Group.c_str(), group))
 			m_Lessons[i]->m_bDisabled = !enabled;
 	}
 }
@@ -1528,6 +1545,8 @@ void C_GameInstructor::ProcessDefinitionEvent(CScriptedIconLesson *definition,
 	const InstructorEventData &event, int eventType)
 {
 	if (!definition || definition->m_bDisabled || eventType != 0)
+		return;
+	if (m_bNoDraw && !definition->m_bCanOpenWhenDead)
 		return;
 
 	for (size_t i = 0; i < definition->m_OpenEvents.size(); ++i)
@@ -1559,6 +1578,26 @@ void C_GameInstructor::FireGameEvent(const InstructorEventData &event)
 {
 	if (!m_bInitialized)
 		Init();
+
+	if (!StringEqualNoCase(event.name, "player_death") &&
+		!StringEqualNoCase(event.name, "player_spawn") && m_bNoDraw)
+		return;
+
+	if (StringEqualNoCase(event.name, "player_death"))
+	{
+		m_bNoDraw = true;
+		for (int i = (int)m_OpenOpportunities.size() - 1; i >= 0; --i)
+		{
+			CScriptedIconLesson *lesson = m_OpenOpportunities[(size_t)i];
+			if (!lesson->m_bCanOpenWhenDead)
+				CloseOpportunity(lesson, "Player died.");
+		}
+		HideManagedLesson();
+	}
+	else if (StringEqualNoCase(event.name, "player_spawn"))
+	{
+		m_bNoDraw = false;
+	}
 
 	for (size_t i = 0; i < m_Lessons.size(); ++i)
 		ProcessDefinitionEvent(m_Lessons[i], event, 0);
@@ -1646,6 +1685,7 @@ void C_GameInstructor::Update(float now)
 {
 	if (!m_bInitialized)
 		Init();
+	m_bHiddenDueToOtherElements = (gHUD.m_iHideHUDDisplay & HIDEHUD_ALL) != 0;
 	if (CVAR_GET_FLOAT("gameinstructor_enable") == 0.0f || m_bNoDraw || m_bHiddenDueToOtherElements)
 	{
 		StopAllLessons();
