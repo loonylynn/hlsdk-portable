@@ -759,6 +759,9 @@ int CHud::Redraw( float flTime, int intermission )
 
 					const int locatorCaptionWidth = DrawHudStringLen( m_szInstructorHintCaption );
 					const int locatorBindingWidth = DrawHudStringLen( locatorBinding );
+					const bool locatorUsesGenericKey = m_hInstructorHintKeyGenericSprite &&
+						locatorBinding[0] && locatorBinding[1] && !locatorBinding[2] ? true :
+						( m_hInstructorHintKeyGenericSprite && locatorBinding[0] && !locatorBinding[1] );
 					const bool hasLocatorText = locatorCaptionWidth > 0 || locatorBindingWidth > 0;
 
 					if( hasLocatorText )
@@ -767,8 +770,8 @@ int CHud::Redraw( float flTime, int intermission )
 						if( locatorBindingWidth > 0 )
 						{
 							locatorKeyWidth = locatorBindingWidth +
-								( m_hInstructorHintKeyGenericSprite ? 12 : 10 );
-							if( m_hInstructorHintKeyGenericSprite && locatorKeyWidth < 22 )
+								( locatorUsesGenericKey ? 12 : 10 );
+							if( locatorUsesGenericKey && locatorKeyWidth < 22 )
 								locatorKeyWidth = 22;
 							if( locatorKeyWidth > 64 )
 								locatorKeyWidth = 64;
@@ -845,7 +848,7 @@ int CHud::Redraw( float flTime, int intermission )
 							const int keyY = labelY + 2;
 							const int keyHeight = 16;
 						bool keySpriteDrawn = false;
-						if( m_hInstructorHintKeyGenericSprite )
+						if( locatorUsesGenericKey )
 						{
 							const int keyNativeWidth = SPR_Width( m_hInstructorHintKeyGenericSprite, 0 );
 						const int keyNativeHeight = SPR_Height( m_hInstructorHintKeyGenericSprite, 0 );
@@ -908,12 +911,15 @@ int CHud::Redraw( float flTime, int intermission )
 			}
 
 			const bool managedCard = m_bInstructorHintManaged;
+			const bool cardUsesGenericKey = m_hInstructorHintKeyGenericSprite &&
+				bindingText[0] && bindingText[1] && !bindingText[2] ? true :
+				( m_hInstructorHintKeyGenericSprite && bindingText[0] && !bindingText[1] );
 			int keyChipWidth = 0;
 			if( managedCard && bindingText[0] )
 			{
 				keyChipWidth = bindingWidth +
-					( m_hInstructorHintKeyGenericSprite ? 12 : 18 );
-				if( m_hInstructorHintKeyGenericSprite && keyChipWidth < 24 )
+					( cardUsesGenericKey ? 12 : 18 );
+				if( cardUsesGenericKey && keyChipWidth < 24 )
 					keyChipWidth = 24;
 				if( keyChipWidth > 64 )
 					keyChipWidth = 64;
@@ -1119,7 +1125,7 @@ int CHud::Redraw( float flTime, int intermission )
 				{
 					const int keyY = panelY + 22;
 					bool keySpriteDrawn = false;
-					if( m_hInstructorHintKeyGenericSprite )
+					if( cardUsesGenericKey )
 					{
 						const int keyNativeWidth = SPR_Width( m_hInstructorHintKeyGenericSprite, 0 );
 						const int keyNativeHeight = SPR_Height( m_hInstructorHintKeyGenericSprite, 0 );
