@@ -533,11 +533,42 @@ namespace
 				value.integer = event->integerValue;
 				return true;
 			}
-			if (paramName == "float_value" || paramName == "hint_range")
+			if (paramName == "hint_icon_offset" || paramName == "hint_range" ||
+				paramName == "float_value")
 			{
 				value.type = ParamValue::VALUE_FLOAT;
 				value.number = event->floatValue;
 				return true;
+			}
+			if (paramName == "hint_flags" || paramName == "hint_local_player_only" ||
+				paramName == "hint_allow_nodraw_target" || paramName == "hint_nooffscreen" ||
+				paramName == "hint_forcecaption" || paramName == "int_value" ||
+				paramName == "hint_timeout")
+			{
+				value.type = ParamValue::VALUE_INTEGER;
+				value.integer = event->integerValue;
+				return true;
+			}
+			if (paramName == event->fieldName && event->fieldName[0])
+			{
+				if (typeName == "float")
+				{
+					value.type = ParamValue::VALUE_FLOAT;
+					value.number = event->floatValue;
+					return true;
+				}
+				if (typeName == "bool" || typeName == "boolean" ||
+					typeName == "int" || typeName == "integer" ||
+					typeName == "short" || typeName == "long")
+				{
+					value.type = (typeName == "bool" || typeName == "boolean") ?
+						ParamValue::VALUE_BOOLEAN : ParamValue::VALUE_INTEGER;
+					value.integer = event->integerValue;
+					return true;
+				}
+				value.type = ParamValue::VALUE_STRING;
+				value.string = event->stringValue;
+				return event->stringValue[0] != '\0';
 			}
 		}
 
@@ -547,8 +578,21 @@ namespace
 			return true;
 		}
 
+		if (typeName == "convar")
+		{
+			value.type = ParamValue::VALUE_FLOAT;
+			value.number = CVAR_GET_FLOAT(paramName.c_str());
+			return true;
+		}
+
 		if (typeName == "string")
 		{
+			if (paramName.compare(0, 7, "convar ") == 0)
+			{
+				value.type = ParamValue::VALUE_STRING;
+				value.string = CVAR_GET_STRING(paramName.c_str() + 7);
+				return true;
+			}
 			value.type = ParamValue::VALUE_STRING;
 			value.string = paramName;
 			return true;
