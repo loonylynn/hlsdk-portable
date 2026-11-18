@@ -1597,7 +1597,7 @@ int CHud::Redraw( float flTime, int intermission )
 			{
 				// Preserve the established env_instructor_hint / pushable styling.
 				FillRGBA( panelX, panelY, panelWidth, panelHeight, 8, 10, 14, panelAlpha );
-				FillRGBA( panelX, panelY, 3, panelHeight, hintR, hintG, hintB, 255 );
+				FillRGBA( panelX, panelY, 3, panelHeight, hintR, hintG, hintB, panelAlpha );
 			}
 
 			int textAreaX = panelX + ( managedCard ? 16 : 14 );
