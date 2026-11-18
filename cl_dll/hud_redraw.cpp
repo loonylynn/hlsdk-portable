@@ -15,6 +15,7 @@
 //
 // hud_redraw.cpp
 //
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 
@@ -252,6 +253,215 @@ static bool HUD_DrawInstructorLocatorSprite( HSPRITE sprite, int x, int y,
 	return true;
 }
 
+// Return whether a lesson binding is an engine command token rather than a
+// literal display label. Source lesson files normally use values such as
+// "+use" and "+attack"; plain text such as "E" remains an explicit override.
+static bool HUD_IsInstructorBindingCommand( const char *binding, const char **command )
+{
+	if( !binding || !binding[0] || !command )
+		return false;
+
+	if( binding[0] == '+' )
+	{
+		*command = binding + 1;
+		return true;
+	}
+
+	static const char *knownCommands[] =
+	{
+		"use", "jump", "attack", "attack2", "reload", "forward", "back",
+		"moveleft", "moveright", "left", "right", "duck", "speed", "walk",
+		"strafe", "showscores", "mlook", "jlook"
+	};
+
+	for( size_t i = 0; i < sizeof( knownCommands ) / sizeof( knownCommands[0] ); ++i )
+	{
+		const char *a = binding;
+		const char *b = knownCommands[i];
+		while( *a && *b && toupper( (unsigned char)*a ) == toupper( (unsigned char)*b ) )
+		{
+			++a;
+			++b;
+		}
+		if( !*a && !*b )
+		{
+			*command = binding;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// Convert engine key names into compact, readable labels. One- and two-key
+// labels can use icon_key_generic; longer names retain the drawn key-chip.
+static void HUD_FormatInstructorKeyName( const char *keyName, char *output, size_t outputSize )
+{
+	if( !output || outputSize == 0 )
+		return;
+	output[0] = '\0';
+	if( !keyName || !keyName[0] )
+		return;
+
+	char upper[32];
+	size_t length = 0;
+	while( keyName[length] && length < sizeof( upper ) - 1 )
+	{
+		upper[length] = (char)toupper( (unsigned char)keyName[length] );
+		++length;
+	}
+	upper[length] = '\0';
+
+	struct KeyLabel
+	{
+		const char *engineName;
+		const char *displayName;
+	};
+	static const KeyLabel labels[] =
+	{
+		{ "SPACE", "SPACE" },
+		{ "ENTER", "ENTER" },
+		{ "ESCAPE", "ESC" },
+		{ "BACKSPACE", "BKSP" },
+		{ "TAB", "TAB" },
+		{ "UPARROW", "UP" },
+		{ "DOWNARROW", "DN" },
+		{ "LEFTARROW", "LT" },
+		{ "RIGHTARROW", "RT" },
+		{ "MOUSE1", "M1" },
+		{ "MOUSE2", "M2" },
+		{ "MOUSE3", "M3" },
+		{ "MOUSE4", "M4" },
+		{ "MOUSE5", "M5" },
+		{ "MWHEELUP", "MW+" },
+		{ "MWHEELDOWN", "MW-" },
+		{ "CTRL", "CTRL" },
+		{ "SHIFT", "SHIFT" },
+		{ "ALT", "ALT" },
+		{ "CAPSLOCK", "CAPS" },
+		{ "SCROLLOCK", "SCRL" },
+		{ "INS", "INS" },
+		{ "DEL", "DEL" },
+		{ "PGUP", "PGUP" },
+		{ "PGDN", "PGDN" },
+		{ "KP_HOME", "KP7" },
+		{ "KP_UPARROW", "KP8" },
+		{ "KP_PGUP", "KP9" },
+		{ "KP_LEFTARROW", "KP4" },
+		{ "KP_5", "KP5" },
+		{ "KP_RIGHTARROW", "KP6" },
+		{ "KP_END", "KP1" },
+		{ "KP_DOWNARROW", "KP2" },
+		{ "KP_PGDN", "KP3" },
+		{ "KP_ENTER", "KP ENT" },
+		{ "KP_INS", "KP0" },
+		{ "KP_DEL", "KP." },
+		{ "KP_SLASH", "KP/" },
+		{ "KP_MINUS", "KP-" },
+		{ "KP_PLUS", "KP+" }
+	};
+
+	for( size_t i = 0; i < sizeof( labels ) / sizeof( labels[0] ); ++i )
+	{
+		if( strcmp( upper, labels[i].engineName ) == 0 )
+		{
+			snprintf( output, outputSize, "%s", labels[i].displayName );
+			return;
+		}
+	}
+
+	// Printable letter keys are returned in lower case by the engine; show
+	// them in upper case to match the generic keycap artwork.
+	snprintf( output, outputSize, "%s", upper );
+}
+
+// Resolve "+use" / "+jump" every frame so changed player key bindings are
+// reflected immediately. The engine API returns the key name, not the command.
+// It currently returns one matching key; literal lesson labels are preserved.
+static void HUD_ResolveInstructorBinding( const char *binding, char *output, size_t outputSize )
+{
+	if( !output || outputSize == 0 )
+		return;
+	output[0] = '\0';
+	if( !binding || !binding[0] )
+		return;
+
+	const char *command = NULL;
+	if( !HUD_IsInstructorBindingCommand( binding, &command ) )
+	{
+		snprintf( output, outputSize, "%s", binding );
+		return;
+	}
+
+	char commandName[64];
+	size_t commandLength = 0;
+	while( command[commandLength] &&
+		( isalnum( (unsigned char)command[commandLength] ) ||
+		  command[commandLength] == '_' ) &&
+		commandLength < sizeof( commandName ) - 1 )
+	{
+		commandName[commandLength] = command[commandLength];
+		++commandLength;
+	}
+	commandName[commandLength] = '\0';
+
+	if( commandName[0] && gEngfuncs.Key_LookupBinding )
+	{
+		const char *keyName = gEngfuncs.Key_LookupBinding( commandName );
+		if( keyName && keyName[0] &&
+			strncmp( keyName, "<KEY", 4 ) != 0 &&
+			strncmp( keyName, "<OUT", 4 ) != 0 )
+		{
+			HUD_FormatInstructorKeyName( keyName, output, outputSize );
+			if( output[0] )
+				return;
+		}
+	}
+
+	// Keep an intelligible prompt when an action is currently unbound instead
+	// of showing a stale token such as "+use".
+	struct KeyLabelFallback
+	{
+		const char *command;
+		const char *displayName;
+	};
+	static const KeyLabelFallback labels[] =
+	{
+		{ "use", "USE" },
+		{ "jump", "JUMP" },
+		{ "attack", "ATTACK" },
+		{ "attack2", "ALT FIRE" },
+		{ "reload", "RELOAD" },
+		{ "forward", "FORWARD" },
+		{ "back", "BACK" },
+		{ "moveleft", "LEFT" },
+		{ "moveright", "RIGHT" },
+		{ "left", "LEFT" },
+		{ "right", "RIGHT" },
+		{ "duck", "CROUCH" },
+		{ "speed", "RUN" },
+		{ "walk", "WALK" },
+		{ "showscores", "SCORES" }
+	};
+	for( size_t i = 0; i < sizeof( labels ) / sizeof( labels[0] ); ++i )
+	{
+		const char *a = commandName;
+		const char *b = labels[i].command;
+		while( *a && *b && toupper( (unsigned char)*a ) == toupper( (unsigned char)*b ) )
+		{
+			++a;
+			++b;
+		}
+		if( !*a && !*b )
+		{
+			snprintf( output, outputSize, "%s", labels[i].displayName );
+			return;
+		}
+	}
+
+	HUD_FormatInstructorKeyName( commandName, output, outputSize );
+}
+
 // Think
 void CHud::Think( void )
 {
@@ -476,11 +686,15 @@ int CHud::Redraw( float flTime, int intermission )
 		}
 		else
 		{
+			char resolvedBinding[64];
+			HUD_ResolveInstructorBinding( m_szInstructorHintBinding,
+				resolvedBinding, sizeof( resolvedBinding ) );
+
 			char bindingText[80];
 			bindingText[0] = '\0';
-			if( m_szInstructorHintBinding[0] )
+			if( resolvedBinding[0] )
 				snprintf( bindingText, sizeof( bindingText ),
-					m_bInstructorHintManaged ? "%s" : "[ %s ]", m_szInstructorHintBinding );
+					m_bInstructorHintManaged ? "%s" : "[ %s ]", resolvedBinding );
 
 			int captionWidth = DrawHudStringLen( m_szInstructorHintCaption );
 			int bindingWidth = DrawHudStringLen( bindingText );
@@ -815,8 +1029,8 @@ int CHud::Redraw( float flTime, int intermission )
 					// Binding text is shown in a small key chip on the same line.
 					char locatorBinding[80];
 					locatorBinding[0] = '\0';
-					if( m_szInstructorHintBinding[0] )
-						snprintf( locatorBinding, sizeof( locatorBinding ), "%s", m_szInstructorHintBinding );
+					if( resolvedBinding[0] )
+						snprintf( locatorBinding, sizeof( locatorBinding ), "%s", resolvedBinding );
 
 					const int locatorCaptionWidth = DrawHudStringLen( m_szInstructorHintCaption );
 					const int locatorBindingWidth = DrawHudStringLen( locatorBinding );
