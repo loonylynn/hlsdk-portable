@@ -91,6 +91,41 @@ public:
 };
 LINK_ENTITY_TO_CLASS( useable_graphic, CUseableGraphic );
 
+//
+// Single-player Source-style instructor hint. The existing PS2 usable bracket
+// remains the world-space marker; this entity supplies contextual HUD text.
+//
+class CEnvInstructorHint : public CPointEntity
+{
+public:
+	CEnvInstructorHint() :
+		m_iszHintTarget( 0 ),
+		m_iszCaption( 0 ),
+		m_iszBinding( 0 ),
+		m_flTimeout( 0.0f ),
+		m_bActive( FALSE )
+	{
+	}
+
+	void Spawn( void );
+	void KeyValue( KeyValueData *pkvd );
+	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
+	void HintTimeoutThink( void );
+
+private:
+	void ShowHint( CBasePlayer *pPlayer );
+	void EndHint( void );
+
+	string_t m_iszHintTarget;
+	string_t m_iszCaption;
+	string_t m_iszBinding;
+	float m_flTimeout;
+	BOOL m_bActive;
+	EHANDLE m_hActivator;
+};
+
+LINK_ENTITY_TO_CLASS( env_instructor_hint, CEnvInstructorHint );
+
 // Global Savedata for player
 TYPEDESCRIPTION	CBasePlayer::m_playerSaveData[] =
 {
@@ -208,6 +243,7 @@ int gmsgTeamNames = 0;
 
 int gmsgStatusText = 0;
 int gmsgStatusValue = 0;
+int gmsgInstructorHint = 0;
 
 void LinkUserMessages( void )
 {
@@ -254,6 +290,7 @@ void LinkUserMessages( void )
 
 	gmsgStatusText = REG_USER_MSG( "StatusText", -1 );
 	gmsgStatusValue = REG_USER_MSG( "StatusValue", 3 );
+	gmsgInstructorHint = REG_USER_MSG( "InstructorHint", -1 );
 }
 
 LINK_ENTITY_TO_CLASS( player, CBasePlayer )
@@ -1852,6 +1889,134 @@ CUseableGraphic *CUseableGraphic::Create( CBaseEntity *pTarget, CBasePlayer *pPl
 	pGraphic->pev->classname = MAKE_STRING( "useable_graphic" );
 	pGraphic->UpdateBrackets( pTarget, pPlayer );
 	return pGraphic;
+}
+
+void CEnvInstructorHint::Spawn( void )
+{
+	pev->solid = SOLID_NOT;
+	pev->effects |= EF_NODRAW;
+	m_bActive = FALSE;
+	m_hActivator = NULL;
+	SetThink( NULL );
+	pev->nextthink = 0;
+}
+
+void CEnvInstructorHint::KeyValue( KeyValueData *pkvd )
+{
+	if( FStrEq( pkvd->szKeyName, "hint_target" ) )
+	{
+		m_iszHintTarget = ALLOC_STRING( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_caption" ) )
+	{
+		m_iszCaption = ALLOC_STRING( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_binding" ) )
+	{
+		m_iszBinding = ALLOC_STRING( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_timeout" ) )
+	{
+		m_flTimeout = Q_max( 0.0f, Q_min( 3276.0f, (float)atof( pkvd->szValue ) ) );
+		pkvd->fHandled = TRUE;
+	}
+	else
+		CPointEntity::KeyValue( pkvd );
+}
+
+void CEnvInstructorHint::ShowHint( CBasePlayer *pPlayer )
+{
+	if( !pPlayer )
+		return;
+
+	CBaseEntity *pTarget = NULL;
+	if( m_iszHintTarget )
+		pTarget = UTIL_FindEntityByTargetname( NULL, STRING( m_iszHintTarget ) );
+
+	const int targetIndex = pTarget ? ENTINDEX( pTarget->edict() ) : 0;
+	const char *caption = m_iszCaption ? STRING( m_iszCaption ) : "";
+	const char *binding = m_iszBinding ? STRING( m_iszBinding ) : "";
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pPlayer->pev );
+		WRITE_BYTE( 1 ); // show
+		WRITE_SHORT( ENTINDEX( edict() ) ); // hint entity ID
+		WRITE_SHORT( targetIndex );
+		WRITE_SHORT( (int)( m_flTimeout * 10.0f ) ); // tenths of a second, capped to signed-short range
+		WRITE_STRING( caption );
+		WRITE_STRING( binding );
+	MESSAGE_END();
+
+	m_bActive = TRUE;
+	m_hActivator = pPlayer;
+
+	if( m_flTimeout > 0.0f )
+	{
+		SetThink( &CEnvInstructorHint::HintTimeoutThink );
+		pev->nextthink = gpGlobals->time + m_flTimeout;
+	}
+	else
+	{
+		SetThink( NULL );
+		pev->nextthink = 0;
+	}
+}
+
+void CEnvInstructorHint::EndHint( void )
+{
+	edict_t *pActivatorEdict = m_hActivator.Get();
+	CBaseEntity *pActivator = pActivatorEdict ? CBaseEntity::Instance( pActivatorEdict ) : NULL;
+
+	if( m_bActive && pActivator && pActivator->IsPlayer() )
+	{
+		CBasePlayer *pPlayer = (CBasePlayer *)pActivator;
+		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pPlayer->pev );
+			WRITE_BYTE( 0 ); // end
+			WRITE_SHORT( ENTINDEX( edict() ) );
+		MESSAGE_END();
+	}
+
+	m_bActive = FALSE;
+	m_hActivator = NULL;
+	SetThink( NULL );
+	pev->nextthink = 0;
+}
+
+void CEnvInstructorHint::HintTimeoutThink( void )
+{
+	EndHint();
+}
+
+void CEnvInstructorHint::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
+{
+	(void)pCaller;
+	BOOL show = FALSE;
+
+	if( useType == USE_ON )
+		show = TRUE;
+	else if( useType == USE_OFF )
+		show = FALSE;
+	else if( useType == USE_SET )
+		show = ( value > 0.5f );
+	else // USE_TOGGLE and other toggle-style activations
+		show = !m_bActive;
+
+	if( !show )
+	{
+		EndHint();
+		return;
+	}
+
+	CBaseEntity *pPlayerEntity = pActivator;
+	if( !pPlayerEntity || !pPlayerEntity->IsPlayer() )
+		pPlayerEntity = UTIL_PlayerByIndex( 1 );
+
+	if( !pPlayerEntity || !pPlayerEntity->IsPlayer() )
+		return;
+
+	ShowHint( (CBasePlayer *)pPlayerEntity );
 }
 
 void CBasePlayer::ClearUseableHighlight( void )

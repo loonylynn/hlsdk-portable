@@ -622,7 +622,22 @@ public:
 	int Redraw( float flTime, int intermission );
 	int UpdateClientData( client_data_t *cdata, float time );
 
-	CHud() : m_iSpriteCount(0), m_pHudList(NULL) {}  
+	// Single active instructor hint. Target entity index is retained for future
+	// target-aware presentation; the first pass draws the caption at a fixed HUD anchor.
+	bool m_bInstructorHintActive;
+	int m_iInstructorHintId;
+	int m_iInstructorHintTarget;
+	float m_flInstructorHintEndTime;
+	char m_szInstructorHintCaption[192];
+	char m_szInstructorHintBinding[64];
+
+	CHud() : m_iSpriteCount(0), m_pHudList(NULL),
+		m_bInstructorHintActive(false), m_iInstructorHintId(0),
+		m_iInstructorHintTarget(0), m_flInstructorHintEndTime(0.0f)
+	{
+		m_szInstructorHintCaption[0] = '\0';
+		m_szInstructorHintBinding[0] = '\0';
+	}  
 	~CHud();			// destructor, frees allocated memory
 
 	// user messages
@@ -634,6 +649,7 @@ public:
 	void _cdecl MsgFunc_ViewMode( const char *pszName, int iSize, void *pbuf );
 	int _cdecl MsgFunc_SetFOV( const char *pszName,  int iSize, void *pbuf );
 	int  _cdecl MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf );
+	int _cdecl MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf );
 
 	// Screen information
 	SCREENINFO	m_scrinfo;
