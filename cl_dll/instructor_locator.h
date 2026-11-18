@@ -60,6 +60,7 @@ public:
 	bool m_bOccluded;
 	bool m_bVisible;
 	bool m_bIsDrawing;
+	bool m_bRemoveWhenFadedOut;
 	float m_flDistFromPlayer;
 	int m_targetX, m_targetY;
 	int m_iconX, m_iconY;
@@ -67,7 +68,11 @@ public:
 	int m_wide, m_tall;
 	float m_widthScaleOnscreen;
 	int m_alpha;
+	int m_iEffectAlpha;
 	float m_fadeStart, m_lerpStart, m_pulseStart;
+	float m_flFadeDuration;
+	float m_flPulse, m_flPulseScale;
+	float m_flShakeX, m_flShakeY, m_flManagedAlpha;
 	int m_declutterIndex, m_lastDeclutterIndex, m_drawArrowDirection;
 	int m_captionWide;
 	bool m_bDrawControllerButton, m_bDrawControllerButtonOffscreen;
@@ -92,6 +97,10 @@ public:
 	void Activate( int serialNumber, int frameNumber, float currentTime, int screenWidth, int screenHeight );
 	void Deactivate( bool noFade, float currentTime, float fadeTime );
 	void Update( int frameNumber );
+	void UpdateAnimation( float currentTime );
+	bool IsFadingOut() const;
+	bool ShouldDraw() const;
+	int GetRenderAlpha( int baseAlpha ) const;
 	void UpdateProjection( float screenX, float screenY, bool behind,
 		int screenWidth, int screenHeight, int visibilityMargin );
 	void CalculateEdgePosition( int screenWidth, int screenHeight, int edgeMargin );
@@ -129,6 +138,8 @@ public:
 	const CInstructorLocatorTarget *GetTargetAt( int index ) const;
 	void DeactivateAllTargets( bool noFade, float currentTime, float fadeTime );
 	void CollectGarbage( float currentTime, float fadeTime );
+	void UpdatePresentation( float currentTime );
+	void ResolveDecluttering( int screenWidth, int screenHeight, int edgeMargin, int gap );
 	void BeginFrame( float currentTime );
 	int GetFrameCount() const;
 	int GetActiveTargetCount() const;
