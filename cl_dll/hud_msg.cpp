@@ -283,6 +283,10 @@ int CHud::MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf )
 	event.integerValue = READ_LONG();
 	event.floatValue = READ_FLOAT();
 
+	if( CVAR_GET_FLOAT( "gameinstructor_verbose" ) != 0.0f && gEngfuncs.Con_Printf )
+		gEngfuncs.Con_Printf( "[GameInstructor] Client received InstructorEvent '%s' (entity %d, class '%s').\\n",
+			event.name, event.entityIndex, event.className );
+
 	GameInstructor_FireEvent( event );
 	return 1;
 }
@@ -299,7 +303,12 @@ void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 
 	// A map-authored env_instructor_hint currently owns the card.
 	if( gHUD.m_bInstructorHintActive && !gHUD.m_bInstructorHintManaged )
+	{
+		if( CVAR_GET_FLOAT( "gameinstructor_verbose" ) != 0.0f && gEngfuncs.Con_Printf )
+			gEngfuncs.Con_Printf( "[GameInstructor] Managed lesson '%s' suppressed: map env_instructor_hint owns the HUD card.\\n",
+				lessonName ? lessonName : "(unnamed)" );
 		return;
+	}
 
 	const bool lessonChanged = !gHUD.m_bInstructorHintManaged ||
 		strcmp( gHUD.m_szInstructorHintName, lessonName ? lessonName : "" ) != 0;
