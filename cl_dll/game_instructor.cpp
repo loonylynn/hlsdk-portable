@@ -1477,7 +1477,7 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 	HUD_SetManagedInstructorHint(lesson->m_Name.c_str(), caption,
 		lesson->m_Binding.c_str(), lesson->m_OnscreenIcon.c_str(),
 		lesson->m_OffscreenIcon.c_str(), lesson->m_iIconTarget, 0.0f,
-		lesson->m_iFlags, r, g, b, lesson->m_flRange, lesson->m_bForceCaption);
+		lesson->m_iFlags, r, g, b, lesson->m_flRange, lesson->m_flIconOffset, lesson->m_bForceCaption);
 	m_bManagedLessonVisible = true;
 }
 
