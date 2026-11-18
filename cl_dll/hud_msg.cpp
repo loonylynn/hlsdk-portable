@@ -116,7 +116,6 @@ void HUD_SyncInstructorLocatorTarget( CHud *hud )
 	target->m_bOccluded = hud->m_bInstructorHintOccluded;
 	target->m_iEffectsFlags = hud->m_iInstructorHintFlags;
 	target->m_flRange = hud->m_flInstructorHintRange;
-	target->m_offsetY = (int)hud->m_flInstructorHintIconOffset;
 	target->SetCaptionColor( hud->m_iInstructorHintColorR,
 		hud->m_iInstructorHintColorG, hud->m_iInstructorHintColorB );
 	target->m_iBindingChoicesCount = hud->m_iInstructorHintBindingChoicesCount;
