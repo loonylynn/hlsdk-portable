@@ -1274,9 +1274,15 @@ void CScriptedIconLesson::ProcessEvent(const InstructorEventData &event, int eve
 	{
 		if ((*events)[i].name != event.name)
 			continue;
+
 		if (ProcessElements(&event, (*events)[i].elements))
 		{
-			if (eventType == 1)
+			// Source treats a successful success-event rule as the completion
+			// signal for this lesson; it is not necessary to add "void success"
+			// manually to every script.
+			if (eventType == 2)
+				GetGameInstructor().MarkSucceeded(m_Name.c_str());
+			else if (eventType == 1)
 			{
 				m_bCloseRequested = true;
 				SetCloseReason("Close event.");
