@@ -571,6 +571,7 @@ void CHud::VidInit( void )
 	m_hInstructorHintHoldSprite = SPR_Load( "sprites/icon_hold.spr" );
 	m_hInstructorHintArrowRightSprite = SPR_Load( "sprites/icon_arrow_right.spr" );
 	m_hInstructorHintArrowUpSprite = SPR_Load( "sprites/icon_arrow_up.spr" );
+	m_hInstructorHintKeyGenericSprite = SPR_Load( "sprites/icon_key_generic.spr" );
 
 	// Map-authored hints use Source-style icon identifiers mapped to optional
 	// GoldSrc sprites: e.g. hint_icon_onscreen "icon_interact" loads
