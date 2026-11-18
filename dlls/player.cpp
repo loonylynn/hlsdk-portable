@@ -38,6 +38,8 @@
 #include "pm_shared.h"
 #include "hltv.h"
 
+#include <stdio.h>
+
 // #define DUCKFIX
 
 extern DLL_GLOBAL ULONG g_ulModelIndexPlayer;
@@ -59,6 +61,7 @@ extern cvar_t hl2_sprintspeed;
 extern cvar_t hl2_suitpower_drain;
 extern cvar_t hl2_suitpower_recharge;
 extern cvar_t hl2_suitpower_start_minimum;
+extern cvar_t pushablemode;
 
 // the world node graph
 extern CGraph WorldGraph;
@@ -116,15 +119,59 @@ static Vector InstructorHintTargetOrigin( CBaseEntity *pTarget )
 	return origin;
 }
 
+// GoldSrc-side port of Valve's public Source CEnvInstructorHint contract.
+// Locator flags and field mapping follow the public Source implementation.
+#define LOCATOR_ICON_FX_PULSE_SLOW       0x00000001
+#define LOCATOR_ICON_FX_PULSE_FAST       0x00000002
+#define LOCATOR_ICON_FX_PULSE_URGENT     0x00000004
+#define LOCATOR_ICON_FX_ALPHA_SLOW       0x00000008
+#define LOCATOR_ICON_FX_ALPHA_FAST       0x00000010
+#define LOCATOR_ICON_FX_ALPHA_URGENT     0x00000020
+#define LOCATOR_ICON_FX_SHAKE_NARROW     0x00000040
+#define LOCATOR_ICON_FX_SHAKE_WIDE       0x00000080
+#define LOCATOR_ICON_FX_STATIC           0x00000100
+#define LOCATOR_ICON_FX_NO_OFFSCREEN     0x00000200
+#define LOCATOR_ICON_FX_FORCE_CAPTION    0x00000400
+
+static BOOL InstructorHintIsOccluded( CBasePlayer *pPlayer, CBaseEntity *pTarget, const Vector &targetOrigin )
+{
+	if( !pPlayer || !pTarget || pTarget == pPlayer )
+		return FALSE;
+
+	Vector eye = pPlayer->pev->origin + pPlayer->pev->view_ofs;
+	TraceResult tr;
+	UTIL_TraceLine( eye, targetOrigin, dont_ignore_monsters, pPlayer->edict(), &tr );
+
+	return ( tr.fStartSolid ||
+		( tr.flFraction < 1.0f && tr.pHit != pTarget->edict() ) );
+}
+
 class CEnvInstructorHint : public CPointEntity
 {
 public:
 	CEnvInstructorHint() :
 		m_iszHintTarget( 0 ),
 		m_iszCaption( 0 ),
+		m_iszActivatorCaption( 0 ),
 		m_iszBinding( 0 ),
+		m_iszReplaceKey( 0 ),
+		m_iszIconOnscreen( 0 ),
+		m_iszIconOffscreen( 0 ),
 		m_flTimeout( 0.0f ),
 		m_flExpireTime( 0.0f ),
+		m_flIconOffset( 0.0f ),
+		m_flRange( 0.0f ),
+		m_iColorR( 255 ),
+		m_iColorG( 255 ),
+		m_iColorB( 255 ),
+		m_iPulseOption( 0 ),
+		m_iAlphaOption( 0 ),
+		m_iShakeOption( 0 ),
+		m_bStatic( FALSE ),
+		m_bNoOffscreen( FALSE ),
+		m_bForceCaption( FALSE ),
+		m_bAllowNoDrawTarget( FALSE ),
+		m_bLocalPlayerOnly( FALSE ),
 		m_bActive( FALSE ),
 		m_bTargetLostNotified( FALSE )
 	{
@@ -138,12 +185,31 @@ public:
 private:
 	void ShowHint( CBasePlayer *pPlayer );
 	void EndHint( void );
+	int BuildIconFlags( void ) const;
+	BOOL IsTargetVisible( CBasePlayer *pPlayer, CBaseEntity *pTarget, const Vector &targetOrigin ) const;
 
 	string_t m_iszHintTarget;
 	string_t m_iszCaption;
+	string_t m_iszActivatorCaption;
 	string_t m_iszBinding;
+	string_t m_iszReplaceKey;
+	string_t m_iszIconOnscreen;
+	string_t m_iszIconOffscreen;
 	float m_flTimeout;
 	float m_flExpireTime;
+	float m_flIconOffset;
+	float m_flRange;
+	int m_iColorR;
+	int m_iColorG;
+	int m_iColorB;
+	int m_iPulseOption;
+	int m_iAlphaOption;
+	int m_iShakeOption;
+	BOOL m_bStatic;
+	BOOL m_bNoOffscreen;
+	BOOL m_bForceCaption;
+	BOOL m_bAllowNoDrawTarget;
+	BOOL m_bLocalPlayerOnly;
 	BOOL m_bActive;
 	BOOL m_bTargetLostNotified;
 	EHANDLE m_hActivator;
@@ -151,6 +217,54 @@ private:
 };
 
 LINK_ENTITY_TO_CLASS( env_instructor_hint, CEnvInstructorHint );
+
+int CEnvInstructorHint::BuildIconFlags( void ) const
+{
+	int flags = 0;
+	if( m_iPulseOption > 0 )
+		flags |= ( LOCATOR_ICON_FX_PULSE_SLOW << ( m_iPulseOption - 1 ) );
+	if( m_iAlphaOption > 0 )
+		flags |= ( LOCATOR_ICON_FX_ALPHA_SLOW << ( m_iAlphaOption - 1 ) );
+	if( m_iShakeOption > 0 )
+		flags |= ( LOCATOR_ICON_FX_SHAKE_NARROW << ( m_iShakeOption - 1 ) );
+	if( m_bStatic )
+		flags |= LOCATOR_ICON_FX_STATIC;
+	if( m_bNoOffscreen )
+		flags |= LOCATOR_ICON_FX_NO_OFFSCREEN;
+	if( m_bForceCaption )
+		flags |= LOCATOR_ICON_FX_FORCE_CAPTION;
+	return flags;
+}
+
+BOOL CEnvInstructorHint::IsTargetVisible( CBasePlayer *pPlayer, CBaseEntity *pTarget, const Vector &targetOrigin ) const
+{
+	if( !pTarget )
+		return m_bStatic;
+
+	if( !m_bAllowNoDrawTarget && ( pTarget->pev->effects & EF_NODRAW ) )
+		return FALSE;
+
+	if( m_flRange > 0.0f && pPlayer && pTarget != pPlayer )
+	{
+		Vector eye = pPlayer->pev->origin + pPlayer->pev->view_ofs;
+		if( ( targetOrigin - eye ).Length() > m_flRange )
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
+class CInfoInstructorHintTarget : public CPointEntity
+{
+public:
+	void Spawn( void )
+	{
+		// Point entities have no render model; do not set EF_NODRAW because
+		// instructor target visibility uses that flag for deliberate hiding.
+		pev->solid = SOLID_NOT;
+	}
+};
+LINK_ENTITY_TO_CLASS( info_target_instructor_hint, CInfoInstructorHintTarget );
 
 // Global Savedata for player
 TYPEDESCRIPTION	CBasePlayer::m_playerSaveData[] =
@@ -1945,14 +2059,102 @@ void CEnvInstructorHint::KeyValue( KeyValueData *pkvd )
 		m_iszCaption = ALLOC_STRING( pkvd->szValue );
 		pkvd->fHandled = TRUE;
 	}
+	else if( FStrEq( pkvd->szKeyName, "hint_activator_caption" ) )
+	{
+		m_iszActivatorCaption = ALLOC_STRING( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
 	else if( FStrEq( pkvd->szKeyName, "hint_binding" ) )
 	{
 		m_iszBinding = ALLOC_STRING( pkvd->szValue );
 		pkvd->fHandled = TRUE;
 	}
+	else if( FStrEq( pkvd->szKeyName, "hint_replace_key" ) )
+	{
+		m_iszReplaceKey = ALLOC_STRING( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_icon_onscreen" ) )
+	{
+		m_iszIconOnscreen = ALLOC_STRING( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_icon_offscreen" ) )
+	{
+		m_iszIconOffscreen = ALLOC_STRING( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
 	else if( FStrEq( pkvd->szKeyName, "hint_timeout" ) )
 	{
 		m_flTimeout = Q_max( 0.0f, Q_min( 3276.0f, (float)atof( pkvd->szValue ) ) );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_range" ) )
+	{
+		m_flRange = Q_max( 0.0f, (float)atof( pkvd->szValue ) );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_icon_offset" ) )
+	{
+		m_flIconOffset = (float)atof( pkvd->szValue );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_color" ) )
+	{
+		char colorText[64];
+		strncpy( colorText, pkvd->szValue, sizeof( colorText ) - 1 );
+		colorText[sizeof( colorText ) - 1] = '\0';
+		for( char *p = colorText; *p; ++p )
+			if( *p == ',' )
+				*p = ' ';
+
+		int r = 255, g = 255, b = 255;
+		if( sscanf( colorText, "%d %d %d", &r, &g, &b ) == 3 )
+		{
+			m_iColorR = Q_max( 0, Q_min( 255, r ) );
+			m_iColorG = Q_max( 0, Q_min( 255, g ) );
+			m_iColorB = Q_max( 0, Q_min( 255, b ) );
+		}
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_pulseoption" ) )
+	{
+		m_iPulseOption = Q_max( 0, Q_min( 3, atoi( pkvd->szValue ) ) );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_alphaoption" ) )
+	{
+		m_iAlphaOption = Q_max( 0, Q_min( 3, atoi( pkvd->szValue ) ) );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_shakeoption" ) )
+	{
+		m_iShakeOption = Q_max( 0, Q_min( 2, atoi( pkvd->szValue ) ) );
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_static" ) )
+	{
+		m_bStatic = atoi( pkvd->szValue ) != 0;
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_nooffscreen" ) )
+	{
+		m_bNoOffscreen = atoi( pkvd->szValue ) != 0;
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_forcecaption" ) )
+	{
+		m_bForceCaption = atoi( pkvd->szValue ) != 0;
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_allow_nodraw_target" ) )
+	{
+		m_bAllowNoDrawTarget = atoi( pkvd->szValue ) != 0;
+		pkvd->fHandled = TRUE;
+	}
+	else if( FStrEq( pkvd->szKeyName, "hint_local_player_only" ) )
+	{
+		m_bLocalPlayerOnly = atoi( pkvd->szValue ) != 0;
 		pkvd->fHandled = TRUE;
 	}
 	else
@@ -1968,26 +2170,51 @@ void CEnvInstructorHint::ShowHint( CBasePlayer *pPlayer )
 	if( m_iszHintTarget )
 		pTarget = UTIL_FindEntityByTargetname( NULL, STRING( m_iszHintTarget ) );
 
+	// Match Source's target fallback: a non-static hint without a named target
+	// follows its activator. Static hints remain fixed in the HUD.
+	if( !pTarget && !m_bStatic )
+		pTarget = pPlayer;
+
 	const int targetIndex = pTarget ? ENTINDEX( pTarget->edict() ) : 0;
-	const Vector targetOrigin = InstructorHintTargetOrigin( pTarget );
+	Vector targetOrigin = InstructorHintTargetOrigin( pTarget );
+	targetOrigin.z += m_flIconOffset;
+
 	const char *caption = m_iszCaption ? STRING( m_iszCaption ) : "";
+	if( m_iszActivatorCaption && STRING( m_iszActivatorCaption )[0] )
+		caption = STRING( m_iszActivatorCaption );
 	const char *binding = m_iszBinding ? STRING( m_iszBinding ) : "";
+	const char *iconOnscreen = m_iszIconOnscreen ? STRING( m_iszIconOnscreen ) : "";
+	const char *iconOffscreen = m_iszIconOffscreen ? STRING( m_iszIconOffscreen ) : "";
+	const char *hintName = STRING( pev->targetname );
+	const char *replaceKey = m_iszReplaceKey ? STRING( m_iszReplaceKey ) : "";
+
+	BOOL bOccluded = pTarget ? InstructorHintIsOccluded( pPlayer, pTarget, targetOrigin ) : FALSE;
+	BOOL bTargetVisible = IsTargetVisible( pPlayer, pTarget, targetOrigin );
 
 	MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pPlayer->pev );
-		WRITE_BYTE( 1 ); // show
-		WRITE_SHORT( ENTINDEX( edict() ) ); // hint entity ID
+		WRITE_BYTE( 1 ); // create/show hint
+		WRITE_SHORT( ENTINDEX( edict() ) );
 		WRITE_SHORT( targetIndex );
-		WRITE_SHORT( (int)( m_flTimeout * 10.0f ) ); // tenths of a second
+		WRITE_SHORT( (int)( m_flTimeout * 10.0f ) );
 		WRITE_COORD( targetOrigin.x );
 		WRITE_COORD( targetOrigin.y );
 		WRITE_COORD( targetOrigin.z );
 		WRITE_STRING( caption );
 		WRITE_STRING( binding );
-		WRITE_BYTE( 0 ); // no stock icon for map-authored hints
+		WRITE_BYTE( 0 ); // icon mode reserved for automatic pushable actions
+		WRITE_STRING( iconOnscreen );
+		WRITE_STRING( iconOffscreen );
+		WRITE_BYTE( m_iColorR );
+		WRITE_BYTE( m_iColorG );
+		WRITE_BYTE( m_iColorB );
+		WRITE_SHORT( BuildIconFlags() );
+		WRITE_COORD( m_flRange );
+		WRITE_BYTE( bOccluded ? 1 : 0 );
+		WRITE_BYTE( bTargetVisible ? 1 : 0 );
+		WRITE_STRING( hintName );
+		WRITE_STRING( replaceKey );
 	MESSAGE_END();
 
-	// Remember which map-authored hint currently owns the single HUD panel.
-	// The automatic pushable prompt yields while this hint is active.
 	pPlayer->m_iActiveInstructorHintId = ENTINDEX( edict() );
 	m_bActive = TRUE;
 	m_hActivator = pPlayer;
@@ -1995,8 +2222,6 @@ void CEnvInstructorHint::ShowHint( CBasePlayer *pPlayer )
 	m_bTargetLostNotified = FALSE;
 	m_flExpireTime = m_flTimeout > 0.0f ? gpGlobals->time + m_flTimeout : 0.0f;
 
-	// Refresh the target position at 20 Hz. This keeps indicators working even
-	// when a target leaves the client's PVS and its cl_entity_t is no longer current.
 	if( pTarget || m_flExpireTime > 0.0f )
 	{
 		SetThink( &CEnvInstructorHint::HintThink );
@@ -2019,8 +2244,9 @@ void CEnvInstructorHint::EndHint( void )
 		CBasePlayer *pPlayer = (CBasePlayer *)pActivator;
 		if( pPlayer->m_iActiveInstructorHintId == ENTINDEX( edict() ) )
 			pPlayer->m_iActiveInstructorHintId = 0;
+
 		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pPlayer->pev );
-			WRITE_BYTE( 0 ); // end
+			WRITE_BYTE( 0 ); // end hint
 			WRITE_SHORT( ENTINDEX( edict() ) );
 		MESSAGE_END();
 	}
@@ -2051,41 +2277,54 @@ void CEnvInstructorHint::HintThink( void )
 
 	edict_t *targetEdict = m_hHintTarget.Get();
 	CBaseEntity *pTarget = targetEdict ? CBaseEntity::Instance( targetEdict ) : NULL;
+	edict_t *activatorEdict = m_hActivator.Get();
+	CBaseEntity *pActivator = activatorEdict ? CBaseEntity::Instance( activatorEdict ) : NULL;
+	CBasePlayer *pPlayer = ( pActivator && pActivator->IsPlayer() ) ? (CBasePlayer *)pActivator : NULL;
 
-	if( pTarget )
+	if( !pPlayer || !pPlayer->IsAlive() )
 	{
-		const Vector targetOrigin = InstructorHintTargetOrigin( pTarget );
-		edict_t *activatorEdict = m_hActivator.Get();
-		CBaseEntity *pActivator = activatorEdict ? CBaseEntity::Instance( activatorEdict ) : NULL;
-
-		if( pActivator && pActivator->IsPlayer() )
-		{
-			MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pActivator->pev );
-				WRITE_BYTE( 2 ); // target position update
-				WRITE_SHORT( ENTINDEX( edict() ) );
-				WRITE_SHORT( ENTINDEX( pTarget->edict() ) );
-				WRITE_COORD( targetOrigin.x );
-				WRITE_COORD( targetOrigin.y );
-				WRITE_COORD( targetOrigin.z );
-				WRITE_BYTE( 0 ); // keep map-authored hints icon-free
-			MESSAGE_END();
-		}
+		EndHint();
+		return;
 	}
-	else if( m_iszHintTarget && !m_bTargetLostNotified )
-	{
-		edict_t *activatorEdict = m_hActivator.Get();
-		CBaseEntity *pActivator = activatorEdict ? CBaseEntity::Instance( activatorEdict ) : NULL;
 
-		if( pActivator && pActivator->IsPlayer() )
+	if( pPlayer && ( pTarget || m_bStatic ) )
+	{
+		Vector targetOrigin = InstructorHintTargetOrigin( pTarget );
+		targetOrigin.z += m_flIconOffset;
+
+		BOOL bOccluded = pTarget ? InstructorHintIsOccluded( pPlayer, pTarget, targetOrigin ) : FALSE;
+		BOOL bTargetVisible = IsTargetVisible( pPlayer, pTarget, targetOrigin );
+
+		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pPlayer->pev );
+			WRITE_BYTE( 2 ); // target/visibility update
+			WRITE_SHORT( ENTINDEX( edict() ) );
+			WRITE_SHORT( pTarget ? ENTINDEX( pTarget->edict() ) : 0 );
+			WRITE_COORD( targetOrigin.x );
+			WRITE_COORD( targetOrigin.y );
+			WRITE_COORD( targetOrigin.z );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( bOccluded ? 1 : 0 );
+			WRITE_BYTE( bTargetVisible ? 1 : 0 );
+			WRITE_STRING( "" );
+			WRITE_STRING( "" );
+		MESSAGE_END();
+	}
+	else if( !m_bTargetLostNotified )
+	{
+		if( pPlayer )
 		{
-			MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pActivator->pev );
-				WRITE_BYTE( 2 ); // target lost; revert to a standalone HUD hint
+			MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pPlayer->pev );
+				WRITE_BYTE( 2 );
 				WRITE_SHORT( ENTINDEX( edict() ) );
 				WRITE_SHORT( 0 );
 				WRITE_COORD( 0.0f );
 				WRITE_COORD( 0.0f );
 				WRITE_COORD( 0.0f );
-				WRITE_BYTE( 0 ); // target-lost map hints do not use an action icon
+				WRITE_BYTE( 0 );
+				WRITE_BYTE( 0 );
+				WRITE_BYTE( 0 ); // target no longer available
+				WRITE_STRING( "" );
+				WRITE_STRING( "" );
 			MESSAGE_END();
 		}
 		m_bTargetLostNotified = TRUE;
@@ -2111,7 +2350,7 @@ void CEnvInstructorHint::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE
 		show = FALSE;
 	else if( useType == USE_SET )
 		show = ( value > 0.5f );
-	else // USE_TOGGLE and other toggle-style activations
+	else
 		show = !m_bActive;
 
 	if( !show )
@@ -2151,18 +2390,31 @@ void CBasePlayer::ClearPushableInstructorHint( void )
 	if( m_bUseableInstructorHintActive )
 	{
 		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pev );
-			WRITE_BYTE( 0 ); // end automatic pushable hint
+			WRITE_BYTE( 0 );
 			WRITE_SHORT( -1 );
 		MESSAGE_END();
 	}
 
 	m_bUseableInstructorHintActive = FALSE;
 	m_iUseableInstructorHintTarget = 0;
+	m_iUseableInstructorHintIconMode = 1;
+	m_flUseableInstructorHintActionTime = 0.0f;
+}
+
+// Called only when CPushable::Move actually changes the object's horizontal
+// velocity. This replaces the old inaccurate "IN_USE means pulling" shortcut.
+void CBasePlayer::SetPushableInstructorHintAction( CBaseEntity *pObject, int iconMode )
+{
+	if( !pObject || !m_bUseableInstructorHintActive ||
+		m_iUseableInstructorHintTarget != ENTINDEX( pObject->edict() ) )
+		return;
+
+	m_iUseableInstructorHintIconMode = ( iconMode == 2 ) ? 2 : 1;
+	m_flUseableInstructorHintActionTime = gpGlobals->time + 0.4f;
 }
 
 void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 {
-	// Map-authored hints take priority over the automatic pushable guidance.
 	if( m_iActiveInstructorHintId != 0 )
 	{
 		ClearPushableInstructorHint();
@@ -2177,25 +2429,45 @@ void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 
 	const int targetIndex = ENTINDEX( pObject->edict() );
 	const Vector targetOrigin = InstructorHintTargetOrigin( pObject );
-	// The normal movement icon prompts the player to walk into the object.
-	// Holding USE switches to the hold icon for the pull interaction.
-	const int iconMode = ( pev->button & IN_USE ) ? 2 : 1;
 
 	if( !m_bUseableInstructorHintActive || m_iUseableInstructorHintTarget != targetIndex )
 	{
 		ClearPushableInstructorHint();
+		m_iUseableInstructorHintIconMode = 1;
+		m_flUseableInstructorHintActionTime = 0.0f;
+	}
 
+	const int iconMode = ( m_flUseableInstructorHintActionTime > gpGlobals->time ) ?
+		m_iUseableInstructorHintIconMode : 1;
+	const char *caption = iconMode == 2 ?
+		( pushablemode.value > 0 ? "Hold USE and move backward to pull" : "Hold USE to pull" ) :
+		"Move into it to push";
+	const char *binding = iconMode == 2 ? "USE" : "";
+
+	if( !m_bUseableInstructorHintActive )
+	{
 		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pev );
-			WRITE_BYTE( 1 ); // show
-			WRITE_SHORT( -1 ); // reserved automatic-pushable hint ID
+			WRITE_BYTE( 1 );
+			WRITE_SHORT( -1 );
 			WRITE_SHORT( targetIndex );
-			WRITE_SHORT( 0 ); // scanner ends the hint when focus changes
+			WRITE_SHORT( 0 );
 			WRITE_COORD( targetOrigin.x );
 			WRITE_COORD( targetOrigin.y );
 			WRITE_COORD( targetOrigin.z );
-			WRITE_STRING( "Move into it to push" );
-			WRITE_STRING( "" );
+			WRITE_STRING( caption );
+			WRITE_STRING( binding );
 			WRITE_BYTE( iconMode );
+			WRITE_STRING( "" );
+			WRITE_STRING( "" );
+			WRITE_BYTE( 255 );
+			WRITE_BYTE( 255 );
+			WRITE_BYTE( 255 );
+			WRITE_SHORT( 0 );
+			WRITE_COORD( 0.0f );
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( 1 );
+			WRITE_STRING( "func_pushable" );
+			WRITE_STRING( "func_pushable" );
 		MESSAGE_END();
 
 		m_bUseableInstructorHintActive = TRUE;
@@ -2203,15 +2475,18 @@ void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 		return;
 	}
 
-	// Keep the same target-following and offscreen-arrow behavior as map hints.
 	MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pev );
-		WRITE_BYTE( 2 ); // target position update
+		WRITE_BYTE( 2 );
 		WRITE_SHORT( -1 );
 		WRITE_SHORT( targetIndex );
 		WRITE_COORD( targetOrigin.x );
 		WRITE_COORD( targetOrigin.y );
 		WRITE_COORD( targetOrigin.z );
 		WRITE_BYTE( iconMode );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 1 );
+		WRITE_STRING( caption );
+		WRITE_STRING( binding );
 	MESSAGE_END();
 }
 
@@ -3712,6 +3987,8 @@ void CBasePlayer::Spawn( void )
 	m_iActiveInstructorHintId = 0;
 	m_iUseableInstructorHintTarget = 0;
 	m_bUseableInstructorHintActive = FALSE;
+	m_iUseableInstructorHintIconMode = 1;
+	m_flUseableInstructorHintActionTime = 0.0f;
 
 	m_flgeigerDelay = gpGlobals->time + 2.0f;	// wait a few seconds until user-defined message registrations
 							// are recieved by all clients

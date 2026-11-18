@@ -234,8 +234,10 @@ int CHud::Redraw( float flTime, int intermission )
 
 	// Source-style instructor hint presentation. The PS2 world-space bracket
 	// remains unchanged; this panel follows a scripted target in screen space.
-	if( m_bInstructorHintActive && !intermission &&
-		m_pCvarDraw && m_pCvarDraw->value && !( m_iHideHUDDisplay & HIDEHUD_ALL ) )
+	if( m_bInstructorHintActive && m_bInstructorHintTargetVisible &&
+		( !m_bInstructorHintOccluded || ( m_iInstructorHintFlags & 0x00000400 ) ) &&
+		!intermission && m_pCvarDraw && m_pCvarDraw->value &&
+		!( m_iHideHUDDisplay & HIDEHUD_ALL ) )
 	{
 		if( m_flInstructorHintEndTime > 0.0f && flTime >= m_flInstructorHintEndTime )
 		{
@@ -243,11 +245,19 @@ int CHud::Redraw( float flTime, int intermission )
 			m_iInstructorHintId = 0;
 			m_iInstructorHintTarget = 0;
 			m_bInstructorHintHasTargetPosition = false;
+			m_bInstructorHintTargetVisible = false;
+			m_bInstructorHintOccluded = false;
 			m_vecInstructorHintTargetOrigin[0] = 0.0f;
 			m_vecInstructorHintTargetOrigin[1] = 0.0f;
 			m_vecInstructorHintTargetOrigin[2] = 0.0f;
 			m_flInstructorHintEndTime = 0.0f;
+			m_iInstructorHintRange = 0.0f;
 			m_iInstructorHintIconMode = 0;
+			m_iInstructorHintFlags = 0;
+			m_hInstructorHintOnscreenSprite = 0;
+			m_hInstructorHintOffscreenSprite = 0;
+			m_szInstructorHintIconOnscreen[0] = '\0';
+			m_szInstructorHintIconOffscreen[0] = '\0';
 			m_szInstructorHintCaption[0] = '\0';
 			m_szInstructorHintBinding[0] = '\0';
 		}
@@ -261,16 +271,35 @@ int CHud::Redraw( float flTime, int intermission )
 			int captionWidth = DrawHudStringLen( m_szInstructorHintCaption );
 			int bindingWidth = DrawHudStringLen( bindingText );
 
-			// Only the automatic func_pushable hint uses these two action sprites.
-			// The files are optional so older game directories retain the text-only UI.
-			HSPRITE hintIcon = 0;
+			// Project the current world target before selecting its on/off-screen icon.
+			float targetX = 0.0f, targetY = 0.0f;
+			bool targetBehind = false;
+			const bool hasTarget = m_bInstructorHintHasTargetPosition &&
+				HUD_GetInstructorHintScreenPosition( m_vecInstructorHintTargetOrigin,
+					&targetX, &targetY, &targetBehind );
+			const int edgeMargin = 24;
+			const bool targetOffscreen = hasTarget && ( targetBehind ||
+				targetX < edgeMargin || targetX > ScreenWidth - edgeMargin ||
+				targetY < edgeMargin || targetY > ScreenHeight - edgeMargin );
+
+			// LOCATOR_ICON_FX_NO_OFFSCREEN deactivates the locator when it leaves
+			// the viewport; don't leave a floating caption behind.
+			if( !( targetOffscreen && ( m_iInstructorHintFlags & 0x00000200 ) ) )
+			{
+			// Source has distinct icon_onscreen and icon_offscreen resources.
+			// Automatic pushable guidance retains its own move/hold fallback sprites.
+			HSPRITE hintIcon = targetOffscreen ?
+				m_hInstructorHintOffscreenSprite : m_hInstructorHintOnscreenSprite;
 			if( m_iInstructorHintId == -1 )
 			{
+				hintIcon = 0;
 				if( m_iInstructorHintIconMode == 2 )
 					hintIcon = m_hInstructorHintHoldSprite;
 				else if( m_iInstructorHintIconMode == 1 )
 					hintIcon = m_hInstructorHintMoveSprite;
 			}
+			if( targetOffscreen && ( m_iInstructorHintFlags & 0x00000200 ) )
+				hintIcon = 0;
 
 			int iconWidth = hintIcon ? SPR_Width( hintIcon, 0 ) : 0;
 			int iconHeight = hintIcon ? SPR_Height( hintIcon, 0 ) : 0;
@@ -294,12 +323,6 @@ int CHud::Redraw( float flTime, int intermission )
 			const int panelHeight = Q_max( basePanelHeight, iconHeight + 16 );
 			int panelX = ( ScreenWidth - panelWidth ) / 2;
 			int panelY = ScreenHeight - panelHeight - 30;
-
-			float targetX = 0.0f, targetY = 0.0f;
-			bool targetBehind = false;
-			const bool hasTarget = m_bInstructorHintHasTargetPosition &&
-				HUD_GetInstructorHintScreenPosition( m_vecInstructorHintTargetOrigin,
-					&targetX, &targetY, &targetBehind );
 
 			if( hasTarget )
 			{
@@ -358,7 +381,7 @@ int CHud::Redraw( float flTime, int intermission )
 
 					FillRGBA( arrowX - 12, arrowY - 12, 24, 24, 8, 10, 14, 225 );
 					DrawHudString( arrowX - 4, arrowY - 7, arrowX + 12,
-						arrow, 236, 9, 77 );
+						arrow, m_iInstructorHintColorR, m_iInstructorHintColorG, m_iInstructorHintColorB );
 
 					if( arrowX <= edgeMargin + 2 )
 				{
@@ -392,15 +415,36 @@ int CHud::Redraw( float flTime, int intermission )
 			if( panelY < 12 ) panelY = 12;
 			if( panelY > maxY - 12 ) panelY = Q_max( 0, maxY - 12 );
 
-			FillRGBA( panelX, panelY, panelWidth, panelHeight, 8, 10, 14, 205 );
-			FillRGBA( panelX, panelY, 3, panelHeight, 236, 9, 77, 255 );
+			// Approximate Source locator FX flags using the GoldSrc HUD primitives.
+			int panelAlpha = 205;
+			const int alphaFlags = m_iInstructorHintFlags & 0x00000038;
+			if( alphaFlags )
+			{
+				const float alphaRate = ( alphaFlags & 0x20 ) ? 5.0f :
+					( ( alphaFlags & 0x10 ) ? 2.5f : 1.0f );
+				panelAlpha = 150 + (int)( 105.0f * ( 0.5f + 0.5f * sinf( flTime * alphaRate * 6.28318f ) ) );
+			}
+			if( m_iInstructorHintFlags & 0x00000007 )
+			{
+				const float pulseRate = ( m_iInstructorHintFlags & 0x4 ) ? 5.0f :
+					( ( m_iInstructorHintFlags & 0x2 ) ? 2.5f : 1.0f );
+				panelAlpha = Q_min( 255, panelAlpha + (int)( 28.0f * ( 0.5f + 0.5f * sinf( flTime * pulseRate * 6.28318f ) ) ) );
+			}
+			if( m_iInstructorHintFlags & 0x000000C0 )
+				panelX += (int)( sinf( flTime * ( ( m_iInstructorHintFlags & 0x80 ) ? 22.0f : 10.0f ) ) * 3.0f );
+
+			const int hintR = m_iInstructorHintColorR;
+			const int hintG = m_iInstructorHintColorG;
+			const int hintB = m_iInstructorHintColorB;
+			FillRGBA( panelX, panelY, panelWidth, panelHeight, 8, 10, 14, panelAlpha );
+			FillRGBA( panelX, panelY, 3, panelHeight, hintR, hintG, hintB, 255 );
 
 			int textAreaX = panelX + 14;
 			if( hintIcon )
 			{
 				const int iconX = panelX + 12;
 				const int iconY = panelY + ( panelHeight - iconHeight ) / 2;
-				SPR_Set( hintIcon, 236, 9, 77 );
+				SPR_Set( hintIcon, m_iInstructorHintColorR, m_iInstructorHintColorG, m_iInstructorHintColorB );
 				SPR_DrawAdditive( 0, iconX, iconY, NULL );
 				textAreaX = iconX + iconWidth + 10;
 			}
@@ -420,7 +464,8 @@ int CHud::Redraw( float flTime, int intermission )
 				if( keyX < textAreaX )
 					keyX = textAreaX;
 				DrawHudString( keyX, panelY + textOffsetY + 32, textAreaRight,
-					bindingText, 236, 9, 77 );
+					bindingText, m_iInstructorHintColorR, m_iInstructorHintColorG, m_iInstructorHintColorB );
+			}
 			}
 		}
 	}

@@ -533,9 +533,24 @@ void CHud::VidInit( void )
 	m_hsprCursor = 0;
 
 	// Optional action sprites used by the automatic func_pushable hint.
-	// Missing files simply disable the artwork; the text prompt still works.
 	m_hInstructorHintMoveSprite = SPR_Load( "sprites/icon_move.spr" );
 	m_hInstructorHintHoldSprite = SPR_Load( "sprites/icon_hold.spr" );
+
+	// Map-authored hints use Source-style icon identifiers mapped to optional
+	// GoldSrc sprites: e.g. hint_icon_onscreen "icon_interact" loads
+	// sprites/icon_interact.spr. The two positions are independent.
+	if( m_szInstructorHintIconOnscreen[0] )
+	{
+		char path[96];
+		snprintf( path, sizeof( path ), "sprites/%s.spr", m_szInstructorHintIconOnscreen );
+		m_hInstructorHintOnscreenSprite = SPR_Load( path );
+	}
+	if( m_szInstructorHintIconOffscreen[0] )
+	{
+		char path[96];
+		snprintf( path, sizeof( path ), "sprites/%s.spr", m_szInstructorHintIconOffscreen );
+		m_hInstructorHintOffscreenSprite = SPR_Load( path );
+	}
 
 	// a1ba: don't break the loading order here and
 	// don't cause memory leak but check

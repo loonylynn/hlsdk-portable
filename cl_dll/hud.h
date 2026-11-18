@@ -622,29 +622,49 @@ public:
 	int Redraw( float flTime, int intermission );
 	int UpdateClientData( client_data_t *cdata, float time );
 
-	// Single active instructor hint, optionally anchored to a world target.
-	// Automatic pushable hints can also display a move/hold action sprite.
+	// Single-player port of Valve's Source instructor/locator payload.
 	bool m_bInstructorHintActive;
 	int m_iInstructorHintId;
 	int m_iInstructorHintTarget;
 	bool m_bInstructorHintHasTargetPosition;
+	bool m_bInstructorHintTargetVisible;
+	bool m_bInstructorHintOccluded;
 	float m_vecInstructorHintTargetOrigin[3];
 	float m_flInstructorHintEndTime;
-	int m_iInstructorHintIconMode; // 0 = none, 1 = move, 2 = hold
+	float m_flInstructorHintRange;
+	int m_iInstructorHintIconMode; // 0 = normal, 1 = move, 2 = hold
+	int m_iInstructorHintFlags;    // LOCATOR_ICON_FX_* compatible bits
+	int m_iInstructorHintColorR;
+	int m_iInstructorHintColorG;
+	int m_iInstructorHintColorB;
 	HSPRITE m_hInstructorHintMoveSprite;
 	HSPRITE m_hInstructorHintHoldSprite;
+	HSPRITE m_hInstructorHintOnscreenSprite;
+	HSPRITE m_hInstructorHintOffscreenSprite;
+	char m_szInstructorHintIconOnscreen[64];
+	char m_szInstructorHintIconOffscreen[64];
+	char m_szInstructorHintName[64];
+	char m_szInstructorHintReplaceKey[64];
 	char m_szInstructorHintCaption[192];
 	char m_szInstructorHintBinding[64];
 
 	CHud() : m_iSpriteCount(0), m_pHudList(NULL),
 		m_bInstructorHintActive(false), m_iInstructorHintId(0),
 		m_iInstructorHintTarget(0), m_bInstructorHintHasTargetPosition(false),
-		m_flInstructorHintEndTime(0.0f), m_iInstructorHintIconMode(0),
-		m_hInstructorHintMoveSprite(0), m_hInstructorHintHoldSprite(0)
+		m_bInstructorHintTargetVisible(false), m_bInstructorHintOccluded(false),
+		m_flInstructorHintEndTime(0.0f), m_flInstructorHintRange(0.0f),
+		m_iInstructorHintIconMode(0), m_iInstructorHintFlags(0),
+		m_iInstructorHintColorR(255), m_iInstructorHintColorG(255), m_iInstructorHintColorB(255),
+		m_hInstructorHintMoveSprite(0), m_hInstructorHintHoldSprite(0),
+		m_hInstructorHintOnscreenSprite(0), m_hInstructorHintOffscreenSprite(0)
 	{
 		m_vecInstructorHintTargetOrigin[0] = 0.0f;
 		m_vecInstructorHintTargetOrigin[1] = 0.0f;
 		m_vecInstructorHintTargetOrigin[2] = 0.0f;
+		m_szInstructorHintIconOnscreen[0] = '\0';
+		m_szInstructorHintIconOffscreen[0] = '\0';
+		m_szInstructorHintName[0] = '\0';
+		m_szInstructorHintReplaceKey[0] = '\0';
 		m_szInstructorHintCaption[0] = '\0';
 		m_szInstructorHintBinding[0] = '\0';
 	}  
