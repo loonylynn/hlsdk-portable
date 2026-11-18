@@ -1256,7 +1256,7 @@ namespace
 	static Ref<Shape> g_worldCollisionShape;
 	static bool g_worldCollisionReady = false;
 
-	static cvar_t g_svNpcVPhysics = { "sv_npc_vphysics", "1", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysics = { "sv_npc_vphysics", "1", FCVAR_SERVER | FCVAR_ARCHIVE };
 	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsBulletScale = { "sv_npc_vphysics_bullet_scale", "1.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsCrowbarScale = { "sv_npc_vphysics_crowbar_scale", "1.0", FCVAR_SERVER };
@@ -1266,10 +1266,10 @@ namespace
 	static cvar_t g_svNpcVPhysicsPlayerPushMass = { "sv_npc_vphysics_player_push_mass", "350", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsPlayerPushSpeed = { "sv_npc_vphysics_player_push_speed", "50", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsSleepAfterTime = { "sv_npc_vphysics_sleep_after_time", "5.0", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsMaxRagdolls = { "sv_npc_vphysics_max_ragdolls", "8", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsMaxRagdolls = { "sv_npc_vphysics_max_ragdolls", "8", FCVAR_SERVER | FCVAR_ARCHIVE };
 	static cvar_t g_svNpcVPhysicsMaxImportantRagdolls = { "sv_npc_vphysics_max_important_ragdolls", "2", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsFadeOnRetire = { "sv_npc_vphysics_fade_on_retire", "1", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsLowViolence = { "sv_npc_vphysics_low_violence", "0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsLowViolence = { "sv_npc_vphysics_low_violence", "0", FCVAR_SERVER | FCVAR_ARCHIVE };
 	static cvar_t g_svNpcVPhysicsFadeTime = { "sv_npc_vphysics_fade_time", "2.0", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
 
