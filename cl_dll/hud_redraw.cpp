@@ -149,6 +149,36 @@ static bool HUD_GetInstructorHintScreenPosition( const float *worldOrigin, float
 	return true;
 }
 
+// Draw a HUD locator sprite at a requested size. Xash3D's generic sprite
+// entry point stretches the source texture; texture-alpha blending allows the
+// renderer to interpolate edge coverage when linear texture filtering is active.
+static void HUD_DrawInstructorLocatorSprite( HSPRITE sprite, int x, int y,
+	int nativeWidth, int nativeHeight, int width, int height,
+	int renderMode, bool additiveFallback )
+{
+	if( !sprite )
+		return;
+
+	if( gEngfuncs.pfnSPR_DrawGeneric && gEngfuncs.pTriAPI &&
+		gEngfuncs.pTriAPI->RenderMode )
+	{
+		gEngfuncs.pTriAPI->RenderMode( renderMode );
+		gEngfuncs.pfnSPR_DrawGeneric( 0, HUD_AdjustX( x ), HUD_AdjustY( y ),
+			NULL, 0, 0, width, height );
+		gEngfuncs.pTriAPI->RenderMode( kRenderNormal );
+		return;
+	}
+
+	// Older engines cannot stretch through the generic sprite API. Keep the
+	// original native-size draw centered as a compatibility fallback.
+	x += ( width - nativeWidth ) / 2;
+	y += ( height - nativeHeight ) / 2;
+	if( additiveFallback )
+		SPR_DrawAdditive( 0, x, y, NULL );
+	else
+		SPR_DrawHoles( 0, x, y, NULL );
+}
+
 // Think
 void CHud::Think( void )
 {
@@ -543,8 +573,14 @@ int CHud::Redraw( float flTime, int intermission )
 						locatorAlpha = (int)( locatorAlpha * ( 0.25f + 0.75f * fade ) );
 					}
 
-					const int markerHalfWidth = locatorSprite ? locatorIconWidth / 2 : 10;
-					const int markerHalfHeight = locatorSprite ? locatorIconHeight / 2 : 10;
+					// A 20% increase keeps the 32x32 art compact while making
+					// the locator easier to pick out at normal gameplay distance.
+					const int locatorDrawWidth = locatorSprite ?
+						(int)( locatorIconWidth * 1.20f + 0.5f ) : 0;
+					const int locatorDrawHeight = locatorSprite ?
+						(int)( locatorIconHeight * 1.20f + 0.5f ) : 0;
+					const int markerHalfWidth = locatorSprite ? locatorDrawWidth / 2 : 10;
+					const int markerHalfHeight = locatorSprite ? locatorDrawHeight / 2 : 10;
 
 					if( locatorSprite )
 					{
@@ -557,20 +593,23 @@ int CHud::Redraw( float flTime, int intermission )
 						SPR_Set( locatorSprite, spriteR, spriteG, spriteB );
 						if( m_iInstructorHintId == -1 )
 						{
-							// The built-in move/hold sprites retain their original
-							// additive treatment.
-							SPR_DrawAdditive( 0,
-								markerX - locatorIconWidth / 2,
-								markerY - locatorIconHeight / 2, NULL );
+							HUD_DrawInstructorLocatorSprite( locatorSprite,
+								markerX - locatorDrawWidth / 2,
+								markerY - locatorDrawHeight / 2,
+								locatorIconWidth, locatorIconHeight,
+								locatorDrawWidth, locatorDrawHeight,
+								kRenderTransAdd, true );
 						}
 						else
 						{
-							// Scripted ALPHATEST sprites reserve palette index 255
-							// as a hole. Additive drawing blends the blue key color
-							// into the scene; DrawHoles skips that palette entry.
-							SPR_DrawHoles( 0,
-								markerX - locatorIconWidth / 2,
-								markerY - locatorIconHeight / 2, NULL );
+							// Use the sprite's per-pixel alpha so filtered samples at
+							// the enlarged edge can blend smoothly with the scene.
+							HUD_DrawInstructorLocatorSprite( locatorSprite,
+								markerX - locatorDrawWidth / 2,
+								markerY - locatorDrawHeight / 2,
+								locatorIconWidth, locatorIconHeight,
+								locatorDrawWidth, locatorDrawHeight,
+								kRenderTransAlpha, false );
 						}
 					}
 					else if( targetOffscreen )
