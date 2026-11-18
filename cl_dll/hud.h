@@ -625,6 +625,9 @@ public:
 	// Single-player port of Valve's Source instructor/locator payload.
 	bool m_bInstructorHintActive;
 	bool m_bInstructorHintManaged;
+	bool m_bInstructorHintFixedPosition;
+	float m_flInstructorHintFixedX;
+	float m_flInstructorHintFixedY;
 	float m_flInstructorManagedVisibleSince;
 	int m_iInstructorHintId;
 	int m_iInstructorHintTarget;
@@ -653,7 +656,8 @@ public:
 
 	CHud() : m_iSpriteCount(0), m_pHudList(NULL),
 		m_bInstructorHintActive(false), m_bInstructorHintManaged(false),
-		m_flInstructorManagedVisibleSince(0.0f), m_iInstructorHintId(0),
+		m_bInstructorHintFixedPosition(false), m_flInstructorHintFixedX(0.5f),
+		m_flInstructorHintFixedY(0.5f), m_flInstructorManagedVisibleSince(0.0f), m_iInstructorHintId(0),
 		m_iInstructorHintTarget(0), m_bInstructorHintHasTargetPosition(false),
 		m_bInstructorHintTargetVisible(false), m_bInstructorHintOccluded(false),
 		m_flInstructorHintEndTime(0.0f), m_flInstructorHintRange(0.0f),
