@@ -247,9 +247,9 @@ int CHud::Redraw( float flTime, int intermission )
 				cl_entity_t *localPlayer = gEngfuncs.GetLocalPlayer();
 				if( localPlayer )
 				{
-					const float dx = managedTarget->origin[0] - localPlayer->origin[0];
-					const float dy = managedTarget->origin[1] - localPlayer->origin[1];
-					const float dz = managedTarget->origin[2] - localPlayer->origin[2];
+					const float dx = m_vecInstructorHintTargetOrigin[0] - localPlayer->origin[0];
+					const float dy = m_vecInstructorHintTargetOrigin[1] - localPlayer->origin[1];
+					const float dz = m_vecInstructorHintTargetOrigin[2] - localPlayer->origin[2];
 					const float distance = sqrtf( dx * dx + dy * dy + dz * dz );
 					if( distance > m_flInstructorHintRange )
 						targetAllowed = false;
