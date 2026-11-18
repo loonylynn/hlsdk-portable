@@ -92,6 +92,32 @@ cvar_t *hud_textmode;
 float g_hud_text_color[3];
 
 // HUD-only overscan compensation. Cache the transform once per HUD redraw.
+// Re-load optional GoldSrc instructor sprites after video-mode changes.
+static HSPRITE HUD_ReloadInstructorHintSprite( const char *iconName )
+{
+	if( !iconName || !iconName[0] )
+		return 0;
+
+	char safeName[64];
+	int out = 0;
+	for( int i = 0; iconName[i] && out < (int)sizeof( safeName ) - 1; ++i )
+	{
+		const char ch = iconName[i];
+		if( ( ch >= 'a' && ch <= 'z' ) || ( ch >= 'A' && ch <= 'Z' ) ||
+			( ch >= '0' && ch <= '9' ) || ch == '_' || ch == '-' )
+			safeName[out++] = ch;
+		else
+			return 0;
+	}
+	safeName[out] = '\0';
+	if( out == 0 )
+		return 0;
+
+	char spritePath[96];
+	snprintf( spritePath, sizeof( spritePath ), "sprites/%s.spr", safeName );
+	return SPR_Load( spritePath );
+}
+
 static cvar_t *hud_overscan = NULL;
 static float g_hudOverscanScale = 1.0f;
 static bool g_hudOverscanEnabled = false;
@@ -547,18 +573,8 @@ void CHud::VidInit( void )
 	// Map-authored hints use Source-style icon identifiers mapped to optional
 	// GoldSrc sprites: e.g. hint_icon_onscreen "icon_interact" loads
 	// sprites/icon_interact.spr. The two positions are independent.
-	if( m_szInstructorHintIconOnscreen[0] )
-	{
-		char path[96];
-		snprintf( path, sizeof( path ), "sprites/%s.spr", m_szInstructorHintIconOnscreen );
-		m_hInstructorHintOnscreenSprite = SPR_Load( path );
-	}
-	if( m_szInstructorHintIconOffscreen[0] )
-	{
-		char path[96];
-		snprintf( path, sizeof( path ), "sprites/%s.spr", m_szInstructorHintIconOffscreen );
-		m_hInstructorHintOffscreenSprite = SPR_Load( path );
-	}
+	m_hInstructorHintOnscreenSprite = HUD_ReloadInstructorHintSprite( m_szInstructorHintIconOnscreen );
+	m_hInstructorHintOffscreenSprite = HUD_ReloadInstructorHintSprite( m_szInstructorHintIconOffscreen );
 
 	// a1ba: don't break the loading order here and
 	// don't cause memory leak but check
