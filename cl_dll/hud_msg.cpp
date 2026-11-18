@@ -113,10 +113,10 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 		char bindingUpdate[64];
 		const char *readCaptionUpdate = READ_STRING();
 		strncpy( captionUpdate, readCaptionUpdate ? readCaptionUpdate : "", sizeof( captionUpdate ) - 1 );
-		captionUpdate[sizeof( captionUpdate ) - 1] = '\\0';
+		captionUpdate[sizeof( captionUpdate ) - 1] = '\0';
 		const char *readBindingUpdate = READ_STRING();
 		strncpy( bindingUpdate, readBindingUpdate ? readBindingUpdate : "", sizeof( bindingUpdate ) - 1 );
-		bindingUpdate[sizeof( bindingUpdate ) - 1] = '\\0';
+		bindingUpdate[sizeof( bindingUpdate ) - 1] = '\0';
 
 		if( m_bInstructorHintActive && hintId == m_iInstructorHintId )
 		{
@@ -168,17 +168,17 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 	char hintName[64], replaceKey[64];
 	const char *readString = READ_STRING();
 	strncpy( caption, readString ? readString : "", sizeof( caption ) - 1 );
-	caption[sizeof( caption ) - 1] = '\\0';
+	caption[sizeof( caption ) - 1] = '\0';
 	readString = READ_STRING();
 	strncpy( binding, readString ? readString : "", sizeof( binding ) - 1 );
-	binding[sizeof( binding ) - 1] = '\\0';
+	binding[sizeof( binding ) - 1] = '\0';
 	const int iconMode = READ_BYTE();
 	readString = READ_STRING();
 	strncpy( iconOnscreen, readString ? readString : "", sizeof( iconOnscreen ) - 1 );
-	iconOnscreen[sizeof( iconOnscreen ) - 1] = '\\0';
+	iconOnscreen[sizeof( iconOnscreen ) - 1] = '\0';
 	readString = READ_STRING();
 	strncpy( iconOffscreen, readString ? readString : "", sizeof( iconOffscreen ) - 1 );
-	iconOffscreen[sizeof( iconOffscreen ) - 1] = '\\0';
+	iconOffscreen[sizeof( iconOffscreen ) - 1] = '\0';
 	const int colorR = READ_BYTE();
 	const int colorG = READ_BYTE();
 	const int colorB = READ_BYTE();
@@ -188,10 +188,10 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 	const bool targetVisible = READ_BYTE() != 0;
 	readString = READ_STRING();
 	strncpy( hintName, readString ? readString : "", sizeof( hintName ) - 1 );
-	hintName[sizeof( hintName ) - 1] = '\\0';
+	hintName[sizeof( hintName ) - 1] = '\0';
 	readString = READ_STRING();
 	strncpy( replaceKey, readString ? readString : "", sizeof( replaceKey ) - 1 );
-	replaceKey[sizeof( replaceKey ) - 1] = '\\0';
+	replaceKey[sizeof( replaceKey ) - 1] = '\0';
 
 	// A new Source hint replaces the currently displayed hint. This is the
 	// single-panel equivalent of the game's replace-key/lesson arbitration.
