@@ -19,6 +19,7 @@
 //
 
 #include "hud.h"
+#include "game_instructor.h"
 #include "view.h"
 #include "cl_util.h"
 #include <string.h>
@@ -180,6 +181,11 @@ int __MsgFunc_ResetHUD( const char *pszName, int iSize, void *pbuf )
 int __MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 {
 	return gHUD.MsgFunc_InstructorHint( pszName, iSize, pbuf );
+}
+
+int __MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf )
+{
+	return gHUD.MsgFunc_InstructorEvent( pszName, iSize, pbuf );
 }
 
 int __MsgFunc_InitHUD( const char *pszName, int iSize, void *pbuf )
@@ -372,6 +378,7 @@ void CHud::Init( void )
 	HOOK_MESSAGE( Logo );
 	HOOK_MESSAGE( ResetHUD );
 	HOOK_MESSAGE( InstructorHint );
+	HOOK_MESSAGE( InstructorEvent );
 	HOOK_MESSAGE( GameMode );
 	HOOK_MESSAGE( InitHUD );
 	HOOK_MESSAGE( ViewMode );
@@ -408,6 +415,7 @@ void CHud::Init( void )
 	HOOK_MESSAGE( VGUIMenu );
 
 	Ragdoll_Init();
+	GameInstructor_Init();
 
 	// Register view controls, including the Portal 2 viewmodel bob and lag cvars.
 	V_Init();
