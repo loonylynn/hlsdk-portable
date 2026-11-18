@@ -47,8 +47,8 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 			m_iInstructorHintId = 0;
 			m_iInstructorHintTarget = 0;
 			m_flInstructorHintEndTime = 0.0f;
-			m_szInstructorHintCaption[0] = '\\0';
-			m_szInstructorHintBinding[0] = '\\0';
+			m_szInstructorHintCaption[0] = '\0';
+			m_szInstructorHintBinding[0] = '\0';
 		}
 		return 1;
 	}
@@ -57,15 +57,15 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 	const int timeoutTenths = READ_SHORT();
 	const char *caption = READ_STRING();
 	strncpy( m_szInstructorHintCaption, caption ? caption : "", sizeof( m_szInstructorHintCaption ) - 1 );
-	m_szInstructorHintCaption[sizeof( m_szInstructorHintCaption ) - 1] = '\\0';
+	m_szInstructorHintCaption[sizeof( m_szInstructorHintCaption ) - 1] = '\0';
 
 	const char *binding = READ_STRING();
 	strncpy( m_szInstructorHintBinding, binding ? binding : "", sizeof( m_szInstructorHintBinding ) - 1 );
-	m_szInstructorHintBinding[sizeof( m_szInstructorHintBinding ) - 1] = '\\0';
+	m_szInstructorHintBinding[sizeof( m_szInstructorHintBinding ) - 1] = '\0';
 
 	m_iInstructorHintId = hintId;
 	m_flInstructorHintEndTime = timeoutTenths > 0 ? m_flTime + ( timeoutTenths * 0.1f ) : 0.0f;
-	m_bInstructorHintActive = ( m_szInstructorHintCaption[0] != '\\0' || m_szInstructorHintBinding[0] != '\\0' );
+	m_bInstructorHintActive = ( m_szInstructorHintCaption[0] != '\0' || m_szInstructorHintBinding[0] != '\0' );
 	return 1;
 }
 
@@ -88,8 +88,8 @@ int CHud::MsgFunc_ResetHUD( const char *pszName, int iSize, void *pbuf )
 	m_iInstructorHintId = 0;
 	m_iInstructorHintTarget = 0;
 	m_flInstructorHintEndTime = 0.0f;
-	m_szInstructorHintCaption[0] = '\\0';
-	m_szInstructorHintBinding[0] = '\\0';
+	m_szInstructorHintCaption[0] = '\0';
+	m_szInstructorHintBinding[0] = '\0';
 
 	// reset sensitivity
 	m_flMouseSensitivity = 0;
