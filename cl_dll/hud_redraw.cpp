@@ -358,7 +358,27 @@ static void HUD_FormatInstructorKeyName( const char *keyName, char *output, size
 		{ "KP_DEL", "KP." },
 		{ "KP_SLASH", "KP/" },
 		{ "KP_MINUS", "KP-" },
-		{ "KP_PLUS", "KP+" }
+		{ "KP_PLUS", "KP+" },
+		// Xash3D gamepad button names returned by Key_LookupBinding.
+		{ "A_BUTTON", "A" },
+		{ "B_BUTTON", "B" },
+		{ "X_BUTTON", "X" },
+		{ "Y_BUTTON", "Y" },
+		{ "BACK", "BACK" },
+		{ "MODE", "MODE" },
+		{ "START", "START" },
+		{ "STICK1", "L3" },
+		{ "STICK2", "R3" },
+		{ "L1_BUTTON", "LB" },
+		{ "R1_BUTTON", "RB" },
+		{ "L2_BUTTON", "LT" },
+		{ "R2_BUTTON", "RT" },
+		{ "LTRIGGER", "LT" },
+		{ "RTRIGGER", "RT" },
+		{ "DPAD_UP", "DU" },
+		{ "DPAD_DOWN", "DD" },
+		{ "DPAD_LEFT", "DL" },
+		{ "DPAD_RIGHT", "DR" }
 	};
 
 	for( size_t i = 0; i < sizeof( labels ) / sizeof( labels[0] ); ++i )
