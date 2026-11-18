@@ -82,7 +82,7 @@ static void HUD_SyncInstructorLocatorTarget( CHud *hud )
 		!hud->m_InstructorLocatorPanel.GetTargetFromHandle( hud->m_iInstructorLocatorTargetHandle ) )
 	{
 		hud->m_iInstructorLocatorTargetHandle =
-			hud->m_InstructorLocatorPanel.AddTarget( ScreenWidth(), ScreenHeight(), hud->m_flTime );
+			hud->m_InstructorLocatorPanel.AddTarget( hud->m_scrinfo.iWidth, hud->m_scrinfo.iHeight, hud->m_flTime );
 	}
 
 	CInstructorLocatorTarget *target =
@@ -110,7 +110,7 @@ static void HUD_SyncInstructorLocatorTarget( CHud *hud )
 	target->m_bOccluded = hud->m_bInstructorHintOccluded;
 	target->m_iEffectsFlags = hud->m_iInstructorHintFlags;
 	target->m_flRange = hud->m_flInstructorHintRange;
-	target->m_iOffsetY = (int)hud->m_flInstructorHintIconOffset;
+	target->m_offsetY = (int)hud->m_flInstructorHintIconOffset;
 	target->SetCaptionColor( hud->m_iInstructorHintColorR,
 		hud->m_iInstructorHintColorG, hud->m_iInstructorHintColorB );
 	target->SetCaptionText( hud->m_szInstructorHintCaption );
