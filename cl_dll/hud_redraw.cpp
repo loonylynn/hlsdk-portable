@@ -168,6 +168,45 @@ int CHud::Redraw( float flTime, int intermission )
 	m_fOldTime = m_flTime;	// save time of previous redraw
 	m_flTime = flTime;
 	GameInstructor_Update( flTime );
+
+	// Resolve the active scripted locator before entering the HUD draw branch:
+	// this lets range and NODRAW rules suppress the entire card, not only its icon.
+	if( m_bInstructorHintActive && m_bInstructorHintManaged &&
+		m_bInstructorHintHasTargetPosition && m_iInstructorHintTarget > 0 )
+	{
+		bool targetAllowed = true;
+		cl_entity_t *managedTarget = gEngfuncs.GetEntityByIndex ?
+			gEngfuncs.GetEntityByIndex( m_iInstructorHintTarget ) : NULL;
+		if( !managedTarget )
+		{
+			targetAllowed = false;
+		}
+		else
+		{
+			m_vecInstructorHintTargetOrigin[0] = managedTarget->origin[0];
+			m_vecInstructorHintTargetOrigin[1] = managedTarget->origin[1];
+			m_vecInstructorHintTargetOrigin[2] = managedTarget->origin[2] + m_flInstructorHintIconOffset;
+
+			if( ( managedTarget->curstate.effects & EF_NODRAW ) &&
+				!( m_iInstructorHintFlags & 0x00010000 ) )
+				targetAllowed = false;
+
+			if( targetAllowed && m_flInstructorHintRange > 0.0f && gEngfuncs.GetLocalPlayer )
+			{
+				cl_entity_t *localPlayer = gEngfuncs.GetLocalPlayer();
+				if( localPlayer )
+				{
+					const float dx = managedTarget->origin[0] - localPlayer->origin[0];
+					const float dy = managedTarget->origin[1] - localPlayer->origin[1];
+					const float dz = managedTarget->origin[2] - localPlayer->origin[2];
+					const float distance = sqrtf( dx * dx + dy * dy + dz * dz );
+					if( distance > m_flInstructorHintRange )
+						targetAllowed = false;
+				}
+			}
+		}
+		m_bInstructorHintTargetVisible = targetAllowed;
+	}
 	m_flTimeDelta = (double)( m_flTime - m_fOldTime );
 	static float m_flShotTime = 0;
 
@@ -275,20 +314,6 @@ int CHud::Redraw( float flTime, int intermission )
 
 			int captionWidth = DrawHudStringLen( m_szInstructorHintCaption );
 			int bindingWidth = DrawHudStringLen( bindingText );
-
-			// Managed lessons follow the current client entity transform. The
-			// server-side env_instructor_hint path continues to supply its own
-			// authoritative position and visibility updates.
-			if( m_bInstructorHintManaged && m_iInstructorHintTarget > 0 && gEngfuncs.GetEntityByIndex )
-			{
-				cl_entity_t *managedTarget = gEngfuncs.GetEntityByIndex( m_iInstructorHintTarget );
-				if( managedTarget )
-				{
-					m_vecInstructorHintTargetOrigin[0] = managedTarget->origin[0];
-					m_vecInstructorHintTargetOrigin[1] = managedTarget->origin[1];
-					m_vecInstructorHintTargetOrigin[2] = managedTarget->origin[2] + m_flInstructorHintIconOffset;
-				}
-			}
 
 			// Project the current world target before selecting its on/off-screen icon.
 			float targetX = 0.0f, targetY = 0.0f;
