@@ -741,6 +741,7 @@ CBaseLesson::CBaseLesson(const char *name, bool definition)
 	  m_bCanTimeoutWhileInactive(false),
 	  m_bDisabled(false),
 	  m_bWasDisplayed(false),
+	  m_bSuccessCounted(false),
 	  m_bCloseRequested(false),
 	  m_bStarted(false),
 	  m_bDefinition(definition)
@@ -814,12 +815,19 @@ bool CBaseLesson::IsLocked(float now) const
 
 void CBaseLesson::MarkSucceeded()
 {
+	if (m_bSuccessCounted)
+		return;
+
+	m_bSuccessCounted = true;
 	CBaseLesson *root = m_pRoot ? m_pRoot : this;
 	++root->m_iSuccessCount;
 }
 
 void CBaseLesson::MarkDisplayed()
 {
+	if (m_bWasDisplayed)
+		return;
+
 	m_bWasDisplayed = true;
 	CBaseLesson *root = m_pRoot ? m_pRoot : this;
 	++root->m_iDisplayCount;
@@ -1090,7 +1098,7 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 		}
 		if (action == "success")
 		{
-			GetGameInstructor().MarkSucceeded(m_Name.c_str());
+			GetGameInstructor().MarkSucceeded(this);
 			continue;
 		}
 		if (action == "lock")
@@ -1448,7 +1456,7 @@ void CScriptedIconLesson::ProcessEvent(const InstructorEventData &event, int eve
 			// signal for this lesson; it is not necessary to add "void success"
 			// manually to every script.
 			if (eventType == 2)
-				GetGameInstructor().MarkSucceeded(m_Name.c_str());
+				GetGameInstructor().MarkSucceeded(this);
 			else if (eventType == 1)
 			{
 				m_bCloseRequested = true;
@@ -1686,16 +1694,23 @@ void C_GameInstructor::MarkSucceeded(const char *name)
 {
 	if (!name)
 		return;
-	for (size_t i = 0; i < m_Lessons.size(); ++i)
+
+	for (size_t i = 0; i < m_OpenOpportunities.size(); ++i)
 	{
-		CScriptedIconLesson *lesson = m_Lessons[i];
+		CScriptedIconLesson *lesson = m_OpenOpportunities[i];
 		if (StringEqualNoCase(lesson->m_Name.c_str(), name))
-		{
-			lesson->MarkSucceeded();
-			SaveCounts(lesson);
-			return;
-		}
+			MarkSucceeded(lesson);
 	}
+}
+
+void C_GameInstructor::MarkSucceeded(CScriptedIconLesson *lesson)
+{
+	if (!lesson)
+		return;
+
+	lesson->MarkSucceeded();
+	if (lesson->m_pRoot)
+		SaveCounts(static_cast<CScriptedIconLesson *>(lesson->m_pRoot));
 }
 
 void C_GameInstructor::LoadCounts(CScriptedIconLesson *lesson)
