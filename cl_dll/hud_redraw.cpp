@@ -98,14 +98,17 @@ static bool HUD_GetInstructorHintScreenPosition( const float *worldOrigin, float
 	float projected[3] = { 0.0f, 0.0f, 0.0f };
 	const int zClipped = gEngfuncs.pTriAPI->WorldToScreen( world, projected );
 
-	*screenX = projected[0];
-	*screenY = projected[1];
+	// Xash3D's TriAPI WorldToScreen returns normalized device coordinates
+	// (-1..+1), not HUD pixels. Convert NDC to the top-left-origin pixel
+	// coordinates used by SPR_Draw/FillRGBA and the rest of this HUD.
+	*screenX = ( 1.0f + projected[0] ) * 0.5f * (float)ScreenWidth;
+	*screenY = ( 1.0f - projected[1] ) * 0.5f * (float)ScreenHeight;
 	*behind = ( zClipped != 0 );
 
 	if( *behind )
 	{
-		// WorldToScreen cannot divide by a negative clip-space W. Reflect
-		// its raw clip direction around the viewport center for edge placement.
+		// WorldToScreen cannot divide by a negative clip-space W. Its raw
+		// NDC direction is reflected around the viewport center for edge placement.
 		*screenX = (float)ScreenWidth - *screenX;
 		*screenY = (float)ScreenHeight - *screenY;
 
