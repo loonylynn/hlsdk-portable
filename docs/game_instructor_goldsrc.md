@@ -238,11 +238,13 @@ alternate-binding behavior. Literal lesson labels such as `E` remain
 explicit overrides.
 
 
-## Native Source-style locator target pool (first transplant stage)
+## Native Source-style locator target pool (second transplant stage)
 
-The first locator-panel transplant adds GoldSrc-native CInstructorLocatorTarget and CInstructorLocatorPanel classes based on the responsibilities of Source's CLocatorTarget and CLocatorPanel. The target model carries independent world/screen origins, entity identity, visibility and occlusion state, caption/binding/icon names, effect flags, fade/lerp/pulse timestamps, layout coordinates, and binding-choice slots. The panel owns a fixed ten-target pool, serial-number handles, add/remove/lookup operations, and Source's 20-frame stale-target collection rule.
+The first locator-panel transplant added GoldSrc-native CInstructorLocatorTarget and CInstructorLocatorPanel classes based on Source's CLocatorTarget and CLocatorPanel. The target model carries independent world/screen origins, entity identity, visibility and occlusion state, caption/binding/icon names, effect flags, fade/lerp/pulse timestamps, layout coordinates, and binding-choice slots. The panel owns a fixed ten-target pool, serial-number handles, add/remove/lookup operations, and Source's 20-frame stale-target collection rule.
 
-This is deliberately an infrastructure-only stage. Existing env_instructor_hint and managed lesson messages are mirrored into a panel target so protocol and lifetime behavior can be migrated incrementally. The legacy single-card renderer still owns presentation in this stage; no visual change is expected yet. The next stage can move target projection, icon positioning, animation, decluttering, and drawing into the panel without changing message parsing or lesson scheduling. The dedicated Source key font remains deferred.
+The second stage makes the target model the presentation data source for the existing locator renderer. Each HUD frame refreshes the active target after world-origin and occlusion updates; the renderer then reads visibility, world/screen origin, icon names, caption, binding choices, effect flags, color, and managed/fixed-position metadata from CInstructorLocatorTarget rather than directly from the legacy hint payload. The legacy HUD fields remain the message/lesson input and lifetime state, while sprite handles remain cached HUD resources.
+
+Projection, edge placement, tether drawing, and the current locator/card paint code still live in CHud::Redraw. This stage is a data-flow migration and is not intended to change the visual result. The next stage can move projected position, onscreen/offscreen state, animation, and decluttering into the target/panel model. The dedicated Source key font remains deferred.
 
 ## Deliberate GoldSrc differences
 
