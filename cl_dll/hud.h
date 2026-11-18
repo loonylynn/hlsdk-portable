@@ -626,6 +626,7 @@ public:
 	bool m_bInstructorHintActive;
 	bool m_bInstructorHintManaged;
 	bool m_bInstructorHintFixedPosition;
+	bool m_bInstructorManagedDisplayCounted;
 	float m_flInstructorHintFixedX;
 	float m_flInstructorHintFixedY;
 	float m_flInstructorManagedVisibleSince;
@@ -656,7 +657,8 @@ public:
 
 	CHud() : m_iSpriteCount(0), m_pHudList(NULL),
 		m_bInstructorHintActive(false), m_bInstructorHintManaged(false),
-		m_bInstructorHintFixedPosition(false), m_flInstructorHintFixedX(0.5f),
+		m_bInstructorHintFixedPosition(false), m_bInstructorManagedDisplayCounted(false),
+		m_flInstructorHintFixedX(0.5f),
 		m_flInstructorHintFixedY(0.5f), m_flInstructorManagedVisibleSince(0.0f), m_iInstructorHintId(0),
 		m_iInstructorHintTarget(0), m_bInstructorHintHasTargetPosition(false),
 		m_bInstructorHintTargetVisible(false), m_bInstructorHintOccluded(false),
