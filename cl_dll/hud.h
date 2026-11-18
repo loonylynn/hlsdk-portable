@@ -33,6 +33,7 @@
 #include "cl_dll.h"
 #include "ammo.h"
 #include "cvardef.h"
+#include "instructor_locator.h"
 
 #define DHN_DRAWZERO 1
 #define DHN_2DIGITS  2
@@ -619,6 +620,10 @@ public:
 	CHudScoreboard	m_Scoreboard;
 	CHudMOTD	m_MOTD;
 
+	// Source-style locator target pool; legacy HUD drawing remains the renderer for now.
+	CInstructorLocatorPanel m_InstructorLocatorPanel;
+	int m_iInstructorLocatorTargetHandle;
+
 	void Init( void );
 	void VidInit( void );
 	void Think(void);
@@ -678,6 +683,7 @@ public:
 	char m_szInstructorHintBindingChoices[MAX_INSTRUCTOR_BINDING_CHOICES][MAX_INSTRUCTOR_BINDING_NAME];
 
 	CHud() : m_iSpriteCount(0), m_pHudList(NULL),
+		m_iInstructorLocatorTargetHandle(-1),
 		m_bInstructorHintActive(false), m_bInstructorHintManaged(false),
 		m_bInstructorHintFixedPosition(false), m_bInstructorManagedDisplayCounted(false),
 		m_flInstructorHintFixedX(0.5f),

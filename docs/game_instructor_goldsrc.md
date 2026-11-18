@@ -237,6 +237,13 @@ A matching engine-side implementation is required to enable Source's full
 alternate-binding behavior. Literal lesson labels such as `E` remain
 explicit overrides.
 
+
+## Native Source-style locator target pool (first transplant stage)
+
+The first locator-panel transplant adds GoldSrc-native CInstructorLocatorTarget and CInstructorLocatorPanel classes based on the responsibilities of Source's CLocatorTarget and CLocatorPanel. The target model carries independent world/screen origins, entity identity, visibility and occlusion state, caption/binding/icon names, effect flags, fade/lerp/pulse timestamps, layout coordinates, and binding-choice slots. The panel owns a fixed ten-target pool, serial-number handles, add/remove/lookup operations, and Source's 20-frame stale-target collection rule.
+
+This is deliberately an infrastructure-only stage. Existing env_instructor_hint and managed lesson messages are mirrored into a panel target so protocol and lifetime behavior can be migrated incrementally. The legacy single-card renderer still owns presentation in this stage; no visual change is expected yet. The next stage can move target projection, icon positioning, animation, decluttering, and drawing into the panel without changing message parsing or lesson scheduling. The dedicated Source key font remains deferred.
+
 ## Deliberate GoldSrc differences
 
 - Multiple lesson opportunities, prerequisites, counters, and priority

@@ -61,8 +61,71 @@ static HSPRITE HUD_LoadInstructorHintSprite( const char *iconName )
 	return SPR_Load( spritePath );
 }
 
+
+static void HUD_SyncInstructorLocatorTarget( CHud *hud )
+{
+	if( !hud )
+		return;
+
+	if( !hud->m_bInstructorHintActive )
+	{
+		if( hud->m_iInstructorLocatorTargetHandle >= 0 )
+		{
+			hud->m_InstructorLocatorPanel.RemoveTarget(
+				hud->m_iInstructorLocatorTargetHandle, hud->m_flTime, 0.3f );
+			hud->m_iInstructorLocatorTargetHandle = -1;
+		}
+		return;
+	}
+
+	if( hud->m_iInstructorLocatorTargetHandle < 0 ||
+		!hud->m_InstructorLocatorPanel.GetTargetFromHandle( hud->m_iInstructorLocatorTargetHandle ) )
+	{
+		hud->m_iInstructorLocatorTargetHandle =
+			hud->m_InstructorLocatorPanel.AddTarget( ScreenWidth(), ScreenHeight(), hud->m_flTime );
+	}
+
+	CInstructorLocatorTarget *target =
+		hud->m_InstructorLocatorPanel.GetTargetFromHandle( hud->m_iInstructorLocatorTargetHandle );
+	if( !target )
+		return;
+
+	target->Update( hud->m_InstructorLocatorPanel.GetFrameCount() );
+	target->m_iEntityIndex = hud->m_iInstructorHintTarget;
+	target->m_bOriginInScreenspace =
+		hud->m_bInstructorHintFixedPosition || !hud->m_bInstructorHintHasTargetPosition;
+	if( target->m_bOriginInScreenspace )
+	{
+		target->m_vecOrigin[0] = hud->m_bInstructorHintFixedPosition ? hud->m_flInstructorHintFixedX : 0.5f;
+		target->m_vecOrigin[1] = hud->m_bInstructorHintFixedPosition ? hud->m_flInstructorHintFixedY : 0.5f;
+		target->m_vecOrigin[2] = 0.0f;
+	}
+	else
+	{
+		target->m_vecOrigin[0] = hud->m_vecInstructorHintTargetOrigin[0];
+		target->m_vecOrigin[1] = hud->m_vecInstructorHintTargetOrigin[1];
+		target->m_vecOrigin[2] = hud->m_vecInstructorHintTargetOrigin[2];
+	}
+	target->m_bVisible = hud->m_bInstructorHintTargetVisible;
+	target->m_bOccluded = hud->m_bInstructorHintOccluded;
+	target->m_iEffectsFlags = hud->m_iInstructorHintFlags;
+	target->m_flRange = hud->m_flInstructorHintRange;
+	target->m_iOffsetY = (int)hud->m_flInstructorHintIconOffset;
+	target->SetCaptionColor( hud->m_iInstructorHintColorR,
+		hud->m_iInstructorHintColorG, hud->m_iInstructorHintColorB );
+	target->SetCaptionText( hud->m_szInstructorHintCaption );
+	target->SetBinding( hud->m_szInstructorHintBinding );
+	target->SetOnscreenIconName( hud->m_szInstructorHintIconOnscreen );
+	target->SetOffscreenIconName( hud->m_szInstructorHintIconOffscreen );
+}
+
 static void HUD_ClearInstructorHint( CHud *hud )
 {
+	if( hud->m_iInstructorLocatorTargetHandle >= 0 )
+	{
+		hud->m_InstructorLocatorPanel.RemoveTarget( hud->m_iInstructorLocatorTargetHandle, hud->m_flTime, 0.3f );
+		hud->m_iInstructorLocatorTargetHandle = -1;
+	}
 	hud->m_bInstructorHintActive = false;
 	hud->m_bInstructorHintManaged = false;
 	hud->m_bInstructorHintFixedPosition = false;
@@ -170,6 +233,7 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 				strncpy( m_szInstructorHintBinding, binding, sizeof( m_szInstructorHintBinding ) - 1 );
 				m_szInstructorHintBinding[sizeof( m_szInstructorHintBinding ) - 1] = '\0';
 			}
+			HUD_SyncInstructorLocatorTarget( this );
 		}
 		return 1;
 	}
@@ -267,6 +331,7 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 	m_bInstructorHintActive = ( m_szInstructorHintCaption[0] != '\0' ||
 		m_szInstructorHintBinding[0] != '\0' ||
 		m_hInstructorHintOnscreenSprite || m_hInstructorHintOffscreenSprite );
+	HUD_SyncInstructorLocatorTarget( this );
 	return 1;
 }
 int CHud::MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf )
@@ -378,6 +443,8 @@ void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 		gHUD.m_szInstructorHintIconOffscreen[sizeof( gHUD.m_szInstructorHintIconOffscreen ) - 1] = '\0';
 		gHUD.m_hInstructorHintOffscreenSprite = HUD_LoadInstructorHintSprite( gHUD.m_szInstructorHintIconOffscreen );
 	}
+
+	HUD_SyncInstructorLocatorTarget( &gHUD );
 }
 
 void HUD_ClearManagedInstructorHint()

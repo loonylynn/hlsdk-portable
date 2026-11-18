@@ -759,6 +759,7 @@ int CHud::Redraw( float flTime, int intermission )
 {
 	m_fOldTime = m_flTime;	// save time of previous redraw
 	m_flTime = flTime;
+	m_InstructorLocatorPanel.BeginFrame( m_flTime );
 	GameInstructor_Update( flTime );
 
 	// Resolve the active scripted locator before entering the HUD draw branch:
