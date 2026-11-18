@@ -1155,6 +1155,12 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 		{
 			if (current.type == ParamValue::VALUE_STRING)
 			{
+				if (action == "add" && parameter.type == ParamValue::VALUE_STRING)
+				{
+					current.string += parameter.string;
+					if (SetVariable(*this, variable, current))
+						continue;
+				}
 				if (scopeDepth > 0)
 				{
 					continueScope = scopeDepth - 1;
@@ -1189,7 +1195,94 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 			continue;
 		}
 
-		if (action == "get distance")
+		if (action == "classname is" || action == "modelname is")
+		{
+			if (current.type != ParamValue::VALUE_ENTITY || parameter.type != ParamValue::VALUE_STRING)
+			{
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
+			}
+
+			const char *actualName = "";
+			if (action == "classname is" && event && current.integer == event->entityIndex)
+				actualName = event->className;
+			else if (action == "modelname is" && gEngfuncs.GetEntityByIndex)
+			{
+				cl_entity_t *entity = gEngfuncs.GetEntityByIndex(current.integer);
+				if (entity && entity->model && entity->model->name)
+					actualName = entity->model->name;
+			}
+
+			bool matches = StringEqualNoCase(actualName, parameter.string.c_str());
+			if (negate)
+				matches = !matches;
+			if (!matches)
+			{
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
+			}
+			continue;
+		}
+
+		if (action == "get use target" || action == "use target is")
+		{
+			const bool isLocalPlayer = current.type == ParamValue::VALUE_ENTITY &&
+				current.integer == m_iLocalPlayer;
+			const bool hasUseEvent = event && StringEqualNoCase(event->name, "player_use") &&
+				event->entityIndex > 0;
+			if (!isLocalPlayer || !hasUseEvent)
+			{
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
+			}
+
+			if (action == "get use target")
+			{
+				const char *destination = parameter.integer == 2 ? "entity2" : "entity1";
+				ParamValue target;
+				target.type = ParamValue::VALUE_ENTITY;
+				target.integer = event->entityIndex;
+				if (!SetVariable(*this, destination, target))
+				{
+					if (scopeDepth > 0)
+					{
+						continueScope = scopeDepth - 1;
+						continue;
+					}
+					return false;
+				}
+			}
+			else
+			{
+				bool matches = event->entityIndex == parameter.integer;
+				if (negate)
+					matches = !matches;
+				if (!matches)
+				{
+					if (scopeDepth > 0)
+					{
+						continueScope = scopeDepth - 1;
+						continue;
+					}
+					return false;
+				}
+			}
+			continue;
+		}
+
+		if (action == "get distance" || action == "get angular distance")
 		{
 			if (current.type != ParamValue::VALUE_ENTITY || parameter.type != ParamValue::VALUE_ENTITY)
 			{
@@ -1200,9 +1293,47 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 				}
 				return false;
 			}
+			if (!gEngfuncs.GetEntityByIndex ||
+				!gEngfuncs.GetEntityByIndex(current.integer) ||
+				!gEngfuncs.GetEntityByIndex(parameter.integer))
+			{
+				if (scopeDepth > 0)
+				{
+					continueScope = scopeDepth - 1;
+					continue;
+				}
+				return false;
+			}
+
 			ParamValue distance;
 			distance.type = ParamValue::VALUE_FLOAT;
-			distance.number = (float)EntityDistance(current.integer, parameter.integer);
+			if (action == "get distance")
+			{
+				distance.number = (float)EntityDistance(current.integer, parameter.integer);
+			}
+			else
+			{
+				cl_entity_t *from = gEngfuncs.GetEntityByIndex(current.integer);
+				cl_entity_t *to = gEngfuncs.GetEntityByIndex(parameter.integer);
+				float dx = to->origin[0] - from->origin[0];
+				float dy = to->origin[1] - from->origin[1];
+				float dz = to->origin[2] - from->origin[2];
+				const float length = sqrtf(dx * dx + dy * dy + dz * dz);
+				if (length <= 0.0001f)
+					distance.number = 0.0f;
+				else
+				{
+					dx /= length; dy /= length; dz /= length;
+					const float pitch = from->angles[0] * 0.017453292519943295f;
+					const float yaw = from->angles[1] * 0.017453292519943295f;
+					const float fx = cosf(pitch) * cosf(yaw);
+					const float fy = cosf(pitch) * sinf(yaw);
+					const float fz = -sinf(pitch);
+					float dot = fx * dx + fy * dy + fz * dz;
+					dot = dot < -1.0f ? -1.0f : dot > 1.0f ? 1.0f : dot;
+					distance.number = acosf(dot) * 57.29577951308232f;
+				}
+			}
 			if (!SetVariable(*this, "output", distance))
 			{
 				if (scopeDepth > 0)
