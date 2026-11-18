@@ -1485,6 +1485,7 @@ C_GameInstructor::C_GameInstructor()
 	  m_bNoDraw(false),
 	  m_bHiddenDueToOtherElements(false),
 	  m_bManagedLessonVisible(false),
+	  m_ManagedLessonName(),
 	  m_iCurrentPriority(0),
 	  m_flLastUpdate(0.0f),
 	  m_flNextStartSoundTime(0.0f)
@@ -1922,10 +1923,16 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 		m_flNextStartSoundTime = now + 4.0f;
 	}
 
-	if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
-		gEngfuncs.Con_Printf("[GameInstructor] Displaying lesson '%s' (target %d, fixed %d, no-target %d).\n",
-			lesson->m_Name.c_str(), lesson->m_iIconTarget,
-			lesson->m_bFixedPosition ? 1 : 0, lesson->m_bNoIconTarget ? 1 : 0);
+	// DisplayLesson is called every HUD frame. Log only when the selected
+	// opportunity changes, rather than flooding the console at frame rate.
+	if (m_ManagedLessonName != lesson->m_Name)
+	{
+		if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
+			gEngfuncs.Con_Printf("[GameInstructor] Displaying lesson '%s' (target %d, fixed %d, no-target %d).\n",
+				lesson->m_Name.c_str(), lesson->m_iIconTarget,
+				lesson->m_bFixedPosition ? 1 : 0, lesson->m_bNoIconTarget ? 1 : 0);
+		m_ManagedLessonName = lesson->m_Name;
+	}
 
 	HUD_SetManagedInstructorHint(lesson->m_Name.c_str(), caption,
 		lesson->m_Binding.c_str(), lesson->m_OnscreenIcon.c_str(),
@@ -1942,6 +1949,7 @@ void C_GameInstructor::HideManagedLesson()
 	if (m_bManagedLessonVisible)
 		HUD_ClearManagedInstructorHint();
 	m_bManagedLessonVisible = false;
+	m_ManagedLessonName.clear();
 }
 
 void C_GameInstructor::Update(float now)
