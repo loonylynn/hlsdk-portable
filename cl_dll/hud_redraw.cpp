@@ -22,6 +22,7 @@
 #include "game_instructor.h"
 #include "cl_util.h"
 #include "cl_entity.h"
+#include "../common/event_api.h"
 #include "../pm_shared/pm_defs.h"
 #include "triangleapi.h"
 
