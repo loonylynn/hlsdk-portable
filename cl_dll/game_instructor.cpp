@@ -53,6 +53,11 @@ namespace
 		return normalized;
 	}
 
+	bool InstructorVerboseEnabled()
+	{
+		return CVAR_GET_FLOAT("gameinstructor_verbose") != 0.0f;
+	}
+
 	struct KVNode
 	{
 		std::string name;
@@ -255,13 +260,20 @@ namespace
 		{
 			if (buffer)
 				gEngfuncs.COM_FreeFile(buffer);
+			if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
+				gEngfuncs.Con_Printf("[GameInstructor] Could not load script '%s' (length %d).\\n", fileName, length);
 			return false;
 		}
 
 		std::string text((const char *)buffer, (size_t)length);
 		gEngfuncs.COM_FreeFile(buffer);
 		KVReader reader(text.c_str());
-		return reader.Parse(root);
+		const bool parsed = reader.Parse(root);
+		if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
+			gEngfuncs.Con_Printf("[GameInstructor] Script '%s': %s, %u top-level entries.\\n",
+				fileName, parsed ? "parsed" : "parse FAILED",
+				(unsigned int)root.children.size());
+		return parsed;
 	}
 
 	void ParseLessonEvents(const KVNode &lesson, const char *sectionName,
@@ -1554,6 +1566,9 @@ void C_GameInstructor::ReadLessonsFromFile(const char *fileName)
 		ParseLessonDefinition(lesson, node);
 		m_Lessons.push_back(lesson);
 		LoadCounts(lesson);
+		if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
+			gEngfuncs.Con_Printf("[GameInstructor] Registered lesson '%s' from '%s'.\\n",
+				lesson->m_Name.c_str(), fileName);
 	}
 }
 
@@ -1784,11 +1799,19 @@ void C_GameInstructor::ProcessDefinitionEvent(CScriptedIconLesson *definition,
 	{
 		if (definition->m_OpenEvents[i].name != event.name)
 			continue;
+		if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
+			gEngfuncs.Con_Printf("[GameInstructor] Lesson '%s' matched open event '%s'.\\n",
+				definition->m_Name.c_str(), event.name);
 		CScriptedIconLesson *instance = definition->CreateOpportunity(gHUD.m_flTime);
 		if (instance->ProcessElements(&event, definition->m_OpenEvents[i].elements))
 		{
 			if (!instance->m_bCloseRequested)
+			{
+				if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
+					gEngfuncs.Con_Printf("[GameInstructor] Opening opportunity '%s'.\\n",
+						definition->m_Name.c_str());
 				OpenOpportunity(instance);
+			}
 			else
 				delete instance;
 		}
@@ -1809,6 +1832,10 @@ void C_GameInstructor::FireGameEvent(const InstructorEventData &event)
 {
 	if (!m_bInitialized)
 		Init();
+
+	if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
+		gEngfuncs.Con_Printf("[GameInstructor] Event '%s' entity %d class '%s'.\\n",
+			event.name, event.entityIndex, event.className);
 
 	if (!StringEqualNoCase(event.name, "player_death") &&
 		!StringEqualNoCase(event.name, "player_spawn") && m_bNoDraw)
@@ -1894,6 +1921,11 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 		m_PreviousStartSound = lesson->m_StartSound;
 		m_flNextStartSoundTime = now + 4.0f;
 	}
+
+	if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
+		gEngfuncs.Con_Printf("[GameInstructor] Displaying lesson '%s' (target %d, fixed %d, no-target %d).\\n",
+			lesson->m_Name.c_str(), lesson->m_iIconTarget,
+			lesson->m_bFixedPosition ? 1 : 0, lesson->m_bNoIconTarget ? 1 : 0);
 
 	HUD_SetManagedInstructorHint(lesson->m_Name.c_str(), caption,
 		lesson->m_Binding.c_str(), lesson->m_OnscreenIcon.c_str(),
