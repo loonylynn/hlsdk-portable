@@ -27,6 +27,7 @@
 #include "decals.h"
 #include "explode.h"
 #include "game.h"
+#include "player.h"
 
 #include <cmath>
 
@@ -997,6 +998,9 @@ void CPushable::Move( CBaseEntity *pOther, int push )
 	else 
 		factor = 0.25f;
 
+	const float oldPushableVelocityX = pev->velocity.x;
+	const float oldPushableVelocityY = pev->velocity.y;
+
 	if( pushablemode.value != 0 )
 	{
 		pev->velocity.x += pevToucher->velocity.x * factor;
@@ -1035,6 +1039,14 @@ void CPushable::Move( CBaseEntity *pOther, int push )
 
 	if( playerTouch )
 	{
+		// Only report a real push/pull when this Move call changed the box's velocity.
+		if( fabsf( pev->velocity.x - oldPushableVelocityX ) > 0.001f ||
+			fabsf( pev->velocity.y - oldPushableVelocityY ) > 0.001f )
+		{
+			CBasePlayer *pPlayer = (CBasePlayer *)pOther;
+			pPlayer->SetPushableInstructorHintAction( this, push ? 1 : 2 );
+		}
+
 		if( push || pushablemode.value != 0 )
 		{
 			pevToucher->velocity.x = pev->velocity.x;
