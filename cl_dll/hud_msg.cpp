@@ -288,7 +288,7 @@ int CHud::MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf )
 void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 	const char *binding, const char *onscreenIcon, const char *offscreenIcon,
 	int targetIndex, float timeout, int flags, int colorR, int colorG, int colorB,
-	float range, bool forceCaption )
+	float range, float iconOffset, bool forceCaption )
 {
 	(void)timeout;
 
