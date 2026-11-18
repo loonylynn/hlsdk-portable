@@ -261,7 +261,7 @@ namespace
 			if (buffer)
 				gEngfuncs.COM_FreeFile(buffer);
 			if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
-				gEngfuncs.Con_Printf("[GameInstructor] Could not load script '%s' (length %d).\\n", fileName, length);
+				gEngfuncs.Con_Printf("[GameInstructor] Could not load script '%s' (length %d).\n", fileName, length);
 			return false;
 		}
 
@@ -270,7 +270,7 @@ namespace
 		KVReader reader(text.c_str());
 		const bool parsed = reader.Parse(root);
 		if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
-			gEngfuncs.Con_Printf("[GameInstructor] Script '%s': %s, %u top-level entries.\\n",
+			gEngfuncs.Con_Printf("[GameInstructor] Script '%s': %s, %u top-level entries.\n",
 				fileName, parsed ? "parsed" : "parse FAILED",
 				(unsigned int)root.children.size());
 		return parsed;
@@ -1567,7 +1567,7 @@ void C_GameInstructor::ReadLessonsFromFile(const char *fileName)
 		m_Lessons.push_back(lesson);
 		LoadCounts(lesson);
 		if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
-			gEngfuncs.Con_Printf("[GameInstructor] Registered lesson '%s' from '%s'.\\n",
+			gEngfuncs.Con_Printf("[GameInstructor] Registered lesson '%s' from '%s'.\n",
 				lesson->m_Name.c_str(), fileName);
 	}
 }
@@ -1800,7 +1800,7 @@ void C_GameInstructor::ProcessDefinitionEvent(CScriptedIconLesson *definition,
 		if (definition->m_OpenEvents[i].name != event.name)
 			continue;
 		if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
-			gEngfuncs.Con_Printf("[GameInstructor] Lesson '%s' matched open event '%s'.\\n",
+			gEngfuncs.Con_Printf("[GameInstructor] Lesson '%s' matched open event '%s'.\n",
 				definition->m_Name.c_str(), event.name);
 		CScriptedIconLesson *instance = definition->CreateOpportunity(gHUD.m_flTime);
 		if (instance->ProcessElements(&event, definition->m_OpenEvents[i].elements))
@@ -1808,7 +1808,7 @@ void C_GameInstructor::ProcessDefinitionEvent(CScriptedIconLesson *definition,
 			if (!instance->m_bCloseRequested)
 			{
 				if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
-					gEngfuncs.Con_Printf("[GameInstructor] Opening opportunity '%s'.\\n",
+					gEngfuncs.Con_Printf("[GameInstructor] Opening opportunity '%s'.\n",
 						definition->m_Name.c_str());
 				OpenOpportunity(instance);
 			}
@@ -1834,7 +1834,7 @@ void C_GameInstructor::FireGameEvent(const InstructorEventData &event)
 		Init();
 
 	if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
-		gEngfuncs.Con_Printf("[GameInstructor] Event '%s' entity %d class '%s'.\\n",
+		gEngfuncs.Con_Printf("[GameInstructor] Event '%s' entity %d class '%s'.\n",
 			event.name, event.entityIndex, event.className);
 
 	if (!StringEqualNoCase(event.name, "player_death") &&
@@ -1923,7 +1923,7 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 	}
 
 	if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
-		gEngfuncs.Con_Printf("[GameInstructor] Displaying lesson '%s' (target %d, fixed %d, no-target %d).\\n",
+		gEngfuncs.Con_Printf("[GameInstructor] Displaying lesson '%s' (target %d, fixed %d, no-target %d).\n",
 			lesson->m_Name.c_str(), lesson->m_iIconTarget,
 			lesson->m_bFixedPosition ? 1 : 0, lesson->m_bNoIconTarget ? 1 : 0);
 
