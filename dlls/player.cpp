@@ -1920,7 +1920,7 @@ void CEnvInstructorHint::KeyValue( KeyValueData *pkvd )
 	}
 	else if( FStrEq( pkvd->szKeyName, "hint_timeout" ) )
 	{
-		m_flTimeout = Q_max( 0.0f, (float)atof( pkvd->szValue ) );
+		m_flTimeout = Q_max( 0.0f, Q_min( 3276.0f, (float)atof( pkvd->szValue ) ) );
 		pkvd->fHandled = TRUE;
 	}
 	else
@@ -1944,7 +1944,7 @@ void CEnvInstructorHint::ShowHint( CBasePlayer *pPlayer )
 		WRITE_BYTE( 1 ); // show
 		WRITE_SHORT( ENTINDEX( edict() ) ); // hint entity ID
 		WRITE_SHORT( targetIndex );
-		WRITE_SHORT( (int)( m_flTimeout * 10.0f ) ); // tenths of a second
+		WRITE_SHORT( (int)( m_flTimeout * 10.0f ) ); // tenths of a second, capped to signed-short range
 		WRITE_STRING( caption );
 		WRITE_STRING( binding );
 	MESSAGE_END();
@@ -1991,6 +1991,7 @@ void CEnvInstructorHint::HintTimeoutThink( void )
 
 void CEnvInstructorHint::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
 {
+	(void)pCaller;
 	BOOL show = FALSE;
 
 	if( useType == USE_ON )
