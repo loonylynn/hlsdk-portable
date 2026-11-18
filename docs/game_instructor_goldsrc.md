@@ -189,8 +189,9 @@ The HUD can use the original `icon_arrow_right.spr` and
 `icon_arrow_up.spr` assets as the directional indicators around offscreen
 targets. The opposite directions are rendered by mirroring the same sprite at
 draw time: horizontal flip for left and vertical flip for down. No separately
-authored left/down sprite files are required. If either original sprite is
-missing, the locator keeps its text-arrow fallback.
+authored left/down sprite files are required. If a directional sprite cannot be
+loaded, that directional indicator is skipped; the main locator's existing
+GoldSrc sprite/text fallback remains available.
 
 ## Deliberate GoldSrc differences
 
