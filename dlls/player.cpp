@@ -133,7 +133,7 @@ static Vector InstructorHintTargetOrigin( CBaseEntity *pTarget )
 
 static BOOL InstructorHintIsOccluded( CBasePlayer *pPlayer, CBaseEntity *pTarget, const Vector &targetOrigin )
 {
-	if( !pPlayer || !pTarget )
+	if( !pPlayer || !pTarget || pTarget == pPlayer )
 		return FALSE;
 
 	Vector eye = pPlayer->pev->origin + pPlayer->pev->view_ofs;
@@ -2277,6 +2277,12 @@ void CEnvInstructorHint::HintThink( void )
 	edict_t *activatorEdict = m_hActivator.Get();
 	CBaseEntity *pActivator = activatorEdict ? CBaseEntity::Instance( activatorEdict ) : NULL;
 	CBasePlayer *pPlayer = ( pActivator && pActivator->IsPlayer() ) ? (CBasePlayer *)pActivator : NULL;
+
+	if( !pPlayer || !pPlayer->IsAlive() )
+	{
+		EndHint();
+		return;
+	}
 
 	if( pPlayer && pTarget )
 	{
