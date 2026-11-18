@@ -1491,16 +1491,25 @@ void C_GameInstructor::MarkDisplayed(const char *name)
 {
 	if (!name)
 		return;
+
+	CScriptedIconLesson *displayed = NULL;
 	for (size_t i = 0; i < m_OpenOpportunities.size(); ++i)
 	{
 		CScriptedIconLesson *lesson = m_OpenOpportunities[i];
-		if (!StringEqualNoCase(lesson->m_Name.c_str(), name) && !lesson->m_bWasDisplayed)
+		if (StringEqualNoCase(lesson->m_Name.c_str(), name) &&
+			lesson->IsInstructing() && !lesson->WasDisplayed() &&
+			(!displayed || lesson->m_iPriority > displayed->m_iPriority))
 		{
-			lesson->MarkDisplayed();
-			if (lesson->m_pRoot)
-				SaveCounts(static_cast<CScriptedIconLesson *>(lesson->m_pRoot));
+			displayed = lesson;
 		}
 	}
+
+	if (!displayed)
+		return;
+
+	displayed->MarkDisplayed();
+	if (displayed->m_pRoot)
+		SaveCounts(static_cast<CScriptedIconLesson *>(displayed->m_pRoot));
 }
 
 void C_GameInstructor::MarkSucceeded(const char *name)
@@ -1720,7 +1729,8 @@ void C_GameInstructor::Update(float now)
 {
 	if (!m_bInitialized)
 		Init();
-	m_bHiddenDueToOtherElements = (gHUD.m_iHideHUDDisplay & HIDEHUD_ALL) != 0;
+	// CHud::Redraw applies the global hide-HUD gate to this card as well.
+	m_bHiddenDueToOtherElements = false;
 	if (CVAR_GET_FLOAT("gameinstructor_enable") == 0.0f || m_bNoDraw || m_bHiddenDueToOtherElements)
 	{
 		StopAllLessons();
