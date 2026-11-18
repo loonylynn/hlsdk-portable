@@ -1897,10 +1897,10 @@ void CBasePlayer::PlayerUse( void )
 			if( caps & FCAP_CONTINUOUS_USE )
 				m_afPhysicsFlags |= PFLAG_USING;
 
-			pObject->Use( this, this, USE_SET, 1 );
 			if( m_afButtonPressed & IN_USE )
 				FireInstructorEvent( "player_use", pObject, "used_entity",
 					STRING( pObject->pev->classname ), 0, 0.0f );
+			pObject->Use( this, this, USE_SET, 1 );
 		}
 		// UNDONE: Send different USE codes for ON/OFF.  Cache last ONOFF_USE object to send 'off' if you turn away
 		else if( ( m_afButtonReleased & IN_USE ) && ( pObject->ObjectCaps() & FCAP_ONOFF_USE ) )	// BUGBUG This is an "off" use
