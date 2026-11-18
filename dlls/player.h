@@ -304,6 +304,7 @@ public:
 	void UpdatePushableInstructorHint( CBaseEntity *pObject );
 	void ClearPushableInstructorHint( void );
 	void SetPushableInstructorHintAction( CBaseEntity *pObject, int iconMode );
+	void FireInstructorEvent( const char *eventName, CBaseEntity *pEntity, const char *fieldName, const char *stringValue, int integerValue, float floatValue );
 
 	void CheckSuitUpdate();
 	void SetSuitUpdate( const char *name, int fgroup, int iNoRepeat );
