@@ -384,6 +384,7 @@ int gmsgTeamNames = 0;
 int gmsgStatusText = 0;
 int gmsgStatusValue = 0;
 int gmsgInstructorHint = 0;
+int gmsgInstructorEvent = 0;
 
 void LinkUserMessages( void )
 {
@@ -431,6 +432,7 @@ void LinkUserMessages( void )
 	gmsgStatusText = REG_USER_MSG( "StatusText", -1 );
 	gmsgStatusValue = REG_USER_MSG( "StatusValue", 3 );
 	gmsgInstructorHint = REG_USER_MSG( "InstructorHint", -1 );
+	gmsgInstructorEvent = REG_USER_MSG( "InstructorEvent", -1 );
 }
 
 LINK_ENTITY_TO_CLASS( player, CBasePlayer )
@@ -1162,6 +1164,7 @@ entvars_t *g_pevLastInflictor;  // Set in combat.cpp.  Used to pass the damage i
 
 void CBasePlayer::Killed( entvars_t *pevAttacker, int iGib )
 {
+	FireInstructorEvent( "player_death", this, "death", "", iGib, 0.0f );
 	CSound *pSound;
 	ClearUseableHighlight();
 
@@ -1895,6 +1898,9 @@ void CBasePlayer::PlayerUse( void )
 				m_afPhysicsFlags |= PFLAG_USING;
 
 			pObject->Use( this, this, USE_SET, 1 );
+			if( m_afButtonPressed & IN_USE )
+				FireInstructorEvent( "player_use", pObject, "used_entity",
+					STRING( pObject->pev->classname ), 0, 0.0f );
 		}
 		// UNDONE: Send different USE codes for ON/OFF.  Cache last ONOFF_USE object to send 'off' if you turn away
 		else if( ( m_afButtonReleased & IN_USE ) && ( pObject->ObjectCaps() & FCAP_ONOFF_USE ) )	// BUGBUG This is an "off" use
@@ -2413,6 +2419,25 @@ void CBasePlayer::SetPushableInstructorHintAction( CBaseEntity *pObject, int ico
 	m_flUseableInstructorHintActionTime = gpGlobals->time + 0.4f;
 }
 
+
+void CBasePlayer::FireInstructorEvent( const char *eventName, CBaseEntity *pEntity,
+	const char *fieldName, const char *stringValue, int integerValue, float floatValue )
+{
+	if( !eventName || !eventName[0] || !gmsgInstructorEvent )
+		return;
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgInstructorEvent, NULL, pev );
+		WRITE_STRING( eventName );
+		WRITE_SHORT( pEntity ? ENTINDEX( pEntity->edict() ) : 0 );
+		WRITE_STRING( pEntity && pEntity->pev->classname ? STRING( pEntity->pev->classname ) : "" );
+		WRITE_STRING( pEntity && pEntity->pev->targetname ? STRING( pEntity->pev->targetname ) : "" );
+		WRITE_STRING( fieldName ? fieldName : "" );
+		WRITE_STRING( stringValue ? stringValue : "" );
+		WRITE_LONG( integerValue );
+		WRITE_FLOAT( floatValue );
+	MESSAGE_END();
+}
+
 void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 {
 	if( m_iActiveInstructorHintId != 0 )
@@ -2618,6 +2643,8 @@ void CBasePlayer::Jump()
 	{
 		return;
 	}
+
+	FireInstructorEvent( "player_jump", this, "", "", 0, 0.0f );
 
 	// many features in this function use v_forward, so makevectors now.
 	UTIL_MakeVectors( pev->angles );
@@ -2936,6 +2963,15 @@ void CBasePlayer::PreThink( void )
 		PlayerDeathThink();
 		return;
 	}
+
+	// GoldSrc has no IGameEvent manager. Publish the Source-style input events
+	// that lesson scripts commonly consume, only on the button's rising edge.
+	if( m_afButtonPressed & IN_ATTACK )
+		FireInstructorEvent( "use_primaryattack", this, "input", "attack", 0, 0.0f );
+	if( m_afButtonPressed & IN_ATTACK2 )
+		FireInstructorEvent( "use_secondaryattack", this, "input", "attack2", 0, 0.0f );
+	if( m_afButtonPressed & IN_RELOAD )
+		FireInstructorEvent( "use_reload", this, "input", "reload", 0, 0.0f );
 
 	// So the correct flags get sent to client asap.
 	//
@@ -4836,6 +4872,8 @@ int CBasePlayer::AddPlayerItem( CBasePlayerItem *pItem )
 			SwitchWeapon( pItem );
 		}
 
+		FireInstructorEvent( "instructor_primaryattack", pItem, "weapon",
+			STRING( pItem->pev->classname ), pItem->m_iId, 0.0f );
 		return TRUE;
 	}
 	else if( gEvilImpulse101 )
@@ -5077,6 +5115,7 @@ void CBasePlayer::UpdateClientData( void )
 		}
 
 		FireTargets( "game_playerspawn", this, this, USE_TOGGLE, 0 );
+		FireInstructorEvent( "player_spawn", this, "spawn", "", 0, 0.0f );
 
 		// Send flashlight status
 		MESSAGE_BEGIN( MSG_ONE, gmsgFlashlight, NULL, pev );
