@@ -46,6 +46,10 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 			m_bInstructorHintActive = false;
 			m_iInstructorHintId = 0;
 			m_iInstructorHintTarget = 0;
+			m_bInstructorHintHasTargetPosition = false;
+			m_vecInstructorHintTargetOrigin[0] = 0.0f;
+			m_vecInstructorHintTargetOrigin[1] = 0.0f;
+			m_vecInstructorHintTargetOrigin[2] = 0.0f;
 			m_flInstructorHintEndTime = 0.0f;
 			m_szInstructorHintCaption[0] = '\0';
 			m_szInstructorHintBinding[0] = '\0';
@@ -53,8 +57,36 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 		return 1;
 	}
 
+	if( action == 2 )
+	{
+		// Position updates are accepted only from the hint currently owning
+		// the HUD panel; stale entities cannot move or replace another hint.
+		const int targetIndex = READ_SHORT();
+		const float x = READ_COORD();
+		const float y = READ_COORD();
+		const float z = READ_COORD();
+
+		if( m_bInstructorHintActive && hintId == m_iInstructorHintId )
+		{
+			m_iInstructorHintTarget = targetIndex;
+			m_bInstructorHintHasTargetPosition = ( targetIndex > 0 );
+			m_vecInstructorHintTargetOrigin[0] = x;
+			m_vecInstructorHintTargetOrigin[1] = y;
+			m_vecInstructorHintTargetOrigin[2] = z;
+		}
+		return 1;
+	}
+
+	if( action != 1 )
+		return 0;
+
 	m_iInstructorHintTarget = READ_SHORT();
 	const int timeoutTenths = READ_SHORT();
+	m_vecInstructorHintTargetOrigin[0] = READ_COORD();
+	m_vecInstructorHintTargetOrigin[1] = READ_COORD();
+	m_vecInstructorHintTargetOrigin[2] = READ_COORD();
+	m_bInstructorHintHasTargetPosition = ( m_iInstructorHintTarget > 0 );
+
 	const char *caption = READ_STRING();
 	strncpy( m_szInstructorHintCaption, caption ? caption : "", sizeof( m_szInstructorHintCaption ) - 1 );
 	m_szInstructorHintCaption[sizeof( m_szInstructorHintCaption ) - 1] = '\0';
@@ -87,6 +119,10 @@ int CHud::MsgFunc_ResetHUD( const char *pszName, int iSize, void *pbuf )
 	m_bInstructorHintActive = false;
 	m_iInstructorHintId = 0;
 	m_iInstructorHintTarget = 0;
+	m_bInstructorHintHasTargetPosition = false;
+	m_vecInstructorHintTargetOrigin[0] = 0.0f;
+	m_vecInstructorHintTargetOrigin[1] = 0.0f;
+	m_vecInstructorHintTargetOrigin[2] = 0.0f;
 	m_flInstructorHintEndTime = 0.0f;
 	m_szInstructorHintCaption[0] = '\0';
 	m_szInstructorHintBinding[0] = '\0';

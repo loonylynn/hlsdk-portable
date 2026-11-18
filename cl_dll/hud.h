@@ -627,14 +627,20 @@ public:
 	bool m_bInstructorHintActive;
 	int m_iInstructorHintId;
 	int m_iInstructorHintTarget;
+	bool m_bInstructorHintHasTargetPosition;
+	float m_vecInstructorHintTargetOrigin[3];
 	float m_flInstructorHintEndTime;
 	char m_szInstructorHintCaption[192];
 	char m_szInstructorHintBinding[64];
 
 	CHud() : m_iSpriteCount(0), m_pHudList(NULL),
 		m_bInstructorHintActive(false), m_iInstructorHintId(0),
-		m_iInstructorHintTarget(0), m_flInstructorHintEndTime(0.0f)
+		m_iInstructorHintTarget(0), m_bInstructorHintHasTargetPosition(false),
+		m_flInstructorHintEndTime(0.0f)
 	{
+		m_vecInstructorHintTargetOrigin[0] = 0.0f;
+		m_vecInstructorHintTargetOrigin[1] = 0.0f;
+		m_vecInstructorHintTargetOrigin[2] = 0.0f;
 		m_szInstructorHintCaption[0] = '\0';
 		m_szInstructorHintBinding[0] = '\0';
 	}  
