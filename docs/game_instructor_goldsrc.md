@@ -244,7 +244,7 @@ The first locator-panel transplant added GoldSrc-native CInstructorLocatorTarget
 
 The second stage makes the target model the presentation data source for the existing locator renderer. Each HUD frame refreshes the active target after world-origin and occlusion updates; the renderer then reads visibility, world/screen origin, icon names, caption, binding choices, effect flags, color, and managed/fixed-position metadata from CInstructorLocatorTarget rather than directly from the legacy hint payload. The legacy HUD fields remain the message/lesson input and lifetime state, while sprite handles remain cached HUD resources.
 
-Projection, edge placement, tether drawing, and the current locator/card paint code still live in CHud::Redraw. This stage is a data-flow migration and is not intended to change the visual result. The next stage can move projected position, onscreen/offscreen state, animation, and decluttering into the target/panel model. The dedicated Source key font remains deferred.
+The next layout stage moves projected screen coordinates, behind-camera state, onscreen/offscreen classification, edge intersection/clamping, and directional-arrow selection into CInstructorLocatorTarget. GoldSrc's TriAPI WorldToScreen call remains in the HUD adapter because it is an engine service, while the resulting projection and all derived locator layout state are stored on the target. Tether drawing and sprite/card painting remain in CHud::Redraw. The dedicated Source key font remains deferred.
 
 ## Deliberate GoldSrc differences
 
