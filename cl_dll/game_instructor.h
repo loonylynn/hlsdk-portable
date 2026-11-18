@@ -118,9 +118,13 @@ public:
 	std::string m_OnscreenIcon;
 	std::string m_OffscreenIcon;
 	std::string m_CaptionColor;
+	std::string m_VguiTargetName;
+	std::string m_VguiTargetLookup;
+	int m_iVguiTargetEdge;
 	int m_iFlags;
 	float m_flRange;
 	float m_flIconOffset;
+	float m_flRelativeIconOffset;
 	bool m_bNoIconTarget;
 	bool m_bAllowNodrawTarget;
 	bool m_bVisible;
@@ -235,7 +239,8 @@ void GameInstructor_FireEvent(const char *name, int entityIndex, const char *cla
 void HUD_SetManagedInstructorHint(const char *lessonName, const char *caption,
 	const char *binding, const char *onscreenIcon, const char *offscreenIcon,
 	int targetIndex, float timeout, int flags, int colorR, int colorG, int colorB,
-	float range, float iconOffset, bool forceCaption);
+	float range, float iconOffset, bool forceCaption,
+	bool fixedPosition, float fixedX, float fixedY);
 void HUD_ClearManagedInstructorHint();
 void HUD_PlayInstructorSound(const char *soundName);
 
