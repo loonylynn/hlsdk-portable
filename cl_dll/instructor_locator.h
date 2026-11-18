@@ -30,6 +30,15 @@ enum InstructorLocatorEffectFlags
 	LOCATOR_ICON_FX_FADE_IN          = 0x00001000
 };
 
+enum InstructorLocatorArrowDirection
+{
+	INSTRUCTOR_LOCATOR_ARROW_NONE = 0,
+	INSTRUCTOR_LOCATOR_ARROW_LEFT,
+	INSTRUCTOR_LOCATOR_ARROW_RIGHT,
+	INSTRUCTOR_LOCATOR_ARROW_UP,
+	INSTRUCTOR_LOCATOR_ARROW_DOWN
+};
+
 class CInstructorLocatorTarget
 {
 public:
@@ -46,6 +55,8 @@ public:
 	int m_serialNumber;
 	int m_frameLastUpdated;
 	bool m_bOnscreen;
+	bool m_bBehindCamera;
+	float m_flProjectedX, m_flProjectedY;
 	bool m_bOccluded;
 	bool m_bVisible;
 	bool m_bIsDrawing;
@@ -81,6 +92,9 @@ public:
 	void Activate( int serialNumber, int frameNumber, float currentTime, int screenWidth, int screenHeight );
 	void Deactivate( bool noFade, float currentTime, float fadeTime );
 	void Update( int frameNumber );
+	void UpdateProjection( float screenX, float screenY, bool behind,
+		int screenWidth, int screenHeight, int visibilityMargin );
+	void CalculateEdgePosition( int screenWidth, int screenHeight, int edgeMargin );
 	void SetVisible( bool visible, float currentTime, float fadeTime );
 	bool IsStatic() const;
 	bool IsPresenting( float currentTime, float restTime ) const;
