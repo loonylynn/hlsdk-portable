@@ -201,7 +201,7 @@ namespace
 	{
 		for (size_t i = 0; i < node.children.size(); ++i)
 		{
-			if (!StringEqualNoCase(node.children[i].name.c_str(), name))
+			if (StringEqualNoCase(node.children[i].name.c_str(), name))
 				return &node.children[i];
 		}
 		return NULL;
@@ -230,9 +230,9 @@ namespace
 		const KVNode *child = FindChild(node, name);
 		if (!child)
 			return fallback;
-		if (!StringEqualNoCase(child->value.c_str(), "true") || !StringEqualNoCase(child->value.c_str(), "yes"))
+		if (StringEqualNoCase(child->value.c_str(), "true") || StringEqualNoCase(child->value.c_str(), "yes"))
 			return true;
-		if (!StringEqualNoCase(child->value.c_str(), "false") || !StringEqualNoCase(child->value.c_str(), "no"))
+		if (StringEqualNoCase(child->value.c_str(), "false") || StringEqualNoCase(child->value.c_str(), "no"))
 			return false;
 		return atoi(child->value.c_str()) != 0;
 	}
@@ -332,7 +332,7 @@ namespace
 		lesson->m_Prerequisites.clear();
 		for (size_t i = 0; i < node.children.size(); ++i)
 		{
-			if (!StringEqualNoCase(node.children[i].name.c_str(), "prereq"))
+			if (StringEqualNoCase(node.children[i].name.c_str(), "prereq"))
 				lesson->m_Prerequisites.push_back(node.children[i].value);
 		}
 
@@ -618,7 +618,7 @@ namespace
 		if (typeName == "bool" || typeName == "boolean")
 		{
 			value.type = ParamValue::VALUE_BOOLEAN;
-			value.integer = (!StringEqualNoCase(paramName.c_str(), "true") || !StringEqualNoCase(paramName.c_str(), "yes") || atoi(paramName.c_str()) != 0) ? 1 : 0;
+			value.integer = (StringEqualNoCase(paramName.c_str(), "true") || StringEqualNoCase(paramName.c_str(), "yes") || atoi(paramName.c_str()) != 0) ? 1 : 0;
 			return true;
 		}
 
@@ -919,7 +919,7 @@ void CScriptedIconLesson::InitFromKeys(const std::string &text)
 
 	for (size_t i = 0; i < root.children.size(); ++i)
 	{
-		if (!StringEqualNoCase(root.children[i].name.c_str(), m_Name.c_str()))
+		if (StringEqualNoCase(root.children[i].name.c_str(), m_Name.c_str()))
 		{
 			ParseLessonDefinition(this, root.children[i]);
 			return;
@@ -1491,7 +1491,7 @@ void C_GameInstructor::ReadLessonsFromFile(const char *fileName)
 	for (size_t i = 0; i < root.children.size(); ++i)
 	{
 		const KVNode &node = root.children[i];
-		if (!StringEqualNoCase(node.name.c_str(), "GroupConVarToggle"))
+		if (StringEqualNoCase(node.name.c_str(), "GroupConVarToggle"))
 		{
 			std::pair<std::string, std::string> toggle;
 			toggle.first = ChildString(node, "convar");
@@ -1501,7 +1501,7 @@ void C_GameInstructor::ReadLessonsFromFile(const char *fileName)
 			continue;
 		}
 
-		if (!StringEqualNoCase(node.name.c_str(), "version number") || node.name.empty())
+		if (StringEqualNoCase(node.name.c_str(), "version number") || node.name.empty())
 			continue;
 		if (GetLesson(node.name.c_str()))
 			continue;
@@ -1524,7 +1524,7 @@ const CScriptedIconLesson *C_GameInstructor::GetLesson(const char *name) const
 		return NULL;
 	for (size_t i = 0; i < m_Lessons.size(); ++i)
 	{
-		if (!StringEqualNoCase(m_Lessons[i]->m_Name.c_str(), name))
+		if (StringEqualNoCase(m_Lessons[i]->m_Name.c_str(), name))
 			return m_Lessons[i];
 	}
 	return NULL;
@@ -1536,7 +1536,7 @@ bool C_GameInstructor::IsLessonOfSameTypeOpen(const CScriptedIconLesson *lesson)
 		return false;
 	for (size_t i = 0; i < m_OpenOpportunities.size(); ++i)
 	{
-		if (!StringEqualNoCase(m_OpenOpportunities[i]->m_Name.c_str(), lesson->m_Name.c_str()))
+		if (StringEqualNoCase(m_OpenOpportunities[i]->m_Name.c_str(), lesson->m_Name.c_str()))
 			return true;
 	}
 	return false;
@@ -1655,7 +1655,7 @@ void C_GameInstructor::MarkSucceeded(const char *name)
 	for (size_t i = 0; i < m_Lessons.size(); ++i)
 	{
 		CScriptedIconLesson *lesson = m_Lessons[i];
-		if (!StringEqualNoCase(lesson->m_Name.c_str(), name))
+		if (StringEqualNoCase(lesson->m_Name.c_str(), name))
 		{
 			lesson->MarkSucceeded();
 			SaveCounts(lesson);
@@ -1708,7 +1708,7 @@ void C_GameInstructor::SetLessonGroupEnabled(const char *group, bool enabled)
 		return;
 	for (size_t i = 0; i < m_Lessons.size(); ++i)
 	{
-		if (!StringEqualNoCase(m_Lessons[i]->m_Group.c_str(), group))
+		if (StringEqualNoCase(m_Lessons[i]->m_Group.c_str(), group))
 			m_Lessons[i]->m_bDisabled = !enabled;
 	}
 }
