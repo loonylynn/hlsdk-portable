@@ -163,6 +163,60 @@ int CHud::Redraw( float flTime, int intermission )
 		}
 	}
 
+	// Source-style instructor hint caption. The server-side PS2 bracket remains
+	// the world-space marker; this panel supplies the contextual instruction.
+	if( m_bInstructorHintActive && !intermission &&
+		m_pCvarDraw && m_pCvarDraw->value && !( m_iHideHUDDisplay & HIDEHUD_ALL ) )
+	{
+		if( m_flInstructorHintEndTime > 0.0f && flTime >= m_flInstructorHintEndTime )
+		{
+			m_bInstructorHintActive = false;
+			m_iInstructorHintId = 0;
+			m_iInstructorHintTarget = 0;
+			m_flInstructorHintEndTime = 0.0f;
+			m_szInstructorHintCaption[0] = '\\0';
+			m_szInstructorHintBinding[0] = '\\0';
+		}
+		else
+		{
+			char bindingText[80];
+			bindingText[0] = '\\0';
+			if( m_szInstructorHintBinding[0] )
+				snprintf( bindingText, sizeof( bindingText ), "[ %s ]", m_szInstructorHintBinding );
+
+			int captionWidth = DrawHudStringLen( m_szInstructorHintCaption );
+			int bindingWidth = DrawHudStringLen( bindingText );
+			int panelWidth = Q_max( captionWidth, bindingWidth ) + 36;
+			const int maxPanelWidth = ScreenWidth - 24;
+			if( panelWidth > maxPanelWidth )
+				panelWidth = maxPanelWidth;
+			if( panelWidth < 180 )
+				panelWidth = 180;
+
+			const int panelHeight = bindingText[0] ? 58 : 42;
+			const int panelX = ( ScreenWidth - panelWidth ) / 2;
+			const int panelY = ScreenHeight - panelHeight - 30;
+
+			FillRGBA( panelX, panelY, panelWidth, panelHeight, 8, 10, 14, 205 );
+			FillRGBA( panelX, panelY, 3, panelHeight, 236, 9, 77, 255 );
+
+			int textX = ( ScreenWidth - captionWidth ) / 2;
+			if( textX < panelX + 14 )
+				textX = panelX + 14;
+			DrawHudString( textX, panelY + 9, panelX + panelWidth - 10,
+				m_szInstructorHintCaption, 245, 245, 245 );
+
+			if( bindingText[0] )
+			{
+				int keyX = ( ScreenWidth - bindingWidth ) / 2;
+				if( keyX < panelX + 14 )
+					keyX = panelX + 14;
+				DrawHudString( keyX, panelY + 32, panelX + panelWidth - 10,
+					bindingText, 236, 9, 77 );
+			}
+		}
+	}
+
 	// are we in demo mode? do we need to draw the logo in the top corner?
 	if( m_iLogo )
 	{
