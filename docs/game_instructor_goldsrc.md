@@ -244,7 +244,13 @@ The first locator-panel transplant added GoldSrc-native CInstructorLocatorTarget
 
 The second stage makes the target model the presentation data source for the existing locator renderer. Each HUD frame refreshes the active target after world-origin and occlusion updates; the renderer then reads visibility, world/screen origin, icon names, caption, binding choices, effect flags, color, and managed/fixed-position metadata from CInstructorLocatorTarget rather than directly from the legacy hint payload. The legacy HUD fields remain the message/lesson input and lifetime state, while sprite handles remain cached HUD resources.
 
-The next layout stage moves projected screen coordinates, behind-camera state, onscreen/offscreen classification, edge intersection/clamping, and directional-arrow selection into CInstructorLocatorTarget. GoldSrc's TriAPI WorldToScreen call remains in the HUD adapter because it is an engine service, while the resulting projection and all derived locator layout state are stored on the target. Tether drawing and sprite/card painting remain in CHud::Redraw. The dedicated Source key font remains deferred.
+The third layout stage moves projected screen coordinates, behind-camera state, onscreen/offscreen classification, edge intersection/clamping, and directional-arrow selection into CInstructorLocatorTarget. GoldSrc's TriAPI WorldToScreen call remains in the HUD adapter because it is an engine service, while the resulting projection and all derived locator layout state are stored on the target. Tether drawing and sprite/card painting remain in CHud::Redraw. The dedicated Source key font remains deferred.
+
+## Locator animation and decluttering (fourth transplant stage)
+
+CInstructorLocatorTarget now advances its fade envelope, pulse phase, alpha pulse, shake offsets, and managed-lesson visibility fade from one per-frame UpdateAnimation call. CInstructorLocatorPanel::UpdatePresentation advances the active pool entries after the HUD message state has been synchronized. The renderer consumes cached alpha/scale/offset values instead of recomputing effect timing in CHud::Redraw. Visibility loss fades a target down without destroying its handle, so a later visibility regain can fade it back in; explicit removal keeps the target alive until its fade-out completes.
+
+The panel also has a stable 17-candidate decluttering resolver. It checks the target's marker bounds against already placed targets, chooses the closest candidate with no overlap where possible, and remembers the prior candidate to reduce position hopping. The present HUD path still renders only the current instructor target, so multi-target overlap behavior is prepared in the pool but will not become visible until the separate multiple-target rendering stage. PS2 interaction brackets and their rendering path remain independent.
 
 ## Deliberate GoldSrc differences
 
