@@ -17,6 +17,7 @@
 #define M_PI_F		(float)M_PI
 #endif
 
+void V_Init( void );
 void V_StartPitchDrift( void );
 void V_StopPitchDrift( void );
 #endif // !VIEWH
