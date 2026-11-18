@@ -97,6 +97,7 @@ set (CLDLL_SOURCES
 	hud_redraw.cpp
 	hud_spectator.cpp
 	hud_update.cpp
+	game_instructor.cpp
 	in_camera.cpp
 	input.cpp
 	input_goldsource.cpp
