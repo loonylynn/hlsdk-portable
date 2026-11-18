@@ -259,8 +259,9 @@ class CInfoInstructorHintTarget : public CPointEntity
 public:
 	void Spawn( void )
 	{
+		// Point entities have no render model; do not set EF_NODRAW because
+		// instructor target visibility uses that flag for deliberate hiding.
 		pev->solid = SOLID_NOT;
-		pev->effects |= EF_NODRAW;
 	}
 };
 LINK_ENTITY_TO_CLASS( info_target_instructor_hint, CInfoInstructorHintTarget );
