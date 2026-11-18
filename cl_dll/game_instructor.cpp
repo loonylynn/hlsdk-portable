@@ -12,6 +12,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <strings.h>
+#endif
 #include <algorithm>
 
 #ifndef FCVAR_ARCHIVE
@@ -1446,11 +1449,10 @@ void C_GameInstructor::UpdateInactiveLesson(CScriptedIconLesson *lesson, float n
 {
 	if (!lesson)
 		return;
-	if (lesson->IsInstructing())
-	{
-		lesson->m_flStartTime = 0.0f;
-		lesson->m_bStarted = false;
-	}
+
+	// Source keeps lesson instances alive while they are not the currently
+	// selected locator. In GoldSrc this means another lesson temporarily owns
+	// the one HUD card; do not restart this lesson's timeout or OnOpen state.
 	lesson->UpdateInactive(now);
 }
 
@@ -1458,7 +1460,7 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 {
 	if (!lesson)
 		return;
-	if (!lesson->m_bVisible || (!lesson->m_bNoIconTarget && lesson->m_iIconTarget <= 0))
+	if (!lesson->m_bVisible || (!lesson->m_bNoIconTarget && !lesson->m_bFixedPosition && lesson->m_iIconTarget <= 0))
 	{
 		HideManagedLesson();
 		return;
@@ -1471,7 +1473,7 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 	if (!lesson->m_CaptionParam.empty())
 	{
 		static char combined[256];
-		snprintf(combined, sizeof(combined), caption, lesson->m_CaptionParam.c_str());
+		snprintf(combined, sizeof(combined), "%s %s", caption, lesson->m_CaptionParam.c_str());
 		caption = combined;
 	}
 
