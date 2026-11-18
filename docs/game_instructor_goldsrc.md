@@ -220,10 +220,13 @@ while playing updates the displayed label on the next HUD redraw.
 
 The returned engine key name is formatted for readability: mouse buttons use
 short labels such as `M1` / `M2`, wheel directions use `MW+` / `MW-`, and
-arrow keys use `UP` / `DN` / `LT` / `RT`. One- and two-character labels
-can use `icon_key_generic.spr`; longer names use the drawn key-chip fallback.
-If an action is unbound, the HUD shows a readable action label such as `USE`
-rather than leaving the raw `+use` token on screen.
+arrow keys use `UP` / `DN` / `LT` / `RT`. Xash3D gamepad names are
+also formatted (for example, `A_BUTTON` becomes `A`, `L1_BUTTON` becomes
+`LB`, and `STICK1` becomes `L3`). One- and two-character labels can use
+`icon_key_generic.spr`; longer names use the drawn key-chip fallback. These
+are text labels, not dedicated controller glyphs. If an action is unbound, the
+HUD shows a readable action label such as `USE` rather than leaving the raw
+`+use` token on screen.
 
 Literal lesson labels such as `E` remain explicit overrides and are not
 passed through the engine lookup. The GoldSrc/Xash interface returns one
