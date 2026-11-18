@@ -52,3 +52,11 @@ The move/hold icon is now selected from actual pushable velocity changes in `CPu
 - The existing PS2 brackets remain a separate world-space interaction marker and are not replaced by the Source locator.
 
 The server entity's keyvalue names and base flag semantics are aligned with the publicly available Valve `CEnvInstructorHint` implementation. See the source comments in `dlls/player.cpp` for the Source-compatible flag values and field mapping.
+
+## Public Source reference files
+
+- Valve-authored server entity: [env_instructor_hint.cpp](https://github.com/InfoSmart/InSource/blob/master/game/server/env_instructor_hint.cpp)
+- Source game instructor manager: [c_gameinstructor.cpp](https://github.com/InfoSmart/InSource/blob/master/game/client/c_gameinstructor.cpp)
+- Source locator presentation: [hud_locator_target.cpp](https://github.com/InfoSmart/InSource/blob/master/game/client/hud_locator_target.cpp) and [hud_locator_target.h](https://github.com/InfoSmart/InSource/blob/master/game/client/hud_locator_target.h)
+
+These public files are the reference for the entity keyvalues, locator effect bits, and presentation behavior adapted here.
