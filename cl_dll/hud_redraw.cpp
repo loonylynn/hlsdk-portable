@@ -19,6 +19,7 @@
 #include <stdio.h>
 
 #include "hud.h"
+#include "game_instructor.h"
 #include "cl_util.h"
 #include "cl_entity.h"
 #include "triangleapi.h"
@@ -166,6 +167,7 @@ int CHud::Redraw( float flTime, int intermission )
 {
 	m_fOldTime = m_flTime;	// save time of previous redraw
 	m_flTime = flTime;
+	GameInstructor_Update( flTime );
 	m_flTimeDelta = (double)( m_flTime - m_fOldTime );
 	static float m_flShotTime = 0;
 
@@ -252,6 +254,9 @@ int CHud::Redraw( float flTime, int intermission )
 			m_vecInstructorHintTargetOrigin[2] = 0.0f;
 			m_flInstructorHintEndTime = 0.0f;
 			m_flInstructorHintRange = 0.0f;
+			m_flInstructorHintIconOffset = 0.0f;
+			m_bInstructorHintManaged = false;
+			m_flInstructorManagedVisibleSince = 0.0f;
 			m_iInstructorHintIconMode = 0;
 			m_iInstructorHintFlags = 0;
 			m_hInstructorHintOnscreenSprite = 0;
@@ -281,6 +286,39 @@ int CHud::Redraw( float flTime, int intermission )
 			const bool targetOffscreen = hasTarget && ( targetBehind ||
 				targetX < edgeMargin || targetX > ScreenWidth - edgeMargin ||
 				targetY < edgeMargin || targetY > ScreenHeight - edgeMargin );
+
+			// Managed lessons follow the current client entity transform. The
+			// server-side env_instructor_hint path continues to supply its own
+			// authoritative position and visibility updates.
+			if( m_bInstructorHintManaged && m_iInstructorHintTarget > 0 && gEngfuncs.GetEntityByIndex )
+			{
+				cl_entity_t *managedTarget = gEngfuncs.GetEntityByIndex( m_iInstructorHintTarget );
+				if( managedTarget )
+				{
+					m_vecInstructorHintTargetOrigin[0] = managedTarget->origin[0];
+					m_vecInstructorHintTargetOrigin[1] = managedTarget->origin[1];
+					m_vecInstructorHintTargetOrigin[2] = managedTarget->origin[2] + m_flInstructorHintIconOffset;
+				}
+			}
+
+			// Source counts a lesson only after its icon has remained on-screen
+			// for at least 1.5 seconds, rather than when it is merely opened.
+			if( m_bInstructorHintManaged )
+			{
+				const bool countsAsVisible = !m_bInstructorHintHasTargetPosition || ( hasTarget && !targetOffscreen );
+				if( countsAsVisible )
+				{
+					if( m_flInstructorManagedVisibleSince <= 0.0f )
+						m_flInstructorManagedVisibleSince = flTime;
+					else if( flTime - m_flInstructorManagedVisibleSince >= 1.5f )
+						GameInstructor_MarkDisplayed( m_szInstructorHintName );
+				}
+				else
+				{
+					m_flInstructorManagedVisibleSince = 0.0f;
+				}
+			}
+
 
 			// LOCATOR_ICON_FX_NO_OFFSCREEN deactivates the locator when it leaves
 			// the viewport; don't leave a floating caption behind.
