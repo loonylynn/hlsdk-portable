@@ -1049,6 +1049,7 @@ entvars_t *g_pevLastInflictor;  // Set in combat.cpp.  Used to pass the damage i
 void CBasePlayer::Killed( entvars_t *pevAttacker, int iGib )
 {
 	CSound *pSound;
+	ClearUseableHighlight();
 
 	// Holster weapon immediately, to allow it to cleanup
 	if( m_pActiveItem )
@@ -1602,6 +1603,8 @@ void CBasePlayer::StartDeathCam( void )
 
 void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 {
+	ClearUseableHighlight();
+
 	// clear any clientside entities attached to this player
 	MESSAGE_BEGIN( MSG_PAS, SVC_TEMPENTITY, pev->origin );
 		WRITE_BYTE( TE_KILLPLAYERATTACHMENTS );
@@ -1982,6 +1985,9 @@ void CEnvInstructorHint::ShowHint( CBasePlayer *pPlayer )
 		WRITE_STRING( binding );
 	MESSAGE_END();
 
+	// Remember which map-authored hint currently owns the single HUD panel.
+	// The automatic pushable prompt yields while this hint is active.
+	pPlayer->m_iActiveInstructorHintId = ENTINDEX( edict() );
 	m_bActive = TRUE;
 	m_hActivator = pPlayer;
 	m_hHintTarget = pTarget;
@@ -2010,6 +2016,8 @@ void CEnvInstructorHint::EndHint( void )
 	if( m_bActive && pActivator && pActivator->IsPlayer() )
 	{
 		CBasePlayer *pPlayer = (CBasePlayer *)pActivator;
+		if( pPlayer->m_iActiveInstructorHintId == ENTINDEX( edict() ) )
+			pPlayer->m_iActiveInstructorHintId = 0;
 		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pPlayer->pev );
 			WRITE_BYTE( 0 ); // end
 			WRITE_SHORT( ENTINDEX( edict() ) );
@@ -2121,6 +2129,8 @@ void CEnvInstructorHint::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE
 
 void CBasePlayer::ClearUseableHighlight( void )
 {
+	ClearPushableInstructorHint();
+
 	edict_t *pentGraphic = m_hUseableHighlight.Get();
 	CUseableGraphic *pGraphic = pentGraphic ? (CUseableGraphic *)CBaseEntity::Instance( pentGraphic ) : NULL;
 	if( pGraphic )
@@ -2128,6 +2138,73 @@ void CBasePlayer::ClearUseableHighlight( void )
 
 	m_hUseableHighlight = NULL;
 	m_hLastUseableItem = NULL;
+}
+
+// The client HUD already understands the same show/update/end packet format
+// used by env_instructor_hint. Reserve a negative hint ID for this automatic
+// single-player prompt; real env_instructor_hint entity indices are positive.
+void CBasePlayer::ClearPushableInstructorHint( void )
+{
+	if( m_bUseableInstructorHintActive )
+	{
+		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pev );
+			WRITE_BYTE( 0 ); // end automatic pushable hint
+			WRITE_SHORT( -1 );
+		MESSAGE_END();
+	}
+
+	m_bUseableInstructorHintActive = FALSE;
+	m_iUseableInstructorHintTarget = 0;
+}
+
+void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
+{
+	// Map-authored hints take priority over the automatic pushable guidance.
+	if( m_iActiveInstructorHintId != 0 )
+	{
+		ClearPushableInstructorHint();
+		return;
+	}
+
+	if( !pObject || !FClassnameIs( pObject->pev, "func_pushable" ) )
+	{
+		ClearPushableInstructorHint();
+		return;
+	}
+
+	const int targetIndex = ENTINDEX( pObject->edict() );
+	const Vector targetOrigin = InstructorHintTargetOrigin( pObject );
+
+	if( !m_bUseableInstructorHintActive || m_iUseableInstructorHintTarget != targetIndex )
+	{
+		ClearPushableInstructorHint();
+
+		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pev );
+			WRITE_BYTE( 1 ); // show
+			WRITE_SHORT( -1 ); // reserved automatic-pushable hint ID
+			WRITE_SHORT( targetIndex );
+			WRITE_SHORT( 0 ); // scanner ends the hint when focus changes
+			WRITE_COORD( targetOrigin.x );
+			WRITE_COORD( targetOrigin.y );
+			WRITE_COORD( targetOrigin.z );
+			WRITE_STRING( "Walk into it to push. Move while holding:" );
+			WRITE_STRING( "USE" );
+		MESSAGE_END();
+
+		m_bUseableInstructorHintActive = TRUE;
+		m_iUseableInstructorHintTarget = targetIndex;
+		return;
+	}
+
+	// Keep the same target-following and offscreen-arrow behavior as map hints.
+	MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pev );
+		WRITE_BYTE( 2 ); // target position update
+		WRITE_SHORT( -1 );
+		WRITE_SHORT( targetIndex );
+		WRITE_COORD( targetOrigin.x );
+		WRITE_COORD( targetOrigin.y );
+		WRITE_COORD( targetOrigin.z );
+	MESSAGE_END();
 }
 
 void CBasePlayer::HighlightUseable( CBaseEntity *pObject )
@@ -2186,9 +2263,9 @@ void CBasePlayer::UpdateUseableHighlight( void )
 		if( pObject->IsPlayer() || pObject->MyMonsterPointer() )
 			continue;
 
-		const char *pszClassname = STRING( pObject->pev->classname );
-		if( ( pszClassname && !strcmp( pszClassname, "func_pushable" ) ) ||
-			( pObject->pev->spawnflags & 0x200 ) )
+		// Pushables are valid continuous-use targets. They were previously
+		// excluded here, which prevented both the PS2 bracket and its hint.
+		if( pObject->pev->spawnflags & 0x200 )
 			continue;
 
 		Vector vecOrigin = pObject->pev->origin;
@@ -2225,7 +2302,10 @@ void CBasePlayer::UpdateUseableHighlight( void )
 	}
 
 	if( pClosest )
+	{
 		HighlightUseable( pClosest );
+		UpdatePushableInstructorHint( pClosest );
+	}
 	else
 		ClearUseableHighlight();
 }
@@ -3617,10 +3697,13 @@ void CBasePlayer::Spawn( void )
 
 	m_flNextDecalTime = 0;// let this player decal as soon as he spawns.
 
-	// These handles are transient and intentionally not part of save data.
+	// These handles and hint IDs are transient and intentionally not saved.
 	m_hUseableHighlight = NULL;
 	m_hLastUseableItem = NULL;
 	m_flNextUseableCheck = gpGlobals->time;
+	m_iActiveInstructorHintId = 0;
+	m_iUseableInstructorHintTarget = 0;
+	m_bUseableInstructorHintActive = FALSE;
 
 	m_flgeigerDelay = gpGlobals->time + 2.0f;	// wait a few seconds until user-defined message registrations
 							// are recieved by all clients
