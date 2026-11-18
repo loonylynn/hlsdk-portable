@@ -69,6 +69,7 @@ static void HUD_ClearInstructorHint( CHud *hud )
 	hud->m_flInstructorHintFixedX = 0.5f;
 	hud->m_flInstructorHintFixedY = 0.5f;
 	hud->m_flInstructorManagedVisibleSince = 0.0f;
+	hud->m_bInstructorManagedDisplayCounted = false;
 	hud->m_iInstructorHintId = 0;
 	hud->m_iInstructorHintTarget = 0;
 	hud->m_bInstructorHintHasTargetPosition = false;
