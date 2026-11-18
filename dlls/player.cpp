@@ -95,6 +95,27 @@ LINK_ENTITY_TO_CLASS( useable_graphic, CUseableGraphic );
 // Single-player Source-style instructor hint. The existing PS2 usable bracket
 // remains the world-space marker; this entity supplies contextual HUD text.
 //
+static Vector InstructorHintTargetOrigin( CBaseEntity *pTarget )
+{
+	if( !pTarget )
+		return g_vecZero;
+
+	Vector origin = pTarget->pev->origin;
+	BOOL isBrushModel = pTarget->IsBSPModel();
+
+	if( !isBrushModel )
+	{
+		const char *model = STRING( pTarget->pev->model );
+		if( model && model[0] == '*' )
+			isBrushModel = TRUE;
+	}
+
+	if( isBrushModel )
+		origin = VecBModelOrigin( pTarget->pev );
+
+	return origin;
+}
+
 class CEnvInstructorHint : public CPointEntity
 {
 public:
@@ -103,14 +124,17 @@ public:
 		m_iszCaption( 0 ),
 		m_iszBinding( 0 ),
 		m_flTimeout( 0.0f ),
-		m_bActive( FALSE )
+		m_flExpireTime( 0.0f ),
+		m_bActive( FALSE ),
+		m_bTargetLostNotified( FALSE ),
+		m_hHintTarget( NULL )
 	{
 	}
 
 	void Spawn( void );
 	void KeyValue( KeyValueData *pkvd );
 	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
-	void HintTimeoutThink( void );
+	void HintThink( void );
 
 private:
 	void ShowHint( CBasePlayer *pPlayer );
@@ -120,8 +144,11 @@ private:
 	string_t m_iszCaption;
 	string_t m_iszBinding;
 	float m_flTimeout;
+	float m_flExpireTime;
 	BOOL m_bActive;
+	BOOL m_bTargetLostNotified;
 	EHANDLE m_hActivator;
+	EHANDLE m_hHintTarget;
 };
 
 LINK_ENTITY_TO_CLASS( env_instructor_hint, CEnvInstructorHint );
@@ -1897,6 +1924,9 @@ void CEnvInstructorHint::Spawn( void )
 	pev->effects |= EF_NODRAW;
 	m_bActive = FALSE;
 	m_hActivator = NULL;
+	m_hHintTarget = NULL;
+	m_flExpireTime = 0.0f;
+	m_bTargetLostNotified = FALSE;
 	SetThink( NULL );
 	pev->nextthink = 0;
 }
@@ -1937,6 +1967,7 @@ void CEnvInstructorHint::ShowHint( CBasePlayer *pPlayer )
 		pTarget = UTIL_FindEntityByTargetname( NULL, STRING( m_iszHintTarget ) );
 
 	const int targetIndex = pTarget ? ENTINDEX( pTarget->edict() ) : 0;
+	const Vector targetOrigin = InstructorHintTargetOrigin( pTarget );
 	const char *caption = m_iszCaption ? STRING( m_iszCaption ) : "";
 	const char *binding = m_iszBinding ? STRING( m_iszBinding ) : "";
 
@@ -1944,18 +1975,26 @@ void CEnvInstructorHint::ShowHint( CBasePlayer *pPlayer )
 		WRITE_BYTE( 1 ); // show
 		WRITE_SHORT( ENTINDEX( edict() ) ); // hint entity ID
 		WRITE_SHORT( targetIndex );
-		WRITE_SHORT( (int)( m_flTimeout * 10.0f ) ); // tenths of a second, capped to signed-short range
+		WRITE_SHORT( (int)( m_flTimeout * 10.0f ) ); // tenths of a second
+		WRITE_COORD( targetOrigin.x );
+		WRITE_COORD( targetOrigin.y );
+		WRITE_COORD( targetOrigin.z );
 		WRITE_STRING( caption );
 		WRITE_STRING( binding );
 	MESSAGE_END();
 
 	m_bActive = TRUE;
 	m_hActivator = pPlayer;
+	m_hHintTarget = pTarget;
+	m_bTargetLostNotified = FALSE;
+	m_flExpireTime = m_flTimeout > 0.0f ? gpGlobals->time + m_flTimeout : 0.0f;
 
-	if( m_flTimeout > 0.0f )
+	// Refresh the target position at 20 Hz. This keeps indicators working even
+	// when a target leaves the client's PVS and its cl_entity_t is no longer current.
+	if( pTarget || m_flExpireTime > 0.0f )
 	{
-		SetThink( &CEnvInstructorHint::HintTimeoutThink );
-		pev->nextthink = gpGlobals->time + m_flTimeout;
+		SetThink( &CEnvInstructorHint::HintThink );
+		pev->nextthink = gpGlobals->time + 0.05f;
 	}
 	else
 	{
@@ -1984,9 +2023,68 @@ void CEnvInstructorHint::EndHint( void )
 	pev->nextthink = 0;
 }
 
-void CEnvInstructorHint::HintTimeoutThink( void )
+void CEnvInstructorHint::HintThink( void )
 {
-	EndHint();
+	if( !m_bActive )
+	{
+		SetThink( NULL );
+		pev->nextthink = 0;
+		return;
+	}
+
+	if( m_flExpireTime > 0.0f && gpGlobals->time >= m_flExpireTime )
+	{
+		EndHint();
+		return;
+	}
+
+	edict_t *targetEdict = m_hHintTarget.Get();
+	CBaseEntity *pTarget = targetEdict ? CBaseEntity::Instance( targetEdict ) : NULL;
+
+	if( pTarget )
+	{
+		const Vector targetOrigin = InstructorHintTargetOrigin( pTarget );
+		edict_t *activatorEdict = m_hActivator.Get();
+		CBaseEntity *pActivator = activatorEdict ? CBaseEntity::Instance( activatorEdict ) : NULL;
+
+		if( pActivator && pActivator->IsPlayer() )
+		{
+			MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pActivator->pev );
+				WRITE_BYTE( 2 ); // target position update
+				WRITE_SHORT( ENTINDEX( edict() ) );
+				WRITE_SHORT( ENTINDEX( pTarget->edict() ) );
+				WRITE_COORD( targetOrigin.x );
+				WRITE_COORD( targetOrigin.y );
+				WRITE_COORD( targetOrigin.z );
+			MESSAGE_END();
+		}
+	}
+	else if( m_iszHintTarget && !m_bTargetLostNotified )
+	{
+		edict_t *activatorEdict = m_hActivator.Get();
+		CBaseEntity *pActivator = activatorEdict ? CBaseEntity::Instance( activatorEdict ) : NULL;
+
+		if( pActivator && pActivator->IsPlayer() )
+		{
+			MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pActivator->pev );
+				WRITE_BYTE( 2 ); // target lost; revert to a standalone HUD hint
+				WRITE_SHORT( ENTINDEX( edict() ) );
+				WRITE_SHORT( 0 );
+				WRITE_COORD( 0.0f );
+				WRITE_COORD( 0.0f );
+				WRITE_COORD( 0.0f );
+			MESSAGE_END();
+		}
+		m_bTargetLostNotified = TRUE;
+	}
+
+	if( pTarget || ( m_flExpireTime > 0.0f ) )
+		pev->nextthink = gpGlobals->time + 0.05f;
+	else
+	{
+		SetThink( NULL );
+		pev->nextthink = 0;
+	}
 }
 
 void CEnvInstructorHint::Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value )
