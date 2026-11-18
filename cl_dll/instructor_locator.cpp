@@ -1,5 +1,6 @@
 #include "instructor_locator.h"
 #include <string.h>
+#include <math.h>
 
 namespace
 {
@@ -58,6 +59,95 @@ void CInstructorLocatorTarget::Deactivate( bool noFade, float currentTime, float
 }
 
 void CInstructorLocatorTarget::Update( int frameNumber ) { m_frameLastUpdated = frameNumber; }
+
+void CInstructorLocatorTarget::UpdateProjection( float screenX, float screenY, bool behind,
+	int screenWidth, int screenHeight, int visibilityMargin )
+{
+	m_flProjectedX = screenX;
+	m_flProjectedY = screenY;
+	m_bBehindCamera = behind;
+	m_targetX = (int)( screenX >= 0.0f ? screenX + 0.5f : screenX - 0.5f );
+	m_targetY = (int)( screenY >= 0.0f ? screenY + 0.5f : screenY - 0.5f );
+	m_drawArrowDirection = INSTRUCTOR_LOCATOR_ARROW_NONE;
+
+	if( screenWidth <= 0 || screenHeight <= 0 )
+	{
+		m_bOnscreen = false;
+		return;
+	}
+
+	if( visibilityMargin < 0 ) visibilityMargin = 0;
+	if( visibilityMargin * 2 > screenWidth ) visibilityMargin = screenWidth / 2;
+	if( visibilityMargin * 2 > screenHeight ) visibilityMargin = screenHeight / 2;
+
+	m_bOnscreen = !behind &&
+		screenX >= (float)visibilityMargin &&
+		screenX <= (float)( screenWidth - visibilityMargin ) &&
+		screenY >= (float)visibilityMargin &&
+		screenY <= (float)( screenHeight - visibilityMargin );
+}
+
+void CInstructorLocatorTarget::CalculateEdgePosition( int screenWidth, int screenHeight, int edgeMargin )
+{
+	if( screenWidth <= 0 || screenHeight <= 0 )
+		return;
+
+	m_centerX = screenWidth / 2;
+	m_centerY = screenHeight / 2;
+	m_iconX = m_targetX;
+	m_iconY = m_targetY;
+	m_drawArrowDirection = INSTRUCTOR_LOCATOR_ARROW_NONE;
+
+	if( edgeMargin < 0 ) edgeMargin = 0;
+	int horizontalMargin = edgeMargin;
+	int verticalMargin = edgeMargin;
+	if( horizontalMargin * 2 > screenWidth ) horizontalMargin = screenWidth / 2;
+	if( verticalMargin * 2 > screenHeight ) verticalMargin = screenHeight / 2;
+
+	if( !m_bOnscreen )
+	{
+		const float dx = m_flProjectedX - (float)m_centerX;
+		float dy = m_flProjectedY - (float)m_centerY;
+		if( fabsf( dx ) < 1.0f && fabsf( dy ) < 1.0f )
+			dy = 1.0f;
+
+		const float left = (float)horizontalMargin;
+		const float right = (float)( screenWidth - horizontalMargin );
+		const float top = (float)verticalMargin;
+		const float bottom = (float)( screenHeight - verticalMargin );
+		float tx = 1000000.0f;
+		float ty = 1000000.0f;
+
+		if( dx > 0.001f )
+			tx = ( right - (float)m_centerX ) / dx;
+		else if( dx < -0.001f )
+			tx = ( left - (float)m_centerX ) / dx;
+
+		if( dy > 0.001f )
+			ty = ( bottom - (float)m_centerY ) / dy;
+		else if( dy < -0.001f )
+			ty = ( top - (float)m_centerY ) / dy;
+
+		float t = tx < ty ? tx : ty;
+		if( t < 0.0f || t > 1000000.0f )
+			t = 0.0f;
+
+		m_iconX = (int)( (float)m_centerX + dx * t );
+		m_iconY = (int)( (float)m_centerY + dy * t );
+
+		if( tx < ty )
+			m_drawArrowDirection = dx < 0.0f ?
+				INSTRUCTOR_LOCATOR_ARROW_LEFT : INSTRUCTOR_LOCATOR_ARROW_RIGHT;
+		else
+			m_drawArrowDirection = dy < 0.0f ?
+				INSTRUCTOR_LOCATOR_ARROW_UP : INSTRUCTOR_LOCATOR_ARROW_DOWN;
+	}
+
+	if( m_iconX < horizontalMargin ) m_iconX = horizontalMargin;
+	if( m_iconX > screenWidth - horizontalMargin ) m_iconX = screenWidth - horizontalMargin;
+	if( m_iconY < verticalMargin ) m_iconY = verticalMargin;
+	if( m_iconY > screenHeight - verticalMargin ) m_iconY = screenHeight - verticalMargin;
+}
 
 void CInstructorLocatorTarget::SetVisible( bool visible, float currentTime, float fadeTime )
 {
