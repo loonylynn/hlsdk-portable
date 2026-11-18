@@ -43,6 +43,14 @@ namespace
 		return *a == *b;
 	}
 
+	std::string NormalizeVariableName(const std::string &name)
+	{
+		std::string normalized(name);
+		for (size_t i = 0; i < normalized.size(); ++i)
+			normalized[i] = (char)tolower((unsigned char)normalized[i]);
+		return normalized;
+	}
+
 	struct KVNode
 	{
 		std::string name;
@@ -390,56 +398,58 @@ namespace
 
 	ParamValue GetVariable(const CScriptedIconLesson &lesson, const std::string &name)
 	{
+		const std::string variableName = NormalizeVariableName(name);
 		ParamValue value;
-		if (name == "local_player") { value.type = ParamValue::VALUE_ENTITY; value.integer = lesson.m_iLocalPlayer; }
-		else if (name == "entity1") { value.type = ParamValue::VALUE_ENTITY; value.integer = lesson.m_iEntity1; }
-		else if (name == "entity2") { value.type = ParamValue::VALUE_ENTITY; value.integer = lesson.m_iEntity2; }
-		else if (name == "icon_target") { value.type = ParamValue::VALUE_ENTITY; value.integer = lesson.m_iIconTarget; }
-		else if (name == "integer1") { value.type = ParamValue::VALUE_INTEGER; value.integer = lesson.m_iInteger1; }
-		else if (name == "integer2") { value.type = ParamValue::VALUE_INTEGER; value.integer = lesson.m_iInteger2; }
-		else if (name == "output") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flOutput; }
-		else if (name == "float1") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flFloat1; }
-		else if (name == "float2") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flFloat2; }
-		else if (name == "string1") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_String1; }
-		else if (name == "string2") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_String2; }
-		else if (name == "caption") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_Caption; }
-		else if (name == "caption_param") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_CaptionParam; }
-		else if (name == "binding") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_Binding; }
-		else if (name == "gamepad_binding") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_GamepadBinding; }
-		else if (name == "onscreen_icon") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_OnscreenIcon; }
-		else if (name == "offscreen_icon") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_OffscreenIcon; }
-		else if (name == "replace_key") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_ReplaceKey; }
-		else if (name == "group") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_Group; }
-		else if (name == "range") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flRange; }
-		else if (name == "timeout") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flTimeout; }
-		else if (name == "priority") { value.type = ParamValue::VALUE_INTEGER; value.integer = lesson.m_iPriority; }
-		else if (name == "flags") { value.type = ParamValue::VALUE_INTEGER; value.integer = lesson.m_iFlags; }
-		else if (name == "visible") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bVisible ? 1 : 0; }
-		else if (name == "no_offscreen") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bNoOffscreen ? 1 : 0; }
-		else if (name == "force_caption") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bForceCaption ? 1 : 0; }
-		else if (name == "no_icon_target") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bNoIconTarget ? 1 : 0; }
-		else if (name == "allow_nodraw_target") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bAllowNodrawTarget ? 1 : 0; }
-		else if (name == "show_when_occluded") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bShowWhenOccluded ? 1 : 0; }
-		else if (name == "fixed_position") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bFixedPosition ? 1 : 0; }
-		else if (name == "fixed_position_x") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flFixedX; }
-		else if (name == "fixed_position_y") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flFixedY; }
-		else if (name == "icon_offset") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flIconOffset; }
-		else if (name == "icon_relative_offset") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flRelativeIconOffset; }
-		else if (name == "caption_color") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_CaptionColor; }
-		else if (name == "start_sound") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_StartSound; }
-		else if (name == "vgui_target_name") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_VguiTargetName; }
-		else if (name == "vgui_target_lookup") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_VguiTargetLookup; }
-		else if (name == "vgui_target_edge") { value.type = ParamValue::VALUE_INTEGER; value.integer = lesson.m_iVguiTargetEdge; }
-		else if (name == "lock_duration") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flLockDuration; }
-		else if (name == "update_interval") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flUpdateInterval; }
-		else if (name == "can_open_when_dead") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bCanOpenWhenDead ? 1 : 0; }
-		else if (name == "bump_with_timeout_when_learned") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bBumpWithTimeoutWhenLearned ? 1 : 0; }
-		else if (name == "can_timeout_while_inactive") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bCanTimeoutWhileInactive ? 1 : 0; }
+		if (variableName == "local_player" || variableName == "void") { value.type = ParamValue::VALUE_ENTITY; value.integer = lesson.m_iLocalPlayer; }
+		else if (variableName == "entity1") { value.type = ParamValue::VALUE_ENTITY; value.integer = lesson.m_iEntity1; }
+		else if (variableName == "entity2") { value.type = ParamValue::VALUE_ENTITY; value.integer = lesson.m_iEntity2; }
+		else if (variableName == "icon_target") { value.type = ParamValue::VALUE_ENTITY; value.integer = lesson.m_iIconTarget; }
+		else if (variableName == "integer1") { value.type = ParamValue::VALUE_INTEGER; value.integer = lesson.m_iInteger1; }
+		else if (variableName == "integer2") { value.type = ParamValue::VALUE_INTEGER; value.integer = lesson.m_iInteger2; }
+		else if (variableName == "output") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flOutput; }
+		else if (variableName == "float1") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flFloat1; }
+		else if (variableName == "float2") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flFloat2; }
+		else if (variableName == "string1") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_String1; }
+		else if (variableName == "string2") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_String2; }
+		else if (variableName == "caption") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_Caption; }
+		else if (variableName == "caption_param") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_CaptionParam; }
+		else if (variableName == "binding") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_Binding; }
+		else if (variableName == "gamepad_binding") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_GamepadBinding; }
+		else if (variableName == "onscreen_icon") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_OnscreenIcon; }
+		else if (variableName == "offscreen_icon") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_OffscreenIcon; }
+		else if (variableName == "replace_key") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_ReplaceKey; }
+		else if (variableName == "group") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_Group; }
+		else if (variableName == "range") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flRange; }
+		else if (variableName == "timeout") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flTimeout; }
+		else if (variableName == "priority") { value.type = ParamValue::VALUE_INTEGER; value.integer = lesson.m_iPriority; }
+		else if (variableName == "flags") { value.type = ParamValue::VALUE_INTEGER; value.integer = lesson.m_iFlags; }
+		else if (variableName == "visible") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bVisible ? 1 : 0; }
+		else if (variableName == "no_offscreen") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bNoOffscreen ? 1 : 0; }
+		else if (variableName == "force_caption") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bForceCaption ? 1 : 0; }
+		else if (variableName == "no_icon_target") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bNoIconTarget ? 1 : 0; }
+		else if (variableName == "allow_nodraw_target") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bAllowNodrawTarget ? 1 : 0; }
+		else if (variableName == "show_when_occluded") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bShowWhenOccluded ? 1 : 0; }
+		else if (variableName == "fixed_position") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bFixedPosition ? 1 : 0; }
+		else if (variableName == "fixed_position_x") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flFixedX; }
+		else if (variableName == "fixed_position_y") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flFixedY; }
+		else if (variableName == "icon_offset") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flIconOffset; }
+		else if (variableName == "icon_relative_offset") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flRelativeIconOffset; }
+		else if (variableName == "caption_color") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_CaptionColor; }
+		else if (variableName == "start_sound") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_StartSound; }
+		else if (variableName == "vgui_target_name") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_VguiTargetName; }
+		else if (variableName == "vgui_target_lookup") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_VguiTargetLookup; }
+		else if (variableName == "vgui_target_edge") { value.type = ParamValue::VALUE_INTEGER; value.integer = lesson.m_iVguiTargetEdge; }
+		else if (variableName == "lock_duration") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flLockDuration; }
+		else if (variableName == "update_interval") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flUpdateInterval; }
+		else if (variableName == "can_open_when_dead") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bCanOpenWhenDead ? 1 : 0; }
+		else if (variableName == "bump_with_timeout_when_learned") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bBumpWithTimeoutWhenLearned ? 1 : 0; }
+		else if (variableName == "can_timeout_while_inactive") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bCanTimeoutWhileInactive ? 1 : 0; }
 		return value;
 	}
 
 	bool SetVariable(CScriptedIconLesson &lesson, const std::string &name, const ParamValue &value)
 	{
+		const std::string variableName = NormalizeVariableName(name);
 		const int i = value.type == ParamValue::VALUE_ENTITY ? value.integer :
 			value.type == ParamValue::VALUE_BOOLEAN ? value.integer :
 			value.type == ParamValue::VALUE_INTEGER ? value.integer :
@@ -449,50 +459,50 @@ namespace
 			(value.type == ParamValue::VALUE_BOOLEAN ? (i ? "1" : "0") :
 			(value.type == ParamValue::VALUE_ENTITY || value.type == ParamValue::VALUE_INTEGER ? std::to_string(i) : std::to_string(f)));
 
-		if (name == "local_player") lesson.m_iLocalPlayer = i;
-		else if (name == "entity1") lesson.m_iEntity1 = i;
-		else if (name == "entity2") lesson.m_iEntity2 = i;
-		else if (name == "icon_target") lesson.m_iIconTarget = i;
-		else if (name == "integer1") lesson.m_iInteger1 = i;
-		else if (name == "integer2") lesson.m_iInteger2 = i;
-		else if (name == "output") lesson.m_flOutput = f;
-		else if (name == "float1") lesson.m_flFloat1 = f;
-		else if (name == "float2") lesson.m_flFloat2 = f;
-		else if (name == "string1") lesson.m_String1 = s;
-		else if (name == "string2") lesson.m_String2 = s;
-		else if (name == "caption") lesson.m_Caption = s;
-		else if (name == "caption_param") lesson.m_CaptionParam = s;
-		else if (name == "binding") lesson.m_Binding = s;
-		else if (name == "gamepad_binding") lesson.m_GamepadBinding = s;
-		else if (name == "onscreen_icon") lesson.m_OnscreenIcon = s;
-		else if (name == "offscreen_icon") lesson.m_OffscreenIcon = s;
-		else if (name == "replace_key") lesson.m_ReplaceKey = s;
-		else if (name == "group") lesson.m_Group = s;
-		else if (name == "range") lesson.m_flRange = f;
-		else if (name == "timeout") lesson.m_flTimeout = f;
-		else if (name == "priority") lesson.m_iPriority = i;
-		else if (name == "flags") lesson.m_iFlags = i;
-		else if (name == "visible") lesson.m_bVisible = (i != 0);
-		else if (name == "no_offscreen") lesson.m_bNoOffscreen = (i != 0);
-		else if (name == "force_caption") lesson.m_bForceCaption = (i != 0);
-		else if (name == "no_icon_target") lesson.m_bNoIconTarget = (i != 0);
-		else if (name == "allow_nodraw_target") lesson.m_bAllowNodrawTarget = (i != 0);
-		else if (name == "show_when_occluded") lesson.m_bShowWhenOccluded = (i != 0);
-		else if (name == "fixed_position") lesson.m_bFixedPosition = (i != 0);
-		else if (name == "fixed_position_x") lesson.m_flFixedX = f;
-		else if (name == "fixed_position_y") lesson.m_flFixedY = f;
-		else if (name == "icon_offset") lesson.m_flIconOffset = f;
-		else if (name == "icon_relative_offset") lesson.m_flRelativeIconOffset = f;
-		else if (name == "caption_color") lesson.m_CaptionColor = s;
-		else if (name == "start_sound") lesson.m_StartSound = s;
-		else if (name == "vgui_target_name") lesson.m_VguiTargetName = s;
-		else if (name == "vgui_target_lookup") lesson.m_VguiTargetLookup = s;
-		else if (name == "vgui_target_edge") lesson.m_iVguiTargetEdge = i;
-		else if (name == "lock_duration") lesson.m_flLockDuration = f;
-		else if (name == "update_interval") lesson.m_flUpdateInterval = f;
-		else if (name == "can_open_when_dead") lesson.m_bCanOpenWhenDead = (i != 0);
-		else if (name == "bump_with_timeout_when_learned") lesson.m_bBumpWithTimeoutWhenLearned = (i != 0);
-		else if (name == "can_timeout_while_inactive") lesson.m_bCanTimeoutWhileInactive = (i != 0);
+		if (variableName == "local_player" || variableName == "void") lesson.m_iLocalPlayer = i;
+		else if (variableName == "entity1") lesson.m_iEntity1 = i;
+		else if (variableName == "entity2") lesson.m_iEntity2 = i;
+		else if (variableName == "icon_target") lesson.m_iIconTarget = i;
+		else if (variableName == "integer1") lesson.m_iInteger1 = i;
+		else if (variableName == "integer2") lesson.m_iInteger2 = i;
+		else if (variableName == "output") lesson.m_flOutput = f;
+		else if (variableName == "float1") lesson.m_flFloat1 = f;
+		else if (variableName == "float2") lesson.m_flFloat2 = f;
+		else if (variableName == "string1") lesson.m_String1 = s;
+		else if (variableName == "string2") lesson.m_String2 = s;
+		else if (variableName == "caption") lesson.m_Caption = s;
+		else if (variableName == "caption_param") lesson.m_CaptionParam = s;
+		else if (variableName == "binding") lesson.m_Binding = s;
+		else if (variableName == "gamepad_binding") lesson.m_GamepadBinding = s;
+		else if (variableName == "onscreen_icon") lesson.m_OnscreenIcon = s;
+		else if (variableName == "offscreen_icon") lesson.m_OffscreenIcon = s;
+		else if (variableName == "replace_key") lesson.m_ReplaceKey = s;
+		else if (variableName == "group") lesson.m_Group = s;
+		else if (variableName == "range") lesson.m_flRange = f;
+		else if (variableName == "timeout") lesson.m_flTimeout = f;
+		else if (variableName == "priority") lesson.m_iPriority = i;
+		else if (variableName == "flags") lesson.m_iFlags = i;
+		else if (variableName == "visible") lesson.m_bVisible = (i != 0);
+		else if (variableName == "no_offscreen") lesson.m_bNoOffscreen = (i != 0);
+		else if (variableName == "force_caption") lesson.m_bForceCaption = (i != 0);
+		else if (variableName == "no_icon_target") lesson.m_bNoIconTarget = (i != 0);
+		else if (variableName == "allow_nodraw_target") lesson.m_bAllowNodrawTarget = (i != 0);
+		else if (variableName == "show_when_occluded") lesson.m_bShowWhenOccluded = (i != 0);
+		else if (variableName == "fixed_position") lesson.m_bFixedPosition = (i != 0);
+		else if (variableName == "fixed_position_x") lesson.m_flFixedX = f;
+		else if (variableName == "fixed_position_y") lesson.m_flFixedY = f;
+		else if (variableName == "icon_offset") lesson.m_flIconOffset = f;
+		else if (variableName == "icon_relative_offset") lesson.m_flRelativeIconOffset = f;
+		else if (variableName == "caption_color") lesson.m_CaptionColor = s;
+		else if (variableName == "start_sound") lesson.m_StartSound = s;
+		else if (variableName == "vgui_target_name") lesson.m_VguiTargetName = s;
+		else if (variableName == "vgui_target_lookup") lesson.m_VguiTargetLookup = s;
+		else if (variableName == "vgui_target_edge") lesson.m_iVguiTargetEdge = i;
+		else if (variableName == "lock_duration") lesson.m_flLockDuration = f;
+		else if (variableName == "update_interval") lesson.m_flUpdateInterval = f;
+		else if (variableName == "can_open_when_dead") lesson.m_bCanOpenWhenDead = (i != 0);
+		else if (variableName == "bump_with_timeout_when_learned") lesson.m_bBumpWithTimeoutWhenLearned = (i != 0);
+		else if (variableName == "can_timeout_while_inactive") lesson.m_bCanTimeoutWhileInactive = (i != 0);
 		else return false;
 		return true;
 	}
