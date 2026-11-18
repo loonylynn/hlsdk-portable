@@ -19,6 +19,7 @@
 //
 
 #include "hud.h"
+#include "view.h"
 #include "cl_util.h"
 #include <string.h>
 #include <stdio.h>
@@ -401,6 +402,9 @@ void CHud::Init( void )
 	HOOK_MESSAGE( VGUIMenu );
 
 	Ragdoll_Init();
+
+	// Register view controls, including the Portal 2 viewmodel bob and lag cvars.
+	V_Init();
 
 	CVAR_CREATE( "hud_classautokill", "1", FCVAR_ARCHIVE | FCVAR_USERINFO );		// controls whether or not to suicide immediately on TF class switch
 	CVAR_CREATE( "hud_takesshots", "0", FCVAR_ARCHIVE );		// controls whether or not to automatically take screenshots at the end of a round
