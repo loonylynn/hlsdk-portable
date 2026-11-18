@@ -826,8 +826,10 @@ int CHud::Redraw( float flTime, int intermission )
 		m_flInstructorHintNextOcclusionTest = flTime + 0.25f;
 	}
 
-	// Refresh the locator model after dynamic target-origin and occlusion updates.
+	// Refresh the locator model, then advance its transition and effect state once
+	// for this frame. Drawing code consumes the cached results only.
 	HUD_SyncInstructorLocatorTarget( this );
+	m_InstructorLocatorPanel.UpdatePresentation( m_flTime );
 
 	m_flTimeDelta = (double)( m_flTime - m_fOldTime );
 	static float m_flShotTime = 0;
@@ -899,9 +901,10 @@ int CHud::Redraw( float flTime, int intermission )
 	// The PS2 world-space bracket remains a separate, unchanged HUD element.
 	CInstructorLocatorTarget *locatorTarget =
 		m_InstructorLocatorPanel.GetTargetFromHandle( m_iInstructorLocatorTargetHandle );
-	if( locatorTarget && locatorTarget->m_isActive && locatorTarget->m_bVisible &&
+	if( locatorTarget && locatorTarget->ShouldDraw() &&
 		( !locatorTarget->m_bOccluded ||
-			( locatorTarget->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) ) &&
+			( locatorTarget->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) ||
+			locatorTarget->IsFadingOut() ) &&
 		!intermission && m_pCvarDraw && m_pCvarDraw->value &&
 		!( m_iHideHUDDisplay & HIDEHUD_ALL ) )
 	{
@@ -1048,24 +1051,12 @@ int CHud::Redraw( float flTime, int intermission )
 					// Projection and edge placement belong to the target model.
 					// The renderer adds only transient pulse/shake offsets.
 					locatorTarget->CalculateEdgePosition( ScreenWidth, ScreenHeight, locatorEdgeMargin );
-					float locatorX = (float)locatorTarget->m_iconX;
-					float locatorY = (float)locatorTarget->m_iconY;
-
-					// The Source locator's pulse/shake options affect the marker,
-					// not a full-screen panel.
-					const int pulseFlags = locatorTarget->m_iEffectsFlags & 0x00000007;
-					const float pulseRate = ( pulseFlags & 0x4 ) ? 5.0f :
-						( ( pulseFlags & 0x2 ) ? 2.5f : 1.0f );
-					const float pulse = pulseFlags ?
-						( 0.5f + 0.5f * sinf( flTime * pulseRate * 6.28318f ) ) : 0.0f;
-
-					const int shakeFlags = locatorTarget->m_iEffectsFlags & 0x000000C0;
-					if( shakeFlags )
-					{
-						const float shakeRate = ( shakeFlags & 0x80 ) ? 22.0f : 10.0f;
-						locatorX += sinf( flTime * shakeRate ) * 2.0f;
-						locatorY += cosf( flTime * shakeRate * 0.83f ) * 1.5f;
-					}
+					m_InstructorLocatorPanel.ResolveDecluttering(
+						ScreenWidth, ScreenHeight, locatorEdgeMargin, 8 );
+					float locatorX = (float)( locatorTarget->m_iconX + locatorTarget->m_offsetX ) +
+						locatorTarget->m_flShakeX;
+					float locatorY = (float)( locatorTarget->m_iconY + locatorTarget->m_offsetY ) +
+						locatorTarget->m_flShakeY;
 
 					if( locatorX < locatorEdgeMargin ) locatorX = (float)locatorEdgeMargin;
 					if( locatorX > ScreenWidth - locatorEdgeMargin ) locatorX = (float)( ScreenWidth - locatorEdgeMargin );
@@ -1117,32 +1108,19 @@ int CHud::Redraw( float flTime, int intermission )
 					int locatorG = locatorTarget->m_iCaptionColorG;
 					int locatorB = locatorTarget->m_iCaptionColorB;
 
-					int locatorAlpha = 220;
-					const int alphaFlags = locatorTarget->m_iEffectsFlags & 0x00000038;
-					if( alphaFlags )
-					{
-						const float alphaRate = ( alphaFlags & 0x20 ) ? 5.0f :
-							( ( alphaFlags & 0x10 ) ? 2.5f : 1.0f );
-						locatorAlpha = 150 + (int)( 105.0f *
-							( 0.5f + 0.5f * sinf( flTime * alphaRate * 6.28318f ) ) );
-					}
-					if( locatorTarget->m_bManaged && locatorTarget->m_flVisibleSince > 0.0f )
-					{
-						float fade = ( flTime - locatorTarget->m_flVisibleSince ) / 0.18f;
-						if( fade < 0.0f ) fade = 0.0f;
-						if( fade > 1.0f ) fade = 1.0f;
-						locatorAlpha = (int)( locatorAlpha * ( 0.25f + 0.75f * fade ) );
-					}
+					int locatorAlpha = locatorTarget->GetRenderAlpha( 220 );
 
 					// A 20% increase keeps the 32x32 art compact while making
 					// the locator easier to pick out at normal gameplay distance.
 					if( sourceBindingIcon && locatorIconHeight > 0 && locatorIconWidth > 0 )
 						sourceBindingIconWidth = Q_max( 1, (int)( sourceBindingIconHeight *
 							( (float)locatorIconWidth / (float)locatorIconHeight ) + 0.5f ) );
-					const int locatorDrawWidth = sourceBindingIcon ? sourceBindingIconWidth :
-						( locatorSprite ? (int)( locatorIconWidth * 1.20f + 0.5f ) : 0 );
-					const int locatorDrawHeight = sourceBindingIcon ? sourceBindingIconHeight :
-						( locatorSprite ? (int)( locatorIconHeight * 1.20f + 0.5f ) : 0 );
+					const int locatorDrawWidth = sourceBindingIcon ?
+						Q_max( 1, (int)( sourceBindingIconWidth * locatorTarget->m_flPulseScale + 0.5f ) ) :
+						( locatorSprite ? (int)( locatorIconWidth * 1.20f * locatorTarget->m_flPulseScale + 0.5f ) : 0 );
+					const int locatorDrawHeight = sourceBindingIcon ?
+						Q_max( 1, (int)( sourceBindingIconHeight * locatorTarget->m_flPulseScale + 0.5f ) ) :
+						( locatorSprite ? (int)( locatorIconHeight * 1.20f * locatorTarget->m_flPulseScale + 0.5f ) : 0 );
 					const int markerHalfWidth = sourceBindingIcon ? locatorDrawWidth / 2 :
 						( locatorSprite ? locatorDrawWidth / 2 : 10 );
 					const int markerHalfHeight = sourceBindingIcon ? locatorDrawHeight / 2 :
@@ -1575,22 +1553,11 @@ int CHud::Redraw( float flTime, int intermission )
 			if( panelY > maxY - 12 ) panelY = Q_max( 0, maxY - 12 );
 
 			// Approximate Source locator FX flags using the GoldSrc HUD primitives.
-			int panelAlpha = 205;
-			const int alphaFlags = locatorTarget->m_iEffectsFlags & 0x00000038;
-			if( alphaFlags )
-			{
-				const float alphaRate = ( alphaFlags & 0x20 ) ? 5.0f :
-					( ( alphaFlags & 0x10 ) ? 2.5f : 1.0f );
-				panelAlpha = 150 + (int)( 105.0f * ( 0.5f + 0.5f * sinf( flTime * alphaRate * 6.28318f ) ) );
-			}
+			int panelAlpha = locatorTarget->GetRenderAlpha( 205 );
 			if( locatorTarget->m_iEffectsFlags & 0x00000007 )
-			{
-				const float pulseRate = ( locatorTarget->m_iEffectsFlags & 0x4 ) ? 5.0f :
-					( ( locatorTarget->m_iEffectsFlags & 0x2 ) ? 2.5f : 1.0f );
-				panelAlpha = Q_min( 255, panelAlpha + (int)( 28.0f * ( 0.5f + 0.5f * sinf( flTime * pulseRate * 6.28318f ) ) ) );
-			}
-			if( locatorTarget->m_iEffectsFlags & 0x000000C0 )
-				panelX += (int)( sinf( flTime * ( ( locatorTarget->m_iEffectsFlags & 0x80 ) ? 22.0f : 10.0f ) ) * 3.0f );
+				panelAlpha = Q_min( 255, panelAlpha + (int)( 28.0f * locatorTarget->m_flPulse ) );
+			panelX += (int)( locatorTarget->m_flShakeX * 1.5f );
+			panelY += (int)( locatorTarget->m_flShakeY );
 
 			int hintR = locatorTarget->m_iCaptionColorR;
 			int hintG = locatorTarget->m_iCaptionColorG;
@@ -1605,15 +1572,6 @@ int CHud::Redraw( float flTime, int intermission )
 					hintR = 112;
 					hintG = 180;
 					hintB = 255;
-				}
-
-				// Fade the managed card in without changing the map-authored hint path.
-				if( locatorTarget->m_flVisibleSince > 0.0f )
-				{
-					float fade = ( flTime - locatorTarget->m_flVisibleSince ) / 0.18f;
-					if( fade < 0.0f ) fade = 0.0f;
-					if( fade > 1.0f ) fade = 1.0f;
-					panelAlpha = (int)( panelAlpha * ( 0.25f + 0.75f * fade ) );
 				}
 
 				FillRGBA( panelX + 2, panelY + 3, panelWidth, panelHeight, 0, 0, 0, panelAlpha / 2 );
