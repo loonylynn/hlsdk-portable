@@ -624,6 +624,8 @@ public:
 
 	// Single-player port of Valve's Source instructor/locator payload.
 	bool m_bInstructorHintActive;
+	bool m_bInstructorHintManaged;
+	float m_flInstructorManagedVisibleSince;
 	int m_iInstructorHintId;
 	int m_iInstructorHintTarget;
 	bool m_bInstructorHintHasTargetPosition;
@@ -649,7 +651,8 @@ public:
 	char m_szInstructorHintBinding[64];
 
 	CHud() : m_iSpriteCount(0), m_pHudList(NULL),
-		m_bInstructorHintActive(false), m_iInstructorHintId(0),
+		m_bInstructorHintActive(false), m_bInstructorHintManaged(false),
+		m_flInstructorManagedVisibleSince(0.0f), m_iInstructorHintId(0),
 		m_iInstructorHintTarget(0), m_bInstructorHintHasTargetPosition(false),
 		m_bInstructorHintTargetVisible(false), m_bInstructorHintOccluded(false),
 		m_flInstructorHintEndTime(0.0f), m_flInstructorHintRange(0.0f),
@@ -680,6 +683,7 @@ public:
 	int _cdecl MsgFunc_SetFOV( const char *pszName,  int iSize, void *pbuf );
 	int  _cdecl MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf );
 	int _cdecl MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf );
+	int _cdecl MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf );
 
 	// Screen information
 	SCREENINFO	m_scrinfo;
