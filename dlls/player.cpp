@@ -2085,6 +2085,7 @@ void CEnvInstructorHint::HintThink( void )
 				WRITE_COORD( 0.0f );
 				WRITE_COORD( 0.0f );
 				WRITE_COORD( 0.0f );
+				WRITE_BYTE( 0 ); // target-lost map hints do not use an action icon
 			MESSAGE_END();
 		}
 		m_bTargetLostNotified = TRUE;
