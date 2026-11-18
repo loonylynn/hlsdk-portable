@@ -987,7 +987,7 @@ int CHud::Redraw( float flTime, int intermission )
 				locatorTarget->m_flNextBindingTick = m_flInstructorHintNextBindingTick;
 				for( int i = 0; i < locatorTarget->m_iBindingChoicesCount; ++i )
 				{
-					strncpy( locatorTarget->m_szBindingChoices[i], locatorTarget->m_szBindingChoices[i],
+					strncpy( locatorTarget->m_szBindingChoices[i], m_szInstructorHintBindingChoices[i],
 						sizeof( locatorTarget->m_szBindingChoices[i] ) - 1 );
 					locatorTarget->m_szBindingChoices[i][sizeof( locatorTarget->m_szBindingChoices[i] ) - 1] = '\0';
 				}
@@ -1003,11 +1003,15 @@ int CHud::Redraw( float flTime, int intermission )
 			// for at least 1.5 seconds, rather than when it is merely opened.
 			if( locatorTarget->m_bManaged && !m_bInstructorManagedDisplayCounted )
 			{
-				const bool countsAsVisible = !(!locatorTarget->m_bOriginInScreenspace) || ( hasTarget && !targetOffscreen );
+				const bool countsAsVisible = locatorTarget->m_bOriginInScreenspace ||
+					( hasTarget && !targetOffscreen );
 				if( countsAsVisible )
 				{
 					if( locatorTarget->m_flVisibleSince <= 0.0f )
+					{
 						locatorTarget->m_flVisibleSince = flTime;
+						m_flInstructorManagedVisibleSince = flTime;
+					}
 					else if( flTime - locatorTarget->m_flVisibleSince >= 1.5f )
 					{
 						GameInstructor_MarkDisplayed( m_szInstructorHintName );
@@ -1017,6 +1021,7 @@ int CHud::Redraw( float flTime, int intermission )
 				else
 				{
 					locatorTarget->m_flVisibleSince = 0.0f;
+					m_flInstructorManagedVisibleSince = 0.0f;
 				}
 			}
 
