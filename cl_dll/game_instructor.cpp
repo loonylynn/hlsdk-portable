@@ -960,6 +960,11 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 		std::string variable, action;
 		bool optional = false, negate = false;
 		if (!ParseExpression(elements[i].expression, variable, action, optional, negate))
+			if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
 			return false;
 
 		if (action == "scope in")
@@ -1004,6 +1009,11 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 			value.integer = m_bStarted ? 1 : 0;
 			if (negate ? value.integer != 0 : value.integer == 0)
 				continue;
+			if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
 			return false;
 		}
 		if (action == "reference open")
@@ -1011,7 +1021,12 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 			if (!GetGameInstructor().IsLessonOfSameTypeOpen(this))
 				return negate;
 			if (negate)
-				return false;
+				if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
+			return false;
 			continue;
 		}
 
@@ -1020,30 +1035,55 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 		{
 			if (optional)
 				continue;
+			if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
 			return false;
 		}
 		if (parameter.type == ParamValue::VALUE_NONE && action != "set")
 		{
 			if (optional)
 				continue;
+			if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
 			return false;
 		}
 
 		if (action == "set")
 		{
 			if (!SetVariable(*this, variable, parameter))
-				return false;
+				if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
+			return false;
 			continue;
 		}
 
 		ParamValue current = GetVariable(*this, variable);
 		if (current.type == ParamValue::VALUE_NONE)
+			if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
 			return false;
 
 		if (action == "add" || action == "subtract" || action == "multiply")
 		{
 			if (current.type == ParamValue::VALUE_STRING)
-				return false;
+				if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
+			return false;
 			const float a = current.type == ParamValue::VALUE_FLOAT ? current.number : (float)current.integer;
 			const float b = parameter.type == ParamValue::VALUE_FLOAT ? parameter.number : (float)parameter.integer;
 			ParamValue result;
@@ -1058,7 +1098,12 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 				result.integer = (int)(action == "add" ? a + b : action == "subtract" ? a - b : a * b);
 			}
 			if (!SetVariable(*this, variable, result))
-				return false;
+				if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
+			return false;
 			continue;
 		}
 
@@ -1068,7 +1113,12 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 			distance.type = ParamValue::VALUE_INTEGER;
 			distance.integer = EntityDistance(m_iLocalPlayer, parameter.integer);
 			if (!SetVariable(*this, variable, distance))
-				return false;
+				if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
+			return false;
 			continue;
 		}
 
@@ -1076,11 +1126,21 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 			action == "has bit" || action == "bit count is" || action == "bit count less than")
 		{
 			if (!CompareValues(current, parameter, action, negate))
-				return false;
+				if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
+			return false;
 			continue;
 		}
 
-		return false;
+		if (scopeDepth > 0)
+			{
+				continueScope = scopeDepth - 1;
+				continue;
+			}
+			return false;
 	}
 
 	return true;
