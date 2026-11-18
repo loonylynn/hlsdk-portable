@@ -76,6 +76,7 @@ static void HUD_ClearInstructorHint( CHud *hud )
 	hud->m_vecInstructorHintTargetOrigin[2] = 0.0f;
 	hud->m_flInstructorHintEndTime = 0.0f;
 	hud->m_flInstructorHintRange = 0.0f;
+	hud->m_flInstructorHintIconOffset = 0.0f;
 	hud->m_iInstructorHintIconMode = 0;
 	hud->m_iInstructorHintFlags = 0;
 	hud->m_iInstructorHintColorR = 255;
@@ -311,6 +312,7 @@ void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 	gHUD.m_bInstructorHintOccluded = false;
 	gHUD.m_flInstructorHintEndTime = 0.0f;
 	gHUD.m_flInstructorHintRange = range;
+	gHUD.m_flInstructorHintIconOffset = iconOffset;
 	gHUD.m_iInstructorHintFlags = flags | ( forceCaption ? 0x00000400 : 0 );
 	gHUD.m_iInstructorHintIconMode = 0;
 	gHUD.m_iInstructorHintColorR = colorR;
