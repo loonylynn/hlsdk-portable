@@ -193,6 +193,15 @@ authored left/down sprite files are required. If a directional sprite cannot be
 loaded, that directional indicator is skipped; the main locator's existing
 GoldSrc sprite/text fallback remains available.
 
+## Keyboard binding keycap
+
+The original `icon_key_generic.spr` is loaded as an optional keyboard keycap.
+It is drawn behind short one- or two-character bindings in world-space locator
+labels and managed lesson cards. Longer bindings continue to use the existing
+drawn key-chip fallback because the original Source HUD uses a separate wide
+key asset for those labels. If the generic sprite is missing, the drawn chip
+remains available.
+
 ## Deliberate GoldSrc differences
 
 - Multiple lesson opportunities, prerequisites, counters, and priority
