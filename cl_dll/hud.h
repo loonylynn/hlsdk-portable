@@ -630,13 +630,17 @@ public:
 	bool m_bInstructorHintHasTargetPosition;
 	float m_vecInstructorHintTargetOrigin[3];
 	float m_flInstructorHintEndTime;
+	int m_iInstructorHintIconMode; // 0 = none, 1 = move, 2 = hold
+	HSPRITE m_hInstructorHintMoveSprite;
+	HSPRITE m_hInstructorHintHoldSprite;
 	char m_szInstructorHintCaption[192];
 	char m_szInstructorHintBinding[64];
 
 	CHud() : m_iSpriteCount(0), m_pHudList(NULL),
 		m_bInstructorHintActive(false), m_iInstructorHintId(0),
 		m_iInstructorHintTarget(0), m_bInstructorHintHasTargetPosition(false),
-		m_flInstructorHintEndTime(0.0f)
+		m_flInstructorHintEndTime(0.0f), m_iInstructorHintIconMode(0),
+		m_hInstructorHintMoveSprite(0), m_hInstructorHintHoldSprite(0)
 	{
 		m_vecInstructorHintTargetOrigin[0] = 0.0f;
 		m_vecInstructorHintTargetOrigin[1] = 0.0f;
