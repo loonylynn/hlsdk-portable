@@ -763,7 +763,16 @@ int CHud::Redraw( float flTime, int intermission )
 
 					if( hasLocatorText )
 					{
-						const int locatorKeyWidth = locatorBindingWidth > 0 ? locatorBindingWidth + 10 : 0;
+						int locatorKeyWidth = 0;
+						if( locatorBindingWidth > 0 )
+						{
+							locatorKeyWidth = locatorBindingWidth +
+								( m_hInstructorHintKeyGenericSprite ? 12 : 10 );
+							if( m_hInstructorHintKeyGenericSprite && locatorKeyWidth < 22 )
+								locatorKeyWidth = 22;
+							if( locatorKeyWidth > 64 )
+								locatorKeyWidth = 64;
+						}
 						const int maxLabelWidth = Q_max( 32, ScreenWidth - 24 );
 						int labelWidth = locatorCaptionWidth + locatorKeyWidth + 24;
 						if( labelWidth < 44 ) labelWidth = 44;
@@ -834,10 +843,36 @@ int CHud::Redraw( float flTime, int intermission )
 						if( locatorKeyWidth > 0 )
 						{
 							const int keyY = labelY + 2;
-							FillRGBA( keyX, keyY, locatorKeyWidth, 16, 12, 15, 19, locatorAlpha );
+							const int keyHeight = 16;
+						bool keySpriteDrawn = false;
+						if( m_hInstructorHintKeyGenericSprite )
+						{
+							const int keyNativeWidth = SPR_Width( m_hInstructorHintKeyGenericSprite, 0 );
+						const int keyNativeHeight = SPR_Height( m_hInstructorHintKeyGenericSprite, 0 );
+						if( keyNativeWidth > 0 && keyNativeHeight > 0 &&
+							keyNativeWidth <= 64 && keyNativeHeight <= 64 )
+						{
+							SPR_Set( m_hInstructorHintKeyGenericSprite,
+								locatorR * locatorAlpha / 255,
+								locatorG * locatorAlpha / 255,
+								locatorB * locatorAlpha / 255 );
+							keySpriteDrawn = HUD_DrawInstructorLocatorSprite(
+								m_hInstructorHintKeyGenericSprite, keyX, keyY,
+								keyNativeWidth, keyNativeHeight,
+								locatorKeyWidth, keyHeight, kRenderTransAlpha, false );
+						}
+						}
+						if( !keySpriteDrawn )
+						{
+							// Keep the old drawn key chip if the optional .spr is absent.
+							FillRGBA( keyX, keyY, locatorKeyWidth, keyHeight, 12, 15, 19, locatorAlpha );
 							FillRGBA( keyX, keyY, locatorKeyWidth, 1, locatorR, locatorG, locatorB, locatorAlpha / 2 );
-							DrawHudString( keyX + 5, keyY + 4, keyX + locatorKeyWidth - 3,
-								locatorBinding, locatorR, locatorG, locatorB );
+						}
+						int keyTextX = keyX + ( locatorKeyWidth - locatorBindingWidth ) / 2;
+					if( keyTextX < keyX + 3 )
+						keyTextX = keyX + 3;
+					DrawHudString( keyTextX, keyY + 4, keyX + locatorKeyWidth - 3,
+						locatorBinding, locatorR, locatorG, locatorB );
 						}
 					}
 				}
@@ -873,7 +908,16 @@ int CHud::Redraw( float flTime, int intermission )
 			}
 
 			const bool managedCard = m_bInstructorHintManaged;
-			const int keyChipWidth = ( managedCard && bindingText[0] ) ? bindingWidth + 18 : 0;
+			int keyChipWidth = 0;
+			if( managedCard && bindingText[0] )
+			{
+				keyChipWidth = bindingWidth +
+					( m_hInstructorHintKeyGenericSprite ? 12 : 18 );
+				if( m_hInstructorHintKeyGenericSprite && keyChipWidth < 24 )
+					keyChipWidth = 24;
+				if( keyChipWidth > 64 )
+					keyChipWidth = 64;
+			}
 			const int contentTextWidth = managedCard ?
 				captionWidth + ( keyChipWidth ? keyChipWidth + 12 : 0 ) :
 				Q_max( captionWidth, bindingWidth );
@@ -1074,10 +1118,34 @@ int CHud::Redraw( float flTime, int intermission )
 				if( bindingText[0] )
 				{
 					const int keyY = panelY + 22;
-					FillRGBA( keyX, keyY, keyChipWidth, 22, 10, 14, 21, panelAlpha );
-					FillRGBA( keyX, keyY, keyChipWidth, 1, hintR, hintG, hintB, panelAlpha );
-					FillRGBA( keyX, keyY + 21, keyChipWidth, 1, 63, 73, 89, panelAlpha );
-					DrawHudString( keyX + 8, keyY + 6, keyX + keyChipWidth - 5,
+					bool keySpriteDrawn = false;
+					if( m_hInstructorHintKeyGenericSprite )
+					{
+						const int keyNativeWidth = SPR_Width( m_hInstructorHintKeyGenericSprite, 0 );
+						const int keyNativeHeight = SPR_Height( m_hInstructorHintKeyGenericSprite, 0 );
+						if( keyNativeWidth > 0 && keyNativeHeight > 0 &&
+							keyNativeWidth <= 64 && keyNativeHeight <= 64 )
+						{
+							SPR_Set( m_hInstructorHintKeyGenericSprite,
+								hintR * panelAlpha / 255,
+								hintG * panelAlpha / 255,
+								hintB * panelAlpha / 255 );
+							keySpriteDrawn = HUD_DrawInstructorLocatorSprite(
+								m_hInstructorHintKeyGenericSprite, keyX, keyY,
+								keyNativeWidth, keyNativeHeight,
+								keyChipWidth, 22, kRenderTransAlpha, false );
+						}
+					}
+					if( !keySpriteDrawn )
+					{
+						FillRGBA( keyX, keyY, keyChipWidth, 22, 10, 14, 21, panelAlpha );
+						FillRGBA( keyX, keyY, keyChipWidth, 1, hintR, hintG, hintB, panelAlpha );
+						FillRGBA( keyX, keyY + 21, keyChipWidth, 1, 63, 73, 89, panelAlpha );
+					}
+					int keyTextX = keyX + ( keyChipWidth - bindingWidth ) / 2;
+					if( keyTextX < keyX + 3 )
+						keyTextX = keyX + 3;
+					DrawHudString( keyTextX, keyY + 6, keyX + keyChipWidth - 5,
 						bindingText, hintR, hintG, hintB );
 				}
 			}
