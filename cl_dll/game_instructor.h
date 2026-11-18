@@ -6,6 +6,7 @@
 
 #include <string>
 #include <vector>
+#include <utility>
 
 class CBaseLesson;
 class CTextLesson;
@@ -20,6 +21,7 @@ struct InstructorEventData
 	int entityIndex;
 	char className[64];
 	char targetName[64];
+	char fieldName[64];
 	char stringValue[128];
 	int integerValue;
 	float floatValue;
@@ -42,7 +44,8 @@ enum LessonInstanceType
 	LESSON_INSTANCE_MULTIPLE = 0,
 	LESSON_INSTANCE_SINGLE_OPEN = 1,
 	LESSON_INSTANCE_FIXED_REPLACE = 2,
-	LESSON_INSTANCE_SINGLE_ACTIVE = 3
+	LESSON_INSTANCE_SINGLE_ACTIVE = 3,
+	LESSON_INSTANCE_TYPE_TOTAL = 4
 };
 
 class CBaseLesson
@@ -223,6 +226,7 @@ void GameInstructor_Init();
 void GameInstructor_Shutdown();
 void GameInstructor_Update(float now);
 void GameInstructor_FireEvent(const InstructorEventData &event);
+void GameInstructor_MarkDisplayed(const char *name);
 void GameInstructor_FireEvent(const char *name, int entityIndex, const char *className,
 	const char *targetName, const char *stringValue, int integerValue, float floatValue);
 
