@@ -4,6 +4,8 @@
 
 #include "hud.h"
 #include "cl_util.h"
+#include "const.h"
+#include "com_model.h"
 #include "cdll_int.h"
 #include "game_instructor.h"
 
@@ -1255,7 +1257,7 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 			else if (action == "modelname is" && gEngfuncs.GetEntityByIndex)
 			{
 				cl_entity_t *entity = gEngfuncs.GetEntityByIndex(current.integer);
-				if (entity && entity->model && entity->model->name)
+				if (entity && entity->model)
 					actualName = entity->model->name;
 			}
 
