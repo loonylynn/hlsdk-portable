@@ -403,6 +403,24 @@ namespace
 		else if (name == "visible") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bVisible ? 1 : 0; }
 		else if (name == "no_offscreen") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bNoOffscreen ? 1 : 0; }
 		else if (name == "force_caption") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bForceCaption ? 1 : 0; }
+		else if (name == "no_icon_target") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bNoIconTarget ? 1 : 0; }
+		else if (name == "allow_nodraw_target") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bAllowNodrawTarget ? 1 : 0; }
+		else if (name == "show_when_occluded") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bShowWhenOccluded ? 1 : 0; }
+		else if (name == "fixed_position") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bFixedPosition ? 1 : 0; }
+		else if (name == "fixed_position_x") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flFixedX; }
+		else if (name == "fixed_position_y") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flFixedY; }
+		else if (name == "icon_offset") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flIconOffset; }
+		else if (name == "icon_relative_offset") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flRelativeIconOffset; }
+		else if (name == "caption_color") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_CaptionColor; }
+		else if (name == "start_sound") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_StartSound; }
+		else if (name == "vgui_target_name") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_VguiTargetName; }
+		else if (name == "vgui_target_lookup") { value.type = ParamValue::VALUE_STRING; value.string = lesson.m_VguiTargetLookup; }
+		else if (name == "vgui_target_edge") { value.type = ParamValue::VALUE_INTEGER; value.integer = lesson.m_iVguiTargetEdge; }
+		else if (name == "lock_duration") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flLockDuration; }
+		else if (name == "update_interval") { value.type = ParamValue::VALUE_FLOAT; value.number = lesson.m_flUpdateInterval; }
+		else if (name == "can_open_when_dead") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bCanOpenWhenDead ? 1 : 0; }
+		else if (name == "bump_with_timeout_when_learned") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bBumpWithTimeoutWhenLearned ? 1 : 0; }
+		else if (name == "can_timeout_while_inactive") { value.type = ParamValue::VALUE_BOOLEAN; value.integer = lesson.m_bCanTimeoutWhileInactive ? 1 : 0; }
 		return value;
 	}
 
@@ -443,6 +461,24 @@ namespace
 		else if (name == "visible") lesson.m_bVisible = (i != 0);
 		else if (name == "no_offscreen") lesson.m_bNoOffscreen = (i != 0);
 		else if (name == "force_caption") lesson.m_bForceCaption = (i != 0);
+		else if (name == "no_icon_target") lesson.m_bNoIconTarget = (i != 0);
+		else if (name == "allow_nodraw_target") lesson.m_bAllowNodrawTarget = (i != 0);
+		else if (name == "show_when_occluded") lesson.m_bShowWhenOccluded = (i != 0);
+		else if (name == "fixed_position") lesson.m_bFixedPosition = (i != 0);
+		else if (name == "fixed_position_x") lesson.m_flFixedX = f;
+		else if (name == "fixed_position_y") lesson.m_flFixedY = f;
+		else if (name == "icon_offset") lesson.m_flIconOffset = f;
+		else if (name == "icon_relative_offset") lesson.m_flRelativeIconOffset = f;
+		else if (name == "caption_color") lesson.m_CaptionColor = s;
+		else if (name == "start_sound") lesson.m_StartSound = s;
+		else if (name == "vgui_target_name") lesson.m_VguiTargetName = s;
+		else if (name == "vgui_target_lookup") lesson.m_VguiTargetLookup = s;
+		else if (name == "vgui_target_edge") lesson.m_iVguiTargetEdge = i;
+		else if (name == "lock_duration") lesson.m_flLockDuration = f;
+		else if (name == "update_interval") lesson.m_flUpdateInterval = f;
+		else if (name == "can_open_when_dead") lesson.m_bCanOpenWhenDead = (i != 0);
+		else if (name == "bump_with_timeout_when_learned") lesson.m_bBumpWithTimeoutWhenLearned = (i != 0);
+		else if (name == "can_timeout_while_inactive") lesson.m_bCanTimeoutWhileInactive = (i != 0);
 		else return false;
 		return true;
 	}
