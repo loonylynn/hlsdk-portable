@@ -152,31 +152,55 @@ static bool HUD_GetInstructorHintScreenPosition( const float *worldOrigin, float
 // Draw a HUD locator sprite at a requested size. Xash3D's generic sprite
 // entry point stretches the source texture; texture-alpha blending allows the
 // renderer to interpolate edge coverage when linear texture filtering is active.
-static void HUD_DrawInstructorLocatorSprite( HSPRITE sprite, int x, int y,
+static bool HUD_DrawInstructorLocatorSprite( HSPRITE sprite, int x, int y,
 	int nativeWidth, int nativeHeight, int width, int height,
-	int renderMode, bool additiveFallback )
+	int renderMode, bool additiveFallback, bool flipX = false, bool flipY = false )
 {
 	if( !sprite )
-		return;
+		return false;
 
 	if( gEngfuncs.pfnSPR_DrawGeneric && gEngfuncs.pTriAPI &&
 		gEngfuncs.pTriAPI->RenderMode )
 	{
+		int drawX = HUD_AdjustX( x );
+		int drawY = HUD_AdjustY( y );
+		int drawWidth = width;
+		int drawHeight = height;
+
+		// Xash3D's generic sprite path forwards signed dimensions to its
+		// textured-quad renderer. Moving the origin to the opposite edge and
+		// negating one dimension mirrors the texture without another .spr.
+		if( flipX )
+		{
+			drawX += drawWidth;
+			drawWidth = -drawWidth;
+		}
+		if( flipY )
+		{
+			drawY += drawHeight;
+			drawHeight = -drawHeight;
+		}
+
 		gEngfuncs.pTriAPI->RenderMode( renderMode );
-		gEngfuncs.pfnSPR_DrawGeneric( 0, HUD_AdjustX( x ), HUD_AdjustY( y ),
-			NULL, 0, 0, width, height );
+		gEngfuncs.pfnSPR_DrawGeneric( 0, drawX, drawY,
+			NULL, 0, 0, drawWidth, drawHeight );
 		gEngfuncs.pTriAPI->RenderMode( kRenderNormal );
-		return;
+		return true;
 	}
 
-	// Older engines cannot stretch through the generic sprite API. Keep the
-	// original native-size draw centered as a compatibility fallback.
+	// Older engines cannot stretch or mirror through the generic sprite API.
+	// Keep the native-size fallback for ordinary sprites; mirrored directions
+	// are skipped so that a backwards-facing arrow is never shown by mistake.
+	if( flipX || flipY )
+		return false;
+
 	x += ( width - nativeWidth ) / 2;
 	y += ( height - nativeHeight ) / 2;
 	if( additiveFallback )
 		SPR_DrawAdditive( 0, x, y, NULL );
 	else
 		SPR_DrawHoles( 0, x, y, NULL );
+	return true;
 }
 
 // Think
@@ -456,7 +480,21 @@ int CHud::Redraw( float flTime, int intermission )
 					float centerY = ScreenHeight * 0.5f;
 					float locatorX = targetX;
 					float locatorY = targetY;
-					const int locatorEdgeMargin = 22;
+					const bool hasDirectionalLocatorSprites =
+						m_hInstructorHintArrowRightSprite && m_hInstructorHintArrowUpSprite;
+					const int locatorArrowDrawSize = 24;
+					const int locatorArrowGap = 4;
+					const int locatorEdgeMargin = hasDirectionalLocatorSprites ?
+						( 22 + locatorArrowDrawSize + locatorArrowGap ) : 22;
+					enum
+					{
+						INSTRUCTOR_ARROW_NONE,
+						INSTRUCTOR_ARROW_LEFT,
+						INSTRUCTOR_ARROW_RIGHT,
+						INSTRUCTOR_ARROW_UP,
+						INSTRUCTOR_ARROW_DOWN
+					};
+					int locatorArrowDirection = INSTRUCTOR_ARROW_NONE;
 
 					if( targetOffscreen )
 					{
@@ -510,6 +548,18 @@ int CHud::Redraw( float flTime, int intermission )
 					if( locatorX > ScreenWidth - locatorEdgeMargin ) locatorX = (float)( ScreenWidth - locatorEdgeMargin );
 					if( locatorY < locatorEdgeMargin ) locatorY = (float)locatorEdgeMargin;
 					if( locatorY > ScreenHeight - locatorEdgeMargin ) locatorY = (float)( ScreenHeight - locatorEdgeMargin );
+
+					if( targetOffscreen && hasDirectionalLocatorSprites )
+					{
+						if( locatorX <= locatorEdgeMargin + 0.5f )
+							locatorArrowDirection = INSTRUCTOR_ARROW_LEFT;
+						else if( locatorX >= ScreenWidth - locatorEdgeMargin - 0.5f )
+							locatorArrowDirection = INSTRUCTOR_ARROW_RIGHT;
+						else if( locatorY <= locatorEdgeMargin + 0.5f )
+							locatorArrowDirection = INSTRUCTOR_ARROW_UP;
+						else
+							locatorArrowDirection = INSTRUCTOR_ARROW_DOWN;
+					}
 
 					const int markerX = (int)locatorX;
 					const int markerY = (int)locatorY;
@@ -622,8 +672,9 @@ int CHud::Redraw( float flTime, int intermission )
 							( dx < 0.0f ? "<" : ">" ) :
 							( dy < 0.0f ? "^" : "v" );
 						FillRGBA( markerX - 10, markerY - 10, 20, 20, 5, 7, 10, locatorAlpha );
-						DrawHudString( markerX - 4, markerY - 8, markerX + 10,
-							arrow, locatorR, locatorG, locatorB );
+						if( !hasDirectionalLocatorSprites )
+							DrawHudString( markerX - 4, markerY - 8, markerX + 10,
+								arrow, locatorR, locatorG, locatorB );
 					}
 					else
 					{
@@ -635,6 +686,68 @@ int CHud::Redraw( float flTime, int intermission )
 						FillRGBA( markerX - 8, markerY - 7, 1, 14, locatorR, locatorG, locatorB, locatorAlpha );
 						FillRGBA( markerX + 7, markerY - 7, 1, 14, locatorR, locatorG, locatorB, locatorAlpha );
 						FillRGBA( markerX - 2, markerY - 2, 5, 5, locatorR, locatorG, locatorB, locatorAlpha );
+					}
+
+					// Source's locator draws a separate direction indicator beside
+					// the offscreen target icon. Reuse the two supplied originals:
+				// left = horizontally flipped right; down = vertically flipped up.
+					if( targetOffscreen && locatorArrowDirection != INSTRUCTOR_ARROW_NONE )
+					{
+						HSPRITE arrowSprite = 0;
+						bool flipArrowX = false;
+						bool flipArrowY = false;
+						int arrowX = markerX;
+						int arrowY = markerY;
+						const int arrowWidth = locatorArrowDrawSize;
+					const int arrowHeight = locatorArrowDrawSize;
+
+						switch( locatorArrowDirection )
+						{
+						case INSTRUCTOR_ARROW_LEFT:
+							arrowSprite = m_hInstructorHintArrowRightSprite;
+							flipArrowX = true;
+							arrowX = markerX - markerHalfWidth - locatorArrowGap - arrowWidth;
+							arrowY = markerY - arrowHeight / 2;
+							break;
+						case INSTRUCTOR_ARROW_RIGHT:
+							arrowSprite = m_hInstructorHintArrowRightSprite;
+							arrowX = markerX + markerHalfWidth + locatorArrowGap;
+							arrowY = markerY - arrowHeight / 2;
+							break;
+						case INSTRUCTOR_ARROW_UP:
+							arrowSprite = m_hInstructorHintArrowUpSprite;
+							arrowX = markerX - arrowWidth / 2;
+							arrowY = markerY - markerHalfHeight - locatorArrowGap - arrowHeight;
+							break;
+						case INSTRUCTOR_ARROW_DOWN:
+							arrowSprite = m_hInstructorHintArrowUpSprite;
+							flipArrowY = true;
+							arrowX = markerX - arrowWidth / 2;
+							arrowY = markerY + markerHalfHeight + locatorArrowGap;
+							break;
+						}
+						if( arrowSprite )
+						{
+							const int arrowNativeWidth = SPR_Width( arrowSprite, 0 );
+						const int arrowNativeHeight = SPR_Height( arrowSprite, 0 );
+						SPR_Set( arrowSprite,
+							locatorR * locatorAlpha / 255,
+							locatorG * locatorAlpha / 255,
+							locatorB * locatorAlpha / 255 );
+						const bool arrowDrawn = HUD_DrawInstructorLocatorSprite(
+							arrowSprite, arrowX, arrowY,
+							arrowNativeWidth, arrowNativeHeight,
+							arrowWidth, arrowHeight, kRenderTransAlpha, false,
+							flipArrowX, flipArrowY );
+						if( !arrowDrawn )
+						{
+							const char *arrow = locatorArrowDirection == INSTRUCTOR_ARROW_LEFT ? "<" :
+								( locatorArrowDirection == INSTRUCTOR_ARROW_RIGHT ? ">" :
+								( locatorArrowDirection == INSTRUCTOR_ARROW_UP ? "^" : "v" ) );
+							DrawHudString( markerX - 4, markerY - 8, markerX + 10,
+								arrow, locatorR, locatorG, locatorB );
+						}
+						}
 					}
 
 					// The caption follows the icon as a compact locator label.
