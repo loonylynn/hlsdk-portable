@@ -759,6 +759,8 @@ public:
 
 extern CHud gHUD;
 
+void HUD_SyncInstructorLocatorTarget( CHud *hud );
+
 extern int g_iPlayerClass;
 extern int g_iTeamNumber;
 extern int g_iUser1;
