@@ -33,6 +33,16 @@ void CInstructorLocatorTarget::Activate( int serialNumber, int frameNumber,
 	m_isActive = true;
 	m_bVisible = m_bOnscreen = true;
 	m_alpha = 0;
+	m_iEffectAlpha = 255;
+	m_flFadeDuration = 0.18f;
+	m_flPulse = 0.0f;
+	m_flPulseScale = 1.0f;
+	m_flShakeX = m_flShakeY = 0.0f;
+	m_flManagedAlpha = 1.0f;
+	m_bRemoveWhenFadedOut = false;
+	m_wide = m_tall = 40;
+	m_declutterIndex = m_lastDeclutterIndex = -1;
+	m_offsetX = m_offsetY = 0;
 	m_fadeStart = m_lerpStart = m_pulseStart = currentTime;
 	m_lastXPos = screenWidth / 2;
 	m_lastYPos = screenHeight / 4;
@@ -48,17 +58,130 @@ void CInstructorLocatorTarget::Deactivate( bool noFade, float currentTime, float
 		ResetState();
 		return;
 	}
+
+	m_bVisible = false;
+	m_bRemoveWhenFadedOut = true;
 	if( !( m_iEffectsFlags & LOCATOR_ICON_FX_FADE_OUT ) )
 	{
 		if( fadeTime < 0.001f ) fadeTime = 0.001f;
-		const float assumedFadeTime = ( 1.0f - (float)m_alpha / 255.0f ) * fadeTime;
-		m_fadeStart = currentTime - assumedFadeTime;
+		m_flFadeDuration = fadeTime;
+		const float elapsedFade = ( 1.0f - (float)m_alpha / 255.0f ) * fadeTime;
+		m_fadeStart = currentTime - elapsedFade;
 		m_iEffectsFlags |= LOCATOR_ICON_FX_FADE_OUT;
 		m_iEffectsFlags &= ~LOCATOR_ICON_FX_FADE_IN;
 	}
 }
 
 void CInstructorLocatorTarget::Update( int frameNumber ) { m_frameLastUpdated = frameNumber; }
+
+bool CInstructorLocatorTarget::IsFadingOut() const
+{
+	return ( m_iEffectsFlags & LOCATOR_ICON_FX_FADE_OUT ) != 0;
+}
+
+bool CInstructorLocatorTarget::ShouldDraw() const
+{
+	return m_isActive && m_alpha > 0 && ( m_bVisible || IsFadingOut() );
+}
+
+int CInstructorLocatorTarget::GetRenderAlpha( int baseAlpha ) const
+{
+	const int alphaFlags = m_iEffectsFlags & 0x00000038;
+	int alpha = alphaFlags ? m_iEffectAlpha : baseAlpha;
+	if( alpha < 0 ) alpha = 0;
+	if( alpha > 255 ) alpha = 255;
+	alpha = alpha * m_alpha / 255;
+	alpha = (int)( (float)alpha * m_flManagedAlpha + 0.5f );
+	if( alpha < 0 ) alpha = 0;
+	if( alpha > 255 ) alpha = 255;
+	return alpha;
+}
+
+void CInstructorLocatorTarget::UpdateAnimation( float currentTime )
+{
+	m_bIsDrawing = false;
+
+	float fadeDuration = m_flFadeDuration;
+	if( fadeDuration < 0.001f ) fadeDuration = 0.001f;
+	float elapsed = currentTime - m_fadeStart;
+	if( elapsed < 0.0f ) elapsed = 0.0f;
+
+	if( m_iEffectsFlags & LOCATOR_ICON_FX_FADE_OUT )
+	{
+		float fraction = elapsed / fadeDuration;
+		if( fraction > 1.0f ) fraction = 1.0f;
+		m_alpha = (int)( 255.0f * ( 1.0f - fraction ) + 0.5f );
+		if( fraction >= 1.0f )
+		{
+			m_alpha = 0;
+			m_iEffectsFlags &= ~LOCATOR_ICON_FX_FADE_OUT;
+			if( m_bRemoveWhenFadedOut )
+			{
+				ResetState();
+				return;
+			}
+		}
+	}
+	else if( m_iEffectsFlags & LOCATOR_ICON_FX_FADE_IN )
+	{
+		float fraction = elapsed / fadeDuration;
+		if( fraction > 1.0f ) fraction = 1.0f;
+		m_alpha = (int)( 255.0f * fraction + 0.5f );
+		if( fraction >= 1.0f )
+		{
+			m_alpha = 255;
+			m_iEffectsFlags &= ~LOCATOR_ICON_FX_FADE_IN;
+		}
+	}
+	else
+	{
+		m_alpha = m_bVisible ? 255 : 0;
+	}
+
+	const float pulseFlags = (float)( m_iEffectsFlags & 0x00000007 );
+	const int pulseMode = (int)pulseFlags;
+	const float pulseRate = ( pulseMode & 0x4 ) ? 5.0f :
+		( ( pulseMode & 0x2 ) ? 2.5f : 1.0f );
+	m_flPulse = pulseMode ?
+		( 0.5f + 0.5f * sinf( ( currentTime - m_pulseStart ) * pulseRate * 6.28318f ) ) : 0.0f;
+	m_flPulseScale = 1.0f + 0.08f * m_flPulse;
+
+	const int alphaFlags = m_iEffectsFlags & 0x00000038;
+	if( alphaFlags )
+	{
+		const float alphaRate = ( alphaFlags & 0x20 ) ? 5.0f :
+			( ( alphaFlags & 0x10 ) ? 2.5f : 1.0f );
+		const float alphaPulse = 0.5f + 0.5f *
+			sinf( ( currentTime - m_pulseStart ) * alphaRate * 6.28318f );
+		m_iEffectAlpha = 150 + (int)( 105.0f * alphaPulse );
+	}
+	else
+	{
+		m_iEffectAlpha = 255;
+	}
+
+	const int shakeFlags = m_iEffectsFlags & 0x000000C0;
+	if( shakeFlags )
+	{
+		const float shakeRate = ( shakeFlags & 0x80 ) ? 22.0f : 10.0f;
+		const float shakeTime = ( currentTime - m_pulseStart ) * shakeRate;
+		m_flShakeX = sinf( shakeTime ) * 2.0f;
+		m_flShakeY = cosf( shakeTime * 0.83f ) * 1.5f;
+	}
+	else
+	{
+		m_flShakeX = m_flShakeY = 0.0f;
+	}
+
+	m_flManagedAlpha = 1.0f;
+	if( m_bManaged && m_flVisibleSince > 0.0f )
+	{
+		float fade = ( currentTime - m_flVisibleSince ) / 0.18f;
+		if( fade < 0.0f ) fade = 0.0f;
+		if( fade > 1.0f ) fade = 1.0f;
+		m_flManagedAlpha = 0.25f + 0.75f * fade;
+	}
+}
 
 void CInstructorLocatorTarget::UpdateProjection( float screenX, float screenY, bool behind,
 	int screenWidth, int screenHeight, int visibilityMargin )
@@ -153,18 +276,26 @@ void CInstructorLocatorTarget::SetVisible( bool visible, float currentTime, floa
 {
 	if( m_bVisible == visible ) return;
 	m_bVisible = visible;
+	m_bRemoveWhenFadedOut = false;
 	if( fadeTime < 0.001f ) fadeTime = 0.001f;
+	m_flFadeDuration = fadeTime;
+
 	if( visible )
 	{
 		m_fadeStart = currentTime - ( (float)m_alpha / 255.0f ) * fadeTime;
 		m_iEffectsFlags |= LOCATOR_ICON_FX_FADE_IN;
 		m_iEffectsFlags &= ~LOCATOR_ICON_FX_FADE_OUT;
 	}
-	else
+	else if( m_alpha > 0 )
 	{
 		m_fadeStart = currentTime - ( 1.0f - (float)m_alpha / 255.0f ) * fadeTime;
 		m_iEffectsFlags |= LOCATOR_ICON_FX_FADE_OUT;
 		m_iEffectsFlags &= ~LOCATOR_ICON_FX_FADE_IN;
+	}
+	else
+	{
+		m_alpha = 0;
+		m_iEffectsFlags &= ~( LOCATOR_ICON_FX_FADE_IN | LOCATOR_ICON_FX_FADE_OUT );
 	}
 }
 
@@ -269,6 +400,105 @@ void CInstructorLocatorPanel::BeginFrame( float currentTime )
 	CollectGarbage( currentTime, 0.3f );
 }
 int CInstructorLocatorPanel::GetFrameCount() const { return m_iFrameCount; }
+void CInstructorLocatorPanel::UpdatePresentation( float currentTime )
+{
+	for( int i = 0; i < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++i )
+	{
+		if( m_targets[i].m_isActive )
+			m_targets[i].UpdateAnimation( currentTime );
+	}
+}
+
+void CInstructorLocatorPanel::ResolveDecluttering( int screenWidth, int screenHeight,
+	int edgeMargin, int gap )
+{
+	if( screenWidth <= 0 || screenHeight <= 0 )
+		return;
+	if( edgeMargin < 0 ) edgeMargin = 0;
+	if( gap < 0 ) gap = 0;
+
+	int placedX[MAX_INSTRUCTOR_LOCATOR_TARGETS];
+	int placedY[MAX_INSTRUCTOR_LOCATOR_TARGETS];
+	int placedW[MAX_INSTRUCTOR_LOCATOR_TARGETS];
+	int placedH[MAX_INSTRUCTOR_LOCATOR_TARGETS];
+	int placedCount = 0;
+
+	for( int i = 0; i < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++i )
+	{
+		CInstructorLocatorTarget &target = m_targets[i];
+		target.m_offsetX = target.m_offsetY = 0;
+		target.m_declutterIndex = -1;
+		if( !target.m_isActive || !target.m_bIsDrawing || !target.ShouldDraw() )
+			continue;
+
+		const int width = target.m_wide > 0 ? target.m_wide : 40;
+		const int height = target.m_tall > 0 ? target.m_tall : 40;
+		const int stepX = width + gap;
+		const int stepY = height + gap;
+		const int candidateX[17] =
+			{ 0, 0, 0, -1, 1, -1, 1, -1, 1, 0, 0, -2, 2, -2, 2, -2, 2 };
+		const int candidateY[17] =
+			{ 0, -1, 1, 0, 0, -1, -1, 1, 1, -2, 2, 0, 0, -2, -2, 2, 2 };
+		const int preferred = target.m_lastDeclutterIndex >= 0 &&
+			target.m_lastDeclutterIndex < 17 ? target.m_lastDeclutterIndex : 0;
+
+		int chosenX = target.m_iconX;
+		int chosenY = target.m_iconY;
+		int chosenIndex = preferred;
+		int bestOverlap = 0x7fffffff;
+		const int minX = edgeMargin;
+		const int maxX = screenWidth - edgeMargin;
+		const int minY = edgeMargin;
+		const int maxY = screenHeight - edgeMargin;
+
+		for( int candidate = 0; candidate < 17; ++candidate )
+		{
+			const int candidateIndex = ( preferred + candidate ) % 17;
+			int x = target.m_iconX + candidateX[candidateIndex] * stepX;
+			int y = target.m_iconY + candidateY[candidateIndex] * stepY;
+			if( x < minX ) x = minX;
+			if( x > maxX ) x = maxX;
+			if( y < minY ) y = minY;
+			if( y > maxY ) y = maxY;
+
+			int overlapScore = 0;
+			for( int p = 0; p < placedCount; ++p )
+			{
+				const int left = x - width / 2 > placedX[p] - placedW[p] / 2 ?
+					x - width / 2 : placedX[p] - placedW[p] / 2;
+				const int right = x + width / 2 < placedX[p] + placedW[p] / 2 ?
+					x + width / 2 : placedX[p] + placedW[p] / 2;
+				const int top = y - height / 2 > placedY[p] - placedH[p] / 2 ?
+					y - height / 2 : placedY[p] - placedH[p] / 2;
+				const int bottom = y + height / 2 < placedY[p] + placedH[p] / 2 ?
+					y + height / 2 : placedY[p] + placedH[p] / 2;
+				if( right > left && bottom > top )
+					overlapScore += ( right - left ) * ( bottom - top );
+			}
+
+			if( overlapScore < bestOverlap )
+			{
+				bestOverlap = overlapScore;
+				chosenX = x;
+				chosenY = y;
+				chosenIndex = candidateIndex;
+			}
+			if( overlapScore == 0 )
+				break;
+		}
+
+		target.m_offsetX = chosenX - target.m_iconX;
+		target.m_offsetY = chosenY - target.m_iconY;
+		target.m_declutterIndex = chosenIndex;
+		target.m_lastDeclutterIndex = chosenIndex;
+		placedX[placedCount] = chosenX;
+		placedY[placedCount] = chosenY;
+		placedW[placedCount] = width;
+		placedH[placedCount] = height;
+		++placedCount;
+	}
+}
+
 int CInstructorLocatorPanel::GetActiveTargetCount() const
 {
 	int count = 0;
