@@ -15,9 +15,6 @@
 #ifndef _WIN32
 #include <strings.h>
 #endif
-#ifndef _WIN32
-#include <strings.h>
-#endif
 #include <algorithm>
 
 #ifndef FCVAR_ARCHIVE
@@ -516,6 +513,14 @@ namespace
 		{
 			if (paramName == "userid" || paramName == "hint_activator_userid")
 			{
+				if (typeName == "player" || typeName == "entity")
+				{
+					cl_entity_t *localPlayer = gEngfuncs.GetLocalPlayer ?
+						gEngfuncs.GetLocalPlayer() : NULL;
+					value.type = ParamValue::VALUE_ENTITY;
+					value.integer = localPlayer ? localPlayer->index : event->userId;
+					return value.integer > 0;
+				}
 				value.type = ParamValue::VALUE_INTEGER;
 				value.integer = event->userId;
 				return true;
@@ -538,8 +543,23 @@ namespace
 				value.string = event->targetName;
 				return event->targetName[0] != '\0';
 			}
-			if (paramName == "value" || paramName == event->fieldName)
+			if (paramName == "value")
 			{
+				if (typeName == "float")
+				{
+					value.type = ParamValue::VALUE_FLOAT;
+					value.number = event->floatValue;
+					return true;
+				}
+				if (typeName == "bool" || typeName == "boolean" ||
+					typeName == "int" || typeName == "integer" ||
+					typeName == "short" || typeName == "long")
+				{
+					value.type = (typeName == "bool" || typeName == "boolean") ?
+						ParamValue::VALUE_BOOLEAN : ParamValue::VALUE_INTEGER;
+					value.integer = event->integerValue;
+					return true;
+				}
 				value.type = ParamValue::VALUE_STRING;
 				value.string = event->stringValue;
 				return event->stringValue[0] != '\0';
@@ -828,7 +848,7 @@ CIconLesson::CIconLesson(const char *name, bool definition)
 
 CScriptedIconLesson::CScriptedIconLesson(const char *name, bool definition)
 	: CIconLesson(name, definition),
-	  m_iLocalPlayer(1),
+	  m_iLocalPlayer(gEngfuncs.GetLocalPlayer && gEngfuncs.GetLocalPlayer() ? gEngfuncs.GetLocalPlayer()->index : 1),
 	  m_iEntity1(0),
 	  m_iEntity2(0),
 	  m_iInteger1(0),
@@ -943,7 +963,7 @@ CScriptedIconLesson *CScriptedIconLesson::CreateOpportunity(float now) const
 	instance->m_bCloseRequested = false;
 	instance->m_bStarted = false;
 	instance->m_CloseReason = "None given.";
-	instance->m_iLocalPlayer = 1;
+	instance->m_iLocalPlayer = gEngfuncs.GetLocalPlayer && gEngfuncs.GetLocalPlayer() ? gEngfuncs.GetLocalPlayer()->index : 1;
 	instance->m_iIconTarget = 0;
 	instance->m_iIconTargetVariable = 0;
 	instance->m_flNextUpdateEvent = now;
@@ -977,7 +997,11 @@ static bool CompareValues(const ParamValue &left, const ParamValue &right, const
 		if (left.type == ParamValue::VALUE_STRING || right.type == ParamValue::VALUE_STRING)
 			result = left.string == right.string;
 		else
-			result = left.integer == right.integer && fabsf(left.number - right.number) < 0.0001f;
+		{
+			const float a = left.type == ParamValue::VALUE_FLOAT ? left.number : (float)left.integer;
+			const float b = right.type == ParamValue::VALUE_FLOAT ? right.number : (float)right.integer;
+			result = fabsf(a - b) < 0.0001f;
+		}
 	}
 	else if (action == "less than")
 	{
@@ -996,7 +1020,7 @@ static bool CompareValues(const ParamValue &left, const ParamValue &right, const
 	}
 	else if (action == "has bit")
 	{
-		result = (left.integer & (1 << right.integer)) != 0;
+		result = (static_cast<unsigned int>(left.integer) & (1U << (right.integer & 31))) != 0;
 	}
 	else if (action == "bit count is" || action == "bit count less than")
 	{
@@ -1902,7 +1926,7 @@ void C_GameInstructor::Update(float now)
 			static_cast<CScriptedIconLesson *>(lesson->m_pRoot) : lesson;
 		const bool learned = lesson->IsLearned();
 		const bool shouldDisplay = lesson->m_bVisible &&
-			(lesson->m_bNoIconTarget || lesson->m_iIconTarget > 0);
+			(lesson->m_bNoIconTarget || lesson->m_bFixedPosition || lesson->m_iIconTarget > 0);
 		const bool locked = lesson->IsLocked(now);
 		const bool singleActiveBlocked = root->m_InstanceType == LESSON_INSTANCE_SINGLE_ACTIVE &&
 			root->m_bStarted;
