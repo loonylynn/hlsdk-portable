@@ -210,6 +210,26 @@ drawn key-chip fallback because the original Source HUD uses a separate wide
 key asset for those labels. If the generic sprite is missing, the drawn chip
 remains available.
 
+## Dynamic keyboard binding labels
+
+For lesson `binding` values that name an engine command, the HUD resolves the
+player's current key at draw time through the engine's
+`Key_LookupBinding` interface. Both Source-style values such as `+use` and
+known bare command names such as `jump` are accepted. Rebinding a command
+while playing updates the displayed label on the next HUD redraw.
+
+The returned engine key name is formatted for readability: mouse buttons use
+short labels such as `M1` / `M2`, wheel directions use `MW+` / `MW-`, and
+arrow keys use `UP` / `DN` / `LT` / `RT`. One- and two-character labels
+can use `icon_key_generic.spr`; longer names use the drawn key-chip fallback.
+If an action is unbound, the HUD shows a readable action label such as `USE`
+rather than leaving the raw `+use` token on screen.
+
+Literal lesson labels such as `E` remain explicit overrides and are not
+passed through the engine lookup. The GoldSrc/Xash interface returns one
+matching key name, so this implementation displays one key rather than
+cycling through every key bound to the same command.
+
 ## Deliberate GoldSrc differences
 
 - Multiple lesson opportunities, prerequisites, counters, and priority
