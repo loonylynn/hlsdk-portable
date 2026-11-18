@@ -1691,8 +1691,18 @@ int CStudioModelRenderer::StudioDrawModel( int flags )
 
 	if( flags & STUDIO_RENDER )
 	{
-		// see if the bounding box lets us trivially reject, also sets
-		if( !IEngineStudio.StudioCheckBBox() )
+		/*
+		 * The ordinary studio bbox is built from the carrier's frozen animation,
+		 * not the articulated physics pose. A valid ragdoll can extend outside
+		 * that box, so rejecting it here prevents StudioSetupBones() from ever
+		 * applying the authoritative networked bone transforms.
+		 */
+		const qboolean hasFreshRagdollPose =
+			m_pCurrentEntity->index > 0 &&
+			IEngineStudio.IsHardware() &&
+			Ragdoll_HasFreshPose( m_pCurrentEntity->index );
+
+		if( !hasFreshRagdollPose && !IEngineStudio.StudioCheckBBox() )
 			return 0;
 
 		( *m_pModelsDrawn )++;
