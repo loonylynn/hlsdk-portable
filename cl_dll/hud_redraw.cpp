@@ -22,6 +22,7 @@
 #include "game_instructor.h"
 #include "cl_util.h"
 #include "cl_entity.h"
+#include "../pm_shared/pm_defs.h"
 #include "triangleapi.h"
 
 #include "vgui_TeamFortressViewport.h"
@@ -147,6 +148,53 @@ static bool HUD_GetInstructorHintScreenPosition( const float *worldOrigin, float
 		return false;
 
 	return true;
+}
+
+// Source-style client locator visibility trace. Map-authored env_instructor_hint
+// already receives this result from the server; this fills the gap for lessons
+// scheduled entirely by the client-side GameInstructor manager.
+static bool HUD_IsInstructorHintOccluded( const float *targetOrigin, int targetEntity )
+{
+	if( !targetOrigin || targetEntity <= 0 || !gEngfuncs.pEventAPI ||
+		!gEngfuncs.GetLocalPlayer )
+		return false;
+
+	event_api_t *eventApi = gEngfuncs.pEventAPI;
+	if( !eventApi->EV_LocalPlayerViewheight || !eventApi->EV_SetUpPlayerPrediction ||
+		!eventApi->EV_PushPMStates || !eventApi->EV_PopPMStates ||
+		!eventApi->EV_SetSolidPlayers || !eventApi->EV_SetTraceHull ||
+		!eventApi->EV_PlayerTrace || !eventApi->EV_IndexFromTrace )
+		return false;
+
+	cl_entity_t *localPlayer = gEngfuncs.GetLocalPlayer();
+	if( !localPlayer || localPlayer->index <= 0 || localPlayer->index == targetEntity )
+		return false;
+
+	float viewHeight[3] = { 0.0f, 0.0f, 0.0f };
+	eventApi->EV_LocalPlayerViewheight( viewHeight );
+
+	float traceStart[3] =
+	{
+		localPlayer->origin[0] + viewHeight[0],
+		localPlayer->origin[1] + viewHeight[1],
+		localPlayer->origin[2] + viewHeight[2]
+	};
+	float traceEnd[3] =
+	{
+		targetOrigin[0], targetOrigin[1], targetOrigin[2]
+	};
+
+	pmtrace_t trace = {};
+	eventApi->EV_SetUpPlayerPrediction( 0, 1 );
+	eventApi->EV_PushPMStates();
+	eventApi->EV_SetSolidPlayers( localPlayer->index - 1 );
+	eventApi->EV_SetTraceHull( 0 );
+	eventApi->EV_PlayerTrace( traceStart, traceEnd, PM_STUDIO_BOX, -1, &trace );
+	eventApi->EV_PopPMStates();
+
+	const int hitEntity = eventApi->EV_IndexFromTrace( &trace );
+	return trace.startsolid ||
+		( trace.fraction < 1.0f && hitEntity != targetEntity );
 }
 
 // Draw a HUD locator sprite at a requested size. Xash3D's generic sprite
@@ -315,6 +363,18 @@ int CHud::Redraw( float flTime, int intermission )
 		}
 		m_bInstructorHintTargetVisible = targetAllowed;
 	}
+
+	// Match Source's 0.25-second occlusion cadence. Only client-managed lessons
+	// need this trace; env_instructor_hint already sends its server-side result.
+	if( m_bInstructorHintActive && m_bInstructorHintManaged &&
+		m_bInstructorHintHasTargetPosition && m_bInstructorHintTargetVisible &&
+		m_iInstructorHintTarget > 0 && flTime >= m_flInstructorHintNextOcclusionTest )
+	{
+		m_bInstructorHintOccluded = HUD_IsInstructorHintOccluded(
+			m_vecInstructorHintTargetOrigin, m_iInstructorHintTarget );
+		m_flInstructorHintNextOcclusionTest = flTime + 0.25f;
+	}
+
 	m_flTimeDelta = (double)( m_flTime - m_fOldTime );
 	static float m_flShotTime = 0;
 
