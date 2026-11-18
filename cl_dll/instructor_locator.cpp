@@ -218,6 +218,7 @@ void CInstructorLocatorTarget::CalculateEdgePosition( int screenWidth, int scree
 	m_centerX = screenWidth / 2;
 	m_centerY = screenHeight / 2;
 	m_iconX = m_targetX;
+	m_bIsDrawing = ShouldDraw();
 	m_iconY = m_targetY;
 	m_drawArrowDirection = INSTRUCTOR_LOCATOR_ARROW_NONE;
 
