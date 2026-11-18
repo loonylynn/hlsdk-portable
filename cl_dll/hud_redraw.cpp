@@ -491,7 +491,8 @@ int CHud::Redraw( float flTime, int intermission )
 					{
 						const int anchorX = (int)entityAnchorX;
 						const int anchorY = (int)entityAnchorY;
-						if( abs( markerX - anchorX ) > 1 || abs( markerY - anchorY ) > 1 )
+						if( markerX - anchorX > 1 || anchorX - markerX > 1 ||
+							markerY - anchorY > 1 || anchorY - markerY > 1 )
 							HUD_DrawInstructorLocatorTether( anchorX, anchorY,
 								markerX, markerY, m_iInstructorHintColorR,
 								m_iInstructorHintColorG, m_iInstructorHintColorB, 150 );
