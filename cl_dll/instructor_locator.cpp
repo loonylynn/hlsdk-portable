@@ -446,10 +446,14 @@ void CInstructorLocatorPanel::ResolveDecluttering( int screenWidth, int screenHe
 		int chosenY = target.m_iconY;
 		int chosenIndex = preferred;
 		int bestOverlap = 0x7fffffff;
-		const int minX = edgeMargin;
-		const int maxX = screenWidth - edgeMargin;
-		const int minY = edgeMargin;
-		const int maxY = screenHeight - edgeMargin;
+		int horizontalMargin = edgeMargin;
+		int verticalMargin = edgeMargin;
+		if( horizontalMargin * 2 > screenWidth ) horizontalMargin = screenWidth / 2;
+		if( verticalMargin * 2 > screenHeight ) verticalMargin = screenHeight / 2;
+		const int minX = horizontalMargin;
+		const int maxX = screenWidth - horizontalMargin;
+		const int minY = verticalMargin;
+		const int maxY = screenHeight - verticalMargin;
 
 		for( int candidate = 0; candidate < 17; ++candidate )
 		{
