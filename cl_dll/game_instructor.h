@@ -58,7 +58,7 @@ public:
 	bool PrerequisitesHaveBeenMet() const;
 	bool IsTimedOut(float now);
 	bool IsLocked(float now) const;
-	bool IsInstructing() const { return m_flStartTime > 0.0f; }
+	bool IsInstructing() const { return m_bStarted; }
 	bool IsOpenOpportunity() const { return !m_bDefinition; }
 	bool IsDefaultHolder() const { return false; }
 	bool WasDisplayed() const { return m_bWasDisplayed; }
