@@ -691,8 +691,8 @@ static void HUD_DrawInstructorBindingName( int centerX, int centerY, const char 
 {
 	if( !bindingName || !bindingName[0] ) return;
 	const int width = gHUD.DrawHudStringLen( bindingName );
-	const int height = gHUD.m_iFontHeight > 0 ? gHUD.m_iFontHeight :
-		( gHUD.m_scrinfo.iCharHeight > 0 ? gHUD.m_scrinfo.iCharHeight : 12 );
+	const int height = gHUD.m_scrinfo.iCharHeight > 0 ? gHUD.m_scrinfo.iCharHeight :
+		( gHUD.m_iFontHeight > 0 ? gHUD.m_iFontHeight : 12 );
 	const int x = centerX - width / 2 - 1;
 	const int y = centerY - height / 2 - 1;
 	int ink = 28 + ( 255 - alpha ) * 3 / 4;
@@ -1427,8 +1427,8 @@ int CHud::Redraw( float flTime, int intermission )
 						const int sourceCaptionWidth = DrawHudStringLen( m_szInstructorHintCaption );
 						if( !targetOffscreen && sourceCaptionWidth > 0 )
 						{
-							const int fontHeight = m_iFontHeight > 0 ? m_iFontHeight :
-								( m_scrinfo.iCharHeight > 0 ? m_scrinfo.iCharHeight : 12 );
+							const int fontHeight = m_scrinfo.iCharHeight > 0 ? m_scrinfo.iCharHeight :
+								( m_iFontHeight > 0 ? m_iFontHeight : 12 );
 							int captionX = markerX + markerHalfWidth + 5;
 							if( captionX + sourceCaptionWidth > ScreenWidth - 8 )
 								captionX = markerX - markerHalfWidth - 5 - sourceCaptionWidth;

@@ -222,17 +222,20 @@ font metrics rather than Source's unavailable dedicated VGUI key font.
 
 ## Dynamic keyboard binding labels
 
-The Xash fork exposes `Key_LookupBindingEx(command, ordinal)` through the
-client engine-function table. The locator enumerates all matching keys,
-deduplicates the choices, and cycles them every 0.75 seconds, matching
-Source's alternate-binding cadence. Both Source-style values such as `+use`
-and known bare command names such as `jump` are accepted. The choices are
-refreshed while the locator is drawn, so rebinding takes effect without
-reopening the lesson.
+The port supports an optional `Key_LookupBindingEx(command, ordinal)`
+extension in the client engine-function table. When the engine populates it,
+the locator enumerates all matching keys, removes duplicates, and cycles
+through them every 0.75 seconds, matching Source's alternate-binding cadence.
+Both Source-style values such as `+use` and known bare command names such as
+`jump` are accepted. The choices are refreshed while the locator is drawn,
+so rebinding takes effect without reopening the lesson.
 
-Literal lesson labels such as `E` remain explicit overrides. The legacy
-`Key_LookupBinding` callback remains a fallback for older engine builds, but
-returns only one matching key and cannot provide the alternate-binding cycle.
+The stock FWGS Xash3D client API exposes `Key_LookupBinding`, but not this
+multi-key extension. On an unmodified engine build the port therefore falls
+back to the first matching key and does not cycle through alternate binds.
+A matching engine-side implementation is required to enable Source's full
+alternate-binding behavior. Literal lesson labels such as `E` remain
+explicit overrides.
 
 ## Deliberate GoldSrc differences
 
