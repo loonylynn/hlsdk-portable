@@ -20,7 +20,8 @@
 
 #include "hud.h"
 #include "cl_util.h"
-//#include "triangleapi.h"
+#include "cl_entity.h"
+#include "triangleapi.h"
 
 #include "vgui_TeamFortressViewport.h"
 
@@ -38,6 +39,78 @@ extern int g_iVisibleMouse;
 float HUD_GetFOV( void );
 
 extern cvar_t *sensitivity;
+
+// Resolve the active hint target to HUD viewport coordinates. TriAPI's
+// WorldToScreen returns viewport-relative pixels and reports points behind
+// the view separately; mirror those coordinates so the offscreen ray points
+// toward the target rather than through the camera.
+static bool HUD_GetInstructorHintScreenPosition( int entityIndex, float *screenX, float *screenY, bool *behind )
+{
+	if( entityIndex <= 0 || !screenX || !screenY || !behind ||
+		!gEngfuncs.GetEntityByIndex || !gEngfuncs.pTriAPI ||
+		!gEngfuncs.pTriAPI->WorldToScreen )
+		return false;
+
+	cl_entity_t *target = gEngfuncs.GetEntityByIndex( entityIndex );
+	if( !target || target->index != entityIndex )
+		return false;
+
+	float world[3] =
+	{
+		target->origin[0],
+		target->origin[1],
+		target->origin[2]
+	};
+	float projected[3] = { 0.0f, 0.0f, 0.0f };
+	const int zClipped = gEngfuncs.pTriAPI->WorldToScreen( world, projected );
+
+	*screenX = projected[0];
+	*screenY = projected[1];
+	*behind = ( zClipped != 0 );
+
+	if( *behind )
+	{
+		// WorldToScreen cannot divide by a negative clip-space W. Reflect
+		// its raw clip direction around the viewport center for edge placement.
+		*screenX = (float)ScreenWidth - *screenX;
+		*screenY = (float)ScreenHeight - *screenY;
+
+		// A target directly behind the player can project to the exact center.
+		// Recover a useful direction from the camera basis in that edge case.
+		if( fabsf( *screenX - ScreenWidth * 0.5f ) < 2.0f &&
+			fabsf( *screenY - ScreenHeight * 0.5f ) < 2.0f &&
+			gEngfuncs.GetViewAngles && gEngfuncs.pfnAngleVectors )
+		{
+			cl_entity_t *local = gEngfuncs.GetLocalPlayer ? gEngfuncs.GetLocalPlayer() : NULL;
+			if( local )
+			{
+				float angles[3] = { 0.0f, 0.0f, 0.0f };
+				float forward[3], right[3], up[3];
+				gEngfuncs.GetViewAngles( angles );
+				gEngfuncs.pfnAngleVectors( angles, forward, right, up );
+
+				float delta[3] =
+				{
+					target->origin[0] - local->origin[0],
+					target->origin[1] - local->origin[1],
+					target->origin[2] - local->origin[2]
+				};
+				const float side = delta[0] * right[0] + delta[1] * right[1] + delta[2] * right[2];
+				const float vertical = delta[0] * up[0] + delta[1] * up[1] + delta[2] * up[2];
+
+				*screenX = ScreenWidth * 0.5f - side;
+				*screenY = ScreenHeight * 0.5f + vertical;
+			}
+		}
+	}
+
+	// Reject invalid or absurd coordinates before integer conversion/clamping.
+	if( *screenX != *screenX || *screenY != *screenY ||
+		fabsf( *screenX ) > 1000000.0f || fabsf( *screenY ) > 1000000.0f )
+		return false;
+
+	return true;
+}
 
 // Think
 void CHud::Think( void )
@@ -164,8 +237,8 @@ int CHud::Redraw( float flTime, int intermission )
 		}
 	}
 
-	// Source-style instructor hint caption. The server-side PS2 bracket remains
-	// the world-space marker; this panel supplies the contextual instruction.
+	// Source-style instructor hint presentation. The PS2 world-space bracket
+	// remains unchanged; this panel follows a scripted target in screen space.
 	if( m_bInstructorHintActive && !intermission &&
 		m_pCvarDraw && m_pCvarDraw->value && !( m_iHideHUDDisplay & HIDEHUD_ALL ) )
 	{
@@ -188,20 +261,116 @@ int CHud::Redraw( float flTime, int intermission )
 			int captionWidth = DrawHudStringLen( m_szInstructorHintCaption );
 			int bindingWidth = DrawHudStringLen( bindingText );
 			int panelWidth = Q_max( captionWidth, bindingWidth ) + 36;
-			const int maxPanelWidth = ScreenWidth - 24;
+			const int maxPanelWidth = Q_max( 1, ScreenWidth - 24 );
 			if( panelWidth > maxPanelWidth )
 				panelWidth = maxPanelWidth;
-			if( panelWidth < 180 )
+			if( panelWidth < 180 && maxPanelWidth >= 180 )
 				panelWidth = 180;
 
 			const int panelHeight = bindingText[0] ? 58 : 42;
-			const int panelX = ( ScreenWidth - panelWidth ) / 2;
-			const int panelY = ScreenHeight - panelHeight - 30;
+			int panelX = ( ScreenWidth - panelWidth ) / 2;
+			int panelY = ScreenHeight - panelHeight - 30;
+
+			float targetX = 0.0f, targetY = 0.0f;
+			bool targetBehind = false;
+			const bool hasTarget = HUD_GetInstructorHintScreenPosition(
+				m_iInstructorHintTarget, &targetX, &targetY, &targetBehind );
+
+			if( hasTarget )
+			{
+				const float centerX = ScreenWidth * 0.5f;
+				const float centerY = ScreenHeight * 0.5f;
+				const int edgeMargin = 24;
+				const bool offscreen = targetBehind ||
+					targetX < edgeMargin || targetX > ScreenWidth - edgeMargin ||
+					targetY < edgeMargin || targetY > ScreenHeight - edgeMargin;
+
+				if( !offscreen )
+				{
+					// Keep the contextual caption close to the object, but never
+					// allow the panel to spill outside the HUD safe area.
+					panelX = (int)( targetX - panelWidth * 0.5f );
+					panelY = (int)( targetY + 28.0f );
+					if( panelY + panelHeight > ScreenHeight - 12 )
+						panelY = (int)( targetY - panelHeight - 24.0f );
+				}
+				else
+				{
+					// Clamp a ray from screen center to the viewport edge. The
+					// arrow glyph points toward the target; its caption card sits
+					// just inside the same edge.
+					float dx = targetX - centerX;
+					float dy = targetY - centerY;
+					if( fabsf( dx ) < 1.0f && fabsf( dy ) < 1.0f )
+					dy = 1.0f; // directly behind: use the lower edge as a stable fallback
+
+					const float left = (float)edgeMargin;
+					const float right = (float)( ScreenWidth - edgeMargin );
+					const float top = (float)edgeMargin;
+					const float bottom = (float)( ScreenHeight - edgeMargin );
+					float tx = 1000000.0f;
+				float ty = 1000000.0f;
+
+					if( dx > 0.001f )
+					tx = ( right - centerX ) / dx;
+					else if( dx < -0.001f )
+					tx = ( left - centerX ) / dx;
+
+					if( dy > 0.001f )
+					ty = ( bottom - centerY ) / dy;
+					else if( dy < -0.001f )
+					ty = ( top - centerY ) / dy;
+
+					float t = Q_min( tx, ty );
+					if( t < 0.0f || t > 1000000.0f )
+					t = 0.0f;
+
+					const int arrowX = (int)( centerX + dx * t );
+					const int arrowY = (int)( centerY + dy * t );
+					const char *arrow = fabsf( dx ) > fabsf( dy ) ?
+						( dx < 0.0f ? "<" : ">" ) :
+						( dy < 0.0f ? "^" : "v" );
+
+					FillRGBA( arrowX - 12, arrowY - 12, 24, 24, 8, 10, 14, 225 );
+					DrawHudString( arrowX - 4, arrowY - 7, arrowX + 12,
+						arrow, 236, 9, 77 );
+
+					if( arrowX <= edgeMargin + 2 )
+				{
+					panelX = edgeMargin + 22;
+					panelY = arrowY - panelHeight / 2;
+				}
+				else if( arrowX >= ScreenWidth - edgeMargin - 2 )
+				{
+					panelX = ScreenWidth - edgeMargin - panelWidth - 22;
+					panelY = arrowY - panelHeight / 2;
+				}
+				else if( arrowY <= edgeMargin + 2 )
+				{
+					panelX = arrowX - panelWidth / 2;
+					panelY = edgeMargin + 22;
+				}
+				else
+				{
+					panelX = arrowX - panelWidth / 2;
+					panelY = ScreenHeight - edgeMargin - panelHeight - 22;
+				}
+				}
+			}
+
+			// Clamp the card after choosing its target-relative or edge-relative
+			// placement. Keep a small inset even with unusual screen sizes.
+			const int maxX = Q_max( 0, ScreenWidth - panelWidth );
+			const int maxY = Q_max( 0, ScreenHeight - panelHeight );
+			if( panelX < 12 ) panelX = 12;
+			if( panelX > maxX - 12 ) panelX = Q_max( 0, maxX - 12 );
+			if( panelY < 12 ) panelY = 12;
+			if( panelY > maxY - 12 ) panelY = Q_max( 0, maxY - 12 );
 
 			FillRGBA( panelX, panelY, panelWidth, panelHeight, 8, 10, 14, 205 );
 			FillRGBA( panelX, panelY, 3, panelHeight, 236, 9, 77, 255 );
 
-			int textX = ( ScreenWidth - captionWidth ) / 2;
+			int textX = panelX + ( panelWidth - captionWidth ) / 2;
 			if( textX < panelX + 14 )
 				textX = panelX + 14;
 			DrawHudString( textX, panelY + 9, panelX + panelWidth - 10,
@@ -209,7 +378,7 @@ int CHud::Redraw( float flTime, int intermission )
 
 			if( bindingText[0] )
 			{
-				int keyX = ( ScreenWidth - bindingWidth ) / 2;
+				int keyX = panelX + ( panelWidth - bindingWidth ) / 2;
 				if( keyX < panelX + 14 )
 					keyX = panelX + 14;
 				DrawHudString( keyX, panelY + 32, panelX + panelWidth - 10,
