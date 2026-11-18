@@ -196,10 +196,13 @@ public:
 	int m_nCustomSprayFrames;// Custom clan logo frames for this player
 	float	m_flNextDecalTime;// next time this player can spray a decal
 
-	// Transient PS2-style usable-object highlight state (not saved).
+	// Transient PS2-style usable-object highlight and instructor-hint state (not saved).
 	EHANDLE	m_hUseableHighlight;
 	EHANDLE	m_hLastUseableItem;
 	float	m_flNextUseableCheck;
+	int		m_iActiveInstructorHintId;
+	int		m_iUseableInstructorHintTarget;
+	BOOL	m_bUseableInstructorHintActive;
 
 	char m_szTeamName[TEAM_NAME_LENGTH];
 
@@ -296,6 +299,8 @@ public:
 	void UpdateUseableHighlight( void );
 	void HighlightUseable( CBaseEntity *pObject );
 	void ClearUseableHighlight( void );
+	void UpdatePushableInstructorHint( CBaseEntity *pObject );
+	void ClearPushableInstructorHint( void );
 
 	void CheckSuitUpdate();
 	void SetSuitUpdate( const char *name, int fgroup, int iNoRepeat );
