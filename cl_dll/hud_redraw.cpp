@@ -245,11 +245,19 @@ int CHud::Redraw( float flTime, int intermission )
 			m_iInstructorHintId = 0;
 			m_iInstructorHintTarget = 0;
 			m_bInstructorHintHasTargetPosition = false;
+			m_bInstructorHintTargetVisible = false;
+			m_bInstructorHintOccluded = false;
 			m_vecInstructorHintTargetOrigin[0] = 0.0f;
 			m_vecInstructorHintTargetOrigin[1] = 0.0f;
 			m_vecInstructorHintTargetOrigin[2] = 0.0f;
 			m_flInstructorHintEndTime = 0.0f;
+			m_iInstructorHintRange = 0.0f;
 			m_iInstructorHintIconMode = 0;
+			m_iInstructorHintFlags = 0;
+			m_hInstructorHintOnscreenSprite = 0;
+			m_hInstructorHintOffscreenSprite = 0;
+			m_szInstructorHintIconOnscreen[0] = '\0';
+			m_szInstructorHintIconOffscreen[0] = '\0';
 			m_szInstructorHintCaption[0] = '\0';
 			m_szInstructorHintBinding[0] = '\0';
 		}
@@ -274,6 +282,10 @@ int CHud::Redraw( float flTime, int intermission )
 				targetX < edgeMargin || targetX > ScreenWidth - edgeMargin ||
 				targetY < edgeMargin || targetY > ScreenHeight - edgeMargin );
 
+			// LOCATOR_ICON_FX_NO_OFFSCREEN deactivates the locator when it leaves
+			// the viewport; don't leave a floating caption behind.
+			if( !( targetOffscreen && ( m_iInstructorHintFlags & 0x00000200 ) ) )
+			{
 			// Source has distinct icon_onscreen and icon_offscreen resources.
 			// Automatic pushable guidance retains its own move/hold fallback sprites.
 			HSPRITE hintIcon = targetOffscreen ?
@@ -453,6 +465,7 @@ int CHud::Redraw( float flTime, int intermission )
 					keyX = textAreaX;
 				DrawHudString( keyX, panelY + textOffsetY + 32, textAreaRight,
 					bindingText, m_iInstructorHintColorR, m_iInstructorHintColorG, m_iInstructorHintColorB );
+			}
 			}
 		}
 	}
