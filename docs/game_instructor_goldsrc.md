@@ -81,7 +81,7 @@ accepts USE and press the USE key.
     "timeout" "8"
     "caption" "You interacted with this"
     "binding" "+use"
-    "onscreen_icon" "icon_interact"
+    "onscreen_icon" "use_binding"
     "offscreen_icon" "icon_arrow_plain"
     "icon_offset" "28"
     "range" "1024"
@@ -201,37 +201,38 @@ the player's eye to their target every 0.25 seconds. The target entity itself
 does not count as an obstruction, and the `force_caption` flag retains its
 Source-style override behavior.
 
-## Keyboard binding keycap
+## Source `use_binding` locator rendering
 
-The original `icon_key_generic.spr` is loaded as an optional keyboard keycap.
-It is drawn behind short one- or two-character bindings in world-space locator
-labels and managed lesson cards. Longer bindings continue to use the existing
-drawn key-chip fallback because the original Source HUD uses a separate wide
-key asset for those labels. If the generic sprite is missing, the drawn chip
-remains available.
+`use_binding` is a virtual Source locator icon, not an asset to load by file
+name. When selected as `onscreen_icon` or `offscreen_icon`, the HUD uses the
+resolved binding image as the locator, places its caption beside it, and
+centers the key glyph over the image. This ports the dedicated
+`CLocatorTarget::UseBindingImage`, `DrawBindingName`, and
+`DrawDynamicIcon` behavior rather than placing a miniature key badge inside
+a custom caption strip.
+
+The binding image uses Source's `ScreenWidth() * 0.04` sizing rule, preserving
+its aspect ratio. `icon_key_generic.spr` is used for short keys and Source's
+designated generic-key cases. The port recognizes the optional wide-key,
+mouse, wheel, and arrow-key sprite names too; those assets render only when
+their matching GoldSrc `.spr` files are available. No replacement artwork is
+generated. The controller path uses text labels because GoldSrc lacks Source's
+`InstructorButtons` VGUI font. The key glyph is centered using GoldSrc HUD
+font metrics rather than Source's unavailable dedicated VGUI key font.
 
 ## Dynamic keyboard binding labels
 
-For lesson `binding` values that name an engine command, the HUD resolves the
-player's current key at draw time through the engine's
-`Key_LookupBinding` interface. Both Source-style values such as `+use` and
-known bare command names such as `jump` are accepted. Rebinding a command
-while playing updates the displayed label on the next HUD redraw.
+The Xash fork exposes `Key_LookupBindingEx(command, ordinal)` through the
+client engine-function table. The locator enumerates all matching keys,
+deduplicates the choices, and cycles them every 0.75 seconds, matching
+Source's alternate-binding cadence. Both Source-style values such as `+use`
+and known bare command names such as `jump` are accepted. The choices are
+refreshed while the locator is drawn, so rebinding takes effect without
+reopening the lesson.
 
-The returned engine key name is formatted for readability: mouse buttons use
-short labels such as `M1` / `M2`, wheel directions use `MW+` / `MW-`, and
-arrow keys use `UP` / `DN` / `LT` / `RT`. Xash3D gamepad names are
-also formatted (for example, `A_BUTTON` becomes `A`, `L1_BUTTON` becomes
-`LB`, and `STICK1` becomes `L3`). One- and two-character labels can use
-`icon_key_generic.spr`; longer names use the drawn key-chip fallback. These
-are text labels, not dedicated controller glyphs. If an action is unbound, the
-HUD shows a readable action label such as `USE` rather than leaving the raw
-`+use` token on screen.
-
-Literal lesson labels such as `E` remain explicit overrides and are not
-passed through the engine lookup. The GoldSrc/Xash interface returns one
-matching key name, so this implementation displays one key rather than
-cycling through every key bound to the same command.
+Literal lesson labels such as `E` remain explicit overrides. The legacy
+`Key_LookupBinding` callback remains a fallback for older engine builds, but
+returns only one matching key and cannot provide the alternate-binding cycle.
 
 ## Deliberate GoldSrc differences
 

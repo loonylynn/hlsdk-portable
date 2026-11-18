@@ -95,7 +95,7 @@ float g_hud_text_color[3];
 // Re-load optional GoldSrc instructor sprites after video-mode changes.
 static HSPRITE HUD_ReloadInstructorHintSprite( const char *iconName )
 {
-	if( !iconName || !iconName[0] )
+	if( !iconName || !iconName[0] || Q_stricmp( iconName, "use_binding" ) == 0 )
 		return 0;
 
 	char safeName[64];
@@ -572,6 +572,17 @@ void CHud::VidInit( void )
 	m_hInstructorHintArrowRightSprite = SPR_Load( "sprites/icon_arrow_right.spr" );
 	m_hInstructorHintArrowUpSprite = SPR_Load( "sprites/icon_arrow_up.spr" );
 	m_hInstructorHintKeyGenericSprite = SPR_Load( "sprites/icon_key_generic.spr" );
+	// Optional Source key art: load a GoldSrc counterpart only when present.
+	m_hInstructorHintKeyWideSprite = SPR_Load( "sprites/icon_key_wide.spr" );
+	m_hInstructorHintKeyMouseLeftSprite = SPR_Load( "sprites/icon_mouseLeft.spr" );
+	m_hInstructorHintKeyMouseRightSprite = SPR_Load( "sprites/icon_mouseRight.spr" );
+	m_hInstructorHintKeyMouseThreeSprite = SPR_Load( "sprites/icon_mouseThree.spr" );
+	m_hInstructorHintKeyMouseWheelUpSprite = SPR_Load( "sprites/icon_mouseWheel_up.spr" );
+	m_hInstructorHintKeyMouseWheelDownSprite = SPR_Load( "sprites/icon_mouseWheel_down.spr" );
+	m_hInstructorHintKeyUpSprite = SPR_Load( "sprites/icon_key_up.spr" );
+	m_hInstructorHintKeyDownSprite = SPR_Load( "sprites/icon_key_down.spr" );
+	m_hInstructorHintKeyLeftSprite = SPR_Load( "sprites/icon_key_left.spr" );
+	m_hInstructorHintKeyRightSprite = SPR_Load( "sprites/icon_key_right.spr" );
 
 	// Map-authored hints use Source-style icon identifiers mapped to optional
 	// GoldSrc sprites: e.g. hint_icon_onscreen "icon_interact" loads

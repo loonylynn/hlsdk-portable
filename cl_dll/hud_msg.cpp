@@ -38,7 +38,7 @@ extern float g_lastFOV;			// Vit_amiN
 // GoldSrc sprite path. Only simple filename characters are accepted.
 static HSPRITE HUD_LoadInstructorHintSprite( const char *iconName )
 {
-	if( !iconName || !iconName[0] )
+	if( !iconName || !iconName[0] || Q_stricmp( iconName, "use_binding" ) == 0 )
 		return 0;
 
 	char path[96];
@@ -95,6 +95,12 @@ static void HUD_ClearInstructorHint( CHud *hud )
 	hud->m_szInstructorHintReplaceKey[0] = '\0';
 	hud->m_szInstructorHintCaption[0] = '\0';
 	hud->m_szInstructorHintBinding[0] = '\0';
+	hud->m_szInstructorHintBindingCache[0] = '\0';
+	hud->m_iInstructorHintBindingChoicesCount = 0;
+	hud->m_iInstructorHintBindingTick = 0;
+	hud->m_flInstructorHintNextBindingTick = 0.0f;
+	for( int i = 0; i < MAX_INSTRUCTOR_BINDING_CHOICES; ++i )
+		hud->m_szInstructorHintBindingChoices[i][0] = '\0';
 }
 
 int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )

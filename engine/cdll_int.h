@@ -306,6 +306,9 @@ typedef struct cl_enginefuncs_s
 
 	// added in 2019 update, not documented yet
 	int             (*pfnFilteredClientCmd)( const char *cmd );
+
+	// Xash3D extension matching Source's multi-key locator lookup.
+	const char      *(*Key_LookupBindingEx)( const char *pBinding, int nKeyNum );
 } cl_enginefunc_t;
 
 #define CLDLL_INTERFACE_VERSION	7

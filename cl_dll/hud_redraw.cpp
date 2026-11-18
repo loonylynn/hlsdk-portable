@@ -320,6 +320,7 @@ static void HUD_FormatInstructorKeyName( const char *keyName, char *output, size
 	static const KeyLabel labels[] =
 	{
 		{ "SPACE", "SPACE" },
+		{ "SEMICOLON", ";" },
 		{ "ENTER", "ENTER" },
 		{ "ESCAPE", "ESC" },
 		{ "BACKSPACE", "BKSP" },
@@ -480,6 +481,223 @@ static void HUD_ResolveInstructorBinding( const char *binding, char *output, siz
 	}
 
 	HUD_FormatInstructorKeyName( commandName, output, outputSize );
+}
+
+
+// Source CLocatorTarget::SetBinding / UseBindingImage / DrawBindingName port.
+// Enumerate all bound keys, preserve Source's 0.75-second cycling interval,
+// and use the matching key art rather than a small inline badge.
+static void HUD_AddInstructorBindingChoice( CHud *hud, const char *keyName )
+{
+	if( !hud || !keyName || !keyName[0] ||
+		hud->m_iInstructorHintBindingChoicesCount >= MAX_INSTRUCTOR_BINDING_CHOICES )
+		return;
+	for( int i = 0; i < hud->m_iInstructorHintBindingChoicesCount; ++i )
+		if( Q_stricmp( hud->m_szInstructorHintBindingChoices[i], keyName ) == 0 )
+			return;
+	char *choice = hud->m_szInstructorHintBindingChoices[hud->m_iInstructorHintBindingChoicesCount++];
+	strncpy( choice, keyName, MAX_INSTRUCTOR_BINDING_NAME - 1 );
+	choice[MAX_INSTRUCTOR_BINDING_NAME - 1] = '\0';
+}
+
+static void HUD_UpdateInstructorBindingChoices( CHud *hud, float flTime )
+{
+	if( !hud ) return;
+	char oldChoices[MAX_INSTRUCTOR_BINDING_CHOICES][MAX_INSTRUCTOR_BINDING_NAME];
+	memset( oldChoices, 0, sizeof( oldChoices ) );
+	const int oldCount = hud->m_iInstructorHintBindingChoicesCount;
+	const int oldTick = hud->m_iInstructorHintBindingTick;
+	for( int i = 0; i < oldCount && i < MAX_INSTRUCTOR_BINDING_CHOICES; ++i )
+		strncpy( oldChoices[i], hud->m_szInstructorHintBindingChoices[i], MAX_INSTRUCTOR_BINDING_NAME - 1 );
+
+	const bool bindingChanged = Q_stricmp( hud->m_szInstructorHintBindingCache, hud->m_szInstructorHintBinding ) != 0;
+	strncpy( hud->m_szInstructorHintBindingCache, hud->m_szInstructorHintBinding, sizeof( hud->m_szInstructorHintBindingCache ) - 1 );
+	hud->m_szInstructorHintBindingCache[sizeof( hud->m_szInstructorHintBindingCache ) - 1] = '\0';
+	hud->m_iInstructorHintBindingChoicesCount = 0;
+	memset( hud->m_szInstructorHintBindingChoices, 0, sizeof( hud->m_szInstructorHintBindingChoices ) );
+
+	const char *cursor = hud->m_szInstructorHintBinding;
+	while( cursor && *cursor && hud->m_iInstructorHintBindingChoicesCount < MAX_INSTRUCTOR_BINDING_CHOICES )
+	{
+		while( *cursor == ';' || *cursor == ' ' || *cursor == '\t' ) ++cursor;
+		if( !*cursor ) break;
+		const char *tokenStart = cursor;
+		while( *cursor && *cursor != ';' ) ++cursor;
+		size_t tokenLength = (size_t)( cursor - tokenStart );
+		while( tokenLength > 0 && ( tokenStart[tokenLength - 1] == ' ' || tokenStart[tokenLength - 1] == '\t' ) ) --tokenLength;
+		if( tokenLength == 0 )
+		{
+			if( *cursor == ';' ) ++cursor;
+			continue;
+		}
+		char token[64];
+		if( tokenLength >= sizeof( token ) ) tokenLength = sizeof( token ) - 1;
+		memcpy( token, tokenStart, tokenLength );
+		token[tokenLength] = '\0';
+
+		const char *command = NULL;
+		if( HUD_IsInstructorBindingCommand( token, &command ) )
+		{
+			char commandName[64];
+			size_t commandLength = 0;
+			while( command[commandLength] &&
+				( isalnum( (unsigned char)command[commandLength] ) || command[commandLength] == '_' ) &&
+				commandLength < sizeof( commandName ) - 1 )
+			{
+				commandName[commandLength] = command[commandLength];
+				++commandLength;
+			}
+			commandName[commandLength] = '\0';
+			if( commandName[0] && gEngfuncs.Key_LookupBindingEx )
+			{
+				for( int ordinal = 0; ordinal < MAX_INSTRUCTOR_BINDING_CHOICES &&
+					hud->m_iInstructorHintBindingChoicesCount < MAX_INSTRUCTOR_BINDING_CHOICES; ++ordinal )
+				{
+					const char *keyName = gEngfuncs.Key_LookupBindingEx( commandName, ordinal );
+					if( !keyName || !keyName[0] ) break;
+					HUD_AddInstructorBindingChoice( hud, keyName );
+				}
+			}
+			else if( commandName[0] && gEngfuncs.Key_LookupBinding )
+				HUD_AddInstructorBindingChoice( hud, gEngfuncs.Key_LookupBinding( commandName ) );
+		}
+		else
+			HUD_AddInstructorBindingChoice( hud, token );
+
+		if( *cursor == ';' ) ++cursor;
+	}
+
+	bool choicesChanged = oldCount != hud->m_iInstructorHintBindingChoicesCount;
+	if( !choicesChanged )
+		for( int i = 0; i < oldCount; ++i )
+			if( Q_stricmp( oldChoices[i], hud->m_szInstructorHintBindingChoices[i] ) != 0 )
+			{
+				choicesChanged = true;
+				break;
+			}
+
+	if( bindingChanged || choicesChanged )
+	{
+		hud->m_iInstructorHintBindingTick = 0;
+		hud->m_flInstructorHintNextBindingTick = flTime + 0.75f;
+	}
+	else if( hud->m_iInstructorHintBindingChoicesCount > 0 )
+		hud->m_iInstructorHintBindingTick = oldTick % hud->m_iInstructorHintBindingChoicesCount;
+	else
+		hud->m_iInstructorHintBindingTick = 0;
+
+	if( flTime >= hud->m_flInstructorHintNextBindingTick )
+	{
+		if( hud->m_iInstructorHintBindingChoicesCount > 1 )
+			hud->m_iInstructorHintBindingTick = ( hud->m_iInstructorHintBindingTick + 1 ) % hud->m_iInstructorHintBindingChoicesCount;
+		hud->m_flInstructorHintNextBindingTick = flTime + 0.75f;
+	}
+}
+
+static bool HUD_IsInstructorControllerBinding( const char *keyName )
+{
+	if( !keyName ) return false;
+	static const char *keys[] = {
+		"A_BUTTON", "B_BUTTON", "X_BUTTON", "Y_BUTTON", "BACK", "MODE", "START",
+		"STICK1", "STICK2", "L1_BUTTON", "R1_BUTTON", "L2_BUTTON", "R2_BUTTON",
+		"LTRIGGER", "RTRIGGER", "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT"
+	};
+	for( size_t i = 0; i < sizeof( keys ) / sizeof( keys[0] ); ++i )
+		if( Q_stricmp( keyName, keys[i] ) == 0 ) return true;
+	return false;
+}
+
+static HSPRITE HUD_GetInstructorBindingImage( CHud *hud, const char *keyName,
+	char *displayName, size_t displayNameSize )
+{
+	if( !displayName || displayNameSize == 0 ) return 0;
+	displayName[0] = '\0';
+	if( !hud || !keyName || !keyName[0] )
+	{
+		snprintf( displayName, displayNameSize, "NONE" );
+		return hud ? hud->m_hInstructorHintKeyWideSprite : 0;
+	}
+	if( Q_stricmp( keyName, "MOUSE1" ) == 0 )
+	{
+		if( hud->m_hInstructorHintKeyMouseLeftSprite ) return hud->m_hInstructorHintKeyMouseLeftSprite;
+		snprintf( displayName, displayNameSize, "M1" ); return 0;
+	}
+	if( Q_stricmp( keyName, "MOUSE2" ) == 0 )
+	{
+		if( hud->m_hInstructorHintKeyMouseRightSprite ) return hud->m_hInstructorHintKeyMouseRightSprite;
+		snprintf( displayName, displayNameSize, "M2" ); return 0;
+	}
+	if( Q_stricmp( keyName, "MOUSE3" ) == 0 )
+	{
+		if( hud->m_hInstructorHintKeyMouseThreeSprite ) return hud->m_hInstructorHintKeyMouseThreeSprite;
+		snprintf( displayName, displayNameSize, "M3" ); return 0;
+	}
+	if( Q_stricmp( keyName, "MWHEELUP" ) == 0 )
+	{
+		if( hud->m_hInstructorHintKeyMouseWheelUpSprite ) return hud->m_hInstructorHintKeyMouseWheelUpSprite;
+		snprintf( displayName, displayNameSize, "MW+" ); return 0;
+	}
+	if( Q_stricmp( keyName, "MWHEELDOWN" ) == 0 )
+	{
+		if( hud->m_hInstructorHintKeyMouseWheelDownSprite ) return hud->m_hInstructorHintKeyMouseWheelDownSprite;
+		snprintf( displayName, displayNameSize, "MW-" ); return 0;
+	}
+	if( Q_stricmp( keyName, "UPARROW" ) == 0 )
+	{
+		if( hud->m_hInstructorHintKeyUpSprite ) return hud->m_hInstructorHintKeyUpSprite;
+		snprintf( displayName, displayNameSize, "UP" ); return 0;
+	}
+	if( Q_stricmp( keyName, "DOWNARROW" ) == 0 )
+	{
+		if( hud->m_hInstructorHintKeyDownSprite ) return hud->m_hInstructorHintKeyDownSprite;
+		snprintf( displayName, displayNameSize, "DN" ); return 0;
+	}
+	if( Q_stricmp( keyName, "LEFTARROW" ) == 0 )
+	{
+		if( hud->m_hInstructorHintKeyLeftSprite ) return hud->m_hInstructorHintKeyLeftSprite;
+		snprintf( displayName, displayNameSize, "LT" ); return 0;
+	}
+	if( Q_stricmp( keyName, "RIGHTARROW" ) == 0 )
+	{
+		if( hud->m_hInstructorHintKeyRightSprite ) return hud->m_hInstructorHintKeyRightSprite;
+		snprintf( displayName, displayNameSize, "RT" ); return 0;
+	}
+	// Source uses a dedicated controller-glyph font that GoldSrc lacks.
+	if( HUD_IsInstructorControllerBinding( keyName ) )
+	{
+		HUD_FormatInstructorKeyName( keyName, displayName, displayNameSize );
+		return 0;
+	}
+	char upper[32];
+	size_t length = 0;
+	while( keyName[length] && length < sizeof( upper ) - 1 )
+	{
+		upper[length] = (char)toupper( (unsigned char)keyName[length] );
+		++length;
+	}
+	upper[length] = '\0';
+	const bool useGeneric = length <= 2 ||
+		Q_stricmp( upper, "SEMICOLON" ) == 0 || Q_stricmp( upper, "INS" ) == 0 ||
+		Q_stricmp( upper, "DEL" ) == 0 || Q_stricmp( upper, "HOME" ) == 0 ||
+		Q_stricmp( upper, "END" ) == 0 || Q_stricmp( upper, "PGUP" ) == 0 ||
+		Q_stricmp( upper, "PGDN" ) == 0 || Q_stricmp( upper, "PAUSE" ) == 0 ||
+		Q_stricmp( upper, "F10" ) == 0 || Q_stricmp( upper, "F11" ) == 0 ||
+		Q_stricmp( upper, "F12" ) == 0;
+	HUD_FormatInstructorKeyName( keyName, displayName, displayNameSize );
+	return useGeneric ? hud->m_hInstructorHintKeyGenericSprite : hud->m_hInstructorHintKeyWideSprite;
+}
+
+static void HUD_DrawInstructorBindingName( int centerX, int centerY, const char *bindingName, int alpha )
+{
+	if( !bindingName || !bindingName[0] ) return;
+	const int width = gHUD.DrawHudStringLen( bindingName );
+	const int height = gHUD.m_iFontHeight > 0 ? gHUD.m_iFontHeight :
+		( gHUD.m_scrinfo.iCharHeight > 0 ? gHUD.m_scrinfo.iCharHeight : 12 );
+	const int x = centerX - width / 2 - 1;
+	const int y = centerY - height / 2 - 1;
+	int ink = 28 + ( 255 - alpha ) * 3 / 4;
+	if( ink > 190 ) ink = 190;
+	gHUD.DrawHudString( x, y, centerX + width / 2 + 4, bindingName, ink, ink, ink );
 }
 
 // Think
@@ -741,6 +959,27 @@ int CHud::Redraw( float flTime, int intermission )
 				targetX < edgeMargin || targetX > ScreenWidth - edgeMargin ||
 				targetY < edgeMargin || targetY > ScreenHeight - edgeMargin );
 
+			// "use_binding" is a virtual icon: the resolved key art becomes the locator.
+			char instructorBindingGlyph[32];
+			instructorBindingGlyph[0] = '\0';
+			HSPRITE instructorBindingSprite = 0;
+			const char *requestedBindingIcon = targetOffscreen ?
+				m_szInstructorHintIconOffscreen : m_szInstructorHintIconOnscreen;
+			const bool sourceBindingIcon = requestedBindingIcon &&
+				Q_stricmp( requestedBindingIcon, "use_binding" ) == 0;
+			int sourceBindingIconHeight = 0;
+			int sourceBindingIconWidth = 0;
+			if( sourceBindingIcon )
+			{
+				HUD_UpdateInstructorBindingChoices( this, flTime );
+				const char *keyName = m_iInstructorHintBindingChoicesCount > 0 ?
+					m_szInstructorHintBindingChoices[m_iInstructorHintBindingTick % m_iInstructorHintBindingChoicesCount] : NULL;
+				instructorBindingSprite = HUD_GetInstructorBindingImage( this, keyName,
+					instructorBindingGlyph, sizeof( instructorBindingGlyph ) );
+				sourceBindingIconHeight = Q_max( 1, (int)( ScreenWidth * 0.04f ) );
+				sourceBindingIconWidth = sourceBindingIconHeight;
+			}
+
 			// Source counts a lesson only after its icon has remained on-screen
 			// for at least 1.5 seconds, rather than when it is merely opened.
 			if( m_bInstructorHintManaged && !m_bInstructorManagedDisplayCounted )
@@ -780,7 +1019,9 @@ int CHud::Redraw( float flTime, int intermission )
 					const int locatorArrowDrawSize = 24;
 					const int locatorArrowGap = 4;
 					const int locatorEdgeMargin = hasDirectionalLocatorSprites ?
-						( 22 + locatorArrowDrawSize + locatorArrowGap ) : 22;
+						( sourceBindingIcon ?
+							sourceBindingIconHeight / 2 + 3 + locatorArrowDrawSize + locatorArrowGap :
+							22 + locatorArrowDrawSize + locatorArrowGap ) : 22;
 					enum
 					{
 						INSTRUCTOR_ARROW_NONE,
@@ -876,9 +1117,9 @@ int CHud::Redraw( float flTime, int intermission )
 								m_iInstructorHintColorG, m_iInstructorHintColorB, 150 );
 					}
 
-					HSPRITE locatorSprite = targetOffscreen ?
-						m_hInstructorHintOffscreenSprite : m_hInstructorHintOnscreenSprite;
-					if( m_iInstructorHintId == -1 )
+					HSPRITE locatorSprite = sourceBindingIcon ? instructorBindingSprite :
+						( targetOffscreen ? m_hInstructorHintOffscreenSprite : m_hInstructorHintOnscreenSprite );
+					if( !sourceBindingIcon && m_iInstructorHintId == -1 )
 					{
 						locatorSprite = 0;
 						if( m_iInstructorHintIconMode == 2 )
@@ -920,12 +1161,17 @@ int CHud::Redraw( float flTime, int intermission )
 
 					// A 20% increase keeps the 32x32 art compact while making
 					// the locator easier to pick out at normal gameplay distance.
-					const int locatorDrawWidth = locatorSprite ?
-						(int)( locatorIconWidth * 1.20f + 0.5f ) : 0;
-					const int locatorDrawHeight = locatorSprite ?
-						(int)( locatorIconHeight * 1.20f + 0.5f ) : 0;
-					const int markerHalfWidth = locatorSprite ? locatorDrawWidth / 2 : 10;
-					const int markerHalfHeight = locatorSprite ? locatorDrawHeight / 2 : 10;
+					if( sourceBindingIcon && locatorIconHeight > 0 && locatorIconWidth > 0 )
+						sourceBindingIconWidth = Q_max( 1, (int)( sourceBindingIconHeight *
+							( (float)locatorIconWidth / (float)locatorIconHeight ) + 0.5f ) );
+					const int locatorDrawWidth = sourceBindingIcon ? sourceBindingIconWidth :
+						( locatorSprite ? (int)( locatorIconWidth * 1.20f + 0.5f ) : 0 );
+					const int locatorDrawHeight = sourceBindingIcon ? sourceBindingIconHeight :
+						( locatorSprite ? (int)( locatorIconHeight * 1.20f + 0.5f ) : 0 );
+					const int markerHalfWidth = sourceBindingIcon ? locatorDrawWidth / 2 :
+						( locatorSprite ? locatorDrawWidth / 2 : 10 );
+					const int markerHalfHeight = sourceBindingIcon ? locatorDrawHeight / 2 :
+						( locatorSprite ? locatorDrawHeight / 2 : 10 );
 
 					if( locatorSprite )
 					{
@@ -957,7 +1203,7 @@ int CHud::Redraw( float flTime, int intermission )
 								kRenderTransAlpha, false );
 						}
 					}
-					else if( targetOffscreen )
+					else if( targetOffscreen && !sourceBindingIcon )
 					{
 						// If the requested Source icon has no GoldSrc .spr
 						// counterpart, fall back to a direction marker.
@@ -971,7 +1217,7 @@ int CHud::Redraw( float flTime, int intermission )
 							DrawHudString( markerX - 4, markerY - 8, markerX + 10,
 								arrow, locatorR, locatorG, locatorB );
 					}
-					else
+					else if( !sourceBindingIcon )
 					{
 						// Sprite-free on-screen fallback: a small reticle, not
 						// the PS2 interaction brackets and not a tutorial card.
@@ -1059,7 +1305,7 @@ int CHud::Redraw( float flTime, int intermission )
 						( m_hInstructorHintKeyGenericSprite && locatorBinding[0] && !locatorBinding[1] );
 					const bool hasLocatorText = locatorCaptionWidth > 0 || locatorBindingWidth > 0;
 
-					if( hasLocatorText )
+					if( hasLocatorText && !sourceBindingIcon )
 					{
 						int locatorKeyWidth = 0;
 						if( locatorBindingWidth > 0 )
@@ -1171,6 +1417,27 @@ int CHud::Redraw( float flTime, int intermission )
 						keyTextX = keyX + 3;
 					DrawHudString( keyTextX, keyY + 4, keyX + locatorKeyWidth - 3,
 						locatorBinding, locatorR, locatorG, locatorB );
+						}
+					}
+
+					if( sourceBindingIcon )
+					{
+						HUD_DrawInstructorBindingName( markerX, markerY,
+							instructorBindingGlyph, locatorAlpha );
+						const int sourceCaptionWidth = DrawHudStringLen( m_szInstructorHintCaption );
+						if( !targetOffscreen && sourceCaptionWidth > 0 )
+						{
+							const int fontHeight = m_iFontHeight > 0 ? m_iFontHeight :
+								( m_scrinfo.iCharHeight > 0 ? m_scrinfo.iCharHeight : 12 );
+							int captionX = markerX + markerHalfWidth + 5;
+							if( captionX + sourceCaptionWidth > ScreenWidth - 8 )
+								captionX = markerX - markerHalfWidth - 5 - sourceCaptionWidth;
+							if( captionX < 8 ) captionX = 8;
+							if( captionX + sourceCaptionWidth > ScreenWidth - 8 )
+								captionX = Q_max( 8, ScreenWidth - sourceCaptionWidth - 8 );
+							DrawHudString( captionX, markerY - fontHeight / 2 - 1,
+								Q_min( ScreenWidth - 8, captionX + sourceCaptionWidth + 4 ),
+								m_szInstructorHintCaption, locatorR, locatorG, locatorB );
 						}
 					}
 				}
