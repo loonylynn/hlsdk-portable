@@ -65,6 +65,9 @@ static void HUD_ClearInstructorHint( CHud *hud )
 {
 	hud->m_bInstructorHintActive = false;
 	hud->m_bInstructorHintManaged = false;
+	hud->m_bInstructorHintFixedPosition = false;
+	hud->m_flInstructorHintFixedX = 0.5f;
+	hud->m_flInstructorHintFixedY = 0.5f;
 	hud->m_flInstructorManagedVisibleSince = 0.0f;
 	hud->m_iInstructorHintId = 0;
 	hud->m_iInstructorHintTarget = 0;
@@ -288,7 +291,8 @@ int CHud::MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf )
 void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 	const char *binding, const char *onscreenIcon, const char *offscreenIcon,
 	int targetIndex, float timeout, int flags, int colorR, int colorG, int colorB,
-	float range, float iconOffset, bool forceCaption )
+	float range, float iconOffset, bool forceCaption,
+	bool fixedPosition, float fixedX, float fixedY )
 {
 	(void)timeout;
 
@@ -307,7 +311,10 @@ void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 	gHUD.m_bInstructorHintManaged = true;
 	gHUD.m_iInstructorHintId = 0;
 	gHUD.m_iInstructorHintTarget = targetIndex;
-	gHUD.m_bInstructorHintHasTargetPosition = targetIndex > 0;
+	gHUD.m_bInstructorHintFixedPosition = fixedPosition;
+	gHUD.m_flInstructorHintFixedX = fixedX;
+	gHUD.m_flInstructorHintFixedY = fixedY;
+	gHUD.m_bInstructorHintHasTargetPosition = targetIndex > 0 && !fixedPosition;
 	gHUD.m_bInstructorHintTargetVisible = true;
 	gHUD.m_bInstructorHintOccluded = false;
 	gHUD.m_flInstructorHintEndTime = 0.0f;
