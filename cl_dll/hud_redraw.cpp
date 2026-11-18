@@ -41,10 +41,48 @@ float HUD_GetFOV( void );
 
 extern cvar_t *sensitivity;
 
-// Resolve the active hint target to HUD viewport coordinates. TriAPI's
-// WorldToScreen returns viewport-relative pixels and reports points behind
-// the view separately; mirror those coordinates so the offscreen ray points
-// toward the target rather than through the camera.
+// Draw a thin HUD-space tether between the real entity anchor and the
+// optional icon-height offset. The short Bresenham walk avoids introducing
+// a VGUI dependency into the GoldSrc client HUD.
+static void HUD_DrawInstructorLocatorTether( int x0, int y0, int x1, int y1,
+	int r, int g, int b, int alpha )
+{
+	int dx = x1 >= x0 ? x1 - x0 : x0 - x1;
+	int sx = x0 < x1 ? 1 : -1;
+	int dy = y1 >= y0 ? -( y1 - y0 ) : -( y0 - y1 );
+	int sy = y0 < y1 ? 1 : -1;
+	int error = dx + dy;
+
+	// A very large projected offset should not become a per-frame fill storm.
+	int steps = dx > -dy ? dx : -dy;
+	if( steps > 256 )
+		return;
+
+	for( ;; )
+	{
+		FillRGBA( x0, y0, 2, 2, 0, 0, 0, alpha / 2 );
+		FillRGBA( x0, y0, 1, 1, r, g, b, alpha );
+		if( x0 == x1 && y0 == y1 )
+			break;
+
+		const int doubledError = 2 * error;
+		if( doubledError >= dy )
+		{
+			error += dy;
+			x0 += sx;
+		}
+		if( doubledError <= dx )
+		{
+			error += dx;
+			y0 += sy;
+		}
+	}
+}
+
+// Resolve a world point to HUD viewport coordinates. TriAPI's WorldToScreen
+// returns viewport-relative pixels and reports points behind the view
+// separately; mirror those coordinates so the offscreen ray points toward
+// the target rather than through the camera.
 static bool HUD_GetInstructorHintScreenPosition( const float *worldOrigin, float *screenX, float *screenY, bool *behind )
 {
 	if( !worldOrigin || !screenX || !screenY || !behind || !gEngfuncs.pTriAPI ||
@@ -183,9 +221,22 @@ int CHud::Redraw( float flTime, int intermission )
 		}
 		else
 		{
+			// GoldSrc brush entities commonly keep their network origin at
+			// (0,0,0). Match the server's VecBModelOrigin() calculation:
+			// absmin + size * 0.5 == origin + (mins + maxs) * 0.5.
+			// Non-brush entities retain their ordinary entity origin.
 			m_vecInstructorHintTargetOrigin[0] = managedTarget->origin[0];
 			m_vecInstructorHintTargetOrigin[1] = managedTarget->origin[1];
-			m_vecInstructorHintTargetOrigin[2] = managedTarget->origin[2] + m_flInstructorHintIconOffset;
+			m_vecInstructorHintTargetOrigin[2] = managedTarget->origin[2];
+			if( managedTarget->curstate.solid == SOLID_BSP )
+			{
+				m_vecInstructorHintTargetOrigin[0] +=
+					( managedTarget->curstate.mins[0] + managedTarget->curstate.maxs[0] ) * 0.5f;
+				m_vecInstructorHintTargetOrigin[1] +=
+					( managedTarget->curstate.mins[1] + managedTarget->curstate.maxs[1] ) * 0.5f;
+				m_vecInstructorHintTargetOrigin[2] +=
+					( managedTarget->curstate.mins[2] + managedTarget->curstate.maxs[2] ) * 0.5f;
+			}
 
 			if( ( managedTarget->curstate.effects & EF_NODRAW ) &&
 				!( m_iInstructorHintFlags & 0x00010000 ) )
@@ -318,10 +369,21 @@ int CHud::Redraw( float flTime, int intermission )
 
 			// Project the current world target before selecting its on/off-screen icon.
 			float targetX = 0.0f, targetY = 0.0f;
+			float entityAnchorX = 0.0f, entityAnchorY = 0.0f;
 			bool targetBehind = false;
+			bool entityAnchorBehind = false;
+			float locatorWorldOrigin[3] =
+			{
+				m_vecInstructorHintTargetOrigin[0],
+				m_vecInstructorHintTargetOrigin[1],
+				m_vecInstructorHintTargetOrigin[2] + m_flInstructorHintIconOffset
+			};
 			const bool hasTarget = m_bInstructorHintHasTargetPosition &&
-				HUD_GetInstructorHintScreenPosition( m_vecInstructorHintTargetOrigin,
+				HUD_GetInstructorHintScreenPosition( locatorWorldOrigin,
 					&targetX, &targetY, &targetBehind );
+			const bool hasEntityAnchor = m_bInstructorHintHasTargetPosition &&
+				HUD_GetInstructorHintScreenPosition( m_vecInstructorHintTargetOrigin,
+					&entityAnchorX, &entityAnchorY, &entityAnchorBehind );
 			const int edgeMargin = 24;
 			const bool targetOffscreen = hasTarget && ( targetBehind ||
 				targetX < edgeMargin || targetX > ScreenWidth - edgeMargin ||
@@ -419,6 +481,22 @@ int CHud::Redraw( float flTime, int intermission )
 					const int markerX = (int)locatorX;
 					const int markerY = (int)locatorY;
 
+					// The icon_offset raises the marker for readability, but its
+					// tether must still originate at the actual entity anchor.
+					// This also connects brush-model locators from their computed
+					// world-space center instead of the brush's often-zero origin.
+					if( !targetOffscreen && hasEntityAnchor && !entityAnchorBehind &&
+						entityAnchorX >= 0.0f && entityAnchorX < ScreenWidth &&
+						entityAnchorY >= 0.0f && entityAnchorY < ScreenHeight )
+					{
+						const int anchorX = (int)entityAnchorX;
+						const int anchorY = (int)entityAnchorY;
+						if( abs( markerX - anchorX ) > 1 || abs( markerY - anchorY ) > 1 )
+							HUD_DrawInstructorLocatorTether( anchorX, anchorY,
+								markerX, markerY, m_iInstructorHintColorR,
+								m_iInstructorHintColorG, m_iInstructorHintColorB, 150 );
+					}
+
 					HSPRITE locatorSprite = targetOffscreen ?
 						m_hInstructorHintOffscreenSprite : m_hInstructorHintOnscreenSprite;
 					if( m_iInstructorHintId == -1 )
@@ -479,7 +557,10 @@ int CHud::Redraw( float flTime, int intermission )
 						const int spriteG = locatorG * locatorAlpha / 255;
 						const int spriteB = locatorB * locatorAlpha / 255;
 						SPR_Set( locatorSprite, spriteR, spriteG, spriteB );
-						SPR_DrawAdditive( 0,
+						// ALPHATEST sprites reserve palette index 255 as a hole.
+						// Additive drawing blends the blue key color into the scene;
+						// DrawHoles skips that palette entry completely.
+						SPR_DrawHoles( 0,
 							markerX - locatorIconWidth / 2,
 							markerY - locatorIconHeight / 2, NULL );
 					}
