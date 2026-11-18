@@ -620,7 +620,7 @@ public:
 	CHudScoreboard	m_Scoreboard;
 	CHudMOTD	m_MOTD;
 
-	// Source-style locator target pool; legacy HUD drawing remains the renderer for now.
+	// Source-style locator target pool; the renderer consumes its presentation state.
 	CInstructorLocatorPanel m_InstructorLocatorPanel;
 	int m_iInstructorLocatorTargetHandle;
 
