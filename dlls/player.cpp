@@ -1983,6 +1983,7 @@ void CEnvInstructorHint::ShowHint( CBasePlayer *pPlayer )
 		WRITE_COORD( targetOrigin.z );
 		WRITE_STRING( caption );
 		WRITE_STRING( binding );
+		WRITE_BYTE( 0 ); // no stock icon for map-authored hints
 	MESSAGE_END();
 
 	// Remember which map-authored hint currently owns the single HUD panel.
@@ -2066,6 +2067,7 @@ void CEnvInstructorHint::HintThink( void )
 				WRITE_COORD( targetOrigin.x );
 				WRITE_COORD( targetOrigin.y );
 				WRITE_COORD( targetOrigin.z );
+				WRITE_BYTE( 0 ); // keep map-authored hints icon-free
 			MESSAGE_END();
 		}
 	}
@@ -2174,6 +2176,9 @@ void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 
 	const int targetIndex = ENTINDEX( pObject->edict() );
 	const Vector targetOrigin = InstructorHintTargetOrigin( pObject );
+	// The normal movement icon prompts the player to walk into the object.
+	// Holding USE switches to the hold icon for the pull interaction.
+	const int iconMode = ( pev->button & IN_USE ) ? 2 : 1;
 
 	if( !m_bUseableInstructorHintActive || m_iUseableInstructorHintTarget != targetIndex )
 	{
@@ -2187,8 +2192,9 @@ void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 			WRITE_COORD( targetOrigin.x );
 			WRITE_COORD( targetOrigin.y );
 			WRITE_COORD( targetOrigin.z );
-			WRITE_STRING( "Walk into it to push. Move while holding:" );
-			WRITE_STRING( "USE" );
+			WRITE_STRING( "Move into it to push" );
+			WRITE_STRING( "" );
+			WRITE_BYTE( iconMode );
 		MESSAGE_END();
 
 		m_bUseableInstructorHintActive = TRUE;
@@ -2204,6 +2210,7 @@ void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 		WRITE_COORD( targetOrigin.x );
 		WRITE_COORD( targetOrigin.y );
 		WRITE_COORD( targetOrigin.z );
+		WRITE_BYTE( iconMode );
 	MESSAGE_END();
 }
 
