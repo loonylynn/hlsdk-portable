@@ -138,8 +138,7 @@ void CInstructorLocatorTarget::UpdateAnimation( float currentTime )
 		m_alpha = m_bVisible ? 255 : 0;
 	}
 
-	const float pulseFlags = (float)( m_iEffectsFlags & 0x00000007 );
-	const int pulseMode = (int)pulseFlags;
+	const int pulseMode = m_iEffectsFlags & 0x00000007;
 	const float pulseRate = ( pulseMode & 0x4 ) ? 5.0f :
 		( ( pulseMode & 0x2 ) ? 2.5f : 1.0f );
 	m_flPulse = pulseMode ?
