@@ -1048,8 +1048,6 @@ int CHud::Redraw( float flTime, int intermission )
 					// Projection and edge placement belong to the target model.
 					// The renderer adds only transient pulse/shake offsets.
 					locatorTarget->CalculateEdgePosition( ScreenWidth, ScreenHeight, locatorEdgeMargin );
-					const float centerX = (float)locatorTarget->m_centerX;
-					const float centerY = (float)locatorTarget->m_centerY;
 					float locatorX = (float)locatorTarget->m_iconX;
 					float locatorY = (float)locatorTarget->m_iconY;
 
