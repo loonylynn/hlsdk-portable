@@ -221,6 +221,7 @@ private:
 	bool m_bNoDraw;
 	bool m_bHiddenDueToOtherElements;
 	bool m_bManagedLessonVisible;
+	std::string m_ManagedLessonName;
 	int m_iCurrentPriority;
 	float m_flLastUpdate;
 	std::string m_PreviousStartSound;
