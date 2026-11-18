@@ -58,10 +58,50 @@ Add this inside the top-level object in `instructor_lessons.txt`:
 }
 ```
 
-The example uses the existing one-card HUD panel and needs no icon sprite.
-To show an icon, provide the named GoldSrc sprite as
-`valve/sprites/<icon-name>.spr` and use the same basename in
+This example deliberately uses a fixed-position screen prompt and needs no
+world target or icon sprite. Target-backed lessons use the world-space locator
+renderer described in the next example. To supply actual icon artwork, provide
+a GoldSrc sprite as `valve/sprites/<icon-name>.spr` and use its basename in
 `onscreen_icon` / `offscreen_icon`.
+
+## Example: locate the object the player uses
+
+This lesson captures the entity passed by the `player_use` event and attaches
+the locator to that entity. It is useful as a smoke test: look at an object that
+accepts USE and press the USE key.
+
+```text
+"Locate used object"
+{
+    "instance_type" "1"
+    "priority" "110"
+    "timeout" "8"
+    "caption" "You interacted with this"
+    "binding" "+use"
+    "onscreen_icon" "icon_interact"
+    "offscreen_icon" "icon_arrow_plain"
+    "icon_offset" "28"
+    "range" "1024"
+
+    "open"
+    {
+        "player_use"
+        {
+            "local_player get use target" "int 1"
+            "icon_target set" "entity entity1"
+        }
+    }
+}
+```
+
+A target-backed lesson now draws a small icon at the target's projected
+world position, with a compact caption tag that follows it. When the target
+leaves the viewport, the off-screen icon is placed at the nearest screen edge;
+`no_offscreen` suppresses it. The `fixed_position` and `no_icon_target` forms remain
+screen-space prompts rather than world locators. `icon_interact` and
+`icon_arrow_plain` are Source icon names: this port expects matching `.spr`
+files under `valve/sprites/`. Without those converted assets, a simple
+reticle/directional-arrow fallback is drawn.
 
 ## Lesson properties
 
