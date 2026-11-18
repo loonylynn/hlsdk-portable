@@ -321,7 +321,7 @@ int CHud::Redraw( float flTime, int intermission )
 					else if( dy < -0.001f )
 					ty = ( top - centerY ) / dy;
 
-					float t = Q_min( tx, ty );
+					float t = tx < ty ? tx : ty;
 					if( t < 0.0f || t > 1000000.0f )
 					t = 0.0f;
 
