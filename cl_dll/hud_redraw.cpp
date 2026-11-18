@@ -247,6 +247,7 @@ int CHud::Redraw( float flTime, int intermission )
 			m_vecInstructorHintTargetOrigin[1] = 0.0f;
 			m_vecInstructorHintTargetOrigin[2] = 0.0f;
 			m_flInstructorHintEndTime = 0.0f;
+			m_iInstructorHintIconMode = 0;
 			m_szInstructorHintCaption[0] = '\0';
 			m_szInstructorHintBinding[0] = '\0';
 		}
@@ -259,14 +260,38 @@ int CHud::Redraw( float flTime, int intermission )
 
 			int captionWidth = DrawHudStringLen( m_szInstructorHintCaption );
 			int bindingWidth = DrawHudStringLen( bindingText );
-			int panelWidth = Q_max( captionWidth, bindingWidth ) + 36;
+
+			// Only the automatic func_pushable hint uses these two action sprites.
+			// The files are optional so older game directories retain the text-only UI.
+			HSPRITE hintIcon = 0;
+			if( m_iInstructorHintId == -1 )
+			{
+				if( m_iInstructorHintIconMode == 2 )
+					hintIcon = m_hInstructorHintHoldSprite;
+				else if( m_iInstructorHintIconMode == 1 )
+					hintIcon = m_hInstructorHintMoveSprite;
+			}
+
+			int iconWidth = hintIcon ? SPR_Width( hintIcon, 0 ) : 0;
+			int iconHeight = hintIcon ? SPR_Height( hintIcon, 0 ) : 0;
+			if( iconWidth <= 0 || iconHeight <= 0 || iconWidth > 64 || iconHeight > 64 )
+			{
+				hintIcon = 0;
+				iconWidth = 0;
+				iconHeight = 0;
+			}
+
+			const int contentTextWidth = Q_max( captionWidth, bindingWidth );
+			const int contentWidth = contentTextWidth + ( hintIcon ? iconWidth + 12 : 0 );
+			int panelWidth = contentWidth + 36;
 			const int maxPanelWidth = Q_max( 1, ScreenWidth - 24 );
 			if( panelWidth > maxPanelWidth )
 				panelWidth = maxPanelWidth;
 			if( panelWidth < 180 && maxPanelWidth >= 180 )
 				panelWidth = 180;
 
-			const int panelHeight = bindingText[0] ? 58 : 42;
+			const int basePanelHeight = bindingText[0] ? 58 : 42;
+			const int panelHeight = Q_max( basePanelHeight, iconHeight + 16 );
 			int panelX = ( ScreenWidth - panelWidth ) / 2;
 			int panelY = ScreenHeight - panelHeight - 30;
 
@@ -370,18 +395,31 @@ int CHud::Redraw( float flTime, int intermission )
 			FillRGBA( panelX, panelY, panelWidth, panelHeight, 8, 10, 14, 205 );
 			FillRGBA( panelX, panelY, 3, panelHeight, 236, 9, 77, 255 );
 
-			int textX = panelX + ( panelWidth - captionWidth ) / 2;
-			if( textX < panelX + 14 )
-				textX = panelX + 14;
-			DrawHudString( textX, panelY + 9, panelX + panelWidth - 10,
+			int textAreaX = panelX + 14;
+			if( hintIcon )
+			{
+				const int iconX = panelX + 12;
+				const int iconY = panelY + ( panelHeight - iconHeight ) / 2;
+				SPR_Set( hintIcon, 236, 9, 77 );
+				SPR_DrawAdditive( 0, iconX, iconY, NULL );
+				textAreaX = iconX + iconWidth + 10;
+			}
+
+			const int textAreaRight = panelX + panelWidth - 10;
+			const int textAreaWidth = Q_max( 1, textAreaRight - textAreaX );
+			int textX = textAreaX + ( textAreaWidth - captionWidth ) / 2;
+			if( textX < textAreaX )
+				textX = textAreaX;
+			const int textOffsetY = ( panelHeight - basePanelHeight ) / 2;
+			DrawHudString( textX, panelY + textOffsetY + 9, textAreaRight,
 				m_szInstructorHintCaption, 245, 245, 245 );
 
 			if( bindingText[0] )
 			{
-				int keyX = panelX + ( panelWidth - bindingWidth ) / 2;
-				if( keyX < panelX + 14 )
-					keyX = panelX + 14;
-				DrawHudString( keyX, panelY + 32, panelX + panelWidth - 10,
+				int keyX = textAreaX + ( textAreaWidth - bindingWidth ) / 2;
+				if( keyX < textAreaX )
+					keyX = textAreaX;
+				DrawHudString( keyX, panelY + textOffsetY + 32, textAreaRight,
 					bindingText, 236, 9, 77 );
 			}
 		}

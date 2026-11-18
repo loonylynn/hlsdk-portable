@@ -532,6 +532,11 @@ void CHud::VidInit( void )
 	m_hsprLogo = 0;	
 	m_hsprCursor = 0;
 
+	// Optional action sprites used by the automatic func_pushable hint.
+	// Missing files simply disable the artwork; the text prompt still works.
+	m_hInstructorHintMoveSprite = SPR_Load( "sprites/icon_move.spr" );
+	m_hInstructorHintHoldSprite = SPR_Load( "sprites/icon_hold.spr" );
+
 	// a1ba: don't break the loading order here and
 	// don't cause memory leak but check
 	// maximum HUD sprite resolution we have
