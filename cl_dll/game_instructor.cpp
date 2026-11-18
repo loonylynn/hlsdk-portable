@@ -260,7 +260,7 @@ namespace
 		{
 			if (buffer)
 				gEngfuncs.COM_FreeFile(buffer);
-			if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
+			if (gEngfuncs.Con_Printf)
 				gEngfuncs.Con_Printf("[GameInstructor] Could not load script '%s' (length %d).\n", fileName, length);
 			return false;
 		}
@@ -269,7 +269,7 @@ namespace
 		gEngfuncs.COM_FreeFile(buffer);
 		KVReader reader(text.c_str());
 		const bool parsed = reader.Parse(root);
-		if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
+		if (gEngfuncs.Con_Printf)
 			gEngfuncs.Con_Printf("[GameInstructor] Script '%s': %s, %u top-level entries.\n",
 				fileName, parsed ? "parsed" : "parse FAILED",
 				(unsigned int)root.children.size());
