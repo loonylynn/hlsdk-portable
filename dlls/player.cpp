@@ -126,8 +126,7 @@ public:
 		m_flTimeout( 0.0f ),
 		m_flExpireTime( 0.0f ),
 		m_bActive( FALSE ),
-		m_bTargetLostNotified( FALSE ),
-		m_hHintTarget( NULL )
+		m_bTargetLostNotified( FALSE )
 	{
 	}
 
@@ -2019,6 +2018,9 @@ void CEnvInstructorHint::EndHint( void )
 
 	m_bActive = FALSE;
 	m_hActivator = NULL;
+	m_hHintTarget = NULL;
+	m_flExpireTime = 0.0f;
+	m_bTargetLostNotified = FALSE;
 	SetThink( NULL );
 	pev->nextthink = 0;
 }
