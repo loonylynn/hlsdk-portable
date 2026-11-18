@@ -44,22 +44,17 @@ extern cvar_t *sensitivity;
 // WorldToScreen returns viewport-relative pixels and reports points behind
 // the view separately; mirror those coordinates so the offscreen ray points
 // toward the target rather than through the camera.
-static bool HUD_GetInstructorHintScreenPosition( int entityIndex, float *screenX, float *screenY, bool *behind )
+static bool HUD_GetInstructorHintScreenPosition( const float *worldOrigin, float *screenX, float *screenY, bool *behind )
 {
-	if( entityIndex <= 0 || !screenX || !screenY || !behind ||
-		!gEngfuncs.GetEntityByIndex || !gEngfuncs.pTriAPI ||
+	if( !worldOrigin || !screenX || !screenY || !behind || !gEngfuncs.pTriAPI ||
 		!gEngfuncs.pTriAPI->WorldToScreen )
-		return false;
-
-	cl_entity_t *target = gEngfuncs.GetEntityByIndex( entityIndex );
-	if( !target || target->index != entityIndex )
 		return false;
 
 	float world[3] =
 	{
-		target->origin[0],
-		target->origin[1],
-		target->origin[2]
+		worldOrigin[0],
+		worldOrigin[1],
+		worldOrigin[2]
 	};
 	float projected[3] = { 0.0f, 0.0f, 0.0f };
 	const int zClipped = gEngfuncs.pTriAPI->WorldToScreen( world, projected );
@@ -91,9 +86,9 @@ static bool HUD_GetInstructorHintScreenPosition( int entityIndex, float *screenX
 
 				float delta[3] =
 				{
-					target->origin[0] - local->origin[0],
-					target->origin[1] - local->origin[1],
-					target->origin[2] - local->origin[2]
+					worldOrigin[0] - local->origin[0],
+					worldOrigin[1] - local->origin[1],
+					worldOrigin[2] - local->origin[2]
 				};
 				const float side = delta[0] * right[0] + delta[1] * right[1] + delta[2] * right[2];
 				const float vertical = delta[0] * up[0] + delta[1] * up[1] + delta[2] * up[2];
@@ -247,6 +242,10 @@ int CHud::Redraw( float flTime, int intermission )
 			m_bInstructorHintActive = false;
 			m_iInstructorHintId = 0;
 			m_iInstructorHintTarget = 0;
+			m_bInstructorHintHasTargetPosition = false;
+			m_vecInstructorHintTargetOrigin[0] = 0.0f;
+			m_vecInstructorHintTargetOrigin[1] = 0.0f;
+			m_vecInstructorHintTargetOrigin[2] = 0.0f;
 			m_flInstructorHintEndTime = 0.0f;
 			m_szInstructorHintCaption[0] = '\0';
 			m_szInstructorHintBinding[0] = '\0';
@@ -273,8 +272,9 @@ int CHud::Redraw( float flTime, int intermission )
 
 			float targetX = 0.0f, targetY = 0.0f;
 			bool targetBehind = false;
-			const bool hasTarget = HUD_GetInstructorHintScreenPosition(
-				m_iInstructorHintTarget, &targetX, &targetY, &targetBehind );
+			const bool hasTarget = m_bInstructorHintHasTargetPosition &&
+				HUD_GetInstructorHintScreenPosition( m_vecInstructorHintTargetOrigin,
+					&targetX, &targetY, &targetBehind );
 
 			if( hasTarget )
 			{
