@@ -36,6 +36,12 @@ public:
 	bool m_bOriginInScreenspace;
 	float m_vecOrigin[3];
 	int m_iEntityIndex;
+	bool m_bFixedPosition;
+	int m_iHintId;
+	int m_iIconMode;
+	bool m_bManaged;
+	float m_flVisibleSince;
+	float m_flIconOffset;
 	bool m_isActive;
 	int m_serialNumber;
 	int m_frameLastUpdated;
