@@ -281,9 +281,8 @@ int CHud::Redraw( float flTime, int intermission )
 				iconHeight = 0;
 			}
 
-			int contentWidth = captionWidth + ( hintIcon ? iconWidth + 12 : 0 );
-			if( bindingWidth > contentWidth )
-				contentWidth = bindingWidth;
+			const int contentTextWidth = Q_max( captionWidth, bindingWidth );
+			const int contentWidth = contentTextWidth + ( hintIcon ? iconWidth + 12 : 0 );
 			int panelWidth = contentWidth + 36;
 			const int maxPanelWidth = Q_max( 1, ScreenWidth - 24 );
 			if( panelWidth > maxPanelWidth )
