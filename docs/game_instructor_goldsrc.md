@@ -37,13 +37,16 @@ Add this inside the top-level object in `instructor_lessons.txt`:
     "success_limit" "1"
     "caption" "Press attack to fire"
     "binding" "+attack"
+    "no_icon_target" "1"
+    "fixed_position" "1"
+    "fixed_position_x" "0.5"
+    "fixed_position_y" "0.75"
 
     "open"
     {
         "instructor_primaryattack"
         {
             "local_player is" "player userid"
-            "icon_target set" "player local_player"
         }
     }
 
