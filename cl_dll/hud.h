@@ -635,8 +635,8 @@ public:
 		m_bInstructorHintActive(false), m_iInstructorHintId(0),
 		m_iInstructorHintTarget(0), m_flInstructorHintEndTime(0.0f)
 	{
-		m_szInstructorHintCaption[0] = '\\0';
-		m_szInstructorHintBinding[0] = '\\0';
+		m_szInstructorHintCaption[0] = '\0';
+		m_szInstructorHintBinding[0] = '\0';
 	}  
 	~CHud();			// destructor, frees allocated memory
 
