@@ -882,6 +882,19 @@ int CHud::Redraw( float flTime, int intermission )
 	}
 	m_InstructorLocatorPanel.ResolveDecluttering( ScreenWidth, ScreenHeight, 56, 8 );
 
+	// Screen-space/static prompts do not have world anchors to declutter.
+	// Stack those cards vertically from the bottom of the HUD instead.
+	int staticCardIndex = 0;
+	for( int locatorIndex = 0; locatorIndex < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++locatorIndex )
+	{
+		CInstructorLocatorTarget *target = m_InstructorLocatorPanel.GetTargetAt( locatorIndex );
+		if( !target || !target->m_isActive || !target->ShouldDraw() ||
+			!target->m_bOriginInScreenspace || target->m_bFixedPosition )
+			continue;
+		target->m_offsetY = -staticCardIndex * 86;
+		++staticCardIndex;
+	}
+
 	m_flTimeDelta = (double)( m_flTime - m_fOldTime );
 	static float m_flShotTime = 0;
 
@@ -1478,6 +1491,8 @@ int CHud::Redraw( float flTime, int intermission )
 				panelX = (int)( locatorTarget->m_vecOrigin[0] * ScreenWidth - panelWidth * 0.5f );
 				panelY = (int)( locatorTarget->m_vecOrigin[1] * ScreenHeight - panelHeight * 0.5f );
 			}
+			else if( !hasTarget )
+				panelY += locatorTarget->m_offsetY;
 			else if( hasTarget )
 			{
 				const float centerX = ScreenWidth * 0.5f;
