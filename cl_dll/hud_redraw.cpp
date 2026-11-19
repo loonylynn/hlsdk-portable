@@ -791,7 +791,7 @@ static void HUD_DrawInstructorBindingName( int centerX, int centerY, const char 
 	int length = (int)strlen( bindingName );
 	if( length > 12 )
 		length = 12;
-	const int scale = length <= 1 ? 3 : ( length <= 4 ? 2 : 1 );
+	const int scale = length <= 4 ? 2 : 1;
 	const int advance = 6 * scale;
 	const int totalWidth = length * advance - scale;
 	const int glyphHeight = 7 * scale;
