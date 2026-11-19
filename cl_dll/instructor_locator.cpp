@@ -424,15 +424,41 @@ void CInstructorLocatorPanel::ResolveDecluttering( int screenWidth, int screenHe
 	if( edgeMargin < 0 ) edgeMargin = 0;
 	if( gap < 0 ) gap = 0;
 
+	// Higher-priority managed lessons claim the clearest positions first.
+	// Ties remain deterministic: older target handles are laid out first.
+	int order[MAX_INSTRUCTOR_LOCATOR_TARGETS];
+	for( int i = 0; i < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++i )
+		order[i] = i;
+	for( int i = 1; i < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++i )
+	{
+		const int key = order[i];
+		const CInstructorLocatorTarget &candidate = m_targets[key];
+		int j = i - 1;
+		while( j >= 0 )
+		{
+			const CInstructorLocatorTarget &previous = m_targets[order[j]];
+			const bool candidateBefore = candidate.m_isActive &&
+				( !previous.m_isActive ||
+				  candidate.m_iPriority > previous.m_iPriority ||
+				  ( candidate.m_iPriority == previous.m_iPriority &&
+				    candidate.m_serialNumber < previous.m_serialNumber ) );
+			if( !candidateBefore )
+				break;
+			order[j + 1] = order[j];
+			--j;
+		}
+		order[j + 1] = key;
+	}
+
 	int placedX[MAX_INSTRUCTOR_LOCATOR_TARGETS];
 	int placedY[MAX_INSTRUCTOR_LOCATOR_TARGETS];
 	int placedW[MAX_INSTRUCTOR_LOCATOR_TARGETS];
 	int placedH[MAX_INSTRUCTOR_LOCATOR_TARGETS];
 	int placedCount = 0;
 
-	for( int i = 0; i < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++i )
+	for( int orderIndex = 0; orderIndex < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++orderIndex )
 	{
-		CInstructorLocatorTarget &target = m_targets[i];
+		CInstructorLocatorTarget &target = m_targets[order[orderIndex]];
 		target.m_offsetX = target.m_offsetY = 0;
 		target.m_declutterIndex = -1;
 		if( !target.m_isActive || !target.m_bIsDrawing || !target.ShouldDraw() )
@@ -457,10 +483,16 @@ void CInstructorLocatorPanel::ResolveDecluttering( int screenWidth, int screenHe
 		int verticalMargin = edgeMargin;
 		if( horizontalMargin * 2 > screenWidth ) horizontalMargin = screenWidth / 2;
 		if( verticalMargin * 2 > screenHeight ) verticalMargin = screenHeight / 2;
-		const int minX = horizontalMargin;
-		const int maxX = screenWidth - horizontalMargin;
-		const int minY = verticalMargin;
-		const int maxY = screenHeight - verticalMargin;
+		int halfWidth = width / 2;
+		int halfHeight = height / 2;
+		if( halfWidth > screenWidth / 2 - horizontalMargin )
+			halfWidth = screenWidth / 2 - horizontalMargin;
+		if( halfHeight > screenHeight / 2 - verticalMargin )
+			halfHeight = screenHeight / 2 - verticalMargin;
+		const int minX = horizontalMargin + halfWidth;
+		const int maxX = screenWidth - horizontalMargin - halfWidth;
+		const int minY = verticalMargin + halfHeight;
+		const int maxY = screenHeight - verticalMargin - halfHeight;
 
 		for( int candidate = 0; candidate < 17; ++candidate )
 		{
