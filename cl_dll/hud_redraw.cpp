@@ -828,14 +828,73 @@ int CHud::Redraw( float flTime, int intermission )
 		}
 	}
 
-	// Advance animations once and lay out all world locators before drawing.
+	// Advance animations once, size every visible target, then resolve
+	// collisions across world markers and screen-space lesson cards together.
 	m_InstructorLocatorPanel.UpdatePresentation( m_flTime );
 	for( int locatorIndex = 0; locatorIndex < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++locatorIndex )
 	{
 		CInstructorLocatorTarget *target = m_InstructorLocatorPanel.GetTargetAt( locatorIndex );
-		if( !target || !target->m_isActive || !target->ShouldDraw() ||
-			target->m_bOriginInScreenspace )
+		if( !target || !target->m_isActive || !target->ShouldDraw() )
 			continue;
+
+		if( target->m_bOriginInScreenspace )
+		{
+			char resolvedBinding[64];
+			HUD_ResolveInstructorBinding( target->m_szBinding,
+				resolvedBinding, sizeof( resolvedBinding ) );
+			const int captionWidth = DrawHudStringLen( target->m_szCaption );
+			const int bindingWidth = DrawHudStringLen( resolvedBinding );
+			const bool managedCard = target->m_bManaged;
+			const bool genericKey = m_hInstructorHintKeyGenericSprite &&
+				resolvedBinding[0] && resolvedBinding[1] && !resolvedBinding[2] ? true :
+				( m_hInstructorHintKeyGenericSprite && resolvedBinding[0] && !resolvedBinding[1] );
+			int keyChipWidth = 0;
+			if( managedCard && resolvedBinding[0] )
+			{
+				keyChipWidth = bindingWidth + ( genericKey ? 12 : 18 );
+				if( genericKey && keyChipWidth < 24 ) keyChipWidth = 24;
+				if( keyChipWidth > 64 ) keyChipWidth = 64;
+			}
+
+			HSPRITE icon = (HSPRITE)target->m_hOnscreenSprite;
+			if( target->m_iHintId == -1 )
+				icon = target->m_iIconMode == 2 ? m_hInstructorHintHoldSprite :
+					( target->m_iIconMode == 1 ? m_hInstructorHintMoveSprite : 0 );
+			int iconWidth = icon ? SPR_Width( icon, 0 ) : 0;
+			int iconHeight = icon ? SPR_Height( icon, 0 ) : 0;
+			if( iconWidth <= 0 || iconHeight <= 0 || iconWidth > 64 || iconHeight > 64 )
+				iconWidth = iconHeight = 0;
+
+			const int textWidth = managedCard ?
+				captionWidth + ( keyChipWidth ? keyChipWidth + 12 : 0 ) :
+				Q_max( captionWidth, bindingWidth );
+			int panelWidth = textWidth + ( iconWidth ? iconWidth + 12 : 0 ) +
+				( managedCard ? 44 : 36 );
+			const int maxPanelWidth = Q_max( 1, ScreenWidth - 24 );
+			if( panelWidth > maxPanelWidth ) panelWidth = maxPanelWidth;
+			const int minPanelWidth = managedCard ? 224 : 180;
+			if( panelWidth < minPanelWidth && maxPanelWidth >= minPanelWidth )
+				panelWidth = minPanelWidth;
+
+			const int basePanelHeight = managedCard ? 62 : ( resolvedBinding[0] ? 58 : 42 );
+			const int panelHeight = Q_max( basePanelHeight,
+				iconHeight + ( managedCard ? 24 : 16 ) );
+			int panelX = ( ScreenWidth - panelWidth ) / 2;
+			int panelY = ScreenHeight - panelHeight - 30;
+			if( target->m_bFixedPosition )
+			{
+				panelX = (int)( target->m_vecOrigin[0] * ScreenWidth - panelWidth * 0.5f );
+				panelY = (int)( target->m_vecOrigin[1] * ScreenHeight - panelHeight * 0.5f );
+			}
+
+			target->m_wide = panelWidth;
+			target->m_tall = panelHeight;
+			target->m_iconX = panelX + panelWidth / 2;
+			target->m_iconY = panelY + panelHeight / 2;
+			target->m_bOnscreen = true;
+			target->m_bIsDrawing = true;
+			continue;
+		}
 
 		float screenX = 0.0f, screenY = 0.0f;
 		bool behind = false;
@@ -881,19 +940,6 @@ int CHud::Redraw( float flTime, int intermission )
 		}
 	}
 	m_InstructorLocatorPanel.ResolveDecluttering( ScreenWidth, ScreenHeight, 56, 8 );
-
-	// Screen-space/static prompts do not have world anchors to declutter.
-	// Stack those cards vertically from the bottom of the HUD instead.
-	int staticCardIndex = 0;
-	for( int locatorIndex = 0; locatorIndex < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++locatorIndex )
-	{
-		CInstructorLocatorTarget *target = m_InstructorLocatorPanel.GetTargetAt( locatorIndex );
-		if( !target || !target->m_isActive || !target->ShouldDraw() ||
-			!target->m_bOriginInScreenspace || target->m_bFixedPosition )
-			continue;
-		target->m_offsetY = -staticCardIndex * 86;
-		++staticCardIndex;
-	}
 
 	m_flTimeDelta = (double)( m_flTime - m_fOldTime );
 	static float m_flShotTime = 0;
@@ -1492,7 +1538,10 @@ int CHud::Redraw( float flTime, int intermission )
 				panelY = (int)( locatorTarget->m_vecOrigin[1] * ScreenHeight - panelHeight * 0.5f );
 			}
 			else if( !hasTarget )
-				panelY += locatorTarget->m_offsetY;
+			{
+				// Screen-space/no-target cards are positioned by the shared
+				// locator declutter pass below.
+			}
 			else if( hasTarget )
 			{
 				const float centerX = ScreenWidth * 0.5f;
@@ -1574,6 +1623,11 @@ int CHud::Redraw( float flTime, int intermission )
 				}
 				}
 			}
+
+			// Apply the panel-wide collision offset for fixed, no-target, and
+			// world-projected cards before clamping to the safe viewport.
+			panelX += locatorTarget->m_offsetX;
+			panelY += locatorTarget->m_offsetY;
 
 			// Clamp the card after choosing its target-relative or edge-relative
 			// placement. Keep a small inset even with unusual screen sizes.
