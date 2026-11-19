@@ -18,6 +18,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "hud.h"
@@ -51,6 +52,21 @@ extern vec3_t v_origin;
 
 // Source hud_locator_target.cpp: ICON_DIST_TOO_FAR = 60 feet * 12 inches.
 #define INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE (60.0f * 12.0f)
+
+// Source AnimateIconSize keeps the same absolute height increase for wide icons.
+static void HUD_AnimateInstructorIconSize( const CInstructorLocatorTarget *target,
+	int *wide, int *tall )
+{
+	if( !target || !wide || !tall || *wide <= 0 || *tall <= 0 ) return;
+	float scale = target->m_flPulseScale;
+	if( *wide > *tall )
+	{
+		const int heightDelta = (int)( (float)( *tall ) * scale - (float)( *tall ) );
+		scale = (float)( *wide + heightDelta ) / (float)( *wide );
+	}
+	*wide = (int)( (float)( *wide ) * scale );
+	*tall = (int)( (float)( *tall ) * scale );
+}
 
 // Draw a thin HUD-space tether between the real entity anchor and the
 // optional icon-height offset. The short Bresenham walk avoids introducing
@@ -967,7 +983,7 @@ int CHud::Redraw( float flTime, int intermission )
 			}
 			const bool forceCaption = ( target->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
 			target->SetVisible( targetAllowed &&
-				( !target->m_bOccluded || forceCaption ), flTime, 0.18f );
+				( !target->m_bOccluded || forceCaption ), flTime, 0.3f );
 		}
 
 		// Source CLocatorPanel::ComputeTargetIconPosition measures from
@@ -1073,7 +1089,7 @@ int CHud::Redraw( float flTime, int intermission )
 		if( HUD_GetInstructorHintScreenPosition( worldOrigin, &screenX, &screenY, &behind ) )
 		{
 			target->UpdateProjection( screenX, screenY, behind,
-				ScreenWidth, ScreenHeight, 24 );
+				ScreenWidth, ScreenHeight, ScreenWidth * 0.075f, m_flTime );
 			if( !target->m_bOnscreen && ( target->m_iEffectsFlags & LOCATOR_ICON_FX_NO_OFFSCREEN ) )
 				continue;
 			// Use the same target-specific safe edge margin during layout and
@@ -1269,10 +1285,10 @@ int CHud::Redraw( float flTime, int intermission )
 			// Source ComputeTargetIconPosition uses a 7.5%-of-screen-width
 			// title-safe inset. Crossing that inset selects the offscreen icon
 			// and direction arrow, including targets near the screen corners.
-			const int edgeMargin = Q_max( 1, (int)( ScreenWidth * 0.075f + 0.5f ) );
+			const float edgeMargin = ScreenWidth * 0.075f;
 			if( hasTarget )
 				locatorTarget->UpdateProjection( targetX, targetY, targetBehind,
-					ScreenWidth, ScreenHeight, edgeMargin );
+					ScreenWidth, ScreenHeight, edgeMargin, flTime );
 			const bool targetOffscreen = hasTarget && !locatorTarget->m_bOnscreen;
 			const bool farInteractionIcon = locatorTarget->m_iHintId == -2 &&
 				locatorTarget->m_flDistFromPlayer > INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE;
@@ -1417,12 +1433,17 @@ int CHud::Redraw( float flTime, int intermission )
 						sourceBindingIconWidth = Q_max( 1, (int)( sourceBindingIconHeight *
 							( (float)locatorIconWidth / (float)locatorIconHeight ) + 0.5f ) );
 					const float locatorIconScale = locatorTarget->m_iHintId == -2 ? 1.0f : 1.20f;
-					const int locatorDrawWidth = sourceBindingIcon ?
-						Q_max( 1, (int)( sourceBindingIconWidth * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) ) :
-						( locatorSprite ? (int)( locatorIconWidth * locatorIconScale * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) : 0 );
-					const int locatorDrawHeight = sourceBindingIcon ?
-						Q_max( 1, (int)( sourceBindingIconHeight * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) ) :
-						( locatorSprite ? (int)( locatorIconHeight * locatorIconScale * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) : 0 );
+					const int locatorBaseWidth = sourceBindingIcon ? sourceBindingIconWidth :
+						( locatorSprite ? (int)( locatorIconWidth * locatorIconScale + 0.5f ) : 0 );
+					const int locatorBaseHeight = sourceBindingIcon ? sourceBindingIconHeight :
+						( locatorSprite ? (int)( locatorIconHeight * locatorIconScale + 0.5f ) : 0 );
+					int animatedIconWidth = locatorBaseWidth;
+					int animatedIconHeight = locatorBaseHeight;
+					HUD_AnimateInstructorIconSize( locatorTarget, &animatedIconWidth, &animatedIconHeight );
+					const int locatorDrawWidth = locatorSprite ?
+						Q_max( 1, (int)( animatedIconWidth * distanceScale + 0.5f ) ) : 0;
+					const int locatorDrawHeight = locatorSprite ?
+						Q_max( 1, (int)( animatedIconHeight * distanceScale + 0.5f ) ) : 0;
 					const int markerHalfWidth = sourceBindingIcon ? locatorDrawWidth / 2 :
 						( locatorSprite ? locatorDrawWidth / 2 : 10 );
 					const int markerHalfHeight = sourceBindingIcon ? locatorDrawHeight / 2 :
