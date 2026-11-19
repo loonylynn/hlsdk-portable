@@ -309,6 +309,8 @@ typedef struct cl_enginefuncs_s
 
 	// Xash3D extension matching Source's multi-key locator lookup.
 	const char      *(*Key_LookupBindingEx)( const char *pBinding, int nKeyNum );
+	// Xash3D extension: set the alpha channel for the next HUD sprite draw.
+	void            (*pfnSPR_SetAlpha)( int alpha );
 } cl_enginefunc_t;
 
 #define CLDLL_INTERFACE_VERSION	7
