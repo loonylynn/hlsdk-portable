@@ -720,135 +720,27 @@ static HSPRITE HUD_GetInstructorBindingImage( CHud *hud, const char *keyName,
 	return useGeneric ? hud->m_hInstructorHintKeyGenericSprite : hud->m_hInstructorHintKeyWideSprite;
 }
 
-// Compact opaque-glyph-free bitmap font for the keycap overlay. FillRGBA's
-// alpha channel matches the key sprite's alpha exactly; unlike DrawHudString,
-// this does not turn black key labels gray/white during the locator fade.
-static unsigned char HUD_InstructorKeyGlyphRow( char ch, int row )
-{
-	static const unsigned char glyphs[36][7] =
-	{
-		{ 0x0E,0x11,0x11,0x1F,0x11,0x11,0x11 }, // A
-		{ 0x1E,0x11,0x11,0x1E,0x11,0x11,0x1E }, // B
-		{ 0x0F,0x10,0x10,0x10,0x10,0x10,0x0F }, // C
-		{ 0x1E,0x11,0x11,0x11,0x11,0x11,0x1E }, // D
-		{ 0x1F,0x10,0x10,0x1E,0x10,0x10,0x1F }, // E
-		{ 0x1F,0x10,0x10,0x1E,0x10,0x10,0x10 }, // F
-		{ 0x0F,0x10,0x10,0x17,0x11,0x11,0x0F }, // G
-		{ 0x11,0x11,0x11,0x1F,0x11,0x11,0x11 }, // H
-		{ 0x0E,0x04,0x04,0x04,0x04,0x04,0x0E }, // I
-		{ 0x07,0x02,0x02,0x02,0x12,0x12,0x0C }, // J
-		{ 0x11,0x12,0x14,0x18,0x14,0x12,0x11 }, // K
-		{ 0x10,0x10,0x10,0x10,0x10,0x10,0x1F }, // L
-		{ 0x11,0x1B,0x15,0x15,0x11,0x11,0x11 }, // M
-		{ 0x11,0x19,0x15,0x13,0x11,0x11,0x11 }, // N
-		{ 0x0E,0x11,0x11,0x11,0x11,0x11,0x0E }, // O
-		{ 0x1E,0x11,0x11,0x1E,0x10,0x10,0x10 }, // P
-		{ 0x0E,0x11,0x11,0x11,0x15,0x12,0x0D }, // Q
-		{ 0x1E,0x11,0x11,0x1E,0x14,0x12,0x11 }, // R
-		{ 0x0F,0x10,0x10,0x0E,0x01,0x01,0x1E }, // S
-		{ 0x1F,0x04,0x04,0x04,0x04,0x04,0x04 }, // T
-		{ 0x11,0x11,0x11,0x11,0x11,0x11,0x0E }, // U
-		{ 0x11,0x11,0x11,0x11,0x11,0x0A,0x04 }, // V
-		{ 0x11,0x11,0x11,0x15,0x15,0x15,0x0A }, // W
-		{ 0x11,0x11,0x0A,0x04,0x0A,0x11,0x11 }, // X
-		{ 0x11,0x11,0x0A,0x04,0x04,0x04,0x04 }, // Y
-		{ 0x1F,0x01,0x02,0x04,0x08,0x10,0x1F }, // Z
-		{ 0x0E,0x11,0x13,0x15,0x19,0x11,0x0E }, // 0
-		{ 0x04,0x0C,0x04,0x04,0x04,0x04,0x0E }, // 1
-		{ 0x0E,0x11,0x01,0x02,0x04,0x08,0x1F }, // 2
-		{ 0x1E,0x01,0x01,0x0E,0x01,0x01,0x1E }, // 3
-		{ 0x02,0x06,0x0A,0x12,0x1F,0x02,0x02 }, // 4
-		{ 0x1F,0x10,0x10,0x1E,0x01,0x01,0x1E }, // 5
-		{ 0x0E,0x10,0x10,0x1E,0x11,0x11,0x0E }, // 6
-		{ 0x1F,0x01,0x02,0x04,0x08,0x08,0x08 }, // 7
-		{ 0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E }, // 8
-		{ 0x0E,0x11,0x11,0x0F,0x01,0x01,0x0E }  // 9
-	};
-
-	if( ch >= 'a' && ch <= 'z' )
-		ch = (char)( ch - 'a' + 'A' );
-	int index = -1;
-	if( ch >= 'A' && ch <= 'Z' )
-		index = ch - 'A';
-	else if( ch >= '0' && ch <= '9' )
-		index = 26 + ch - '0';
-	if( index >= 0 && index < 36 && row >= 0 && row < 7 )
-		return glyphs[index][row];
-	switch( ch )
-	{
-	case '-': return row == 3 ? 0x1F : 0x00;
-	case '+': return row == 3 ? 0x1F : ( row == 1 || row == 2 || row == 4 || row == 5 ? 0x04 : 0x00 );
-	case '/': return row == 0 ? 0x01 : ( row == 1 || row == 2 ? 0x02 :
-		( row == 3 ? 0x04 : ( row == 4 || row == 5 ? 0x08 : 0x10 ) ) );
-	case '.': return row >= 5 ? 0x0C : 0x00;
-	default: return 0x00;
-	}
-}
-
-// Alpha-blended 5x7 glyphs used only for the black keycap label. The
-// normal GoldSrc HUD font has no alpha parameter; captions therefore retain
-// DrawHudString and use the same locator fade envelope through RGB intensity.
-static void HUD_DrawInstructorAlphaText( int x, int y, int maxX,
-	const char *text, int r, int g, int b, int alpha, int scale )
-{
-	if( !text || !text[0] || alpha <= 0 || scale <= 0 || maxX <= x )
-		return;
-
-	const int advance = 6 * scale;
-	for( int i = 0; text[i] && text[i] != '\n'; ++i )
-	{
-		const int glyphX = x + i * advance;
-		if( glyphX >= maxX )
-			break;
-
-		for( int row = 0; row < 7; ++row )
-		{
-			const unsigned char bits = HUD_InstructorKeyGlyphRow( text[i], row );
-			int col = 0;
-			while( col < 5 )
-			{
-				if( !( bits & ( 1 << ( 4 - col ) ) ) )
-				{
-					++col;
-					continue;
-				}
-
-				const int first = col;
-				while( col < 5 && ( bits & ( 1 << ( 4 - col ) ) ) )
-					++col;
-
-				const int drawX = glyphX + first * scale;
-				int drawWidth = ( col - first ) * scale;
-				if( drawX + drawWidth > maxX )
-					drawWidth = maxX - drawX;
-				if( drawWidth > 0 )
-					FillRGBABlend( drawX, y + row * scale, drawWidth, scale,
-						r, g, b, alpha );
-			}
-		}
-	}
-}
-
+// Draw the resolved binding with the normal Half-Life HUD font. The HUD text
+// API has no per-character alpha parameter, so fade the black glyph toward the
+// light keycap face using the exact same locator alpha envelope.
 static void HUD_DrawInstructorBindingName( int centerX, int centerY,
 	const char *bindingName, int alpha )
 {
 	if( !bindingName || !bindingName[0] || alpha <= 0 )
 		return;
 
-	int length = (int)strlen( bindingName );
-	if( length > 12 )
-		length = 12;
+	const int textWidth = gHUD.DrawHudStringLen( bindingName );
+	if( textWidth <= 0 )
+		return;
 
-	// The generic/wide key art has a relatively large light face. A larger
-	// bitmap glyph for one- and two-character keys fully covers any pale
-	// placeholder glyph and remains centered in the keycap.
-	const int scale = length <= 2 ? 3 : ( length <= 4 ? 2 : 1 );
-	const int totalWidth = length * 6 * scale - scale;
-	const int glyphHeight = 7 * scale;
-	const int startX = centerX - totalWidth / 2;
-	const int startY = centerY - glyphHeight / 2;
-	HUD_DrawInstructorAlphaText( startX, startY, startX + totalWidth,
-		bindingName, 0, 0, 0, alpha, scale );
+	const int fontHeight = gHUD.m_scrinfo.iCharHeight > 0 ?
+		gHUD.m_scrinfo.iCharHeight : ( gHUD.m_iFontHeight > 0 ? gHUD.m_iFontHeight : 12 );
+	const int textX = centerX - textWidth / 2;
+	const int textY = centerY - fontHeight / 2 - 1;
+	const int fadeColor = 255 - Q_max( 0, Q_min( 255, alpha ) );
+
+	gHUD.DrawHudString( textX, textY, textX + textWidth + 2,
+		bindingName, fadeColor, fadeColor, fadeColor );
 }
 
 // Think
@@ -1081,7 +973,10 @@ int CHud::Redraw( float flTime, int intermission )
 			// final drawing. ResolveDecluttering then offsets from this exact
 			// base position instead of a subtly different second projection.
 			const bool targetOffscreen = !target->m_bOnscreen;
-			const char *requestedIcon = targetOffscreen ?
+			const bool farInteractionIcon = target->m_iHintId == -2 &&
+				target->m_flDistFromPlayer > INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE;
+			const bool targetUsesOffscreenIcon = targetOffscreen || farInteractionIcon;
+			const char *requestedIcon = targetUsesOffscreenIcon ?
 				target->m_szOffscreenIcon : target->m_szOnscreenIcon;
 			const bool sourceBindingIcon = requestedIcon &&
 				stricmp( requestedIcon, "use_binding" ) == 0;
@@ -1093,8 +988,8 @@ int CHud::Redraw( float flTime, int intermission )
 					sourceBindingIconHeight / 2 + 3 + 24 + 4 : 22 + 24 + 4 ) : 22;
 			target->CalculateEdgePosition( ScreenWidth, ScreenHeight, target->m_iEdgeMargin );
 
-			HSPRITE icon = target->m_bOnscreen ?
-				(HSPRITE)target->m_hOnscreenSprite : (HSPRITE)target->m_hOffscreenSprite;
+			HSPRITE icon = targetUsesOffscreenIcon ?
+				(HSPRITE)target->m_hOffscreenSprite : (HSPRITE)target->m_hOnscreenSprite;
 			if( target->m_iHintId == -1 )
 				icon = target->m_iIconMode == 2 ? m_hInstructorHintHoldSprite :
 					( target->m_iIconMode == 1 ? m_hInstructorHintMoveSprite : 0 );
@@ -1108,8 +1003,7 @@ int CHud::Redraw( float flTime, int intermission )
 					target->m_tall = (int)( iconHeight * 1.2f + 0.5f );
 				}
 			}
-			if( ( stricmp( target->m_szOnscreenIcon, "use_binding" ) == 0 ) ||
-				( stricmp( target->m_szOffscreenIcon, "use_binding" ) == 0 ) )
+			if( requestedIcon && stricmp( requestedIcon, "use_binding" ) == 0 )
 				target->m_wide = target->m_tall = Q_max( target->m_wide, (int)( ScreenWidth * 0.04f ) );
 			// Source's dynamic locator only reserves caption width while the
 			// target is on-screen and within ICON_DIST_TOO_FAR (720 units),
@@ -1252,12 +1146,15 @@ int CHud::Redraw( float flTime, int intermission )
 				locatorTarget->UpdateProjection( targetX, targetY, targetBehind,
 					ScreenWidth, ScreenHeight, edgeMargin );
 			const bool targetOffscreen = hasTarget && !locatorTarget->m_bOnscreen;
+			const bool farInteractionIcon = locatorTarget->m_iHintId == -2 &&
+				locatorTarget->m_flDistFromPlayer > INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE;
+			const bool targetUsesOffscreenIcon = targetOffscreen || farInteractionIcon;
 
 			// "use_binding" is a virtual icon: the resolved key art becomes the locator.
 			char instructorBindingGlyph[32];
 			instructorBindingGlyph[0] = '\0';
 			HSPRITE instructorBindingSprite = 0;
-			const char *requestedBindingIcon = targetOffscreen ?
+			const char *requestedBindingIcon = targetUsesOffscreenIcon ?
 				locatorTarget->m_szOffscreenIcon : locatorTarget->m_szOnscreenIcon;
 			const bool sourceBindingIcon = requestedBindingIcon &&
 				stricmp( requestedBindingIcon, "use_binding" ) == 0;
@@ -1345,7 +1242,7 @@ int CHud::Redraw( float flTime, int intermission )
 					}
 
 					HSPRITE locatorSprite = sourceBindingIcon ? instructorBindingSprite :
-						( targetOffscreen ? (HSPRITE)locatorTarget->m_hOffscreenSprite :
+						( targetUsesOffscreenIcon ? (HSPRITE)locatorTarget->m_hOffscreenSprite :
 							(HSPRITE)locatorTarget->m_hOnscreenSprite );
 					if( !sourceBindingIcon && locatorTarget->m_iHintId == -1 )
 					{
@@ -1667,18 +1564,24 @@ int CHud::Redraw( float flTime, int intermission )
 						{
 							const int fontHeight = m_scrinfo.iCharHeight > 0 ? m_scrinfo.iCharHeight :
 								( m_iFontHeight > 0 ? m_iFontHeight : 12 );
-							int captionX = markerX + markerHalfWidth + 5;
-							if( captionX + sourceCaptionWidth > ScreenWidth - 8 )
-								captionX = markerX - markerHalfWidth - 5 - sourceCaptionWidth;
-							if( captionX < 8 ) captionX = 8;
-							if( captionX + sourceCaptionWidth > ScreenWidth - 8 )
-								captionX = Q_max( 8, ScreenWidth - sourceCaptionWidth - 8 );
-							// Keep the standard Half-Life HUD font. DrawHudString is
-							// RGB-only, so scale its color with this target's exact fade
-							// envelope; the sprite and black key glyph use that same alpha.
+							const int safeLeft = 8;
+							const int safeRight = Q_max( safeLeft + 1, ScreenWidth - 8 );
+							const int rightCaptionX = markerX + markerHalfWidth + 5;
+							const int leftCaptionX = markerX - markerHalfWidth - 5 - sourceCaptionWidth;
+							const int rightSpace = safeRight - rightCaptionX;
+							const int leftSpace = markerX - markerHalfWidth - 5 - safeLeft;
+							int captionX = rightSpace >= sourceCaptionWidth ? rightCaptionX :
+								( leftSpace >= sourceCaptionWidth ? leftCaptionX :
+								( rightSpace >= leftSpace ? rightCaptionX : leftCaptionX ) );
+							const int maxCaptionX = Q_max( safeLeft, safeRight - sourceCaptionWidth );
+							captionX = Q_max( safeLeft, Q_min( captionX, maxCaptionX ) );
+
+							// Keep the standard Half-Life HUD font and let it use the
+							// full remaining safe width. This prevents the last letters
+							// from being clipped when the icon is near either screen edge.
 							DrawHudString( captionX, markerY - fontHeight / 2 - 1,
-								Q_min( ScreenWidth - 8, captionX + sourceCaptionWidth + 4 ),
-								locatorTarget->m_szCaption, locatorTextR, locatorTextG, locatorTextB );
+								safeRight, locatorTarget->m_szCaption,
+								locatorTextR, locatorTextG, locatorTextB );
 						}
 					}
 				}
