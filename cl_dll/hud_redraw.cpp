@@ -254,9 +254,13 @@ static bool HUD_DrawInstructorLocatorSprite( HSPRITE sprite, int x, int y,
 			drawHeight = -drawHeight;
 		}
 
+		// Select the TriAPI blend mode first. RenderMode can update the
+		// engine's active render state, so set the per-sprite alpha after it
+		// and immediately before submitting the quad. This keeps the sprite's
+		// fade on the same target alpha used by its caption and binding glyph.
+		gEngfuncs.pTriAPI->RenderMode( renderMode );
 		if( gEngfuncs.pfnSPR_SetAlpha )
 			gEngfuncs.pfnSPR_SetAlpha( alpha );
-		gEngfuncs.pTriAPI->RenderMode( renderMode );
 		gEngfuncs.pfnSPR_DrawGeneric( 0, drawX, drawY,
 			NULL, 0, 0, drawWidth, drawHeight );
 		gEngfuncs.pTriAPI->RenderMode( kRenderNormal );
