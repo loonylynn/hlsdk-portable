@@ -136,7 +136,7 @@ void HUD_SyncInstructorLocatorTarget( CHud *hud )
 	const bool forceCaption = ( hud->m_iInstructorHintFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
 	const bool shouldBeVisible = hud->m_bInstructorHintTargetVisible &&
 		( !hud->m_bInstructorHintOccluded || forceCaption );
-	target->SetVisible( shouldBeVisible, hud->m_flTime, 0.18f );
+	target->SetVisible( shouldBeVisible, hud->m_flTime, 0.3f );
 	const int animationFlags = target->m_iEffectsFlags &
 		( LOCATOR_ICON_FX_FADE_IN | LOCATOR_ICON_FX_FADE_OUT );
 	target->m_iEffectsFlags = hud->m_iInstructorHintFlags | animationFlags;
@@ -288,7 +288,7 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 				target->SetBinding( binding );
 			}
 			const bool forceCaption = ( target->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
-			target->SetVisible( targetVisible && ( !occluded || forceCaption ), m_flTime, 0.18f );
+			target->SetVisible( targetVisible && ( !occluded || forceCaption ), m_flTime, 0.3f );
 			if( targetIndex <= 0 && !( target->m_iEffectsFlags & LOCATOR_ICON_FX_STATIC ) &&
 				!targetVisible )
 				m_InstructorLocatorPanel.RemoveTarget( target->m_serialNumber, m_flTime, 0.3f );
@@ -404,7 +404,7 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 		target->SetBinding( pushableBinding );
 	}
 	const bool forceCaption = ( flags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
-	target->SetVisible( targetVisible && ( !occluded || forceCaption ), m_flTime, 0.18f );
+	target->SetVisible( targetVisible && ( !occluded || forceCaption ), m_flTime, 0.3f );
 	return 1;
 }
 int CHud::MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf )
@@ -544,7 +544,7 @@ void HUD_SetManagedInstructorHint( const char *lessonName, int instanceSerial, c
 	target->m_flRange = range;
 	target->m_iEffectsFlags = flags | animationFlags |
 		( forceCaption ? LOCATOR_ICON_FX_FORCE_CAPTION : 0 );
-	target->SetVisible( true, gHUD.m_flTime, 0.18f );
+	target->SetVisible( true, gHUD.m_flTime, 0.3f );
 	target->SetCaptionColor( colorR, colorG, colorB );
 	target->SetCaptionText( caption );
 	target->SetBinding( binding );
