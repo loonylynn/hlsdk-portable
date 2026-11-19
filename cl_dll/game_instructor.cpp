@@ -1979,11 +1979,30 @@ void C_GameInstructor::Update(float now)
 	CScriptedIconLesson *displayLessons[MAX_INSTRUCTOR_LOCATOR_TARGETS];
 	int displayCount = 0;
 
-	// Preserve Source's instance/priority arbitration, but retain every eligible
-	// lesson at the winning presentation priority instead of one global HUD slot.
-	for (int i = (int)m_OpenOpportunities.size() - 1; i >= 0; --i)
+	// Process higher-priority opportunities first. Preserve the manager's
+	// newest-first order for equal priorities, matching the previous reverse
+	// traversal while making arbitration independent of event/open order.
+	std::vector<CScriptedIconLesson *> priorityOrder;
+	priorityOrder.reserve( m_OpenOpportunities.size() );
+	for( int i = (int)m_OpenOpportunities.size() - 1; i >= 0; --i )
+		priorityOrder.push_back( m_OpenOpportunities[(size_t)i] );
+
+	for( size_t i = 1; i < priorityOrder.size(); ++i )
 	{
-		CScriptedIconLesson *lesson = m_OpenOpportunities[(size_t)i];
+		CScriptedIconLesson *key = priorityOrder[i];
+		size_t j = i;
+		while( j > 0 && priorityOrder[j - 1]->m_iPriority < key->m_iPriority )
+		{
+			priorityOrder[j] = priorityOrder[j - 1];
+			--j;
+		}
+		priorityOrder[j] = key;
+	}
+
+	// Retain every eligible lesson at the winning presentation priority.
+	for( size_t i = 0; i < priorityOrder.size(); ++i )
+	{
+		CScriptedIconLesson *lesson = priorityOrder[i];
 		CScriptedIconLesson *root = lesson->m_pRoot ?
 			static_cast<CScriptedIconLesson *>(lesson->m_pRoot) : lesson;
 		const bool learned = lesson->IsLearned();
