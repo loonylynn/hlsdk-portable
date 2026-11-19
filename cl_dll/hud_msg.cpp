@@ -145,8 +145,8 @@ void HUD_SyncInstructorLocatorTarget( CHud *hud )
 		hud->m_iInstructorHintColorG, hud->m_iInstructorHintColorB );
 	target->SetCaptionText( hud->m_szInstructorHintCaption );
 	target->SetBinding( hud->m_szInstructorHintBinding );
-	target->SetOnscreenIconName( hud->m_szInstructorHintIconOnscreen );
-	target->SetOffscreenIconName( hud->m_szInstructorHintIconOffscreen );
+	target->SetOnscreenIconName( hud->m_szInstructorHintIconOnscreen, hud->m_flTime );
+	target->SetOffscreenIconName( hud->m_szInstructorHintIconOffscreen, hud->m_flTime );
 	strncpy( target->m_szName, hud->m_szInstructorHintName, sizeof( target->m_szName ) - 1 );
 	target->m_szName[sizeof( target->m_szName ) - 1] = '\0';
 	target->m_hOnscreenSprite = (int)hud->m_hInstructorHintOnscreenSprite;
@@ -379,8 +379,8 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 	target->SetCaptionColor( colorR, colorG, colorB );
 	target->SetCaptionText( caption );
 	target->SetBinding( binding );
-	target->SetOnscreenIconName( iconOnscreen );
-	target->SetOffscreenIconName( iconOffscreen );
+	target->SetOnscreenIconName( iconOnscreen, m_flTime );
+	target->SetOffscreenIconName( iconOffscreen, m_flTime );
 	strncpy( target->m_szName, hintName, sizeof( target->m_szName ) - 1 );
 	target->m_szName[sizeof( target->m_szName ) - 1] = '\0';
 	strncpy( target->m_szReplaceKey, replaceKey, sizeof( target->m_szReplaceKey ) - 1 );
@@ -550,12 +550,12 @@ void HUD_SetManagedInstructorHint( const char *lessonName, int instanceSerial, c
 	target->SetBinding( binding );
 	if( onscreenIconChanged )
 	{
-		target->SetOnscreenIconName( onscreenIcon );
+		target->SetOnscreenIconName( onscreenIcon, gHUD.m_flTime );
 		target->m_hOnscreenSprite = (int)HUD_LoadInstructorHintSprite( target->m_szOnscreenIcon );
 	}
 	if( offscreenIconChanged )
 	{
-		target->SetOffscreenIconName( offscreenIcon );
+		target->SetOffscreenIconName( offscreenIcon, gHUD.m_flTime );
 		target->m_hOffscreenSprite = (int)HUD_LoadInstructorHintSprite( target->m_szOffscreenIcon );
 	}
 
