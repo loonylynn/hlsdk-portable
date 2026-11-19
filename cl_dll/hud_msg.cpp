@@ -442,7 +442,7 @@ int CHud::MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf )
 // The Source manager can keep many opportunities open, but this GoldSrc port
 // intentionally renders the highest-priority lesson through the existing HUD card.
 static CInstructorLocatorTarget *HUD_FindManagedInstructorTarget( CHud *hud,
-	const char *lessonName )
+	const char *lessonName, int instanceSerial )
 {
 	if( !hud || !lessonName || !lessonName[0] )
 		return NULL;
@@ -450,13 +450,14 @@ static CInstructorLocatorTarget *HUD_FindManagedInstructorTarget( CHud *hud,
 	{
 		CInstructorLocatorTarget *target = hud->m_InstructorLocatorPanel.GetTargetAt( i );
 		if( target && target->m_isActive && target->m_bManaged &&
+			target->m_iManagedInstanceId == instanceSerial &&
 			strcmp( target->m_szName, lessonName ) == 0 )
 			return target;
 	}
 	return NULL;
 }
 
-void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
+void HUD_SetManagedInstructorHint( const char *lessonName, int instanceSerial, const char *caption,
 	const char *binding, const char *onscreenIcon, const char *offscreenIcon,
 	int targetIndex, int priority, float timeout, int flags, int colorR, int colorG, int colorB,
 	float range, float iconOffset, bool forceCaption,
@@ -468,7 +469,7 @@ void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 		return;
 
 	CInstructorLocatorTarget *target =
-		HUD_FindManagedInstructorTarget( &gHUD, lessonName );
+		HUD_FindManagedInstructorTarget( &gHUD, lessonName, instanceSerial );
 	if( target && target->m_bRemoveWhenFadedOut )
 	{
 		target->Deactivate( true, gHUD.m_flTime, 0.0f );
@@ -526,6 +527,7 @@ void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 		( LOCATOR_ICON_FX_FADE_IN | LOCATOR_ICON_FX_FADE_OUT );
 	target->m_iHintId = 0;
 	target->m_iPriority = priority;
+	target->m_iManagedInstanceId = instanceSerial;
 	target->m_iEntityIndex = targetIndex;
 	target->m_iIconMode = 0;
 	target->m_bManaged = true;
