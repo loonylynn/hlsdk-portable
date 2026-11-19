@@ -912,7 +912,21 @@ int CHud::Redraw( float flTime, int intermission )
 				ScreenWidth, ScreenHeight, 24 );
 			if( !target->m_bOnscreen && ( target->m_iEffectsFlags & LOCATOR_ICON_FX_NO_OFFSCREEN ) )
 				continue;
-			target->CalculateEdgePosition( ScreenWidth, ScreenHeight, 56 );
+			// Use the same target-specific safe edge margin during layout and
+			// final drawing. ResolveDecluttering then offsets from this exact
+			// base position instead of a subtly different second projection.
+			const bool targetOffscreen = !target->m_bOnscreen;
+			const char *requestedIcon = targetOffscreen ?
+				target->m_szOffscreenIcon : target->m_szOnscreenIcon;
+			const bool sourceBindingIcon = requestedIcon &&
+				stricmp( requestedIcon, "use_binding" ) == 0;
+			const bool hasDirectionalLocatorSprites =
+				m_hInstructorHintArrowRightSprite && m_hInstructorHintArrowUpSprite;
+			const int sourceBindingIconHeight = Q_max( 1, (int)( ScreenWidth * 0.04f ) );
+			target->m_iEdgeMargin = hasDirectionalLocatorSprites ?
+				( sourceBindingIcon ?
+					sourceBindingIconHeight / 2 + 3 + 24 + 4 : 22 + 24 + 4 ) : 22;
+			target->CalculateEdgePosition( ScreenWidth, ScreenHeight, target->m_iEdgeMargin );
 
 			HSPRITE icon = target->m_bOnscreen ?
 				(HSPRITE)target->m_hOnscreenSprite : (HSPRITE)target->m_hOffscreenSprite;
@@ -1116,10 +1130,8 @@ int CHud::Redraw( float flTime, int intermission )
 						m_hInstructorHintArrowRightSprite && m_hInstructorHintArrowUpSprite;
 					const int locatorArrowDrawSize = 24;
 					const int locatorArrowGap = 4;
-					const int locatorEdgeMargin = hasDirectionalLocatorSprites ?
-						( sourceBindingIcon ?
-							sourceBindingIconHeight / 2 + 3 + locatorArrowDrawSize + locatorArrowGap :
-							22 + locatorArrowDrawSize + locatorArrowGap ) : 22;
+					const int locatorEdgeMargin = locatorTarget->m_iEdgeMargin > 0 ?
+						locatorTarget->m_iEdgeMargin : 22;
 
 					// Projection and edge placement belong to the target model.
 					// The renderer adds only transient pulse/shake offsets.
