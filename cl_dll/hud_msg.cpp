@@ -439,8 +439,8 @@ int CHud::MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// The Source manager can keep many opportunities open, but this GoldSrc port
-// intentionally renders the highest-priority lesson through the existing HUD card.
+// The Source manager can keep many opportunities open. Each eligible managed
+// opportunity is now represented by its own target in the shared locator pool.
 static CInstructorLocatorTarget *HUD_FindManagedInstructorTarget( CHud *hud,
 	const char *lessonName, int instanceSerial )
 {
@@ -487,7 +487,7 @@ void HUD_SetManagedInstructorHint( const char *lessonName, int instanceSerial, c
 	if( !target )
 	{
 		if( CVAR_GET_FLOAT( "gameinstructor_verbose" ) != 0.0f && gEngfuncs.Con_Printf )
-			gEngfuncs.Con_Printf( "[GameInstructor] Locator pool full; could not display lesson '%s'.\\n",
+			gEngfuncs.Con_Printf( "[GameInstructor] Locator pool full; could not display lesson '%s'.\n",
 				lessonName );
 		return;
 	}
@@ -565,7 +565,7 @@ void HUD_SetManagedInstructorHint( const char *lessonName, int instanceSerial, c
 	target->Update( gHUD.m_InstructorLocatorPanel.GetFrameCount() );
 
 	if( created && CVAR_GET_FLOAT( "gameinstructor_verbose" ) != 0.0f && gEngfuncs.Con_Printf )
-		gEngfuncs.Con_Printf( "[GameInstructor] Added managed locator '%s' (priority %d, target %d).\\n",
+		gEngfuncs.Con_Printf( "[GameInstructor] Added managed locator '%s' (priority %d, target %d).\n",
 			lessonName, priority, targetIndex );
 }
 
