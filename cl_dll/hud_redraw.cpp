@@ -783,26 +783,25 @@ static unsigned char HUD_InstructorKeyGlyphRow( char ch, int row )
 	}
 }
 
-static void HUD_DrawInstructorBindingName( int centerX, int centerY, const char *bindingName, int alpha )
+// Alpha-blended 5x7 text for the small instructor labels. GoldSrc's
+// VGUI2DrawCharacterAdditive API accepts RGB but no alpha, so DrawHudString
+// cannot fade in lockstep with an RGBA locator sprite. FillRGBA can.
+static void HUD_DrawInstructorAlphaText( int x, int y, int maxX,
+	const char *text, int r, int g, int b, int alpha, int scale )
 {
-	if( !bindingName || !bindingName[0] || alpha <= 0 )
+	if( !text || !text[0] || alpha <= 0 || scale <= 0 || maxX <= x )
 		return;
 
-	int length = (int)strlen( bindingName );
-	if( length > 12 )
-		length = 12;
-	const int scale = length <= 4 ? 2 : 1;
 	const int advance = 6 * scale;
-	const int totalWidth = length * advance - scale;
-	const int glyphHeight = 7 * scale;
-	const int startX = centerX - totalWidth / 2;
-	const int startY = centerY - glyphHeight / 2;
-
-	for( int i = 0; i < length; ++i )
+	for( int i = 0; text[i] && text[i] != '\\n'; ++i )
 	{
+		const int glyphX = x + i * advance;
+		if( glyphX >= maxX )
+			break;
+
 		for( int row = 0; row < 7; ++row )
 		{
-			const unsigned char bits = HUD_InstructorKeyGlyphRow( bindingName[i], row );
+			const unsigned char bits = HUD_InstructorKeyGlyphRow( text[i], row );
 			int col = 0;
 			while( col < 5 )
 			{
@@ -815,12 +814,39 @@ static void HUD_DrawInstructorBindingName( int centerX, int centerY, const char 
 				const int first = col;
 				while( col < 5 && ( bits & ( 1 << ( 4 - col ) ) ) )
 					++col;
-				FillRGBA( startX + i * advance + first * scale,
-					startY + row * scale, ( col - first ) * scale, scale,
-					0, 0, 0, alpha );
+
+				const int drawX = glyphX + first * scale;
+				int drawWidth = ( col - first ) * scale;
+				if( drawX + drawWidth > maxX )
+					drawWidth = maxX - drawX;
+				if( drawWidth > 0 )
+					FillRGBA( drawX, y + row * scale, drawWidth, scale,
+						r, g, b, alpha );
 			}
 		}
 	}
+}
+
+static void HUD_DrawInstructorBindingName( int centerX, int centerY,
+	const char *bindingName, int alpha )
+{
+	if( !bindingName || !bindingName[0] || alpha <= 0 )
+		return;
+
+	int length = (int)strlen( bindingName );
+	if( length > 12 )
+		length = 12;
+
+	// The generic/wide key art has a relatively large light face. A larger
+	// bitmap glyph for one- and two-character keys fully covers any pale
+	// placeholder glyph and remains centered in the keycap.
+	const int scale = length <= 2 ? 3 : ( length <= 4 ? 2 : 1 );
+	const int totalWidth = length * 6 * scale - scale;
+	const int glyphHeight = 7 * scale;
+	const int startX = centerX - totalWidth / 2;
+	const int startY = centerY - glyphHeight / 2;
+	HUD_DrawInstructorAlphaText( startX, startY, startX + totalWidth,
+		bindingName, 0, 0, 0, alpha, scale );
 }
 
 // Think
@@ -1645,9 +1671,21 @@ int CHud::Redraw( float flTime, int intermission )
 							if( captionX < 8 ) captionX = 8;
 							if( captionX + sourceCaptionWidth > ScreenWidth - 8 )
 								captionX = Q_max( 8, ScreenWidth - sourceCaptionWidth - 8 );
-							DrawHudString( captionX, markerY - fontHeight / 2 - 1,
-								Q_min( ScreenWidth - 8, captionX + sourceCaptionWidth + 4 ),
-								locatorTarget->m_szCaption, locatorTextR, locatorTextG, locatorTextB );
+							if( locatorTarget->m_iHintId == -2 )
+							{
+								// The automatic Interact prompt must fade with
+								// the keycap and icon. Draw it through the same
+								// RGBA glyph path instead of RGB-darkening it.
+								HUD_DrawInstructorAlphaText( captionX, markerY - 3,
+									ScreenWidth - 8, locatorTarget->m_szCaption,
+									locatorR, locatorG, locatorB, locatorAlpha, 1 );
+							}
+							else
+							{
+								DrawHudString( captionX, markerY - fontHeight / 2 - 1,
+									Q_min( ScreenWidth - 8, captionX + sourceCaptionWidth + 4 ),
+									locatorTarget->m_szCaption, locatorTextR, locatorTextG, locatorTextB );
+							}
 						}
 					}
 				}
