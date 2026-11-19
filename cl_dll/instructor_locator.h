@@ -69,6 +69,7 @@ public:
 	float m_flDistFromPlayer;
 	int m_targetX, m_targetY;
 	int m_iconX, m_iconY;
+	int m_iEdgeMargin; // edge margin shared by layout and final drawing
 	int m_centerX, m_centerY;
 	int m_wide, m_tall;
 	float m_widthScaleOnscreen;
