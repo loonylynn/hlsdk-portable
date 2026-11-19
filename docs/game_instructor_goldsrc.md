@@ -246,20 +246,29 @@ The second stage makes the target model the presentation data source for the exi
 
 The third layout stage moves projected screen coordinates, behind-camera state, onscreen/offscreen classification, edge intersection/clamping, and directional-arrow selection into CInstructorLocatorTarget. GoldSrc's TriAPI WorldToScreen call remains in the HUD adapter because it is an engine service, while the resulting projection and all derived locator layout state are stored on the target. Tether drawing and sprite/card painting remain in CHud::Redraw. The dedicated Source key font remains deferred.
 
-## Locator animation and decluttering (fourth transplant stage)
+## Locator animation, multiple targets, and decluttering (fourth and fifth transplant stages)
 
-CInstructorLocatorTarget now advances its fade envelope, pulse phase, alpha pulse, shake offsets, and managed-lesson visibility fade from one per-frame UpdateAnimation call. CInstructorLocatorPanel::UpdatePresentation advances the active pool entries after the HUD message state has been synchronized. The renderer consumes cached alpha/scale/offset values instead of recomputing effect timing in CHud::Redraw. Visibility loss fades a target down without destroying its handle, so a later visibility regain can fade it back in; explicit removal keeps the target alive until its fade-out completes.
+CInstructorLocatorTarget advances its fade envelope, pulse phase, alpha pulse, shake offsets, and managed-lesson visibility fade from one per-frame UpdateAnimation call. CInstructorLocatorPanel::UpdatePresentation advances the active pool entries after the HUD message state has been synchronized. The renderer consumes cached alpha/scale/offset values instead of recomputing effect timing in CHud::Redraw. Visibility loss fades a target down without destroying its handle, so a later visibility regain can fade it back in; explicit removal keeps the target alive until its fade-out completes.
 
-The panel also has a stable 17-candidate decluttering resolver. It checks marker bounds against already placed targets, chooses the closest candidate with no overlap where possible, and remembers the prior candidate to reduce position hopping. Stage 5 makes the HUD traverse the full ten-entry pool: map-authored env_instructor_hint instances now retain independent payloads and can render simultaneously. World markers share the panel declutter pass, while static/screen-space hint cards stack vertically. Map-authored targets are retained until their end packet or timeout; the 20-frame stale-target collector remains for managed targets. PS2 interaction brackets and their rendering path remain independent.
+The panel now renders and maintains a shared pool of up to ten simultaneous targets. Map-authored env_instructor_hint entities retain independent payloads keyed by their entity hint ID. Scripted GameInstructor opportunities also own independent target entries keyed by a unique opportunity serial, so multiple open instances of the same lesson do not overwrite one another. Map hints and managed lessons can coexist in the pool; map hints no longer suppress the managed lesson layer.
+
+The client lesson manager preserves its existing instance and priority arbitration, then submits all eligible opportunities at the highest currently selected display priority. Each submitted opportunity has its own visibility, occlusion, range, fade, binding, timeout, and display-count state. Opportunities below the current display priority continue through the manager's inactive/update lifecycle but do not draw until they become eligible. The ten-target capacity is shared by map-authored and managed targets; if the pool is full, additional managed targets cannot be allocated.
+
+Decluttering is performed across both world-space markers and screen-space/fixed-position cards. Managed targets are sorted by descending lesson priority before placement; equal-priority and map-authored targets keep deterministic order. The 17-candidate resolver checks target/card footprints against already placed entries and remembers the prior candidate to reduce position hopping. Screen-space cards use their real panel dimensions in the same pass, rather than relying on a separate bottom-stack offset. World markers, compact card labels, and fixed/no-target cards then consume the resolved offsets. The 20-frame stale-target collector remains for managed targets. PS2 interaction brackets and their rendering path remain independent.
 
 ## Deliberate GoldSrc differences
 
-- Map-authored `env_instructor_hint` instances can render simultaneously,
-  up to the ten-target locator pool. Each has independent origin, sprite,
-  caption, binding, visibility, occlusion, timeout, fade, and replace-key state.
-- The scripted lesson manager still selects one highest-priority eligible
-  managed lesson for its HUD slot. Map-authored hints take precedence over that
-  managed slot; concurrent managed-lesson painting remains a separate stage.
+- The shared locator pool supports up to ten active/fading targets across
+  map-authored `env_instructor_hint` entities and scripted managed lessons.
+  Each target has independent origin, sprite, caption, binding, visibility,
+  occlusion, timeout, fade, and (for managed lessons) priority/instance state.
+- Managed lesson opportunities at the highest currently selected display
+  priority can be shown together. Lower-priority opportunities remain managed
+  by the lesson state machine but are not rendered until they become eligible.
+  When the combined pool is full, additional target registrations are skipped.
+- The locator declutter pass covers world-space markers and screen-space,
+  fixed-position, and no-target cards. Higher-priority managed lessons are
+  placed before lower-priority and map-authored entries.
 - The PS2 interaction brackets and automatic pushable move/hold prompt remain
   separate systems.
 - Source VGUI2 target anchoring, true Source locator target handles, the full
