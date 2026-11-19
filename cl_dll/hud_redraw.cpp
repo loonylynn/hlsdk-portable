@@ -703,7 +703,7 @@ static void HUD_DrawInstructorBindingName( int centerX, int centerY, const char 
 		( gHUD.m_iFontHeight > 0 ? gHUD.m_iFontHeight : 12 );
 	const int x = centerX - width / 2 - 1;
 	const int y = centerY - height / 2 - 1;
-	int ink = 28 + ( 255 - alpha ) * 3 / 4;
+	int ink = ( 255 - alpha ) * 3 / 4;
 	if( ink > 190 ) ink = 190;
 	gHUD.DrawHudString( x, y, centerX + width / 2 + 4, bindingName, ink, ink, ink );
 }
@@ -1495,8 +1495,13 @@ int CHud::Redraw( float flTime, int intermission )
 						int keyTextX = keyX + ( locatorKeyWidth - locatorBindingWidth ) / 2;
 					if( keyTextX < keyX + 3 )
 						keyTextX = keyX + 3;
+					// The supplied keycap sprites have a light face. Keep the
+					// resolved key label black on that face, not locator-white.
+					int keyGlyphInk = keySpriteDrawn ?
+						( 16 + ( 255 - locatorAlpha ) * 3 / 4 ) : locatorTextR;
+					if( keyGlyphInk > 190 ) keyGlyphInk = 190;
 					DrawHudString( keyTextX, keyY + 4, keyX + locatorKeyWidth - 3,
-						locatorBinding, locatorTextR, locatorTextG, locatorTextB );
+						locatorBinding, keyGlyphInk, keyGlyphInk, keyGlyphInk );
 						}
 					}
 
@@ -1794,8 +1799,11 @@ int CHud::Redraw( float flTime, int intermission )
 					int keyTextX = keyX + ( keyChipWidth - bindingWidth ) / 2;
 					if( keyTextX < keyX + 3 )
 						keyTextX = keyX + 3;
+					int keyGlyphInk = keySpriteDrawn ?
+						( 16 + ( 255 - panelAlpha ) * 3 / 4 ) : hintTextR;
+					if( keyGlyphInk > 190 ) keyGlyphInk = 190;
 					DrawHudString( keyTextX, keyY + 6, keyX + keyChipWidth - 5,
-						bindingText, hintTextR, hintTextG, hintTextB );
+						bindingText, keyGlyphInk, keyGlyphInk, keyGlyphInk );
 				}
 			}
 			else
