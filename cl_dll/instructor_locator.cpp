@@ -44,6 +44,7 @@ void CInstructorLocatorTarget::Activate( int serialNumber, int frameNumber,
 	m_flEndTime = 0.0f;
 	m_hOnscreenSprite = m_hOffscreenSprite = 0;
 	m_wide = m_tall = 40;
+	m_iEdgeMargin = 56;
 	m_declutterIndex = m_lastDeclutterIndex = -1;
 	m_offsetX = m_offsetY = 0;
 	m_fadeStart = m_lerpStart = m_pulseStart = currentTime;
