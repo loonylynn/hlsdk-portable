@@ -21,7 +21,7 @@ This is a GoldSrc/Xash3D single-player port of the public Source `CEnvInstructor
 | `hint_shakeoption` | 0 = none, 1 = narrow, 2 = wide. |
 | `hint_static` | Displays the card at a fixed HUD position rather than following a world target. |
 | `hint_nooffscreen` | Hides the hint when its world target leaves the viewport. |
-| `hint_forcecaption` | Allows the hint caption to remain visible when the target is occluded. |
+| `hint_forcecaption` | Bypasses Source-style caption distance and occlusion suppression. It does not bypass `hint_range` target culling. |
 | `hint_allow_nodraw_target` | Allows a target with `EF_NODRAW` to remain a valid hint target. |
 | `hint_local_player_only` | Retained for map compatibility; the project is single-player, so there is only one recipient. |
 | `hint_replace_key` | Retained in the hint payload. The current single-panel HUD replaces its currently displayed hint when another hint starts. |
@@ -50,7 +50,7 @@ The move/hold icon is now selected from actual pushable velocity changes in `CPu
   separate scripted `C_GameInstructor` manager still selects one prioritized
   managed lesson for its HUD slot; concurrent managed-lesson presentation is
   not part of this stage.
-- Target-backed hints use a projected world-space icon and a small caption tag while on-screen. When off-screen, the caption and normal inline binding label are hidden; the off-screen icon and directional arrow remain. The Source `use_binding` virtual icon may still show its key glyph off-screen, matching `DrawBindingNameOffscreen`. Static hints keep a screen-space prompt. The HUD uses GoldSrc sprite files and a custom user message rather than Source game events, VGUI locator panels, and VTF materials.
+- Target-backed hints use a projected world-space icon and a small caption tag while on-screen. Like Source's `ICON_DIST_TOO_FAR`, captions and ordinary inline binding labels are suppressed beyond 720 units (60 feet), measured from the current camera origin; the locator icon remains visible. `hint_forcecaption` bypasses this caption-distance cutoff and occlusion suppression, but not the separate `hint_range` culling rule. When off-screen, captions and normal inline binding labels are hidden; the off-screen icon and directional arrow remain. The Source `use_binding` virtual icon keeps its special behavior: its on-screen key glyph follows the caption-distance gate, while its off-screen key glyph remains available through the equivalent of `DrawBindingNameOffscreen`. Static hints keep a screen-space prompt and are not subject to this distance cutoff. The HUD uses GoldSrc sprite files and a custom user message rather than Source game events, VGUI locator panels, and VTF materials.
 - Locator pulse/alpha/shake flags are approximated with GoldSrc HUD drawing; the halo and movement are not pixel-identical to Source's animation curves, and Source's VGUI layout/decluttering behavior is not reproduced.
 - Controller-specific button localization is not included. Keyboard bindings can
   resolve through the locator's `use_binding` path; stock FWGS Xash3D falls back
