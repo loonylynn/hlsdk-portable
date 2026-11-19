@@ -55,7 +55,7 @@ The player's usable-object scan now displays an automatic `Interact` locator wit
   resolve through the locator's `use_binding` path; stock FWGS Xash3D falls back
   to the first matching key because its client API lacks alternate-key lookup.
 - The existing PS2 brackets remain a separate world-space interaction marker and are not replaced by the Source locator. The automatic `Interact` keycap is a separate locator attached to the same currently focused usable entity.
-- Sprite-backed keycaps draw the resolved key label as black alpha-blended glyphs, using the same opacity as the key image. This uses the appended Xash3D `pfnSPR_SetAlpha` client callback. The paired `loonylynn/xash3d-fwgs` engine and this SDK must be rebuilt together; do not use the updated client DLL with an engine that lacks the callback.
+- Sprite-backed keycaps draw the resolved key label as black alpha-blended glyphs, using the same per-target fade alpha as the key image and caption. The generic sprite path selects its TriAPI render mode before setting `pfnSPR_SetAlpha`, so the render-mode change cannot overwrite the fade value before the keycap quad is submitted. This uses the appended Xash3D `pfnSPR_SetAlpha` client callback. The paired `loonylynn/xash3d-fwgs` engine and this SDK must be rebuilt together; do not use the updated client DLL with an engine that lacks the callback.
 
 The server entity's keyvalue names and base flag semantics are aligned with the publicly available Valve `CEnvInstructorHint` implementation. See the source comments in `dlls/player.cpp` for the Source-compatible flag values and field mapping.
 
