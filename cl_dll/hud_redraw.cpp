@@ -1272,9 +1272,9 @@ int CHud::Redraw( float flTime, int intermission )
 					const int locatorTextG = locatorG * locatorAlpha / 255;
 					const int locatorTextB = locatorB * locatorAlpha / 255;
 
-					// Source halves both on/offscreen icon dimensions beyond
-					// ICON_DIST_TOO_FAR (720 units). This does not select the
-					// offscreen icon; only leaving the title-safe viewport does.
+					// Source halves locator icons beyond ICON_DIST_TOO_FAR (720 units).
+					// The automatic -2 Interact prompt also selects its interaction icon
+					// at that distance; other hints switch icons only when off-screen.
 					const float distanceScale =
 						locatorTarget->m_flDistFromPlayer > INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE ?
 						0.5f : 1.0f;
