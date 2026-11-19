@@ -982,7 +982,24 @@ int CHud::Redraw( float flTime, int intermission )
 				stricmp( requestedIcon, "use_binding" ) == 0;
 			const bool hasDirectionalLocatorSprites =
 				m_hInstructorHintArrowRightSprite && m_hInstructorHintArrowUpSprite;
-			const int sourceBindingIconHeight = Q_max( 1, (int)( ScreenWidth * 0.04f ) );
+			int sourceBindingIconWidth = 0;
+			int sourceBindingIconHeight = 0;
+			if( sourceBindingIcon )
+			{
+				HUD_UpdateInstructorBindingChoices( target, m_flTime );
+				const char *keyName = target->m_iBindingChoicesCount > 0 ?
+					target->m_szBindingChoices[target->m_iBindingTick % target->m_iBindingChoicesCount] : NULL;
+				char ignoredGlyph[32];
+				HSPRITE keySprite = HUD_GetInstructorBindingImage( this, keyName,
+					ignoredGlyph, sizeof( ignoredGlyph ) );
+				if( keySprite )
+				{
+					sourceBindingIconWidth = SPR_Width( keySprite, 0 );
+					sourceBindingIconHeight = SPR_Height( keySprite, 0 );
+					if( sourceBindingIconWidth > 64 || sourceBindingIconHeight > 64 )
+						sourceBindingIconWidth = sourceBindingIconHeight = 0;
+				}
+			}
 			target->m_iEdgeMargin = hasDirectionalLocatorSprites ?
 				( sourceBindingIcon ?
 					sourceBindingIconHeight / 2 + 3 + 24 + 4 : 22 + 24 + 4 ) : 22;
@@ -999,12 +1016,16 @@ int CHud::Redraw( float flTime, int intermission )
 				const int iconHeight = SPR_Height( icon, 0 );
 				if( iconWidth > 0 && iconHeight > 0 && iconWidth <= 64 && iconHeight <= 64 )
 				{
-					target->m_wide = (int)( iconWidth * 1.2f + 0.5f );
-					target->m_tall = (int)( iconHeight * 1.2f + 0.5f );
+					const float iconScale = target->m_iHintId == -2 ? 1.0f : 1.2f;
+					target->m_wide = (int)( iconWidth * iconScale + 0.5f );
+					target->m_tall = (int)( iconHeight * iconScale + 0.5f );
 				}
 			}
-			if( requestedIcon && stricmp( requestedIcon, "use_binding" ) == 0 )
-				target->m_wide = target->m_tall = Q_max( target->m_wide, (int)( ScreenWidth * 0.04f ) );
+			if( sourceBindingIcon && sourceBindingIconWidth > 0 && sourceBindingIconHeight > 0 )
+			{
+				target->m_wide = sourceBindingIconWidth;
+				target->m_tall = sourceBindingIconHeight;
+			}
 			// Source's dynamic locator only reserves caption width while the
 			// target is on-screen and within ICON_DIST_TOO_FAR (720 units),
 			// unless FORCE_CAPTION is set. Off-screen and distant markers use
@@ -1167,8 +1188,12 @@ int CHud::Redraw( float flTime, int intermission )
 					locatorTarget->m_szBindingChoices[locatorTarget->m_iBindingTick % locatorTarget->m_iBindingChoicesCount] : NULL;
 				instructorBindingSprite = HUD_GetInstructorBindingImage( this, keyName,
 					instructorBindingGlyph, sizeof( instructorBindingGlyph ) );
-				sourceBindingIconHeight = Q_max( 1, (int)( ScreenWidth * 0.04f ) );
-				sourceBindingIconWidth = sourceBindingIconHeight;
+				sourceBindingIconWidth = instructorBindingSprite ?
+					SPR_Width( instructorBindingSprite, 0 ) : 0;
+				sourceBindingIconHeight = instructorBindingSprite ?
+					SPR_Height( instructorBindingSprite, 0 ) : 0;
+				if( sourceBindingIconWidth > 64 || sourceBindingIconHeight > 64 )
+					sourceBindingIconWidth = sourceBindingIconHeight = 0;
 			}
 
 			// Source counts a lesson only after its icon has remained on-screen
@@ -1284,12 +1309,13 @@ int CHud::Redraw( float flTime, int intermission )
 					if( sourceBindingIcon && locatorIconHeight > 0 && locatorIconWidth > 0 )
 						sourceBindingIconWidth = Q_max( 1, (int)( sourceBindingIconHeight *
 							( (float)locatorIconWidth / (float)locatorIconHeight ) + 0.5f ) );
+					const float locatorIconScale = locatorTarget->m_iHintId == -2 ? 1.0f : 1.20f;
 					const int locatorDrawWidth = sourceBindingIcon ?
 						Q_max( 1, (int)( sourceBindingIconWidth * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) ) :
-						( locatorSprite ? (int)( locatorIconWidth * 1.20f * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) : 0 );
+						( locatorSprite ? (int)( locatorIconWidth * locatorIconScale * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) : 0 );
 					const int locatorDrawHeight = sourceBindingIcon ?
 						Q_max( 1, (int)( sourceBindingIconHeight * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) ) :
-						( locatorSprite ? (int)( locatorIconHeight * 1.20f * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) : 0 );
+						( locatorSprite ? (int)( locatorIconHeight * locatorIconScale * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) : 0 );
 					const int markerHalfWidth = sourceBindingIcon ? locatorDrawWidth / 2 :
 						( locatorSprite ? locatorDrawWidth / 2 : 10 );
 					const int markerHalfHeight = sourceBindingIcon ? locatorDrawHeight / 2 :
