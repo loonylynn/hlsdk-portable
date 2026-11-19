@@ -720,27 +720,134 @@ static HSPRITE HUD_GetInstructorBindingImage( CHud *hud, const char *keyName,
 	return useGeneric ? hud->m_hInstructorHintKeyGenericSprite : hud->m_hInstructorHintKeyWideSprite;
 }
 
-// Draw the resolved binding with the normal Half-Life HUD font. The HUD text
-// API has no per-character alpha parameter, so fade the black glyph toward the
-// light keycap face using the exact same locator alpha envelope.
+// Compact 5x7 glyphs for black keycap labels. These are blended over the
+// existing .spr artwork, because the GoldSrc HUD font is additive and cannot
+// render true black. FillRGBABlend preserves the locator's shared fade.
+static unsigned char HUD_InstructorKeyGlyphRow( char ch, int row )
+{
+	static const unsigned char glyphs[36][7] =
+	{
+		{ 0x0E,0x11,0x11,0x1F,0x11,0x11,0x11 }, // A
+		{ 0x1E,0x11,0x11,0x1E,0x11,0x11,0x1E }, // B
+		{ 0x0F,0x10,0x10,0x10,0x10,0x10,0x0F }, // C
+		{ 0x1E,0x11,0x11,0x11,0x11,0x11,0x1E }, // D
+		{ 0x1F,0x10,0x10,0x1E,0x10,0x10,0x1F }, // E
+		{ 0x1F,0x10,0x10,0x1E,0x10,0x10,0x10 }, // F
+		{ 0x0F,0x10,0x10,0x17,0x11,0x11,0x0F }, // G
+		{ 0x11,0x11,0x11,0x1F,0x11,0x11,0x11 }, // H
+		{ 0x0E,0x04,0x04,0x04,0x04,0x04,0x0E }, // I
+		{ 0x07,0x02,0x02,0x02,0x12,0x12,0x0C }, // J
+		{ 0x11,0x12,0x14,0x18,0x14,0x12,0x11 }, // K
+		{ 0x10,0x10,0x10,0x10,0x10,0x10,0x1F }, // L
+		{ 0x11,0x1B,0x15,0x15,0x11,0x11,0x11 }, // M
+		{ 0x11,0x19,0x15,0x13,0x11,0x11,0x11 }, // N
+		{ 0x0E,0x11,0x11,0x11,0x11,0x11,0x0E }, // O
+		{ 0x1E,0x11,0x11,0x1E,0x10,0x10,0x10 }, // P
+		{ 0x0E,0x11,0x11,0x11,0x15,0x12,0x0D }, // Q
+		{ 0x1E,0x11,0x11,0x1E,0x14,0x12,0x11 }, // R
+		{ 0x0F,0x10,0x10,0x0E,0x01,0x01,0x1E }, // S
+		{ 0x1F,0x04,0x04,0x04,0x04,0x04,0x04 }, // T
+		{ 0x11,0x11,0x11,0x11,0x11,0x11,0x0E }, // U
+		{ 0x11,0x11,0x11,0x11,0x11,0x0A,0x04 }, // V
+		{ 0x11,0x11,0x11,0x15,0x15,0x15,0x0A }, // W
+		{ 0x11,0x11,0x0A,0x04,0x0A,0x11,0x11 }, // X
+		{ 0x11,0x11,0x0A,0x04,0x04,0x04,0x04 }, // Y
+		{ 0x1F,0x01,0x02,0x04,0x08,0x10,0x1F }, // Z
+		{ 0x0E,0x11,0x13,0x15,0x19,0x11,0x0E }, // 0
+		{ 0x04,0x0C,0x04,0x04,0x04,0x04,0x0E }, // 1
+		{ 0x0E,0x11,0x01,0x02,0x04,0x08,0x1F }, // 2
+		{ 0x1E,0x01,0x01,0x0E,0x01,0x01,0x1E }, // 3
+		{ 0x02,0x06,0x0A,0x12,0x1F,0x02,0x02 }, // 4
+		{ 0x1F,0x10,0x10,0x1E,0x01,0x01,0x1E }, // 5
+		{ 0x0E,0x10,0x10,0x1E,0x11,0x11,0x0E }, // 6
+		{ 0x1F,0x01,0x02,0x04,0x08,0x08,0x08 }, // 7
+		{ 0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E }, // 8
+		{ 0x0E,0x11,0x11,0x0F,0x01,0x01,0x0E }  // 9
+	};
+
+	if( ch >= 'a' && ch <= 'z' )
+		ch = (char)( ch - 'a' + 'A' );
+	int index = -1;
+	if( ch >= 'A' && ch <= 'Z' )
+		index = ch - 'A';
+	else if( ch >= '0' && ch <= '9' )
+		index = 26 + ch - '0';
+	if( index >= 0 && index < 36 && row >= 0 && row < 7 )
+		return glyphs[index][row];
+	switch( ch )
+	{
+	case '-': return row == 3 ? 0x1F : 0x00;
+	case '+': return row == 3 ? 0x1F : ( row == 1 || row == 2 || row == 4 || row == 5 ? 0x04 : 0x00 );
+	case '/': return row == 0 ? 0x01 : ( row == 1 || row == 2 ? 0x02 :
+		( row == 3 ? 0x04 : ( row == 4 || row == 5 ? 0x08 : 0x10 ) ) );
+	case '.': return row >= 5 ? 0x0C : 0x00;
+	default: return 0x00;
+	}
+}
+
+// Alpha-blended 5x7 text for the small instructor labels. GoldSrc's
+// VGUI2DrawCharacterAdditive API accepts RGB but no alpha, so DrawHudString
+// cannot fade in lockstep with an RGBA locator sprite. FillRGBA can.
+static void HUD_DrawInstructorAlphaText( int x, int y, int maxX,
+	const char *text, int r, int g, int b, int alpha, int scale )
+{
+	if( !text || !text[0] || alpha <= 0 || scale <= 0 || maxX <= x )
+		return;
+
+	const int advance = 6 * scale;
+	for( int i = 0; text[i] && text[i] != '\\n'; ++i )
+	{
+		const int glyphX = x + i * advance;
+		if( glyphX >= maxX )
+			break;
+
+		for( int row = 0; row < 7; ++row )
+		{
+			const unsigned char bits = HUD_InstructorKeyGlyphRow( text[i], row );
+			int col = 0;
+			while( col < 5 )
+			{
+				if( !( bits & ( 1 << ( 4 - col ) ) ) )
+				{
+					++col;
+					continue;
+				}
+
+				const int first = col;
+				while( col < 5 && ( bits & ( 1 << ( 4 - col ) ) ) )
+					++col;
+
+				const int drawX = glyphX + first * scale;
+				int drawWidth = ( col - first ) * scale;
+				if( drawX + drawWidth > maxX )
+					drawWidth = maxX - drawX;
+				if( drawWidth > 0 )
+					FillRGBABlend( drawX, y + row * scale, drawWidth, scale,
+						r, g, b, alpha );
+			}
+		}
+	}
+}
+
 static void HUD_DrawInstructorBindingName( int centerX, int centerY,
 	const char *bindingName, int alpha )
 {
 	if( !bindingName || !bindingName[0] || alpha <= 0 )
 		return;
 
-	const int textWidth = gHUD.DrawHudStringLen( bindingName );
-	if( textWidth <= 0 )
-		return;
+	int length = (int)strlen( bindingName );
+	if( length > 12 )
+		length = 12;
 
-	const int fontHeight = gHUD.m_scrinfo.iCharHeight > 0 ?
-		gHUD.m_scrinfo.iCharHeight : ( gHUD.m_iFontHeight > 0 ? gHUD.m_iFontHeight : 12 );
-	const int textX = centerX - textWidth / 2;
-	const int textY = centerY - fontHeight / 2 - 1;
-	const int fadeColor = 255 - Q_max( 0, Q_min( 255, alpha ) );
-
-	gHUD.DrawHudString( textX, textY, textX + textWidth + 2,
-		bindingName, fadeColor, fadeColor, fadeColor );
+	// Keep short labels compact: E is 10x14 pixels, not the oversized 15x21
+	// version. Longer labels use the native 5x7 bitmap size.
+	const int scale = length <= 2 ? 2 : 1;
+	const int totalWidth = length * 6 * scale - scale;
+	const int glyphHeight = 7 * scale;
+	const int startX = centerX - totalWidth / 2;
+	const int startY = centerY - glyphHeight / 2;
+	HUD_DrawInstructorAlphaText( startX, startY, startX + totalWidth,
+		bindingName, 0, 0, 0, alpha, scale );
 }
 
 // Think
