@@ -160,6 +160,9 @@ public:
 	std::vector<InstructorLessonEvent> m_OnOpenEvents;
 	std::vector<InstructorLessonEvent> m_UpdateEvents;
 
+	// Unique identity for this open opportunity (definitions keep zero).
+	int m_iInstanceSerial;
+
 	// Source LESSON_VARIABLE_FACTORY state, adapted to GoldSrc entity indices.
 	int m_iLocalPlayer;
 	int m_iEntity1;
@@ -239,7 +242,7 @@ void GameInstructor_FireEvent(const char *name, int entityIndex, const char *cla
 
 // Implemented by the GoldSrc HUD. Each active lesson owns an independent locator
 // target; the panel caps the combined map/managed target pool at ten entries.
-void HUD_SetManagedInstructorHint(const char *lessonName, const char *caption,
+void HUD_SetManagedInstructorHint(const char *lessonName, int instanceSerial, const char *caption,
 	const char *binding, const char *onscreenIcon, const char *offscreenIcon,
 	int targetIndex, int priority, float timeout, int flags, int colorR, int colorG, int colorB,
 	float range, float iconOffset, bool forceCaption,
