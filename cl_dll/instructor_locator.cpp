@@ -1,6 +1,7 @@
 #include "instructor_locator.h"
 #include <string.h>
 #include <math.h>
+#include <stdlib.h>
 
 namespace
 {
@@ -34,11 +35,10 @@ void CInstructorLocatorTarget::Activate( int serialNumber, int frameNumber,
 	m_bVisible = m_bOnscreen = true;
 	m_alpha = 0;
 	m_iEffectAlpha = 255;
-	m_flFadeDuration = 0.18f;
+	m_flFadeDuration = 0.3f;
 	m_flPulse = 0.0f;
 	m_flPulseScale = 1.0f;
 	m_flShakeX = m_flShakeY = 0.0f;
-	m_flManagedAlpha = 1.0f;
 	m_bRemoveWhenFadedOut = false;
 	m_bManagedDisplayCounted = false;
 	m_flEndTime = 0.0f;
@@ -95,7 +95,6 @@ int CInstructorLocatorTarget::GetRenderAlpha( int baseAlpha ) const
 	if( alpha < 0 ) alpha = 0;
 	if( alpha > 255 ) alpha = 255;
 	alpha = alpha * m_alpha / 255;
-	alpha = (int)( (float)alpha * m_flManagedAlpha + 0.5f );
 	if( alpha < 0 ) alpha = 0;
 	if( alpha > 255 ) alpha = 255;
 	return alpha;
@@ -142,56 +141,59 @@ void CInstructorLocatorTarget::UpdateAnimation( float currentTime )
 		m_alpha = m_bVisible ? 255 : 0;
 	}
 
-	const int pulseMode = m_iEffectsFlags & 0x00000007;
-	const float pulseRate = ( pulseMode & 0x4 ) ? 5.0f :
-		( ( pulseMode & 0x2 ) ? 2.5f : 1.0f );
-	m_flPulse = pulseMode ?
-		( 0.5f + 0.5f * sinf( ( currentTime - m_pulseStart ) * pulseRate * 6.28318f ) ) : 0.0f;
-	m_flPulseScale = 1.0f + 0.08f * m_flPulse;
-
-	const int alphaFlags = m_iEffectsFlags & 0x00000038;
-	if( alphaFlags )
-	{
-		const float alphaRate = ( alphaFlags & 0x20 ) ? 5.0f :
-			( ( alphaFlags & 0x10 ) ? 2.5f : 1.0f );
-		const float alphaPulse = 0.5f + 0.5f *
-			sinf( ( currentTime - m_pulseStart ) * alphaRate * 6.28318f );
-		m_iEffectAlpha = 150 + (int)( 105.0f * alphaPulse );
-	}
+	// Source CLocatorPanel::AnimateIconSize defaults: 1.0..1.75 and a
+	// one-second activation pulse, even when no persistent pulse flag is set.
+	const int pulseFlags = m_iEffectsFlags & 0x00000007;
+	const float pulseElapsed = currentTime - m_pulseStart;
+	if( ( pulseFlags & LOCATOR_ICON_FX_PULSE_SLOW ) || pulseElapsed < 1.0f )
+		m_flPulse = fabsf( sinf( pulseElapsed * 3.14159265358979323846f ) );
+	else if( pulseFlags & LOCATOR_ICON_FX_PULSE_FAST )
+		m_flPulse = fabsf( sinf( currentTime * 2.0f * 3.14159265358979323846f ) );
+	else if( pulseFlags & LOCATOR_ICON_FX_PULSE_URGENT )
+		m_flPulse = fabsf( sinf( currentTime * 4.0f * 3.14159265358979323846f ) );
 	else
-	{
-		m_iEffectAlpha = 255;
-	}
+		m_flPulse = 0.0f;
+	m_flPulseScale = 1.0f + 0.75f * m_flPulse;
 
+	// Source MIN_ICON_ALPHA=0.5 / MAX_ICON_ALPHA=1.0, with absolute-time
+	// oscillation frequencies of 3, 7, and 10 radians per second.
+	const int alphaFlags = m_iEffectsFlags & 0x00000038;
+	float alphaScale = 1.0f;
+	if( alphaFlags & LOCATOR_ICON_FX_ALPHA_SLOW )
+		alphaScale = 0.5f + 0.5f * fabsf( sinf( currentTime * 3.0f ) );
+	else if( alphaFlags & LOCATOR_ICON_FX_ALPHA_FAST )
+		alphaScale = 0.5f + 0.5f * fabsf( sinf( currentTime * 7.0f ) );
+	else if( alphaFlags & LOCATOR_ICON_FX_ALPHA_URGENT )
+		alphaScale = 0.5f + 0.5f * fabsf( sinf( currentTime * 10.0f ) );
+	m_iEffectAlpha = (int)( 255.0f * alphaScale );
+
+	// Source uses a fresh integer offset per presentation update, not a
+	// smooth sinusoidal vibration.
 	const int shakeFlags = m_iEffectsFlags & 0x000000C0;
-	if( shakeFlags )
+	if( shakeFlags & LOCATOR_ICON_FX_SHAKE_NARROW )
 	{
-		const float shakeRate = ( shakeFlags & 0x80 ) ? 22.0f : 10.0f;
-		const float shakeTime = ( currentTime - m_pulseStart ) * shakeRate;
-		m_flShakeX = sinf( shakeTime ) * 2.0f;
-		m_flShakeY = cosf( shakeTime * 0.83f ) * 1.5f;
+		m_flShakeX = (float)( rand() % 5 - 2 );
+		m_flShakeY = (float)( rand() % 5 - 2 );
+	}
+	else if( shakeFlags & LOCATOR_ICON_FX_SHAKE_WIDE )
+	{
+		m_flShakeX = (float)( rand() % 11 - 5 );
+		m_flShakeY = (float)( rand() % 11 - 5 );
 	}
 	else
 	{
 		m_flShakeX = m_flShakeY = 0.0f;
 	}
-
-	m_flManagedAlpha = 1.0f;
-	if( m_bManaged && m_flVisibleSince > 0.0f )
-	{
-		float fade = ( currentTime - m_flVisibleSince ) / 0.18f;
-		if( fade < 0.0f ) fade = 0.0f;
-		if( fade > 1.0f ) fade = 1.0f;
-		m_flManagedAlpha = 0.25f + 0.75f * fade;
-	}
 }
 
 void CInstructorLocatorTarget::UpdateProjection( float screenX, float screenY, bool behind,
-	int screenWidth, int screenHeight, int visibilityMargin )
+	int screenWidth, int screenHeight, float visibilityMargin, float currentTime )
 {
+	const bool wasOnscreen = m_bOnscreen;
 	m_flProjectedX = screenX;
 	m_flProjectedY = screenY;
 	m_bBehindCamera = behind;
+	m_flVisibilityMargin = visibilityMargin;
 	m_targetX = (int)( screenX >= 0.0f ? screenX + 0.5f : screenX - 0.5f );
 	m_targetY = (int)( screenY >= 0.0f ? screenY + 0.5f : screenY - 0.5f );
 	m_drawArrowDirection = INSTRUCTOR_LOCATOR_ARROW_NONE;
@@ -199,77 +201,79 @@ void CInstructorLocatorTarget::UpdateProjection( float screenX, float screenY, b
 	if( screenWidth <= 0 || screenHeight <= 0 )
 	{
 		m_bOnscreen = false;
+		if( wasOnscreen != m_bOnscreen ) m_pulseStart = currentTime;
 		return;
 	}
 
-	if( visibilityMargin < 0 ) visibilityMargin = 0;
-	if( visibilityMargin * 2 > screenWidth ) visibilityMargin = screenWidth / 2;
-	if( visibilityMargin * 2 > screenHeight ) visibilityMargin = screenHeight / 2;
+	if( visibilityMargin < 0.0f ) visibilityMargin = 0.0f;
+	if( visibilityMargin * 2.0f > (float)screenWidth ) visibilityMargin = (float)screenWidth * 0.5f;
+	if( visibilityMargin * 2.0f > (float)screenHeight ) visibilityMargin = (float)screenHeight * 0.5f;
 
 	m_bOnscreen = !behind &&
-		screenX >= (float)visibilityMargin &&
-		screenX <= (float)( screenWidth - visibilityMargin ) &&
-		screenY >= (float)visibilityMargin &&
-		screenY <= (float)( screenHeight - visibilityMargin );
+		screenX >= visibilityMargin &&
+		screenX <= (float)screenWidth - visibilityMargin &&
+		screenY >= visibilityMargin &&
+		screenY <= (float)screenHeight - visibilityMargin;
+
+	// Source restarts the one-second presentation pulse on on/offscreen transitions.
+	if( wasOnscreen != m_bOnscreen ) m_pulseStart = currentTime;
 }
 
 void CInstructorLocatorTarget::CalculateEdgePosition( int screenWidth, int screenHeight, int edgeMargin )
 {
-	if( screenWidth <= 0 || screenHeight <= 0 )
-		return;
-
+	if( screenWidth <= 0 || screenHeight <= 0 ) return;
 	m_centerX = screenWidth / 2;
 	m_centerY = screenHeight / 2;
 	m_iconX = m_targetX;
-	m_bIsDrawing = ShouldDraw();
 	m_iconY = m_targetY;
+	m_bIsDrawing = ShouldDraw();
 	m_drawArrowDirection = INSTRUCTOR_LOCATOR_ARROW_NONE;
 
 	if( edgeMargin < 0 ) edgeMargin = 0;
-	int horizontalMargin = edgeMargin;
-	int verticalMargin = edgeMargin;
+	int horizontalMargin = edgeMargin, verticalMargin = edgeMargin;
 	if( horizontalMargin * 2 > screenWidth ) horizontalMargin = screenWidth / 2;
 	if( verticalMargin * 2 > screenHeight ) verticalMargin = screenHeight / 2;
 
 	if( !m_bOnscreen )
 	{
 		const float dx = m_flProjectedX - (float)m_centerX;
-		float dy = m_flProjectedY - (float)m_centerY;
-		if( fabsf( dx ) < 1.0f && fabsf( dy ) < 1.0f )
-			dy = 1.0f;
+		const float dy = m_flProjectedY - (float)m_centerY;
+		const float safe = m_flVisibilityMargin;
 
-		const float left = (float)horizontalMargin;
-		const float right = (float)( screenWidth - horizontalMargin );
-		const float top = (float)verticalMargin;
-		const float bottom = (float)( screenHeight - verticalMargin );
-		float tx = 1000000.0f;
-		float ty = 1000000.0f;
+		// Source positions offscreen locators on an ellipse around screen center:
+		// YRES(100) radius and 0.6 vertical squash.
+		float radius = (float)screenHeight * ( 100.0f / 480.0f );
+		float maxRadiusX = (float)m_centerX - (float)horizontalMargin;
+		float maxRadiusY = ( (float)m_centerY - (float)verticalMargin ) / 0.6f;
+		if( maxRadiusX < 0.0f ) maxRadiusX = 0.0f;
+		if( maxRadiusY < 0.0f ) maxRadiusY = 0.0f;
+		if( radius > maxRadiusX ) radius = maxRadiusX;
+		if( radius > maxRadiusY ) radius = maxRadiusY;
 
-		if( dx > 0.001f )
-			tx = ( right - (float)m_centerX ) / dx;
-		else if( dx < -0.001f )
-			tx = ( left - (float)m_centerX ) / dx;
+		const float direction = atan2f( dx, -dy );
+		m_iconX = m_centerX + (int)( radius * sinf( direction ) + ( dx >= 0.0f ? 0.5f : -0.5f ) );
+		m_iconY = m_centerY - (int)( radius * 0.6f * cosf( direction ) +
+			( dy <= 0.0f ? 0.5f : -0.5f ) );
 
-		if( dy > 0.001f )
-			ty = ( bottom - (float)m_centerY ) / dy;
-		else if( dy < -0.001f )
-			ty = ( top - (float)m_centerY ) / dy;
-
-		float t = tx < ty ? tx : ty;
-		if( t < 0.0f || t > 1000000.0f )
-			t = 0.0f;
-
-		m_iconX = (int)( (float)m_centerX + dx * t );
-		m_iconY = (int)( (float)m_centerY + dy * t );
-
-		if( tx <= ty )
-			m_drawArrowDirection = dx < 0.0f ?
-				INSTRUCTOR_LOCATOR_ARROW_LEFT : INSTRUCTOR_LOCATOR_ARROW_RIGHT;
-		else
-			m_drawArrowDirection = dy < 0.0f ?
-				INSTRUCTOR_LOCATOR_ARROW_UP : INSTRUCTOR_LOCATOR_ARROW_DOWN;
+		// Source tests horizontal title-safe bounds before vertical bounds.
+		if( m_flProjectedX < safe )
+			m_drawArrowDirection = INSTRUCTOR_LOCATOR_ARROW_LEFT;
+		else if( m_flProjectedX > (float)screenWidth - safe )
+			m_drawArrowDirection = INSTRUCTOR_LOCATOR_ARROW_RIGHT;
+		else if( m_flProjectedY < safe )
+			m_drawArrowDirection = INSTRUCTOR_LOCATOR_ARROW_UP;
+		else if( m_flProjectedY > (float)screenHeight - safe )
+			m_drawArrowDirection = INSTRUCTOR_LOCATOR_ARROW_DOWN;
+		else if( m_bBehindCamera )
+		{
+			if( fabsf( dx ) * (float)screenHeight >= fabsf( dy ) * (float)screenWidth )
+				m_drawArrowDirection = dx < 0.0f ?
+					INSTRUCTOR_LOCATOR_ARROW_LEFT : INSTRUCTOR_LOCATOR_ARROW_RIGHT;
+			else
+				m_drawArrowDirection = dy < 0.0f ?
+					INSTRUCTOR_LOCATOR_ARROW_UP : INSTRUCTOR_LOCATOR_ARROW_DOWN;
+		}
 	}
-
 	if( m_iconX < horizontalMargin ) m_iconX = horizontalMargin;
 	if( m_iconX > screenWidth - horizontalMargin ) m_iconX = screenWidth - horizontalMargin;
 	if( m_iconY < verticalMargin ) m_iconY = verticalMargin;
@@ -327,8 +331,22 @@ void CInstructorLocatorTarget::SetScreenOrigin( float x, float y )
 }
 void CInstructorLocatorTarget::SetCaptionText( const char *caption ) { CopyLocatorString( m_szCaption, sizeof( m_szCaption ), caption ); }
 void CInstructorLocatorTarget::SetBinding( const char *binding ) { CopyLocatorString( m_szBinding, sizeof( m_szBinding ), binding ); }
-void CInstructorLocatorTarget::SetOnscreenIconName( const char *iconName ) { CopyLocatorString( m_szOnscreenIcon, sizeof( m_szOnscreenIcon ), iconName ); }
-void CInstructorLocatorTarget::SetOffscreenIconName( const char *iconName ) { CopyLocatorString( m_szOffscreenIcon, sizeof( m_szOffscreenIcon ), iconName ); }
+void CInstructorLocatorTarget::SetOnscreenIconName( const char *iconName, float currentTime )
+{
+	if( strcmp( m_szOnscreenIcon, iconName ? iconName : "" ) != 0 )
+	{
+		CopyLocatorString( m_szOnscreenIcon, sizeof( m_szOnscreenIcon ), iconName );
+		m_pulseStart = currentTime;
+	}
+}
+void CInstructorLocatorTarget::SetOffscreenIconName( const char *iconName, float currentTime )
+{
+	if( strcmp( m_szOffscreenIcon, iconName ? iconName : "" ) != 0 )
+	{
+		CopyLocatorString( m_szOffscreenIcon, sizeof( m_szOffscreenIcon ), iconName );
+		m_pulseStart = currentTime;
+	}
+}
 void CInstructorLocatorTarget::SetCaptionColor( int red, int green, int blue )
 {
 	m_iCaptionColorR = red < 0 ? 0 : ( red > 255 ? 255 : red );
