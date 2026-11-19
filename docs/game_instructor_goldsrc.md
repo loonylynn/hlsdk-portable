@@ -250,16 +250,17 @@ The third layout stage moves projected screen coordinates, behind-camera state, 
 
 CInstructorLocatorTarget now advances its fade envelope, pulse phase, alpha pulse, shake offsets, and managed-lesson visibility fade from one per-frame UpdateAnimation call. CInstructorLocatorPanel::UpdatePresentation advances the active pool entries after the HUD message state has been synchronized. The renderer consumes cached alpha/scale/offset values instead of recomputing effect timing in CHud::Redraw. Visibility loss fades a target down without destroying its handle, so a later visibility regain can fade it back in; explicit removal keeps the target alive until its fade-out completes.
 
-The panel also has a stable 17-candidate decluttering resolver. It checks the target's marker bounds against already placed targets, chooses the closest candidate with no overlap where possible, and remembers the prior candidate to reduce position hopping. The present HUD path still renders only the current instructor target, so multi-target overlap behavior is prepared in the pool but will not become visible until the separate multiple-target rendering stage. PS2 interaction brackets and their rendering path remain independent.
+The panel also has a stable 17-candidate decluttering resolver. It checks marker bounds against already placed targets, chooses the closest candidate with no overlap where possible, and remembers the prior candidate to reduce position hopping. Stage 5 makes the HUD traverse the full ten-entry pool: map-authored env_instructor_hint instances now retain independent payloads and can render simultaneously. PS2 interaction brackets and their rendering path remain independent.
 
 ## Deliberate GoldSrc differences
 
-- Multiple lesson opportunities, prerequisites, counters, and priority
-  arbitration are retained, but the HUD can render only one managed lesson card
-  at a time.
-- Map-authored `env_instructor_hint` messages continue to own the existing
-  hint/locator card directly and take precedence over scripted lessons. The
-  PS2 interaction brackets and automatic pushable move/hold prompt remain
+- Map-authored `env_instructor_hint` instances can render simultaneously,
+  up to the ten-target locator pool. Each has independent origin, sprite,
+  caption, binding, visibility, occlusion, timeout, fade, and replace-key state.
+- The scripted lesson manager still selects one highest-priority eligible
+  managed lesson for its HUD slot. Map-authored hints take precedence over that
+  managed slot; concurrent managed-lesson painting remains a separate stage.
+- The PS2 interaction brackets and automatic pushable move/hold prompt remain
   separate systems.
 - Source VGUI2 target anchoring, true Source locator target handles, the full
   Source hint/lesson event payload, split-screen/player swapping, team and

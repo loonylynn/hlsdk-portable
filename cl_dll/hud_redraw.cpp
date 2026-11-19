@@ -488,37 +488,37 @@ static void HUD_ResolveInstructorBinding( const char *binding, char *output, siz
 // Source CLocatorTarget::SetBinding / UseBindingImage / DrawBindingName port.
 // Enumerate all bound keys, preserve Source's 0.75-second cycling interval,
 // and use the matching key art rather than a small inline badge.
-static void HUD_AddInstructorBindingChoice( CHud *hud, const char *keyName )
+static void HUD_AddInstructorBindingChoice( CInstructorLocatorTarget *target, const char *keyName )
 {
-	if( !hud || !keyName || !keyName[0] ||
-		hud->m_iInstructorHintBindingChoicesCount >= MAX_INSTRUCTOR_BINDING_CHOICES )
+	if( !target || !keyName || !keyName[0] ||
+		target->m_iBindingChoicesCount >= MAX_INSTRUCTOR_LOCATOR_BINDINGS )
 		return;
-	for( int i = 0; i < hud->m_iInstructorHintBindingChoicesCount; ++i )
-		if( stricmp( hud->m_szInstructorHintBindingChoices[i], keyName ) == 0 )
+	for( int i = 0; i < target->m_iBindingChoicesCount; ++i )
+		if( stricmp( target->m_szBindingChoices[i], keyName ) == 0 )
 			return;
-	char *choice = hud->m_szInstructorHintBindingChoices[hud->m_iInstructorHintBindingChoicesCount++];
-	strncpy( choice, keyName, MAX_INSTRUCTOR_BINDING_NAME - 1 );
-	choice[MAX_INSTRUCTOR_BINDING_NAME - 1] = '\0';
+	char *choice = target->m_szBindingChoices[target->m_iBindingChoicesCount++];
+	strncpy( choice, keyName, MAX_INSTRUCTOR_LOCATOR_BINDING - 1 );
+	choice[MAX_INSTRUCTOR_LOCATOR_BINDING - 1] = '\0';
 }
 
-static void HUD_UpdateInstructorBindingChoices( CHud *hud, float flTime )
+static void HUD_UpdateInstructorBindingChoices( CInstructorLocatorTarget *target, float flTime )
 {
-	if( !hud ) return;
-	char oldChoices[MAX_INSTRUCTOR_BINDING_CHOICES][MAX_INSTRUCTOR_BINDING_NAME];
+	if( !target ) return;
+	char oldChoices[MAX_INSTRUCTOR_LOCATOR_BINDINGS][MAX_INSTRUCTOR_LOCATOR_BINDING];
 	memset( oldChoices, 0, sizeof( oldChoices ) );
-	const int oldCount = hud->m_iInstructorHintBindingChoicesCount;
-	const int oldTick = hud->m_iInstructorHintBindingTick;
-	for( int i = 0; i < oldCount && i < MAX_INSTRUCTOR_BINDING_CHOICES; ++i )
-		strncpy( oldChoices[i], hud->m_szInstructorHintBindingChoices[i], MAX_INSTRUCTOR_BINDING_NAME - 1 );
+	const int oldCount = target->m_iBindingChoicesCount;
+	const int oldTick = target->m_iBindingTick;
+	for( int i = 0; i < oldCount && i < MAX_INSTRUCTOR_LOCATOR_BINDINGS; ++i )
+		strncpy( oldChoices[i], target->m_szBindingChoices[i], MAX_INSTRUCTOR_LOCATOR_BINDING - 1 );
 
-	const bool bindingChanged = stricmp( hud->m_szInstructorHintBindingCache, hud->m_szInstructorHintBinding ) != 0;
-	strncpy( hud->m_szInstructorHintBindingCache, hud->m_szInstructorHintBinding, sizeof( hud->m_szInstructorHintBindingCache ) - 1 );
-	hud->m_szInstructorHintBindingCache[sizeof( hud->m_szInstructorHintBindingCache ) - 1] = '\0';
-	hud->m_iInstructorHintBindingChoicesCount = 0;
-	memset( hud->m_szInstructorHintBindingChoices, 0, sizeof( hud->m_szInstructorHintBindingChoices ) );
+	const bool bindingChanged = stricmp( target->m_szBindingCache, target->m_szBinding ) != 0;
+	strncpy( target->m_szBindingCache, target->m_szBinding, sizeof( target->m_szBindingCache ) - 1 );
+	target->m_szBindingCache[sizeof( target->m_szBindingCache ) - 1] = '\0';
+	target->m_iBindingChoicesCount = 0;
+	memset( target->m_szBindingChoices, 0, sizeof( target->m_szBindingChoices ) );
 
-	const char *cursor = hud->m_szInstructorHintBinding;
-	while( cursor && *cursor && hud->m_iInstructorHintBindingChoicesCount < MAX_INSTRUCTOR_BINDING_CHOICES )
+	const char *cursor = target->m_szBinding;
+	while( cursor && *cursor && target->m_iBindingChoicesCount < MAX_INSTRUCTOR_LOCATOR_BINDINGS )
 	{
 		while( *cursor == ';' || *cursor == ' ' || *cursor == '\t' ) ++cursor;
 		if( !*cursor ) break;
@@ -551,47 +551,47 @@ static void HUD_UpdateInstructorBindingChoices( CHud *hud, float flTime )
 			commandName[commandLength] = '\0';
 			if( commandName[0] && gEngfuncs.Key_LookupBindingEx )
 			{
-				for( int ordinal = 0; ordinal < MAX_INSTRUCTOR_BINDING_CHOICES &&
-					hud->m_iInstructorHintBindingChoicesCount < MAX_INSTRUCTOR_BINDING_CHOICES; ++ordinal )
+				for( int ordinal = 0; ordinal < MAX_INSTRUCTOR_LOCATOR_BINDINGS &&
+					target->m_iBindingChoicesCount < MAX_INSTRUCTOR_LOCATOR_BINDINGS; ++ordinal )
 				{
 					const char *keyName = gEngfuncs.Key_LookupBindingEx( commandName, ordinal );
 					if( !keyName || !keyName[0] ) break;
-					HUD_AddInstructorBindingChoice( hud, keyName );
+					HUD_AddInstructorBindingChoice( target, keyName );
 				}
 			}
 			else if( commandName[0] && gEngfuncs.Key_LookupBinding )
-				HUD_AddInstructorBindingChoice( hud, gEngfuncs.Key_LookupBinding( commandName ) );
+				HUD_AddInstructorBindingChoice( target, gEngfuncs.Key_LookupBinding( commandName ) );
 		}
 		else
-			HUD_AddInstructorBindingChoice( hud, token );
+			HUD_AddInstructorBindingChoice( target, token );
 
 		if( *cursor == ';' ) ++cursor;
 	}
 
-	bool choicesChanged = oldCount != hud->m_iInstructorHintBindingChoicesCount;
+	bool choicesChanged = oldCount != target->m_iBindingChoicesCount;
 	if( !choicesChanged )
 		for( int i = 0; i < oldCount; ++i )
-			if( stricmp( oldChoices[i], hud->m_szInstructorHintBindingChoices[i] ) != 0 )
+			if( stricmp( oldChoices[i], target->m_szBindingChoices[i] ) != 0 )
 			{
 				choicesChanged = true;
 				break;
 			}
 
 	if( bindingChanged || choicesChanged )
-	{
-		hud->m_iInstructorHintBindingTick = 0;
-		hud->m_flInstructorHintNextBindingTick = flTime + 0.75f;
-	}
-	else if( hud->m_iInstructorHintBindingChoicesCount > 0 )
-		hud->m_iInstructorHintBindingTick = oldTick % hud->m_iInstructorHintBindingChoicesCount;
+		{
+			target->m_iBindingTick = 0;
+			target->m_flNextBindingTick = flTime + 0.75f;
+		}
+	else if( target->m_iBindingChoicesCount > 0 )
+		target->m_iBindingTick = oldTick % target->m_iBindingChoicesCount;
 	else
-		hud->m_iInstructorHintBindingTick = 0;
+		target->m_iBindingTick = 0;
 
-	if( flTime >= hud->m_flInstructorHintNextBindingTick )
+	if( flTime >= target->m_flNextBindingTick )
 	{
-		if( hud->m_iInstructorHintBindingChoicesCount > 1 )
-			hud->m_iInstructorHintBindingTick = ( hud->m_iInstructorHintBindingTick + 1 ) % hud->m_iInstructorHintBindingChoicesCount;
-		hud->m_flInstructorHintNextBindingTick = flTime + 0.75f;
+		if( target->m_iBindingChoicesCount > 1 )
+			target->m_iBindingTick = ( target->m_iBindingTick + 1 ) % target->m_iBindingChoicesCount;
+		target->m_flNextBindingTick = flTime + 0.75f;
 	}
 }
 
@@ -763,73 +763,120 @@ int CHud::Redraw( float flTime, int intermission )
 	m_InstructorLocatorPanel.BeginFrame( m_flTime );
 	GameInstructor_Update( flTime );
 
-	// Resolve the active scripted locator before entering the HUD draw branch:
-	// this lets range and NODRAW rules suppress the entire card, not only its icon.
-	if( m_bInstructorHintActive && m_bInstructorHintManaged &&
-		m_bInstructorHintHasTargetPosition && m_iInstructorHintTarget > 0 )
+	// Refresh the managed lesson adapter; map-authored hints already own
+	// independent target entries in the locator panel.
+	HUD_SyncInstructorLocatorTarget( this );
+
+	for( int locatorIndex = 0; locatorIndex < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++locatorIndex )
 	{
-		bool targetAllowed = true;
-		cl_entity_t *managedTarget = gEngfuncs.GetEntityByIndex ?
-			gEngfuncs.GetEntityByIndex( m_iInstructorHintTarget ) : NULL;
-		if( !managedTarget )
-		{
-			targetAllowed = false;
-		}
-		else
-		{
-			// GoldSrc brush entities commonly keep their network origin at
-			// (0,0,0). Match the server's VecBModelOrigin() calculation:
-			// absmin + size * 0.5 == origin + (mins + maxs) * 0.5.
-			// Non-brush entities retain their ordinary entity origin.
-			m_vecInstructorHintTargetOrigin[0] = managedTarget->origin[0];
-			m_vecInstructorHintTargetOrigin[1] = managedTarget->origin[1];
-			m_vecInstructorHintTargetOrigin[2] = managedTarget->origin[2];
-			if( managedTarget->curstate.solid == SOLID_BSP )
-			{
-				m_vecInstructorHintTargetOrigin[0] +=
-					( managedTarget->curstate.mins[0] + managedTarget->curstate.maxs[0] ) * 0.5f;
-				m_vecInstructorHintTargetOrigin[1] +=
-					( managedTarget->curstate.mins[1] + managedTarget->curstate.maxs[1] ) * 0.5f;
-				m_vecInstructorHintTargetOrigin[2] +=
-					( managedTarget->curstate.mins[2] + managedTarget->curstate.maxs[2] ) * 0.5f;
-			}
+		CInstructorLocatorTarget *target = m_InstructorLocatorPanel.GetTargetAt( locatorIndex );
+		if( !target || !target->m_isActive )
+			continue;
 
-			if( ( managedTarget->curstate.effects & EF_NODRAW ) &&
-				!( m_iInstructorHintFlags & 0x00010000 ) )
+		if( target->m_bManaged && !target->m_bOriginInScreenspace )
+		{
+			bool targetAllowed = true;
+			cl_entity_t *managedTarget = gEngfuncs.GetEntityByIndex ?
+				gEngfuncs.GetEntityByIndex( target->m_iEntityIndex ) : NULL;
+			if( !managedTarget )
 				targetAllowed = false;
-
-			if( targetAllowed && m_flInstructorHintRange > 0.0f && gEngfuncs.GetLocalPlayer )
+			else
 			{
-				cl_entity_t *localPlayer = gEngfuncs.GetLocalPlayer();
-				if( localPlayer )
+				target->m_vecOrigin[0] = managedTarget->origin[0];
+				target->m_vecOrigin[1] = managedTarget->origin[1];
+				target->m_vecOrigin[2] = managedTarget->origin[2];
+				if( managedTarget->curstate.solid == SOLID_BSP )
 				{
-					const float dx = m_vecInstructorHintTargetOrigin[0] - localPlayer->origin[0];
-					const float dy = m_vecInstructorHintTargetOrigin[1] - localPlayer->origin[1];
-					const float dz = m_vecInstructorHintTargetOrigin[2] - localPlayer->origin[2];
-					const float distance = sqrtf( dx * dx + dy * dy + dz * dz );
-					if( distance > m_flInstructorHintRange )
-						targetAllowed = false;
+					target->m_vecOrigin[0] +=
+						( managedTarget->curstate.mins[0] + managedTarget->curstate.maxs[0] ) * 0.5f;
+					target->m_vecOrigin[1] +=
+						( managedTarget->curstate.mins[1] + managedTarget->curstate.maxs[1] ) * 0.5f;
+					target->m_vecOrigin[2] +=
+						( managedTarget->curstate.mins[2] + managedTarget->curstate.maxs[2] ) * 0.5f;
+				}
+				if( ( managedTarget->curstate.effects & EF_NODRAW ) &&
+					!( target->m_iEffectsFlags & 0x00010000 ) )
+					targetAllowed = false;
+				if( targetAllowed && target->m_flRange > 0.0f && gEngfuncs.GetLocalPlayer )
+				{
+					cl_entity_t *localPlayer = gEngfuncs.GetLocalPlayer();
+					if( localPlayer )
+					{
+						const float dx = target->m_vecOrigin[0] - localPlayer->origin[0];
+						const float dy = target->m_vecOrigin[1] - localPlayer->origin[1];
+						const float dz = target->m_vecOrigin[2] - localPlayer->origin[2];
+						if( sqrtf( dx * dx + dy * dy + dz * dz ) > target->m_flRange )
+							targetAllowed = false;
+					}
 				}
 			}
+			if( targetAllowed && flTime >= target->m_flNextOcclusionTest )
+			{
+				target->m_bOccluded = HUD_IsInstructorHintOccluded(
+					target->m_vecOrigin, target->m_iEntityIndex );
+				target->m_flNextOcclusionTest = flTime + 0.25f;
+			}
+			const bool forceCaption = ( target->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
+			target->SetVisible( targetAllowed &&
+				( !target->m_bOccluded || forceCaption ), flTime, 0.18f );
 		}
-		m_bInstructorHintTargetVisible = targetAllowed;
+
+		if( target->m_flEndTime > 0.0f && flTime >= target->m_flEndTime )
+		{
+			m_InstructorLocatorPanel.RemoveTarget( target->m_serialNumber, flTime, 0.3f );
+			target->m_flEndTime = 0.0f;
+		}
 	}
 
-	// Match Source's 0.25-second occlusion cadence. Only client-managed lessons
-	// need this trace; env_instructor_hint already sends its server-side result.
-	if( m_bInstructorHintActive && m_bInstructorHintManaged &&
-		m_bInstructorHintHasTargetPosition && m_bInstructorHintTargetVisible &&
-		m_iInstructorHintTarget > 0 && flTime >= m_flInstructorHintNextOcclusionTest )
-	{
-		m_bInstructorHintOccluded = HUD_IsInstructorHintOccluded(
-			m_vecInstructorHintTargetOrigin, m_iInstructorHintTarget );
-		m_flInstructorHintNextOcclusionTest = flTime + 0.25f;
-	}
-
-	// Refresh the locator model, then advance its transition and effect state once
-	// for this frame. Drawing code consumes the cached results only.
-	HUD_SyncInstructorLocatorTarget( this );
+	// Advance animations once and lay out all world locators before drawing.
 	m_InstructorLocatorPanel.UpdatePresentation( m_flTime );
+	for( int locatorIndex = 0; locatorIndex < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++locatorIndex )
+	{
+		CInstructorLocatorTarget *target = m_InstructorLocatorPanel.GetTargetAt( locatorIndex );
+		if( !target || !target->m_isActive || !target->ShouldDraw() ||
+			target->m_bOriginInScreenspace )
+			continue;
+
+		float screenX = 0.0f, screenY = 0.0f;
+		bool behind = false;
+		float worldOrigin[3] =
+		{
+			target->m_vecOrigin[0],
+			target->m_vecOrigin[1],
+			target->m_vecOrigin[2] + target->m_flIconOffset
+		};
+		if( HUD_GetInstructorHintScreenPosition( worldOrigin, &screenX, &screenY, &behind ) )
+		{
+			target->UpdateProjection( screenX, screenY, behind,
+				ScreenWidth, ScreenHeight, 24 );
+			target->CalculateEdgePosition( ScreenWidth, ScreenHeight, 56 );
+
+			HSPRITE icon = target->m_bOnscreen ?
+				(HSPRITE)target->m_hOnscreenSprite : (HSPRITE)target->m_hOffscreenSprite;
+			if( target->m_iHintId == -1 )
+				icon = target->m_iIconMode == 2 ? m_hInstructorHintHoldSprite :
+					( target->m_iIconMode == 1 ? m_hInstructorHintMoveSprite : 0 );
+			if( icon )
+			{
+				const int iconWidth = SPR_Width( icon, 0 );
+				const int iconHeight = SPR_Height( icon, 0 );
+				if( iconWidth > 0 && iconHeight > 0 && iconWidth <= 64 && iconHeight <= 64 )
+				{
+					target->m_wide = (int)( iconWidth * 1.2f + 0.5f );
+					target->m_tall = (int)( iconHeight * 1.2f + 0.5f );
+				}
+			}
+			if( ( stricmp( target->m_szOnscreenIcon, "use_binding" ) == 0 ) ||
+				( stricmp( target->m_szOffscreenIcon, "use_binding" ) == 0 ) )
+				target->m_wide = target->m_tall = Q_max( target->m_wide, (int)( ScreenWidth * 0.04f ) );
+			const int captionFootprint = DrawHudStringLen( target->m_szCaption ) + 24;
+			if( target->m_wide < captionFootprint )
+				target->m_wide = Q_min( Q_max( 40, captionFootprint ), Q_max( 40, ScreenWidth / 2 ) );
+			if( target->m_tall < 48 )
+				target->m_tall = 48;
+		}
+	}
+	m_InstructorLocatorPanel.ResolveDecluttering( ScreenWidth, ScreenHeight, 56, 8 );
 
 	m_flTimeDelta = (double)( m_flTime - m_fOldTime );
 	static float m_flShotTime = 0;
@@ -899,8 +946,9 @@ int CHud::Redraw( float flTime, int intermission )
 
 	// Source-style instructor hint presentation now consumes the locator model.
 	// The PS2 world-space bracket remains a separate, unchanged HUD element.
-	CInstructorLocatorTarget *locatorTarget =
-		m_InstructorLocatorPanel.GetTargetFromHandle( m_iInstructorLocatorTargetHandle );
+	for( int locatorIndex = 0; locatorIndex < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++locatorIndex )
+	{
+	CInstructorLocatorTarget *locatorTarget = m_InstructorLocatorPanel.GetTargetAt( locatorIndex );
 	if( locatorTarget && locatorTarget->ShouldDraw() &&
 		( !locatorTarget->m_bOccluded ||
 			( locatorTarget->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) ||
@@ -908,30 +956,10 @@ int CHud::Redraw( float flTime, int intermission )
 		!intermission && m_pCvarDraw && m_pCvarDraw->value &&
 		!( m_iHideHUDDisplay & HIDEHUD_ALL ) )
 	{
-		if( m_flInstructorHintEndTime > 0.0f && flTime >= m_flInstructorHintEndTime )
+		if( locatorTarget->m_flEndTime > 0.0f && flTime >= locatorTarget->m_flEndTime )
 		{
-			m_bInstructorHintActive = false;
-			m_iInstructorHintId = 0;
-			m_iInstructorHintTarget = 0;
-			m_bInstructorHintHasTargetPosition = false;
-			m_bInstructorHintTargetVisible = false;
-			m_bInstructorHintOccluded = false;
-			m_vecInstructorHintTargetOrigin[0] = 0.0f;
-			m_vecInstructorHintTargetOrigin[1] = 0.0f;
-			m_vecInstructorHintTargetOrigin[2] = 0.0f;
-			m_flInstructorHintEndTime = 0.0f;
-			m_flInstructorHintRange = 0.0f;
-			m_flInstructorHintIconOffset = 0.0f;
-			m_bInstructorHintManaged = false;
-			m_flInstructorManagedVisibleSince = 0.0f;
-			m_iInstructorHintIconMode = 0;
-			m_iInstructorHintFlags = 0;
-			m_hInstructorHintOnscreenSprite = 0;
-			m_hInstructorHintOffscreenSprite = 0;
-			m_szInstructorHintIconOnscreen[0] = '\0';
-			m_szInstructorHintIconOffscreen[0] = '\0';
-			m_szInstructorHintCaption[0] = '\0';
-			m_szInstructorHintBinding[0] = '\0';
+			m_InstructorLocatorPanel.RemoveTarget( locatorTarget->m_serialNumber, flTime, 0.3f );
+			locatorTarget->m_flEndTime = 0.0f;
 		}
 		else
 		{
@@ -983,19 +1011,7 @@ int CHud::Redraw( float flTime, int intermission )
 			int sourceBindingIconWidth = 0;
 			if( sourceBindingIcon )
 			{
-				HUD_UpdateInstructorBindingChoices( this, flTime );
-				// Binding cycling is presentation state owned by the locator target.
-				locatorTarget->m_iBindingChoicesCount = m_iInstructorHintBindingChoicesCount;
-				if( locatorTarget->m_iBindingChoicesCount > MAX_INSTRUCTOR_LOCATOR_BINDINGS )
-					locatorTarget->m_iBindingChoicesCount = MAX_INSTRUCTOR_LOCATOR_BINDINGS;
-				locatorTarget->m_iBindingTick = m_iInstructorHintBindingTick;
-				locatorTarget->m_flNextBindingTick = m_flInstructorHintNextBindingTick;
-				for( int i = 0; i < locatorTarget->m_iBindingChoicesCount; ++i )
-				{
-					strncpy( locatorTarget->m_szBindingChoices[i], m_szInstructorHintBindingChoices[i],
-						sizeof( locatorTarget->m_szBindingChoices[i] ) - 1 );
-					locatorTarget->m_szBindingChoices[i][sizeof( locatorTarget->m_szBindingChoices[i] ) - 1] = '\0';
-				}
+				HUD_UpdateInstructorBindingChoices( locatorTarget, flTime );
 				const char *keyName = locatorTarget->m_iBindingChoicesCount > 0 ?
 					locatorTarget->m_szBindingChoices[locatorTarget->m_iBindingTick % locatorTarget->m_iBindingChoicesCount] : NULL;
 				instructorBindingSprite = HUD_GetInstructorBindingImage( this, keyName,
@@ -1006,28 +1022,22 @@ int CHud::Redraw( float flTime, int intermission )
 
 			// Source counts a lesson only after its icon has remained on-screen
 			// for at least 1.5 seconds, rather than when it is merely opened.
-			if( locatorTarget->m_bManaged && !m_bInstructorManagedDisplayCounted )
+			if( locatorTarget->m_bManaged && !locatorTarget->m_bManagedDisplayCounted )
 			{
 				const bool countsAsVisible = locatorTarget->m_bOriginInScreenspace ||
 					( hasTarget && !targetOffscreen );
 				if( countsAsVisible )
 				{
 					if( locatorTarget->m_flVisibleSince <= 0.0f )
-					{
 						locatorTarget->m_flVisibleSince = flTime;
-						m_flInstructorManagedVisibleSince = flTime;
-					}
 					else if( flTime - locatorTarget->m_flVisibleSince >= 1.5f )
 					{
-						GameInstructor_MarkDisplayed( m_szInstructorHintName );
-						m_bInstructorManagedDisplayCounted = true;
+						GameInstructor_MarkDisplayed( locatorTarget->m_szName );
+						locatorTarget->m_bManagedDisplayCounted = true;
 					}
 				}
 				else
-				{
 					locatorTarget->m_flVisibleSince = 0.0f;
-					m_flInstructorManagedVisibleSince = 0.0f;
-				}
 			}
 
 
@@ -1051,8 +1061,6 @@ int CHud::Redraw( float flTime, int intermission )
 					// Projection and edge placement belong to the target model.
 					// The renderer adds only transient pulse/shake offsets.
 					locatorTarget->CalculateEdgePosition( ScreenWidth, ScreenHeight, locatorEdgeMargin );
-					m_InstructorLocatorPanel.ResolveDecluttering(
-						ScreenWidth, ScreenHeight, locatorEdgeMargin, 8 );
 					float locatorX = (float)( locatorTarget->m_iconX + locatorTarget->m_offsetX ) +
 						locatorTarget->m_flShakeX;
 					float locatorY = (float)( locatorTarget->m_iconY + locatorTarget->m_offsetY ) +
@@ -1085,7 +1093,8 @@ int CHud::Redraw( float flTime, int intermission )
 					}
 
 					HSPRITE locatorSprite = sourceBindingIcon ? instructorBindingSprite :
-						( targetOffscreen ? m_hInstructorHintOffscreenSprite : m_hInstructorHintOnscreenSprite );
+						( targetOffscreen ? (HSPRITE)locatorTarget->m_hOffscreenSprite :
+							(HSPRITE)locatorTarget->m_hOnscreenSprite );
 					if( !sourceBindingIcon && locatorTarget->m_iHintId == -1 )
 					{
 						locatorSprite = 0;
@@ -1408,7 +1417,7 @@ int CHud::Redraw( float flTime, int intermission )
 			// Source has distinct icon_onscreen and icon_offscreen resources.
 			// Automatic pushable guidance retains its own move/hold fallback sprites.
 			HSPRITE hintIcon = targetOffscreen ?
-				m_hInstructorHintOffscreenSprite : m_hInstructorHintOnscreenSprite;
+				(HSPRITE)locatorTarget->m_hOffscreenSprite : (HSPRITE)locatorTarget->m_hOnscreenSprite;
 			if( locatorTarget->m_iHintId == -1 )
 			{
 				hintIcon = 0;
@@ -1682,6 +1691,8 @@ int CHud::Redraw( float flTime, int intermission )
 			}
 			}
 		}
+	}
+
 	}
 
 	// are we in demo mode? do we need to draw the logo in the top corner?

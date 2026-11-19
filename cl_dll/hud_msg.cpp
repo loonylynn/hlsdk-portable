@@ -101,12 +101,22 @@ void HUD_SyncInstructorLocatorTarget( CHud *hud )
 		return;
 
 	target->Update( hud->m_InstructorLocatorPanel.GetFrameCount() );
+	const bool managedLessonChanged = !target->m_bManaged ||
+		strcmp( target->m_szName, hud->m_szInstructorHintName ) != 0;
 	target->m_iEntityIndex = hud->m_iInstructorHintTarget;
 	target->m_bFixedPosition = hud->m_bInstructorHintFixedPosition;
 	target->m_iHintId = hud->m_iInstructorHintId;
 	target->m_iIconMode = hud->m_iInstructorHintIconMode;
 	target->m_bManaged = hud->m_bInstructorHintManaged;
-	target->m_flVisibleSince = hud->m_flInstructorManagedVisibleSince;
+	if( managedLessonChanged )
+	{
+		target->m_flVisibleSince = 0.0f;
+		target->m_bManagedDisplayCounted = false;
+		target->m_iBindingChoicesCount = 0;
+		target->m_iBindingTick = 0;
+		target->m_flNextBindingTick = 0.0f;
+		target->m_szBindingCache[0] = '\0';
+	}
 	target->m_flIconOffset = hud->m_flInstructorHintIconOffset;
 	target->m_bOriginInScreenspace =
 		hud->m_bInstructorHintFixedPosition || !hud->m_bInstructorHintHasTargetPosition;
@@ -133,18 +143,6 @@ void HUD_SyncInstructorLocatorTarget( CHud *hud )
 	target->m_flRange = hud->m_flInstructorHintRange;
 	target->SetCaptionColor( hud->m_iInstructorHintColorR,
 		hud->m_iInstructorHintColorG, hud->m_iInstructorHintColorB );
-	target->m_iBindingChoicesCount = hud->m_iInstructorHintBindingChoicesCount;
-	if( target->m_iBindingChoicesCount < 0 ) target->m_iBindingChoicesCount = 0;
-	if( target->m_iBindingChoicesCount > MAX_INSTRUCTOR_LOCATOR_BINDINGS )
-		target->m_iBindingChoicesCount = MAX_INSTRUCTOR_LOCATOR_BINDINGS;
-	target->m_iBindingTick = hud->m_iInstructorHintBindingTick;
-	target->m_flNextBindingTick = hud->m_flInstructorHintNextBindingTick;
-	for( int i = 0; i < target->m_iBindingChoicesCount; ++i )
-	{
-		strncpy( target->m_szBindingChoices[i], hud->m_szInstructorHintBindingChoices[i],
-			sizeof( target->m_szBindingChoices[i] ) - 1 );
-		target->m_szBindingChoices[i][sizeof( target->m_szBindingChoices[i] ) - 1] = '\0';
-	}
 	target->SetCaptionText( hud->m_szInstructorHintCaption );
 	target->SetBinding( hud->m_szInstructorHintBinding );
 	target->SetOnscreenIconName( hud->m_szInstructorHintIconOnscreen );

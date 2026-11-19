@@ -45,7 +45,11 @@ The move/hold icon is now selected from actual pushable velocity changes in `CPu
 
 ## Deliberate GoldSrc differences
 
-- This is a single active HUD panel, not the full Source `C_GameInstructor` lesson manager with multiple concurrent lessons, priorities, display counters, scripted prerequisites, sounds, or persistence.
+- Up to ten map-authored `env_instructor_hint` instances can be displayed at
+  the same time, each with independent lifecycle and presentation state. The
+  separate scripted `C_GameInstructor` manager still selects one prioritized
+  managed lesson for its HUD slot; concurrent managed-lesson presentation is
+  not part of this stage.
 - Target-backed hints use a projected world-space icon and a small caption tag, with an edge marker when the target is off-screen. Static hints keep a screen-space prompt. The HUD uses GoldSrc sprite files and a custom user message rather than Source game events, VGUI locator panels, and VTF materials.
 - Locator pulse/alpha/shake flags are approximated with GoldSrc HUD drawing; the halo and movement are not pixel-identical to Source's animation curves, and Source's VGUI layout/decluttering behavior is not reproduced.
 - Controller-specific button localization and engine binding lookup are not included; `hint_binding` is drawn as literal text.
