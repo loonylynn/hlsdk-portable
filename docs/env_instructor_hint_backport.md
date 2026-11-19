@@ -26,7 +26,7 @@ This is a GoldSrc/Xash3D single-player port of the public Source `CEnvInstructor
 | `hint_local_player_only` | Retained for map compatibility; the project is single-player, so there is only one recipient. |
 | `hint_replace_key` | Retained in the hint payload. The current single-panel HUD replaces its currently displayed hint when another hint starts. |
 
-Icon identifiers map to optional GoldSrc sprites under `valve/sprites/`: for example, `hint_icon_onscreen "icon_interact"` loads `sprites/icon_interact.spr`. Do not include the directory or `.spr` extension in the identifier. Source's original VGUI/VTF icon assets are not GoldSrc sprites, so the project must provide or convert the artwork. Missing sprites fall back to a text/arrow presentation.
+Icon identifiers map to optional GoldSrc sprites under `valve/sprites/`: for example, `hint_icon_onscreen "icon_interact"` loads `sprites/icon_interact.spr`. Do not include the directory or `.spr` extension in the identifier. Source's original VGUI/VTF icon assets are not GoldSrc sprites, so the project must provide or convert the artwork. Missing sprites fall back to a text/arrow presentation. For a key prompt that changes to the interaction symbol outside the view, set `hint_icon_onscreen "use_binding"`, `hint_icon_offscreen "icon_interact"`, and `hint_binding "+use"`. The off-screen icon is selected when the target leaves the view; the 720-unit distance cutoff does not itself trigger that switch.
 
 ## Activation
 
@@ -55,7 +55,7 @@ The player's usable-object scan now displays an automatic `Interact` locator wit
   resolve through the locator's `use_binding` path; stock FWGS Xash3D falls back
   to the first matching key because its client API lacks alternate-key lookup.
 - The existing PS2 brackets remain a separate world-space interaction marker and are not replaced by the Source locator. The automatic `Interact` keycap is a separate locator attached to the same currently focused usable entity.
-- Sprite-backed keycaps draw the resolved key label as black alpha-blended glyphs, using the same opacity as the key image. This uses the appended Xash3D `pfnSPR_SetAlpha` client callback; rebuild the paired `loonylynn/xash3d-fwgs` engine and this SDK before using the synchronized fade. An older engine falls back to RGB modulation and cannot provide the same alpha match.
+- Sprite-backed keycaps draw the resolved key label as black alpha-blended glyphs, using the same opacity as the key image. This uses the appended Xash3D `pfnSPR_SetAlpha` client callback. The paired `loonylynn/xash3d-fwgs` engine and this SDK must be rebuilt together; do not use the updated client DLL with an engine that lacks the callback.
 
 The server entity's keyvalue names and base flag semantics are aligned with the publicly available Valve `CEnvInstructorHint` implementation. See the source comments in `dlls/player.cpp` for the Source-compatible flag values and field mapping.
 
