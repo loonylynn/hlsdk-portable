@@ -1899,10 +1899,7 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 	if (!lesson)
 		return;
 	if (!lesson->m_bVisible || (!lesson->m_bNoIconTarget && !lesson->m_bFixedPosition && lesson->m_iIconTarget <= 0))
-	{
-		HideManagedLesson();
 		return;
-	}
 
 	int r, g, b;
 	ParseColor(lesson->m_CaptionColor, r, g, b);
@@ -1923,20 +1920,10 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 		m_flNextStartSoundTime = now + 4.0f;
 	}
 
-	// DisplayLesson is called every HUD frame. Log only when the selected
-	// opportunity changes, rather than flooding the console at frame rate.
-	if (m_ManagedLessonName != lesson->m_Name)
-	{
-		if (InstructorVerboseEnabled() && gEngfuncs.Con_Printf)
-			gEngfuncs.Con_Printf("[GameInstructor] Displaying lesson '%s' (target %d, fixed %d, no-target %d).\n",
-				lesson->m_Name.c_str(), lesson->m_iIconTarget,
-				lesson->m_bFixedPosition ? 1 : 0, lesson->m_bNoIconTarget ? 1 : 0);
-		m_ManagedLessonName = lesson->m_Name;
-	}
 
 	HUD_SetManagedInstructorHint(lesson->m_Name.c_str(), caption,
 		lesson->m_Binding.c_str(), lesson->m_OnscreenIcon.c_str(),
-		lesson->m_OffscreenIcon.c_str(), lesson->m_iIconTarget, 0.0f,
+		lesson->m_OffscreenIcon.c_str(), lesson->m_iIconTarget, lesson->m_iPriority, 0.0f,
 		lesson->m_iFlags | (lesson->m_bNoOffscreen ? 0x00000200 : 0) |
 			(lesson->m_bAllowNodrawTarget ? 0x00010000 : 0), r, g, b, lesson->m_flRange,
 			lesson->m_flIconOffset, lesson->m_bForceCaption,
@@ -1946,8 +1933,7 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 
 void C_GameInstructor::HideManagedLesson()
 {
-	if (m_bManagedLessonVisible)
-		HUD_ClearManagedInstructorHint();
+	HUD_ClearManagedInstructorHint();
 	m_bManagedLessonVisible = false;
 	m_ManagedLessonName.clear();
 }
@@ -1983,9 +1969,12 @@ void C_GameInstructor::Update(float now)
 		m_Lessons[i]->m_bStarted = false;
 
 	int currentPriority = 0;
-	CScriptedIconLesson *display = NULL;
+	int displayPriority = -2147483647;
+	CScriptedIconLesson *displayLessons[MAX_INSTRUCTOR_LOCATOR_TARGETS];
+	int displayCount = 0;
 
-	// Run the Source priority/instance arbitration over every open opportunity.
+	// Preserve Source's instance/priority arbitration, but retain every eligible
+	// lesson at the winning presentation priority instead of one global HUD slot.
 	for (int i = (int)m_OpenOpportunities.size() - 1; i >= 0; --i)
 	{
 		CScriptedIconLesson *lesson = m_OpenOpportunities[(size_t)i];
@@ -2006,10 +1995,16 @@ void C_GameInstructor::Update(float now)
 			if (lesson->IsInstructing() || learned)
 			{
 				root->m_bStarted = true;
-				if (!display || lesson->m_iPriority >= display->m_iPriority)
+				if (!learned && shouldDisplay)
 				{
-					if (!learned && shouldDisplay)
-						display = lesson;
+					if (lesson->m_iPriority > displayPriority)
+					{
+						displayPriority = lesson->m_iPriority;
+						displayCount = 0;
+					}
+					if (lesson->m_iPriority == displayPriority &&
+						displayCount < MAX_INSTRUCTOR_LOCATOR_TARGETS)
+						displayLessons[displayCount++] = lesson;
 				}
 				if (lesson->m_iPriority > currentPriority && lesson->m_iPriority != 0)
 					currentPriority = lesson->m_iPriority;
@@ -2022,10 +2017,18 @@ void C_GameInstructor::Update(float now)
 	}
 
 	m_iCurrentPriority = currentPriority;
-	if (display)
-		DisplayLesson(display, now);
+	if (displayCount > 0)
+	{
+		for (int i = 0; i < displayCount; ++i)
+			DisplayLesson(displayLessons[i], now);
+		m_bManagedLessonVisible = true;
+		HUD_PruneManagedInstructorHints();
+	}
 	else
+	{
 		HideManagedLesson();
+	}
+
 }
 
 void GameInstructor_Init()
