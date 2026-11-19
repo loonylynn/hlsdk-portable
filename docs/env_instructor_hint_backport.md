@@ -37,11 +37,11 @@ Use the entity like a GoldSrc `func_button` target:
 - `USE_SET`: show when the value is greater than 0.5, otherwise end.
 - `USE_TOGGLE`: toggle the current state.
 
-The entity ID owns the active instructor presentation. A map hint takes priority over the automatic `func_pushable` prompt. Hints are ended when their activator dies or their timeout expires.
+The entity ID owns the active map-authored instructor presentation. Map hints take priority over the automatic player-use prompt. An `env_instructor_hint` still requires its `Use` input to be fired; proximity alone does not activate that map entity. Hints are ended when their activator dies or their timeout expires.
 
 ## Pushable action prompt
 
-The move/hold icon is now selected from actual pushable velocity changes in `CPushable::Move`, not merely from the player holding USE. A successful `push` impulse selects move; a successful pull impulse selects hold. The action state decays back to the move prompt after 0.4 seconds without another successful impulse. The optional action art remains `sprites/icon_move.spr` and `sprites/icon_hold.spr`.
+The player's usable-object scan now displays an automatic `Interact` locator with the resolved `+use` keycap for other visible use-capable entities before the player presses USE. It follows the same 0.2-second scan that drives the PS2 brackets: the target must be within `PLAYER_SEARCH_RADIUS`, inside the forward cone, and unobstructed. The hint disappears when the target leaves that scan. This automatic prompt is code-driven and does not require a map-authored instructor script. Pushables retain their separate move/hold prompt, selected from actual velocity changes in `CPushable::Move`; the action state decays back to the move prompt after 0.4 seconds without another successful impulse.
 
 ## Deliberate GoldSrc differences
 
@@ -55,7 +55,8 @@ The move/hold icon is now selected from actual pushable velocity changes in `CPu
 - Controller-specific button localization is not included. Keyboard bindings can
   resolve through the locator's `use_binding` path; stock FWGS Xash3D falls back
   to the first matching key because its client API lacks alternate-key lookup.
-- The existing PS2 brackets remain a separate world-space interaction marker and are not replaced by the Source locator.
+- The existing PS2 brackets remain a separate world-space interaction marker and are not replaced by the Source locator. The automatic `Interact` keycap is a separate locator attached to the same currently focused usable entity.
+- Sprite-backed keycaps draw the resolved key label in dark ink for contrast against the light keycap face.
 
 The server entity's keyvalue names and base flag semantics are aligned with the publicly available Valve `CEnvInstructorHint` implementation. See the source comments in `dlls/player.cpp` for the Source-compatible flag values and field mapping.
 
