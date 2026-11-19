@@ -2571,8 +2571,8 @@ void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject )
 			WRITE_STRING( "Interact" );
 			WRITE_STRING( "+use" );
 			WRITE_BYTE( 0 );
-			WRITE_STRING( "use_binding" );
-			WRITE_STRING( "use_binding" );
+			WRITE_STRING( "use_binding" ); // on-screen: show the resolved +use key
+			WRITE_STRING( "icon_interact" ); // off-screen: switch to Source's interaction icon
 			WRITE_BYTE( 255 );
 			WRITE_BYTE( 255 );
 			WRITE_BYTE( 255 );
