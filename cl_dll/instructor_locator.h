@@ -47,6 +47,7 @@ public:
 	int m_iEntityIndex;
 	bool m_bFixedPosition;
 	int m_iHintId;
+	int m_iPriority; // managed lesson priority; map-authored hints default to zero
 	int m_iIconMode;
 	bool m_bManaged;
 	float m_flVisibleSince;
