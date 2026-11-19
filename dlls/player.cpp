@@ -2390,20 +2390,23 @@ void CBasePlayer::ClearUseableHighlight( void )
 }
 
 // The client HUD already understands the same show/update/end packet format
-// used by env_instructor_hint. Reserve a negative hint ID for this automatic
-// single-player prompt; real env_instructor_hint entity indices are positive.
+// used by env_instructor_hint. Reserve negative IDs for automatic single-player
+// prompts; real env_instructor_hint entity indices are positive.
 void CBasePlayer::ClearPushableInstructorHint( void )
 {
 	if( m_bUseableInstructorHintActive )
 	{
+		const int hintId = m_iUseableInstructorHintId != 0 ?
+			m_iUseableInstructorHintId : -1;
 		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pev );
 			WRITE_BYTE( 0 );
-			WRITE_SHORT( -1 );
+			WRITE_SHORT( hintId );
 		MESSAGE_END();
 	}
 
 	m_bUseableInstructorHintActive = FALSE;
 	m_iUseableInstructorHintTarget = 0;
+	m_iUseableInstructorHintId = 0;
 	m_iUseableInstructorHintIconMode = 1;
 	m_flUseableInstructorHintActionTime = 0.0f;
 }
@@ -2413,6 +2416,7 @@ void CBasePlayer::ClearPushableInstructorHint( void )
 void CBasePlayer::SetPushableInstructorHintAction( CBaseEntity *pObject, int iconMode )
 {
 	if( !pObject || !m_bUseableInstructorHintActive ||
+		m_iUseableInstructorHintId != -1 ||
 		m_iUseableInstructorHintTarget != ENTINDEX( pObject->edict() ) )
 		return;
 
@@ -2461,12 +2465,14 @@ void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 	const int targetIndex = ENTINDEX( pObject->edict() );
 	const Vector targetOrigin = InstructorHintTargetOrigin( pObject );
 
-	if( !m_bUseableInstructorHintActive || m_iUseableInstructorHintTarget != targetIndex )
+	if( !m_bUseableInstructorHintActive || m_iUseableInstructorHintTarget != targetIndex ||
+		m_iUseableInstructorHintId != -1 )
 	{
 		ClearPushableInstructorHint();
 		m_iUseableInstructorHintIconMode = 1;
 		m_flUseableInstructorHintActionTime = 0.0f;
 	}
+	m_iUseableInstructorHintId = -1;
 
 	const int iconMode = ( m_flUseableInstructorHintActionTime > gpGlobals->time ) ?
 		m_iUseableInstructorHintIconMode : 1;
@@ -2518,6 +2524,86 @@ void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 		WRITE_BYTE( 1 );
 		WRITE_STRING( caption );
 		WRITE_STRING( binding );
+	MESSAGE_END();
+}
+
+// Generic interaction prompt for the other FCAP_USE-style targets found by
+// UpdateUseableHighlight. This is shown before IN_USE is pressed, so its
+// keycap teaches the player which binding will activate the focused object.
+void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject )
+{
+	if( m_iActiveInstructorHintId != 0 )
+	{
+		ClearPushableInstructorHint();
+		return;
+	}
+
+	if( !pObject )
+	{
+		ClearPushableInstructorHint();
+		return;
+	}
+
+	if( FClassnameIs( pObject->pev, "func_pushable" ) )
+	{
+		UpdatePushableInstructorHint( pObject );
+		return;
+	}
+
+	const int targetIndex = ENTINDEX( pObject->edict() );
+	const Vector targetOrigin = InstructorHintTargetOrigin( pObject );
+
+	if( !m_bUseableInstructorHintActive ||
+		m_iUseableInstructorHintTarget != targetIndex ||
+		m_iUseableInstructorHintId != -2 )
+	{
+		ClearPushableInstructorHint();
+		m_iUseableInstructorHintId = -2;
+
+		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pev );
+			WRITE_BYTE( 1 ); // create/show hint
+			WRITE_SHORT( -2 ); // automatic generic usable-object prompt
+			WRITE_SHORT( targetIndex );
+			WRITE_SHORT( 0 ); // no timeout; the use-target scan owns its lifetime
+			WRITE_COORD( targetOrigin.x );
+			WRITE_COORD( targetOrigin.y );
+			WRITE_COORD( targetOrigin.z );
+			WRITE_STRING( "Interact" );
+			WRITE_STRING( "+use" );
+			WRITE_BYTE( 0 );
+			WRITE_STRING( "use_binding" );
+			WRITE_STRING( "use_binding" );
+			WRITE_BYTE( 255 );
+			WRITE_BYTE( 255 );
+			WRITE_BYTE( 255 );
+			WRITE_SHORT( 0 );
+			WRITE_COORD( 0.0f );
+			WRITE_BYTE( 0 ); // unobstructed by the use-target scan
+			WRITE_BYTE( 1 ); // visible
+			WRITE_STRING( "automatic_use" );
+			WRITE_STRING( "automatic_use" );
+		MESSAGE_END();
+
+		m_bUseableInstructorHintActive = TRUE;
+		m_iUseableInstructorHintTarget = targetIndex;
+		m_iUseableInstructorHintId = -2;
+		m_iUseableInstructorHintIconMode = 0;
+		m_flUseableInstructorHintActionTime = 0.0f;
+		return;
+	}
+
+	MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pev );
+		WRITE_BYTE( 2 ); // update target position
+		WRITE_SHORT( -2 );
+		WRITE_SHORT( targetIndex );
+		WRITE_COORD( targetOrigin.x );
+		WRITE_COORD( targetOrigin.y );
+		WRITE_COORD( targetOrigin.z );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 0 );
+		WRITE_BYTE( 1 );
+		WRITE_STRING( "Interact" );
+		WRITE_STRING( "+use" );
 	MESSAGE_END();
 }
 
@@ -2618,7 +2704,10 @@ void CBasePlayer::UpdateUseableHighlight( void )
 	if( pClosest )
 	{
 		HighlightUseable( pClosest );
-		UpdatePushableInstructorHint( pClosest );
+		if( FClassnameIs( pClosest->pev, "func_pushable" ) )
+			UpdatePushableInstructorHint( pClosest );
+		else
+			UpdateUseableInstructorHint( pClosest );
 	}
 	else
 		ClearUseableHighlight();
@@ -4028,6 +4117,7 @@ void CBasePlayer::Spawn( void )
 	m_flNextUseableCheck = gpGlobals->time;
 	m_iActiveInstructorHintId = 0;
 	m_iUseableInstructorHintTarget = 0;
+	m_iUseableInstructorHintId = 0;
 	m_bUseableInstructorHintActive = FALSE;
 	m_iUseableInstructorHintIconMode = 1;
 	m_flUseableInstructorHintActionTime = 0.0f;
