@@ -207,12 +207,27 @@ static bool HUD_IsInstructorHintOccluded( const float *targetOrigin, int targetE
 		( trace.fraction < 1.0f && hitEntity != targetEntity );
 }
 
-// Draw a HUD locator sprite at a requested size. Xash3D's generic sprite
-// entry point stretches the source texture; texture-alpha blending allows the
-// renderer to interpolate edge coverage when linear texture filtering is active.
+// Set sprite modulation and (when supported) retain full RGB so the engine
+// can apply the requested opacity through its actual sprite alpha channel.
+static void HUD_SetInstructorLocatorSpriteColor( HSPRITE sprite,
+	int r, int g, int b, int alpha )
+{
+	if( !sprite )
+		return;
+
+	if( gEngfuncs.pfnSPR_SetAlpha )
+		SPR_Set( sprite, r, g, b );
+	else
+		SPR_Set( sprite, r * alpha / 255, g * alpha / 255, b * alpha / 255 );
+}
+
+// Draw a HUD locator sprite at a requested size. The Xash extension sets the
+// per-sprite alpha used by SPR_DrawGeneric, so its fade matches Source VGUI's
+// Color( r, g, b, alpha ) instead of simulating opacity by darkening RGB.
 static bool HUD_DrawInstructorLocatorSprite( HSPRITE sprite, int x, int y,
 	int nativeWidth, int nativeHeight, int width, int height,
-	int renderMode, bool additiveFallback, bool flipX = false, bool flipY = false )
+	int renderMode, bool additiveFallback, bool flipX = false, bool flipY = false,
+	int alpha = 255 )
 {
 	if( !sprite )
 		return false;
@@ -239,10 +254,14 @@ static bool HUD_DrawInstructorLocatorSprite( HSPRITE sprite, int x, int y,
 			drawHeight = -drawHeight;
 		}
 
+		if( gEngfuncs.pfnSPR_SetAlpha )
+			gEngfuncs.pfnSPR_SetAlpha( alpha );
 		gEngfuncs.pTriAPI->RenderMode( renderMode );
 		gEngfuncs.pfnSPR_DrawGeneric( 0, drawX, drawY,
 			NULL, 0, 0, drawWidth, drawHeight );
 		gEngfuncs.pTriAPI->RenderMode( kRenderNormal );
+		if( gEngfuncs.pfnSPR_SetAlpha )
+			gEngfuncs.pfnSPR_SetAlpha( 255 );
 		return true;
 	}
 
@@ -254,10 +273,14 @@ static bool HUD_DrawInstructorLocatorSprite( HSPRITE sprite, int x, int y,
 
 	x += ( width - nativeWidth ) / 2;
 	y += ( height - nativeHeight ) / 2;
+	if( gEngfuncs.pfnSPR_SetAlpha )
+		gEngfuncs.pfnSPR_SetAlpha( alpha );
 	if( additiveFallback )
 		SPR_DrawAdditive( 0, x, y, NULL );
 	else
 		SPR_DrawHoles( 0, x, y, NULL );
+	if( gEngfuncs.pfnSPR_SetAlpha )
+		gEngfuncs.pfnSPR_SetAlpha( 255 );
 	return true;
 }
 
@@ -695,17 +718,109 @@ static HSPRITE HUD_GetInstructorBindingImage( CHud *hud, const char *keyName,
 	return useGeneric ? hud->m_hInstructorHintKeyGenericSprite : hud->m_hInstructorHintKeyWideSprite;
 }
 
+// Compact opaque-glyph-free bitmap font for the keycap overlay. FillRGBA's
+// alpha channel matches the key sprite's alpha exactly; unlike DrawHudString,
+// this does not turn black key labels gray/white during the locator fade.
+static unsigned char HUD_InstructorKeyGlyphRow( char ch, int row )
+{
+	static const unsigned char glyphs[36][7] =
+	{
+		{ 0x0E,0x11,0x11,0x1F,0x11,0x11,0x11 }, // A
+		{ 0x1E,0x11,0x11,0x1E,0x11,0x11,0x1E }, // B
+		{ 0x0F,0x10,0x10,0x10,0x10,0x10,0x0F }, // C
+		{ 0x1E,0x11,0x11,0x11,0x11,0x11,0x1E }, // D
+		{ 0x1F,0x10,0x10,0x1E,0x10,0x10,0x1F }, // E
+		{ 0x1F,0x10,0x10,0x1E,0x10,0x10,0x10 }, // F
+		{ 0x0F,0x10,0x10,0x17,0x11,0x11,0x0F }, // G
+		{ 0x11,0x11,0x11,0x1F,0x11,0x11,0x11 }, // H
+		{ 0x0E,0x04,0x04,0x04,0x04,0x04,0x0E }, // I
+		{ 0x07,0x02,0x02,0x02,0x12,0x12,0x0C }, // J
+		{ 0x11,0x12,0x14,0x18,0x14,0x12,0x11 }, // K
+		{ 0x10,0x10,0x10,0x10,0x10,0x10,0x1F }, // L
+		{ 0x11,0x1B,0x15,0x15,0x11,0x11,0x11 }, // M
+		{ 0x11,0x19,0x15,0x13,0x11,0x11,0x11 }, // N
+		{ 0x0E,0x11,0x11,0x11,0x11,0x11,0x0E }, // O
+		{ 0x1E,0x11,0x11,0x1E,0x10,0x10,0x10 }, // P
+		{ 0x0E,0x11,0x11,0x11,0x15,0x12,0x0D }, // Q
+		{ 0x1E,0x11,0x11,0x1E,0x14,0x12,0x11 }, // R
+		{ 0x0F,0x10,0x10,0x0E,0x01,0x01,0x1E }, // S
+		{ 0x1F,0x04,0x04,0x04,0x04,0x04,0x04 }, // T
+		{ 0x11,0x11,0x11,0x11,0x11,0x11,0x0E }, // U
+		{ 0x11,0x11,0x11,0x11,0x11,0x0A,0x04 }, // V
+		{ 0x11,0x11,0x11,0x15,0x15,0x15,0x0A }, // W
+		{ 0x11,0x11,0x0A,0x04,0x0A,0x11,0x11 }, // X
+		{ 0x11,0x11,0x0A,0x04,0x04,0x04,0x04 }, // Y
+		{ 0x1F,0x01,0x02,0x04,0x08,0x10,0x1F }, // Z
+		{ 0x0E,0x11,0x13,0x15,0x19,0x11,0x0E }, // 0
+		{ 0x04,0x0C,0x04,0x04,0x04,0x04,0x0E }, // 1
+		{ 0x0E,0x11,0x01,0x02,0x04,0x08,0x1F }, // 2
+		{ 0x1E,0x01,0x01,0x0E,0x01,0x01,0x1E }, // 3
+		{ 0x02,0x06,0x0A,0x12,0x1F,0x02,0x02 }, // 4
+		{ 0x1F,0x10,0x10,0x1E,0x01,0x01,0x1E }, // 5
+		{ 0x0E,0x10,0x10,0x1E,0x11,0x11,0x0E }, // 6
+		{ 0x1F,0x01,0x02,0x04,0x08,0x08,0x08 }, // 7
+		{ 0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E }, // 8
+		{ 0x0E,0x11,0x11,0x0F,0x01,0x01,0x0E }  // 9
+	};
+
+	if( ch >= 'a' && ch <= 'z' )
+		ch = (char)( ch - 'a' + 'A' );
+	int index = -1;
+	if( ch >= 'A' && ch <= 'Z' )
+		index = ch - 'A';
+	else if( ch >= '0' && ch <= '9' )
+		index = 26 + ch - '0';
+	if( index >= 0 && index < 36 && row >= 0 && row < 7 )
+		return glyphs[index][row];
+	switch( ch )
+	{
+	case '-': return row == 3 ? 0x1F : 0x00;
+	case '+': return row == 3 ? 0x1F : ( row == 1 || row == 2 || row == 4 || row == 5 ? 0x04 : 0x00 );
+	case '/': return row == 0 ? 0x01 : ( row == 1 || row == 2 ? 0x02 :
+		( row == 3 ? 0x04 : ( row == 4 || row == 5 ? 0x08 : 0x10 ) ) );
+	case '.': return row >= 5 ? 0x0C : 0x00;
+	default: return 0x00;
+	}
+}
+
 static void HUD_DrawInstructorBindingName( int centerX, int centerY, const char *bindingName, int alpha )
 {
-	if( !bindingName || !bindingName[0] ) return;
-	const int width = gHUD.DrawHudStringLen( bindingName );
-	const int height = gHUD.m_scrinfo.iCharHeight > 0 ? gHUD.m_scrinfo.iCharHeight :
-		( gHUD.m_iFontHeight > 0 ? gHUD.m_iFontHeight : 12 );
-	const int x = centerX - width / 2 - 1;
-	const int y = centerY - height / 2 - 1;
-	int ink = ( 255 - alpha ) * 3 / 4;
-	if( ink > 190 ) ink = 190;
-	gHUD.DrawHudString( x, y, centerX + width / 2 + 4, bindingName, ink, ink, ink );
+	if( !bindingName || !bindingName[0] || alpha <= 0 )
+		return;
+
+	int length = (int)strlen( bindingName );
+	if( length > 12 )
+		length = 12;
+	const int scale = length <= 1 ? 3 : ( length <= 4 ? 2 : 1 );
+	const int advance = 6 * scale;
+	const int totalWidth = length * advance - scale;
+	const int glyphHeight = 7 * scale;
+	const int startX = centerX - totalWidth / 2;
+	const int startY = centerY - glyphHeight / 2;
+
+	for( int i = 0; i < length; ++i )
+	{
+		for( int row = 0; row < 7; ++row )
+		{
+			const unsigned char bits = HUD_InstructorKeyGlyphRow( bindingName[i], row );
+			int col = 0;
+			while( col < 5 )
+			{
+				if( !( bits & ( 1 << ( 4 - col ) ) ) )
+				{
+					++col;
+					continue;
+				}
+
+				const int first = col;
+				while( col < 5 && ( bits & ( 1 << ( 4 - col ) ) ) )
+					++col;
+				FillRGBA( startX + i * advance + first * scale,
+					startY + row * scale, ( col - first ) * scale, scale,
+					0, 0, 0, alpha );
+			}
+		}
+	}
 }
 
 // Think
@@ -1224,7 +1339,7 @@ int CHud::Redraw( float flTime, int intermission )
 					int locatorG = locatorTarget->m_iCaptionColorG;
 					int locatorB = locatorTarget->m_iCaptionColorB;
 
-					int locatorAlpha = locatorTarget->GetRenderAlpha( 220 );
+					int locatorAlpha = locatorTarget->GetRenderAlpha( 255 );
 					const int locatorTextR = locatorR * locatorAlpha / 255;
 					const int locatorTextG = locatorG * locatorAlpha / 255;
 					const int locatorTextB = locatorB * locatorAlpha / 255;
@@ -1250,10 +1365,8 @@ int CHud::Redraw( float flTime, int intermission )
 						// Keep the sprite's transparent palette pixels fully clear.
 						// Do not draw a rectangular backing/halo behind the locator.
 
-						const int spriteR = locatorR * locatorAlpha / 255;
-						const int spriteG = locatorG * locatorAlpha / 255;
-						const int spriteB = locatorB * locatorAlpha / 255;
-						SPR_Set( locatorSprite, spriteR, spriteG, spriteB );
+						HUD_SetInstructorLocatorSpriteColor( locatorSprite,
+							locatorR, locatorG, locatorB, locatorAlpha );
 						if( locatorTarget->m_iHintId == -1 )
 						{
 							HUD_DrawInstructorLocatorSprite( locatorSprite,
@@ -1261,7 +1374,7 @@ int CHud::Redraw( float flTime, int intermission )
 								markerY - locatorDrawHeight / 2,
 								locatorIconWidth, locatorIconHeight,
 								locatorDrawWidth, locatorDrawHeight,
-								kRenderTransAdd, true );
+								kRenderTransAdd, true, false, false, locatorAlpha );
 						}
 						else
 						{
@@ -1272,7 +1385,7 @@ int CHud::Redraw( float flTime, int intermission )
 								markerY - locatorDrawHeight / 2,
 								locatorIconWidth, locatorIconHeight,
 								locatorDrawWidth, locatorDrawHeight,
-								kRenderTransAlpha, false );
+								kRenderTransAlpha, false, false, false, locatorAlpha );
 						}
 					}
 					else if( targetOffscreen && !sourceBindingIcon )
@@ -1343,15 +1456,13 @@ int CHud::Redraw( float flTime, int intermission )
 						{
 							const int arrowNativeWidth = SPR_Width( arrowSprite, 0 );
 						const int arrowNativeHeight = SPR_Height( arrowSprite, 0 );
-						SPR_Set( arrowSprite,
-							locatorR * locatorAlpha / 255,
-							locatorG * locatorAlpha / 255,
-							locatorB * locatorAlpha / 255 );
+						HUD_SetInstructorLocatorSpriteColor( arrowSprite,
+							locatorR, locatorG, locatorB, locatorAlpha );
 						const bool arrowDrawn = HUD_DrawInstructorLocatorSprite(
 							arrowSprite, arrowX, arrowY,
 							arrowNativeWidth, arrowNativeHeight,
 							arrowWidth, arrowHeight, kRenderTransAlpha, false,
-							flipArrowX, flipArrowY );
+							flipArrowX, flipArrowY, locatorAlpha );
 						if( !arrowDrawn )
 						{
 							const char *arrow = locatorTarget->m_drawArrowDirection == INSTRUCTOR_LOCATOR_ARROW_LEFT ? "<" :
@@ -1476,14 +1587,13 @@ int CHud::Redraw( float flTime, int intermission )
 						if( keyNativeWidth > 0 && keyNativeHeight > 0 &&
 							keyNativeWidth <= 64 && keyNativeHeight <= 64 )
 						{
-							SPR_Set( m_hInstructorHintKeyGenericSprite,
-								locatorR * locatorAlpha / 255,
-								locatorG * locatorAlpha / 255,
-								locatorB * locatorAlpha / 255 );
+							HUD_SetInstructorLocatorSpriteColor( m_hInstructorHintKeyGenericSprite,
+								locatorR, locatorG, locatorB, locatorAlpha );
 							keySpriteDrawn = HUD_DrawInstructorLocatorSprite(
 								m_hInstructorHintKeyGenericSprite, keyX, keyY,
 								keyNativeWidth, keyNativeHeight,
-								locatorKeyWidth, keyHeight, kRenderTransAlpha, false );
+								locatorKeyWidth, keyHeight, kRenderTransAlpha, false,
+								false, false, locatorAlpha );
 						}
 						}
 						if( !keySpriteDrawn )
@@ -1492,16 +1602,17 @@ int CHud::Redraw( float flTime, int intermission )
 							FillRGBA( keyX, keyY, locatorKeyWidth, keyHeight, 12, 15, 19, locatorAlpha );
 							FillRGBA( keyX, keyY, locatorKeyWidth, 1, locatorR, locatorG, locatorB, locatorAlpha / 2 );
 						}
+						if( keySpriteDrawn )
+						HUD_DrawInstructorBindingName( keyX + locatorKeyWidth / 2,
+							keyY + keyHeight / 2, locatorBinding, locatorAlpha );
+					else
+					{
 						int keyTextX = keyX + ( locatorKeyWidth - locatorBindingWidth ) / 2;
-					if( keyTextX < keyX + 3 )
-						keyTextX = keyX + 3;
-					// The supplied keycap sprites have a light face. Keep the
-					// resolved key label black on that face, not locator-white.
-					int keyGlyphInk = keySpriteDrawn ?
-						( 16 + ( 255 - locatorAlpha ) * 3 / 4 ) : locatorTextR;
-					if( keyGlyphInk > 190 ) keyGlyphInk = 190;
-					DrawHudString( keyTextX, keyY + 4, keyX + locatorKeyWidth - 3,
-						locatorBinding, keyGlyphInk, keyGlyphInk, keyGlyphInk );
+						if( keyTextX < keyX + 3 )
+							keyTextX = keyX + 3;
+						DrawHudString( keyTextX, keyY + 4, keyX + locatorKeyWidth - 3,
+							locatorBinding, locatorTextR, locatorTextG, locatorTextB );
+					}
 						}
 					}
 
@@ -1752,8 +1863,13 @@ int CHud::Redraw( float flTime, int intermission )
 					FillRGBA( iconX - 5, iconY - 5, iconWidth + 10, iconHeight + 10, 31, 39, 52, panelAlpha );
 					FillRGBA( iconX - 5, iconY - 5, iconWidth + 10, 1, hintR, hintG, hintB, panelAlpha );
 				}
-				SPR_Set( hintIcon, hintTextR, hintTextG, hintTextB );
+				HUD_SetInstructorLocatorSpriteColor( hintIcon,
+					hintR, hintG, hintB, panelAlpha );
+				if( gEngfuncs.pfnSPR_SetAlpha )
+					gEngfuncs.pfnSPR_SetAlpha( panelAlpha );
 				SPR_DrawAdditive( 0, iconX, iconY, NULL );
+				if( gEngfuncs.pfnSPR_SetAlpha )
+					gEngfuncs.pfnSPR_SetAlpha( 255 );
 				textAreaX = iconX + iconWidth + 12;
 			}
 
@@ -1780,14 +1896,13 @@ int CHud::Redraw( float flTime, int intermission )
 						if( keyNativeWidth > 0 && keyNativeHeight > 0 &&
 							keyNativeWidth <= 64 && keyNativeHeight <= 64 )
 						{
-							SPR_Set( m_hInstructorHintKeyGenericSprite,
-								hintR * panelAlpha / 255,
-								hintG * panelAlpha / 255,
-								hintB * panelAlpha / 255 );
+							HUD_SetInstructorLocatorSpriteColor( m_hInstructorHintKeyGenericSprite,
+								hintR, hintG, hintB, panelAlpha );
 							keySpriteDrawn = HUD_DrawInstructorLocatorSprite(
 								m_hInstructorHintKeyGenericSprite, keyX, keyY,
 								keyNativeWidth, keyNativeHeight,
-								keyChipWidth, 22, kRenderTransAlpha, false );
+								keyChipWidth, 22, kRenderTransAlpha, false,
+								false, false, panelAlpha );
 						}
 					}
 					if( !keySpriteDrawn )
@@ -1796,14 +1911,17 @@ int CHud::Redraw( float flTime, int intermission )
 						FillRGBA( keyX, keyY, keyChipWidth, 1, hintR, hintG, hintB, panelAlpha );
 						FillRGBA( keyX, keyY + 21, keyChipWidth, 1, 63, 73, 89, panelAlpha );
 					}
-					int keyTextX = keyX + ( keyChipWidth - bindingWidth ) / 2;
-					if( keyTextX < keyX + 3 )
-						keyTextX = keyX + 3;
-					int keyGlyphInk = keySpriteDrawn ?
-						( 16 + ( 255 - panelAlpha ) * 3 / 4 ) : hintTextR;
-					if( keyGlyphInk > 190 ) keyGlyphInk = 190;
-					DrawHudString( keyTextX, keyY + 6, keyX + keyChipWidth - 5,
-						bindingText, keyGlyphInk, keyGlyphInk, keyGlyphInk );
+					if( keySpriteDrawn )
+						HUD_DrawInstructorBindingName( keyX + keyChipWidth / 2,
+							keyY + 11, bindingText, panelAlpha );
+					else
+					{
+						int keyTextX = keyX + ( keyChipWidth - bindingWidth ) / 2;
+						if( keyTextX < keyX + 3 )
+							keyTextX = keyX + 3;
+						DrawHudString( keyTextX, keyY + 6, keyX + keyChipWidth - 5,
+							bindingText, hintTextR, hintTextG, hintTextB );
+					}
 				}
 			}
 			else
