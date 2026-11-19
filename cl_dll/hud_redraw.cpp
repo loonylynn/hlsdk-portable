@@ -254,11 +254,9 @@ static bool HUD_DrawInstructorLocatorSprite( HSPRITE sprite, int x, int y,
 			drawHeight = -drawHeight;
 		}
 
-		// Select the TriAPI blend mode first. RenderMode can update the
-		// engine's active render state, so set the per-sprite alpha after it
-		// and immediately before submitting the quad. This keeps the sprite's
-		// fade on the same target alpha used by its caption and binding glyph.
 		gEngfuncs.pTriAPI->RenderMode( renderMode );
+		// SPR_SetAlpha controls the alpha component of the current sprite color.
+		// Set it after SPR_Set/color modulation and immediately before drawing.
 		if( gEngfuncs.pfnSPR_SetAlpha )
 			gEngfuncs.pfnSPR_SetAlpha( alpha );
 		gEngfuncs.pfnSPR_DrawGeneric( 0, drawX, drawY,
@@ -787,9 +785,9 @@ static unsigned char HUD_InstructorKeyGlyphRow( char ch, int row )
 	}
 }
 
-// Alpha-blended 5x7 text for the small instructor labels. GoldSrc's
-// VGUI2DrawCharacterAdditive API accepts RGB but no alpha, so DrawHudString
-// cannot fade in lockstep with an RGBA locator sprite. FillRGBA can.
+// Alpha-blended 5x7 glyphs used only for the black keycap label. The
+// normal GoldSrc HUD font has no alpha parameter; captions therefore retain
+// DrawHudString and use the same locator fade envelope through RGB intensity.
 static void HUD_DrawInstructorAlphaText( int x, int y, int maxX,
 	const char *text, int r, int g, int b, int alpha, int scale )
 {
@@ -824,7 +822,7 @@ static void HUD_DrawInstructorAlphaText( int x, int y, int maxX,
 				if( drawX + drawWidth > maxX )
 					drawWidth = maxX - drawX;
 				if( drawWidth > 0 )
-					FillRGBA( drawX, y + row * scale, drawWidth, scale,
+					FillRGBABlend( drawX, y + row * scale, drawWidth, scale,
 						r, g, b, alpha );
 			}
 		}
@@ -1675,21 +1673,12 @@ int CHud::Redraw( float flTime, int intermission )
 							if( captionX < 8 ) captionX = 8;
 							if( captionX + sourceCaptionWidth > ScreenWidth - 8 )
 								captionX = Q_max( 8, ScreenWidth - sourceCaptionWidth - 8 );
-							if( locatorTarget->m_iHintId == -2 )
-							{
-								// The automatic Interact prompt must fade with
-								// the keycap and icon. Draw it through the same
-								// RGBA glyph path instead of RGB-darkening it.
-								HUD_DrawInstructorAlphaText( captionX, markerY - 3,
-									ScreenWidth - 8, locatorTarget->m_szCaption,
-									locatorR, locatorG, locatorB, locatorAlpha, 1 );
-							}
-							else
-							{
-								DrawHudString( captionX, markerY - fontHeight / 2 - 1,
-									Q_min( ScreenWidth - 8, captionX + sourceCaptionWidth + 4 ),
-									locatorTarget->m_szCaption, locatorTextR, locatorTextG, locatorTextB );
-							}
+							// Keep the standard Half-Life HUD font. DrawHudString is
+							// RGB-only, so scale its color with this target's exact fade
+							// envelope; the sprite and black key glyph use that same alpha.
+							DrawHudString( captionX, markerY - fontHeight / 2 - 1,
+								Q_min( ScreenWidth - 8, captionX + sourceCaptionWidth + 4 ),
+								locatorTarget->m_szCaption, locatorTextR, locatorTextG, locatorTextB );
 						}
 					}
 				}
