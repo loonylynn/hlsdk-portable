@@ -240,7 +240,7 @@ explicit overrides.
 
 ## Native Source-style locator target pool (second transplant stage)
 
-The first locator-panel transplant added GoldSrc-native CInstructorLocatorTarget and CInstructorLocatorPanel classes based on Source's CLocatorTarget and CLocatorPanel. The target model carries independent world/screen origins, entity identity, visibility and occlusion state, caption/binding/icon names, effect flags, fade/lerp/pulse timestamps, layout coordinates, and binding-choice slots. The panel owns a fixed ten-target pool, serial-number handles, add/remove/lookup operations, and Source's 20-frame stale-target collection rule.
+The first locator-panel transplant added GoldSrc-native CInstructorLocatorTarget and CInstructorLocatorPanel classes based on Source's CLocatorTarget and CLocatorPanel. The target model carries independent world/screen origins, entity identity, visibility and occlusion state, caption/binding/icon names, effect flags, fade/lerp/pulse timestamps, layout coordinates, and binding-choice slots. The panel owns a fixed ten-target pool and serial-number handles; managed lesson targets use a 20-frame stale-target safety collector, while map-authored hint lifetimes are message/timeout driven.
 
 The second stage makes the target model the presentation data source for the existing locator renderer. Each HUD frame refreshes the active target after world-origin and occlusion updates; the renderer then reads visibility, world/screen origin, icon names, caption, binding choices, effect flags, color, and managed/fixed-position metadata from CInstructorLocatorTarget rather than directly from the legacy hint payload. The legacy HUD fields remain the message/lesson input and lifetime state, while sprite handles remain cached HUD resources.
 

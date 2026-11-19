@@ -52,7 +52,9 @@ The move/hold icon is now selected from actual pushable velocity changes in `CPu
   not part of this stage.
 - Target-backed hints use a projected world-space icon and a small caption tag, with an edge marker when the target is off-screen. Static hints keep a screen-space prompt. The HUD uses GoldSrc sprite files and a custom user message rather than Source game events, VGUI locator panels, and VTF materials.
 - Locator pulse/alpha/shake flags are approximated with GoldSrc HUD drawing; the halo and movement are not pixel-identical to Source's animation curves, and Source's VGUI layout/decluttering behavior is not reproduced.
-- Controller-specific button localization and engine binding lookup are not included; `hint_binding` is drawn as literal text.
+- Controller-specific button localization is not included. Keyboard bindings can
+  resolve through the locator's `use_binding` path; stock FWGS Xash3D falls back
+  to the first matching key because its client API lacks alternate-key lookup.
 - The existing PS2 brackets remain a separate world-space interaction marker and are not replaced by the Source locator.
 
 The server entity's keyvalue names and base flag semantics are aligned with the publicly available Valve `CEnvInstructorHint` implementation. See the source comments in `dlls/player.cpp` for the Source-compatible flag values and field mapping.

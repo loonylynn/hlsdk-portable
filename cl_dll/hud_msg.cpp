@@ -462,11 +462,11 @@ void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 {
 	(void)timeout;
 
-		// Any live map-authored hint keeps precedence over client-scheduled lessons.
+	// Any live map-authored hint keeps precedence over client-scheduled lessons.
 	if( HUD_HasActiveMapInstructorHints( &gHUD ) )
 	{
 		if( CVAR_GET_FLOAT( "gameinstructor_verbose" ) != 0.0f && gEngfuncs.Con_Printf )
-			gEngfuncs.Con_Printf( "[GameInstructor] Managed lesson '%s' suppressed: map env_instructor_hint owns the HUD layer.\\n",
+			gEngfuncs.Con_Printf( "[GameInstructor] Managed lesson '%s' suppressed: map env_instructor_hint owns the HUD layer.\n",
 				lessonName ? lessonName : "(unnamed)" );
 		return;
 	}
