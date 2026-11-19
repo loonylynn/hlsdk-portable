@@ -845,10 +845,14 @@ int CHud::Redraw( float flTime, int intermission )
 			target->m_vecOrigin[1],
 			target->m_vecOrigin[2] + target->m_flIconOffset
 		};
+		target->m_wide = 40;
+		target->m_tall = 40;
 		if( HUD_GetInstructorHintScreenPosition( worldOrigin, &screenX, &screenY, &behind ) )
 		{
 			target->UpdateProjection( screenX, screenY, behind,
 				ScreenWidth, ScreenHeight, 24 );
+			if( !target->m_bOnscreen && ( target->m_iEffectsFlags & LOCATOR_ICON_FX_NO_OFFSCREEN ) )
+				continue;
 			target->CalculateEdgePosition( ScreenWidth, ScreenHeight, 56 );
 
 			HSPRITE icon = target->m_bOnscreen ?

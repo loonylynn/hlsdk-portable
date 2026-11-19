@@ -151,7 +151,6 @@ void HUD_SyncInstructorLocatorTarget( CHud *hud )
 	target->m_szName[sizeof( target->m_szName ) - 1] = '\0';
 	target->m_hOnscreenSprite = (int)hud->m_hInstructorHintOnscreenSprite;
 	target->m_hOffscreenSprite = (int)hud->m_hInstructorHintOffscreenSprite;
-	target->m_bManagedDisplayCounted = hud->m_bInstructorManagedDisplayCounted;
 	target->m_flEndTime = 0.0f;
 }
 
