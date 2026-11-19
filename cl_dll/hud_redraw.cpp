@@ -946,9 +946,15 @@ int CHud::Redraw( float flTime, int intermission )
 			if( ( stricmp( target->m_szOnscreenIcon, "use_binding" ) == 0 ) ||
 				( stricmp( target->m_szOffscreenIcon, "use_binding" ) == 0 ) )
 				target->m_wide = target->m_tall = Q_max( target->m_wide, (int)( ScreenWidth * 0.04f ) );
-			const int captionFootprint = DrawHudStringLen( target->m_szCaption ) + 24;
-			if( target->m_wide < captionFootprint )
-				target->m_wide = Q_min( Q_max( 40, captionFootprint ), Q_max( 40, ScreenWidth / 2 ) );
+			// Source's dynamic locator shows captions only while the target is
+			// on-screen. Do not reserve caption width for an off-screen marker;
+			// its layout footprint is the off-screen icon itself.
+			if( target->m_bOnscreen )
+			{
+				const int captionFootprint = DrawHudStringLen( target->m_szCaption ) + 24;
+				if( target->m_wide < captionFootprint )
+					target->m_wide = Q_min( Q_max( 40, captionFootprint ), Q_max( 40, ScreenWidth / 2 ) );
+			}
 			if( target->m_tall < 48 )
 				target->m_tall = 48;
 		}
@@ -1346,7 +1352,10 @@ int CHud::Redraw( float flTime, int intermission )
 						( m_hInstructorHintKeyGenericSprite && locatorBinding[0] && !locatorBinding[1] );
 					const bool hasLocatorText = locatorCaptionWidth > 0 || locatorBindingWidth > 0;
 
-					if( hasLocatorText && !sourceBindingIcon )
+					// Match CLocatorPanel::DrawDynamicIcon: the off-screen branch
+					// draws its offscreen icon, optional use_binding key graphic,
+					// and direction arrow, but never the caption/inline key label.
+					if( hasLocatorText && !sourceBindingIcon && !targetOffscreen )
 					{
 						int locatorKeyWidth = 0;
 						if( locatorBindingWidth > 0 )
