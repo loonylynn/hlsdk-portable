@@ -880,6 +880,7 @@ CIconLesson::CIconLesson(const char *name, bool definition)
 
 CScriptedIconLesson::CScriptedIconLesson(const char *name, bool definition)
 	: CIconLesson(name, definition),
+	  m_iInstanceSerial(0),
 	  m_iLocalPlayer(gEngfuncs.GetLocalPlayer && gEngfuncs.GetLocalPlayer() ? gEngfuncs.GetLocalPlayer()->index : 1),
 	  m_iEntity1(0),
 	  m_iEntity2(0),
@@ -896,6 +897,7 @@ CScriptedIconLesson::CScriptedIconLesson(const char *name, bool definition)
 
 CScriptedIconLesson::CScriptedIconLesson(const CScriptedIconLesson &definition)
 	: CIconLesson(definition.m_Name.c_str(), false),
+	  m_iInstanceSerial(0),
 	  m_iLocalPlayer(1),
 	  m_iEntity1(0),
 	  m_iEntity2(0),
@@ -988,6 +990,10 @@ void CScriptedIconLesson::InitPrerequisites()
 CScriptedIconLesson *CScriptedIconLesson::CreateOpportunity(float now) const
 {
 	CScriptedIconLesson *instance = new CScriptedIconLesson(*this);
+	static int nextInstanceSerial = 1;
+	if( nextInstanceSerial <= 0 )
+		nextInstanceSerial = 1;
+	instance->m_iInstanceSerial = nextInstanceSerial++;
 	instance->m_flInitTime = now;
 	instance->m_flStartTime = 0.0f;
 	instance->m_flLockTime = 0.0f;
@@ -1921,7 +1927,7 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 	}
 
 
-	HUD_SetManagedInstructorHint(lesson->m_Name.c_str(), caption,
+	HUD_SetManagedInstructorHint(lesson->m_Name.c_str(), lesson->m_iInstanceSerial, caption,
 		lesson->m_Binding.c_str(), lesson->m_OnscreenIcon.c_str(),
 		lesson->m_OffscreenIcon.c_str(), lesson->m_iIconTarget, lesson->m_iPriority, 0.0f,
 		lesson->m_iFlags | (lesson->m_bNoOffscreen ? 0x00000200 : 0) |
