@@ -61,6 +61,9 @@ public:
 	bool m_bVisible;
 	bool m_bIsDrawing;
 	bool m_bRemoveWhenFadedOut;
+	bool m_bManagedDisplayCounted;
+	float m_flEndTime;
+	int m_hOnscreenSprite, m_hOffscreenSprite;
 	float m_flDistFromPlayer;
 	int m_targetX, m_targetY;
 	int m_iconX, m_iconY;
@@ -87,7 +90,9 @@ public:
 	int m_iBindingChoicesCount;
 	char m_szBindingChoices[MAX_INSTRUCTOR_LOCATOR_BINDINGS][MAX_INSTRUCTOR_LOCATOR_BINDING];
 	char m_szCaption[MAX_INSTRUCTOR_LOCATOR_CAPTION];
+	char m_szName[64], m_szReplaceKey[64];
 	char m_szBinding[MAX_INSTRUCTOR_LOCATOR_BINDING];
+	char m_szBindingCache[MAX_INSTRUCTOR_LOCATOR_BINDING];
 	char m_szOnscreenIcon[MAX_INSTRUCTOR_LOCATOR_ICON];
 	char m_szOffscreenIcon[MAX_INSTRUCTOR_LOCATOR_ICON];
 	char m_szVguiTargetName[64], m_szVguiTargetLookup[64];

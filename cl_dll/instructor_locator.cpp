@@ -40,6 +40,9 @@ void CInstructorLocatorTarget::Activate( int serialNumber, int frameNumber,
 	m_flShakeX = m_flShakeY = 0.0f;
 	m_flManagedAlpha = 1.0f;
 	m_bRemoveWhenFadedOut = false;
+	m_bManagedDisplayCounted = false;
+	m_flEndTime = 0.0f;
+	m_hOnscreenSprite = m_hOffscreenSprite = 0;
 	m_wide = m_tall = 40;
 	m_declutterIndex = m_lastDeclutterIndex = -1;
 	m_offsetX = m_offsetY = 0;
@@ -389,7 +392,11 @@ void CInstructorLocatorPanel::CollectGarbage( float currentTime, float fadeTime 
 	for( int i = 0; i < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++i )
 	{
 		CInstructorLocatorTarget &target = m_targets[i];
-		if( target.m_isActive && m_iFrameCount - target.m_frameLastUpdated > INSTRUCTOR_LOCATOR_STALE_FRAMES )
+		// Managed lesson targets are refreshed every HUD frame. Map-authored
+		// hints are message-driven and may intentionally remain static forever;
+		// their lifetime is controlled by explicit end messages or timeouts.
+		if( target.m_isActive && target.m_bManaged &&
+			m_iFrameCount - target.m_frameLastUpdated > INSTRUCTOR_LOCATOR_STALE_FRAMES )
 			target.Deactivate( false, currentTime, fadeTime );
 	}
 }

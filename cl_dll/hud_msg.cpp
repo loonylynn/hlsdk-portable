@@ -149,6 +149,12 @@ void HUD_SyncInstructorLocatorTarget( CHud *hud )
 	target->SetBinding( hud->m_szInstructorHintBinding );
 	target->SetOnscreenIconName( hud->m_szInstructorHintIconOnscreen );
 	target->SetOffscreenIconName( hud->m_szInstructorHintIconOffscreen );
+	strncpy( target->m_szName, hud->m_szInstructorHintName, sizeof( target->m_szName ) - 1 );
+	target->m_szName[sizeof( target->m_szName ) - 1] = '\0';
+	target->m_hOnscreenSprite = (int)hud->m_hInstructorHintOnscreenSprite;
+	target->m_hOffscreenSprite = (int)hud->m_hInstructorHintOffscreenSprite;
+	target->m_bManagedDisplayCounted = hud->m_bInstructorManagedDisplayCounted;
+	target->m_flEndTime = 0.0f;
 }
 
 static void HUD_ClearInstructorHint( CHud *hud )
@@ -197,17 +203,58 @@ static void HUD_ClearInstructorHint( CHud *hud )
 		hud->m_szInstructorHintBindingChoices[i][0] = '\0';
 }
 
+
+static CInstructorLocatorTarget *HUD_FindInstructorMapTarget( CHud *hud, int hintId )
+{
+	if( !hud )
+		return NULL;
+	for( int i = 0; i < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++i )
+	{
+		CInstructorLocatorTarget *target = hud->m_InstructorLocatorPanel.GetTargetAt( i );
+		if( target && target->m_isActive && !target->m_bManaged && target->m_iHintId == hintId )
+			return target;
+	}
+	return NULL;
+}
+
+static bool HUD_HasActiveMapInstructorHints( CHud *hud )
+{
+	if( !hud )
+		return false;
+	for( int i = 0; i < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++i )
+	{
+		const CInstructorLocatorTarget *target = hud->m_InstructorLocatorPanel.GetTargetAt( i );
+		if( target && target->m_isActive && !target->m_bManaged && !target->m_bRemoveWhenFadedOut )
+			return true;
+	}
+	return false;
+}
+
+static void HUD_RemoveInstructorHintsWithReplaceKey( CHud *hud, const char *replaceKey,
+	CInstructorLocatorTarget *exceptTarget )
+{
+	if( !hud || !replaceKey || !replaceKey[0] )
+		return;
+	for( int i = 0; i < MAX_INSTRUCTOR_LOCATOR_TARGETS; ++i )
+	{
+		CInstructorLocatorTarget *target = hud->m_InstructorLocatorPanel.GetTargetAt( i );
+		if( target && target != exceptTarget && target->m_isActive && !target->m_bManaged &&
+			target->m_szReplaceKey[0] && stricmp( target->m_szReplaceKey, replaceKey ) == 0 )
+			hud->m_InstructorLocatorPanel.RemoveTarget( target->m_serialNumber, hud->m_flTime, 0.3f );
+	}
+}
+
 int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 {
 	BEGIN_READ( pbuf, iSize );
-
 	const int action = READ_BYTE();
 	const int hintId = READ_SHORT();
 
 	if( action == 0 )
 	{
-		if( m_bInstructorHintActive && hintId == m_iInstructorHintId )
-			HUD_ClearInstructorHint( this );
+		CInstructorLocatorTarget *target = HUD_FindInstructorMapTarget( this, hintId );
+		if( target )
+			m_InstructorLocatorPanel.RemoveTarget( target->m_serialNumber, m_flTime, 0.3f );
 		return 1;
 	}
 
@@ -220,8 +267,7 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 		const int iconMode = READ_BYTE();
 		const bool occluded = READ_BYTE() != 0;
 		const bool targetVisible = READ_BYTE() != 0;
-		char captionUpdate[192];
-		char bindingUpdate[64];
+		char captionUpdate[192], bindingUpdate[64];
 		const char *readCaptionUpdate = READ_STRING();
 		strncpy( captionUpdate, readCaptionUpdate ? readCaptionUpdate : "", sizeof( captionUpdate ) - 1 );
 		captionUpdate[sizeof( captionUpdate ) - 1] = '\0';
@@ -229,42 +275,39 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 		strncpy( bindingUpdate, readBindingUpdate ? readBindingUpdate : "", sizeof( bindingUpdate ) - 1 );
 		bindingUpdate[sizeof( bindingUpdate ) - 1] = '\0';
 
-		if( m_bInstructorHintActive && hintId == m_iInstructorHintId )
+		CInstructorLocatorTarget *target = HUD_FindInstructorMapTarget( this, hintId );
+		if( target )
 		{
-			if( m_iInstructorHintTarget != targetIndex )
-				m_flInstructorHintNextOcclusionTest = 0.0f;
-			m_iInstructorHintTarget = targetIndex;
-			m_bInstructorHintHasTargetPosition =
-				( targetIndex > 0 ) && !( m_iInstructorHintFlags & 0x00000100 );
-			m_vecInstructorHintTargetOrigin[0] = x;
-			m_vecInstructorHintTargetOrigin[1] = y;
-			m_vecInstructorHintTargetOrigin[2] = z;
-			m_iInstructorHintIconMode = iconMode;
-			m_bInstructorHintOccluded = occluded;
-			m_bInstructorHintTargetVisible = targetVisible;
-
-			// Empty strings mean "retain the map-authored caption/binding".
-			if( captionUpdate && captionUpdate[0] )
+			target->Update( m_InstructorLocatorPanel.GetFrameCount() );
+			target->m_iEntityIndex = targetIndex;
+			target->m_bOriginInScreenspace =
+				targetIndex <= 0 || ( target->m_iEffectsFlags & LOCATOR_ICON_FX_STATIC );
+			if( target->m_bOriginInScreenspace )
+				target->SetScreenOrigin( 0.5f, 0.5f );
+			else
 			{
-				strncpy( m_szInstructorHintCaption, captionUpdate, sizeof( m_szInstructorHintCaption ) - 1 );
-				m_szInstructorHintCaption[sizeof( m_szInstructorHintCaption ) - 1] = '\0';
+				const float origin[3] = { x, y, z };
+				target->SetWorldOrigin( origin, targetIndex );
 			}
-			if( bindingUpdate && bindingUpdate[0] )
-			{
-				strncpy( m_szInstructorHintBinding, bindingUpdate, sizeof( m_szInstructorHintBinding ) - 1 );
-				m_szInstructorHintBinding[sizeof( m_szInstructorHintBinding ) - 1] = '\0';
-			}
+			target->m_iIconMode = iconMode;
+			target->m_bOccluded = occluded;
+			if( captionUpdate[0] )
+				target->SetCaptionText( captionUpdate );
+			if( bindingUpdate[0] )
+				target->SetBinding( bindingUpdate );
 			if( hintId == -1 )
 			{
 				const char *caption = iconMode == 2 ?
 					"Hold USE and move backward to pull" : "Move into it to push";
 				const char *binding = iconMode == 2 ? "USE" : "";
-				strncpy( m_szInstructorHintCaption, caption, sizeof( m_szInstructorHintCaption ) - 1 );
-				m_szInstructorHintCaption[sizeof( m_szInstructorHintCaption ) - 1] = '\0';
-				strncpy( m_szInstructorHintBinding, binding, sizeof( m_szInstructorHintBinding ) - 1 );
-				m_szInstructorHintBinding[sizeof( m_szInstructorHintBinding ) - 1] = '\0';
+				target->SetCaptionText( caption );
+				target->SetBinding( binding );
 			}
-			HUD_SyncInstructorLocatorTarget( this );
+			const bool forceCaption = ( target->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
+			target->SetVisible( targetVisible && ( !occluded || forceCaption ), m_flTime, 0.18f );
+			if( targetIndex <= 0 && !( target->m_iEffectsFlags & LOCATOR_ICON_FX_STATIC ) &&
+				!targetVisible )
+				m_InstructorLocatorPanel.RemoveTarget( target->m_serialNumber, m_flTime, 0.3f );
 		}
 		return 1;
 	}
@@ -307,62 +350,77 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 	strncpy( replaceKey, readString ? readString : "", sizeof( replaceKey ) - 1 );
 	replaceKey[sizeof( replaceKey ) - 1] = '\0';
 
-	// Server-authored hints have precedence over scripted client lessons.
-	// The manager resumes once this explicit hint ends or times out.
-	m_bInstructorHintManaged = false;
-	m_flInstructorManagedVisibleSince = 0.0f;
+	// A map-authored hint takes precedence over the currently managed lesson.
+	if( m_bInstructorHintActive && m_bInstructorHintManaged )
+		HUD_ClearInstructorHint( this );
 
-	// A new Source hint replaces the currently displayed hint. This is the
-	// single-panel equivalent of the game's replace-key/lesson arbitration.
-	m_iInstructorHintId = hintId;
-	m_iInstructorHintTarget = targetIndex;
-	m_flInstructorHintNextOcclusionTest = 0.0f;
-	m_iInstructorHintFlags = flags;
-	m_bInstructorHintHasTargetPosition =
-		( targetIndex > 0 ) && !( flags & 0x00000100 );
-	m_bInstructorHintOccluded = occluded;
-	m_bInstructorHintTargetVisible = targetVisible;
-	m_vecInstructorHintTargetOrigin[0] = x;
-	m_vecInstructorHintTargetOrigin[1] = y;
-	m_vecInstructorHintTargetOrigin[2] = z;
-	m_flInstructorHintEndTime = timeoutTenths > 0 ? m_flTime + ( timeoutTenths * 0.1f ) : 0.0f;
-	m_flInstructorHintRange = range;
-	m_iInstructorHintIconMode = iconMode;
-	m_iInstructorHintColorR = colorR;
-	m_iInstructorHintColorG = colorG;
-	m_iInstructorHintColorB = colorB;
+	CInstructorLocatorTarget *target = HUD_FindInstructorMapTarget( this, hintId );
+	if( target && target->m_bRemoveWhenFadedOut )
+	{
+		target->Deactivate( true, m_flTime, 0.0f );
+		target = NULL;
+	}
+	HUD_RemoveInstructorHintsWithReplaceKey( this, replaceKey, target );
 
-	strncpy( m_szInstructorHintCaption, caption ? caption : "", sizeof( m_szInstructorHintCaption ) - 1 );
-	m_szInstructorHintCaption[sizeof( m_szInstructorHintCaption ) - 1] = '\0';
-	strncpy( m_szInstructorHintBinding, binding ? binding : "", sizeof( m_szInstructorHintBinding ) - 1 );
-	m_szInstructorHintBinding[sizeof( m_szInstructorHintBinding ) - 1] = '\0';
-	strncpy( m_szInstructorHintIconOnscreen, iconOnscreen ? iconOnscreen : "", sizeof( m_szInstructorHintIconOnscreen ) - 1 );
-	m_szInstructorHintIconOnscreen[sizeof( m_szInstructorHintIconOnscreen ) - 1] = '\0';
-	strncpy( m_szInstructorHintIconOffscreen, iconOffscreen ? iconOffscreen : "", sizeof( m_szInstructorHintIconOffscreen ) - 1 );
-	m_szInstructorHintIconOffscreen[sizeof( m_szInstructorHintIconOffscreen ) - 1] = '\0';
-	strncpy( m_szInstructorHintName, hintName ? hintName : "", sizeof( m_szInstructorHintName ) - 1 );
-	m_szInstructorHintName[sizeof( m_szInstructorHintName ) - 1] = '\0';
-	strncpy( m_szInstructorHintReplaceKey, replaceKey ? replaceKey : "", sizeof( m_szInstructorHintReplaceKey ) - 1 );
-	m_szInstructorHintReplaceKey[sizeof( m_szInstructorHintReplaceKey ) - 1] = '\0';
+	if( !target )
+	{
+		const int handle = m_InstructorLocatorPanel.AddTarget(
+			m_scrinfo.iWidth, m_scrinfo.iHeight, m_flTime );
+		target = m_InstructorLocatorPanel.GetTargetFromHandle( handle );
+	}
+	if( !target )
+		return 1;
 
-	m_hInstructorHintOnscreenSprite = HUD_LoadInstructorHintSprite( m_szInstructorHintIconOnscreen );
-	m_hInstructorHintOffscreenSprite = HUD_LoadInstructorHintSprite( m_szInstructorHintIconOffscreen );
+	const int animationFlags = target->m_iEffectsFlags &
+		( LOCATOR_ICON_FX_FADE_IN | LOCATOR_ICON_FX_FADE_OUT );
+	target->m_iHintId = hintId;
+	target->m_iEntityIndex = targetIndex;
+	target->m_iIconMode = iconMode;
+	target->m_bManaged = false;
+	target->m_bFixedPosition = false;
+	target->m_bOriginInScreenspace =
+		targetIndex <= 0 || ( flags & LOCATOR_ICON_FX_STATIC );
+	if( target->m_bOriginInScreenspace )
+		target->SetScreenOrigin( 0.5f, 0.5f );
+	else
+	{
+		const float origin[3] = { x, y, z };
+		target->SetWorldOrigin( origin, targetIndex );
+	}
+	target->m_bOccluded = occluded;
+	target->m_flEndTime = timeoutTenths > 0 ? m_flTime + timeoutTenths * 0.1f : 0.0f;
+	target->m_flRange = range;
+	target->m_flIconOffset = 0.0f; // server coordinates already include hint_icon_offset
+	target->m_iEffectsFlags = flags | animationFlags;
+	target->SetCaptionColor( colorR, colorG, colorB );
+	target->SetCaptionText( caption );
+	target->SetBinding( binding );
+	target->SetOnscreenIconName( iconOnscreen );
+	target->SetOffscreenIconName( iconOffscreen );
+	strncpy( target->m_szName, hintName, sizeof( target->m_szName ) - 1 );
+	target->m_szName[sizeof( target->m_szName ) - 1] = '\0';
+	strncpy( target->m_szReplaceKey, replaceKey, sizeof( target->m_szReplaceKey ) - 1 );
+	target->m_szReplaceKey[sizeof( target->m_szReplaceKey ) - 1] = '\0';
+	target->m_hOnscreenSprite = (int)HUD_LoadInstructorHintSprite( iconOnscreen );
+	target->m_hOffscreenSprite = (int)HUD_LoadInstructorHintSprite( iconOffscreen );
+	target->m_iBindingChoicesCount = 0;
+	target->m_iBindingTick = 0;
+	target->m_flNextBindingTick = 0.0f;
+	target->m_szBindingCache[0] = '\0';
+	target->m_bManagedDisplayCounted = false;
+	target->m_flVisibleSince = 0.0f;
+	target->Update( m_InstructorLocatorPanel.GetFrameCount() );
 
 	if( hintId == -1 )
 	{
 		const char *pushableCaption = iconMode == 2 ?
 			"Hold USE and move backward to pull" : "Move into it to push";
 		const char *pushableBinding = iconMode == 2 ? "USE" : "";
-		strncpy( m_szInstructorHintCaption, pushableCaption, sizeof( m_szInstructorHintCaption ) - 1 );
-		m_szInstructorHintCaption[sizeof( m_szInstructorHintCaption ) - 1] = '\0';
-		strncpy( m_szInstructorHintBinding, pushableBinding, sizeof( m_szInstructorHintBinding ) - 1 );
-		m_szInstructorHintBinding[sizeof( m_szInstructorHintBinding ) - 1] = '\0';
+		target->SetCaptionText( pushableCaption );
+		target->SetBinding( pushableBinding );
 	}
-
-	m_bInstructorHintActive = ( m_szInstructorHintCaption[0] != '\0' ||
-		m_szInstructorHintBinding[0] != '\0' ||
-		m_hInstructorHintOnscreenSprite || m_hInstructorHintOffscreenSprite );
-	HUD_SyncInstructorLocatorTarget( this );
+	const bool forceCaption = ( flags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
+	target->SetVisible( targetVisible && ( !occluded || forceCaption ), m_flTime, 0.18f );
 	return 1;
 }
 int CHud::MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf )
@@ -407,11 +465,11 @@ void HUD_SetManagedInstructorHint( const char *lessonName, const char *caption,
 {
 	(void)timeout;
 
-	// A map-authored env_instructor_hint currently owns the card.
-	if( gHUD.m_bInstructorHintActive && !gHUD.m_bInstructorHintManaged )
+		// Any live map-authored hint keeps precedence over client-scheduled lessons.
+	if( HUD_HasActiveMapInstructorHints( &gHUD ) )
 	{
 		if( CVAR_GET_FLOAT( "gameinstructor_verbose" ) != 0.0f && gEngfuncs.Con_Printf )
-			gEngfuncs.Con_Printf( "[GameInstructor] Managed lesson '%s' suppressed: map env_instructor_hint owns the HUD card.\n",
+			gEngfuncs.Con_Printf( "[GameInstructor] Managed lesson '%s' suppressed: map env_instructor_hint owns the HUD layer.\\n",
 				lessonName ? lessonName : "(unnamed)" );
 		return;
 	}
@@ -506,6 +564,7 @@ int CHud::MsgFunc_ResetHUD( const char *pszName, int iSize, void *pbuf )
 
 	// Instructor hints are transient and must not survive a HUD reset.
 	HUD_ClearInstructorHint( this );
+	m_InstructorLocatorPanel.DeactivateAllTargets( true, m_flTime, 0.0f );
 
 	// reset sensitivity
 	m_flMouseSensitivity = 0;
