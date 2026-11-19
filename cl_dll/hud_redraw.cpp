@@ -1216,7 +1216,10 @@ int CHud::Redraw( float flTime, int intermission )
 			const bool hasEntityAnchor = (!locatorTarget->m_bOriginInScreenspace) &&
 				HUD_GetInstructorHintScreenPosition( locatorTarget->m_vecOrigin,
 					&entityAnchorX, &entityAnchorY, &entityAnchorBehind );
-			const int edgeMargin = 24;
+			// Source ComputeTargetIconPosition uses a 7.5%-of-screen-width
+			// title-safe inset. Crossing that inset selects the offscreen icon
+			// and direction arrow, including targets near the screen corners.
+			const int edgeMargin = Q_max( 1, (int)( ScreenWidth * 0.075f + 0.5f ) );
 			if( hasTarget )
 				locatorTarget->UpdateProjection( targetX, targetY, targetBehind,
 					ScreenWidth, ScreenHeight, edgeMargin );
@@ -1344,17 +1347,24 @@ int CHud::Redraw( float flTime, int intermission )
 					const int locatorTextG = locatorG * locatorAlpha / 255;
 					const int locatorTextB = locatorB * locatorAlpha / 255;
 
+					// Source halves both on/offscreen icon dimensions beyond
+					// ICON_DIST_TOO_FAR (720 units). This does not select the
+					// offscreen icon; only leaving the title-safe viewport does.
+					const float distanceScale =
+						locatorTarget->m_flDistFromPlayer > INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE ?
+						0.5f : 1.0f;
+
 					// A 20% increase keeps the 32x32 art compact while making
 					// the locator easier to pick out at normal gameplay distance.
 					if( sourceBindingIcon && locatorIconHeight > 0 && locatorIconWidth > 0 )
 						sourceBindingIconWidth = Q_max( 1, (int)( sourceBindingIconHeight *
 							( (float)locatorIconWidth / (float)locatorIconHeight ) + 0.5f ) );
 					const int locatorDrawWidth = sourceBindingIcon ?
-						Q_max( 1, (int)( sourceBindingIconWidth * locatorTarget->m_flPulseScale + 0.5f ) ) :
-						( locatorSprite ? (int)( locatorIconWidth * 1.20f * locatorTarget->m_flPulseScale + 0.5f ) : 0 );
+						Q_max( 1, (int)( sourceBindingIconWidth * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) ) :
+						( locatorSprite ? (int)( locatorIconWidth * 1.20f * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) : 0 );
 					const int locatorDrawHeight = sourceBindingIcon ?
-						Q_max( 1, (int)( sourceBindingIconHeight * locatorTarget->m_flPulseScale + 0.5f ) ) :
-						( locatorSprite ? (int)( locatorIconHeight * 1.20f * locatorTarget->m_flPulseScale + 0.5f ) : 0 );
+						Q_max( 1, (int)( sourceBindingIconHeight * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) ) :
+						( locatorSprite ? (int)( locatorIconHeight * 1.20f * locatorTarget->m_flPulseScale * distanceScale + 0.5f ) : 0 );
 					const int markerHalfWidth = sourceBindingIcon ? locatorDrawWidth / 2 :
 						( locatorSprite ? locatorDrawWidth / 2 : 10 );
 					const int markerHalfHeight = sourceBindingIcon ? locatorDrawHeight / 2 :
