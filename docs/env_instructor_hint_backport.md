@@ -45,11 +45,10 @@ The player's usable-object scan now displays an automatic `Interact` locator wit
 
 ## Deliberate GoldSrc differences
 
-- Up to ten map-authored `env_instructor_hint` instances can be displayed at
-  the same time, each with independent lifecycle and presentation state. The
-  separate scripted `C_GameInstructor` manager still selects one prioritized
-  managed lesson for its HUD slot; concurrent managed-lesson presentation is
-  not part of this stage.
+- Map-authored hints and scripted managed lessons share the ten-target
+  locator pool. Map hints keep independent lifecycles; the `C_GameInstructor`
+  manager can present multiple eligible lessons tied at the highest selected
+  display priority, subject to the shared pool capacity.
 - Target-backed hints use a projected world-space icon and a small caption tag while on-screen. Like Source's `ICON_DIST_TOO_FAR`, captions and ordinary inline binding labels are suppressed beyond 720 units (60 feet), measured from the current camera origin; the locator icon remains visible. `hint_forcecaption` bypasses this caption-distance cutoff and occlusion suppression, but not the separate `hint_range` culling rule. When off-screen, captions and normal inline binding labels are hidden; the off-screen icon and directional arrow remain. The Source `use_binding` virtual icon keeps its special behavior: its on-screen key glyph follows the caption-distance gate, while its off-screen key glyph remains available through the equivalent of `DrawBindingNameOffscreen`. Static hints keep a screen-space prompt and are not subject to this distance cutoff. The HUD uses GoldSrc sprite files and a custom user message rather than Source game events, VGUI locator panels, and VTF materials.
 - Locator pulse/alpha/shake flags are approximated with GoldSrc HUD drawing; the halo and movement are not pixel-identical to Source's animation curves, and Source's VGUI layout/decluttering behavior is not reproduced.
 - Controller-specific button localization is not included. Keyboard bindings can
