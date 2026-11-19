@@ -45,6 +45,13 @@ float HUD_GetFOV( void );
 
 extern cvar_t *sensitivity;
 
+// Updated by V_CalcRefdef; this is the actual camera origin, matching
+// Source's MainViewOrigin() rather than the player's feet position.
+extern vec3_t v_origin;
+
+// Source hud_locator_target.cpp: ICON_DIST_TOO_FAR = 60 feet * 12 inches.
+#define INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE (60.0f * 12.0f)
+
 // Draw a thin HUD-space tether between the real entity anchor and the
 // optional icon-height offset. The short Bresenham walk avoids introducing
 // a VGUI dependency into the GoldSrc client HUD.
@@ -821,6 +828,21 @@ int CHud::Redraw( float flTime, int intermission )
 				( !target->m_bOccluded || forceCaption ), flTime, 0.18f );
 		}
 
+		// Source CLocatorPanel::ComputeTargetIconPosition measures from
+		// MainViewOrigin(). GoldSrc's v_origin is the finalized refdef camera
+		// position, including view height, chase-camera offsets, and view effects.
+		if( target->m_bOriginInScreenspace )
+		{
+			target->m_flDistFromPlayer = 0.0f;
+		}
+		else
+		{
+			const float dx = target->m_vecOrigin[0] - v_origin[0];
+			const float dy = target->m_vecOrigin[1] - v_origin[1];
+			const float dz = target->m_vecOrigin[2] - v_origin[2];
+			target->m_flDistFromPlayer = sqrtf( dx * dx + dy * dy + dz * dz );
+		}
+
 		if( target->m_flEndTime > 0.0f && flTime >= target->m_flEndTime )
 		{
 			m_InstructorLocatorPanel.RemoveTarget( target->m_serialNumber, flTime, 0.3f );
@@ -946,10 +968,13 @@ int CHud::Redraw( float flTime, int intermission )
 			if( ( stricmp( target->m_szOnscreenIcon, "use_binding" ) == 0 ) ||
 				( stricmp( target->m_szOffscreenIcon, "use_binding" ) == 0 ) )
 				target->m_wide = target->m_tall = Q_max( target->m_wide, (int)( ScreenWidth * 0.04f ) );
-			// Source's dynamic locator shows captions only while the target is
-			// on-screen. Do not reserve caption width for an off-screen marker;
-			// its layout footprint is the off-screen icon itself.
-			if( target->m_bOnscreen )
+			// Source's dynamic locator only reserves caption width while the
+			// target is on-screen and within ICON_DIST_TOO_FAR (720 units),
+			// unless FORCE_CAPTION is set. Off-screen and distant markers use
+			// the icon footprint only.
+			const bool forceCaption = ( target->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
+			if( target->m_bOnscreen &&
+				( forceCaption || target->m_flDistFromPlayer <= INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE ) )
 			{
 				const int captionFootprint = DrawHudStringLen( target->m_szCaption ) + 24;
 				if( target->m_wide < captionFootprint )
@@ -1352,10 +1377,15 @@ int CHud::Redraw( float flTime, int intermission )
 						( m_hInstructorHintKeyGenericSprite && locatorBinding[0] && !locatorBinding[1] );
 					const bool hasLocatorText = locatorCaptionWidth > 0 || locatorBindingWidth > 0;
 
-					// Match CLocatorPanel::DrawDynamicIcon: the off-screen branch
-					// draws its offscreen icon, optional use_binding key graphic,
-					// and direction arrow, but never the caption/inline key label.
-					if( hasLocatorText && !sourceBindingIcon && !targetOffscreen )
+					// Match CLocatorPanel::DrawDynamicIcon: captions and ordinary
+					// inline binding labels are limited by ICON_DIST_TOO_FAR.
+					// FORCE_CAPTION bypasses both distance and occlusion limits.
+					const bool forceCaption =
+						( locatorTarget->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
+					const bool captionWithinSourceRange = forceCaption ||
+						locatorTarget->m_flDistFromPlayer <= INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE;
+					if( hasLocatorText && !sourceBindingIcon && !targetOffscreen &&
+						captionWithinSourceRange )
 					{
 						int locatorKeyWidth = 0;
 						if( locatorBindingWidth > 0 )
@@ -1472,10 +1502,14 @@ int CHud::Redraw( float flTime, int intermission )
 
 					if( sourceBindingIcon )
 					{
-						HUD_DrawInstructorBindingName( markerX, markerY,
-							instructorBindingGlyph, locatorAlpha );
+						// Source's on-screen DrawBindingName() is inside
+						// bShouldDrawCaption; its off-screen binding image is
+						// drawn separately and remains available at any distance.
+						if( targetOffscreen || captionWithinSourceRange )
+							HUD_DrawInstructorBindingName( markerX, markerY,
+								instructorBindingGlyph, locatorAlpha );
 						const int sourceCaptionWidth = DrawHudStringLen( locatorTarget->m_szCaption );
-						if( !targetOffscreen && sourceCaptionWidth > 0 )
+						if( !targetOffscreen && captionWithinSourceRange && sourceCaptionWidth > 0 )
 						{
 							const int fontHeight = m_scrinfo.iCharHeight > 0 ? m_scrinfo.iCharHeight :
 								( m_iFontHeight > 0 ? m_iFontHeight : 12 );
