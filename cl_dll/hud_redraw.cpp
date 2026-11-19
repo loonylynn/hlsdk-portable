@@ -795,7 +795,7 @@ static void HUD_DrawInstructorAlphaText( int x, int y, int maxX,
 		return;
 
 	const int advance = 6 * scale;
-	for( int i = 0; text[i] && text[i] != '\\n'; ++i )
+	for( int i = 0; text[i] && text[i] != '\n'; ++i )
 	{
 		const int glyphX = x + i * advance;
 		if( glyphX >= maxX )
