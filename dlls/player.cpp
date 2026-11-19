@@ -1792,6 +1792,9 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 // PlayerUse - handles USE keypress
 //
 #define	PLAYER_SEARCH_RADIUS	(float)64
+// The instructor locator can lead the player toward a usable object at a
+// distance. This is deliberately separate from PlayerUse and PS2 brackets.
+#define	PLAYER_INSTRUCTOR_HINT_SEARCH_RADIUS	(float)1024
 
 void CBasePlayer::PlayerUse( void )
 {
@@ -2703,6 +2706,7 @@ void CBasePlayer::UpdateUseableHighlight( void )
 
 	if( pClosest )
 	{
+		// Keep the original 64-unit scan and its PS2 brackets unchanged.
 		HighlightUseable( pClosest );
 		if( FClassnameIs( pClosest->pev, "func_pushable" ) )
 			UpdatePushableInstructorHint( pClosest );
@@ -2710,7 +2714,67 @@ void CBasePlayer::UpdateUseableHighlight( void )
 			UpdateUseableInstructorHint( pClosest );
 	}
 	else
-		ClearUseableHighlight();
+	{
+		// Remove only the PS2 bracket entity. ClearUseableHighlight also ends
+		// the instructor hint, which must remain available for the wider scan.
+		edict_t *pentGraphic = m_hUseableHighlight.Get();
+		CUseableGraphic *pGraphic = pentGraphic ?
+			(CUseableGraphic *)CBaseEntity::Instance( pentGraphic ) : NULL;
+		if( pGraphic )
+			UTIL_Remove( pGraphic );
+		m_hUseableHighlight = NULL;
+		m_hLastUseableItem = NULL;
+
+		// This locator-only scan does not change PlayerUse's 64-unit activation
+		// range or the PS2 bracket range. It selects visible generic use targets
+		// out to 1024 units so the player can identify distant interactables.
+		CBaseEntity *pHintObject = NULL;
+		CBaseEntity *pHintCandidate = NULL;
+		float flMaxHintDot = VIEW_FIELD_NARROW;
+		const Vector vecEye = pev->origin + pev->view_ofs;
+
+		while( ( pHintObject = UTIL_FindEntityInSphere(
+			pHintObject, pev->origin, PLAYER_INSTRUCTOR_HINT_SEARCH_RADIUS ) ) != NULL )
+		{
+			if( !( pHintObject->ObjectCaps() &
+				( FCAP_IMPULSE_USE | FCAP_CONTINUOUS_USE | FCAP_ONOFF_USE ) ) )
+				continue;
+
+			if( pHintObject->IsPlayer() || pHintObject->MyMonsterPointer() ||
+				FClassnameIs( pHintObject->pev, "func_pushable" ) ||
+				( pHintObject->pev->spawnflags & 0x200 ) )
+				continue;
+
+			Vector hintOrigin = pHintObject->pev->origin;
+			BOOL hintIsBModel = pHintObject->IsBSPModel();
+			if( !hintIsBModel )
+			{
+				const char *pszModel = STRING( pHintObject->pev->model );
+				if( pszModel && pszModel[0] == '*' )
+					hintIsBModel = TRUE;
+			}
+			if( hintIsBModel )
+				hintOrigin = VecBModelOrigin( pHintObject->pev );
+
+			Vector hintLOS = hintOrigin - vecEye;
+			hintLOS = UTIL_ClampVectorToBox( hintLOS, pHintObject->pev->size * 0.5f );
+			const float hintDot = DotProduct( hintLOS, gpGlobals->v_forward );
+			if( hintDot <= flMaxHintDot )
+				continue;
+
+			TraceResult hintTrace;
+			UTIL_TraceLine( vecEye, vecEye + hintLOS,
+				dont_ignore_monsters, edict(), &hintTrace );
+			if( hintTrace.fStartSolid ||
+				( hintTrace.flFraction < 1.0f && hintTrace.pHit != pHintObject->edict() ) )
+				continue;
+
+			pHintCandidate = pHintObject;
+			flMaxHintDot = hintDot;
+		}
+
+		UpdateUseableInstructorHint( pHintCandidate );
+	}
 }
 
 void CBasePlayer::Jump()
