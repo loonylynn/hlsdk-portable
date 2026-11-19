@@ -59,6 +59,7 @@ public:
 	bool m_bOnscreen;
 	bool m_bBehindCamera;
 	float m_flProjectedX, m_flProjectedY;
+	float m_flVisibilityMargin;
 	bool m_bOccluded;
 	bool m_bVisible;
 	bool m_bIsDrawing;
@@ -78,7 +79,7 @@ public:
 	float m_fadeStart, m_lerpStart, m_pulseStart;
 	float m_flFadeDuration;
 	float m_flPulse, m_flPulseScale;
-	float m_flShakeX, m_flShakeY, m_flManagedAlpha;
+	float m_flShakeX, m_flShakeY;
 	int m_declutterIndex, m_lastDeclutterIndex, m_drawArrowDirection;
 	int m_captionWide;
 	bool m_bDrawControllerButton, m_bDrawControllerButtonOffscreen;
@@ -110,7 +111,7 @@ public:
 	bool ShouldDraw() const;
 	int GetRenderAlpha( int baseAlpha ) const;
 	void UpdateProjection( float screenX, float screenY, bool behind,
-		int screenWidth, int screenHeight, int visibilityMargin );
+		int screenWidth, int screenHeight, float visibilityMargin, float currentTime );
 	void CalculateEdgePosition( int screenWidth, int screenHeight, int edgeMargin );
 	void SetVisible( bool visible, float currentTime, float fadeTime );
 	bool IsStatic() const;
@@ -126,8 +127,8 @@ public:
 	void SetScreenOrigin( float x, float y );
 	void SetCaptionText( const char *caption );
 	void SetBinding( const char *binding );
-	void SetOnscreenIconName( const char *iconName );
-	void SetOffscreenIconName( const char *iconName );
+	void SetOnscreenIconName( const char *iconName, float currentTime );
+	void SetOffscreenIconName( const char *iconName, float currentTime );
 	void SetCaptionColor( int red, int green, int blue );
 
 private:
