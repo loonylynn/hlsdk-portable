@@ -150,6 +150,7 @@ public:
 	void OnOpen();
 	void Update(float now);
 	void UpdateInactive(float now);
+	bool ValidateIconTarget(float now);
 	void ProcessEvent(const InstructorEventData &event, int eventType);
 	bool ProcessElements(const InstructorEventData *event, const std::vector<InstructorLessonElement> &elements);
 	CScriptedIconLesson *CreateOpportunity(float now) const;
@@ -179,6 +180,7 @@ public:
 private:
 	const CScriptedIconLesson *m_pDefinition;
 	float m_flNextUpdateEvent;
+	float m_flNextTargetValidation;
 };
 
 class C_GameInstructor
