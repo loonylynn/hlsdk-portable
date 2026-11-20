@@ -306,6 +306,14 @@ typedef struct cl_enginefuncs_s
 
 	// added in 2019 update, not documented yet
 	int             (*pfnFilteredClientCmd)( const char *cmd );
+
+	// Xash3D extension matching Source's multi-key locator lookup.
+	const char      *(*Key_LookupBindingEx)( const char *pBinding, int nKeyNum );
+	// Xash3D extension: set the alpha channel for the next HUD sprite draw.
+	void            (*pfnSPR_SetAlpha)( int alpha );
+	// Xash3D extension: draw and measure console-font text at a HUD-local scale.
+	int		(*pfnDrawConsoleStringScaled)( int x, int y, const char *string, float scale );
+	void	(*pfnDrawConsoleStringLenScaled)( const char *string, int *length, int *height, float scale );
 } cl_enginefunc_t;
 
 #define CLDLL_INTERFACE_VERSION	7

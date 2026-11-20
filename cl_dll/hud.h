@@ -26,10 +26,14 @@
 #define RGB_REDISH 0x00FF1010 //255,160,0
 #define RGB_GREENISH 0x0000A000 //0,160,0
 
+#define MAX_INSTRUCTOR_BINDING_CHOICES 8
+#define MAX_INSTRUCTOR_BINDING_NAME 32
+
 #include "wrect.h"
 #include "cl_dll.h"
 #include "ammo.h"
 #include "cvardef.h"
+#include "instructor_locator.h"
 
 #define DHN_DRAWZERO 1
 #define DHN_2DIGITS  2
@@ -616,6 +620,10 @@ public:
 	CHudScoreboard	m_Scoreboard;
 	CHudMOTD	m_MOTD;
 
+	// Source-style locator target pool; the renderer consumes its presentation state.
+	CInstructorLocatorPanel m_InstructorLocatorPanel;
+	int m_iInstructorLocatorTargetHandle;
+
 	void Init( void );
 	void VidInit( void );
 	void Think(void);
@@ -624,6 +632,12 @@ public:
 
 	// Single-player port of Valve's Source instructor/locator payload.
 	bool m_bInstructorHintActive;
+	bool m_bInstructorHintManaged;
+	bool m_bInstructorHintFixedPosition;
+	bool m_bInstructorManagedDisplayCounted;
+	float m_flInstructorHintFixedX;
+	float m_flInstructorHintFixedY;
+	float m_flInstructorManagedVisibleSince;
 	int m_iInstructorHintId;
 	int m_iInstructorHintTarget;
 	bool m_bInstructorHintHasTargetPosition;
@@ -632,13 +646,31 @@ public:
 	float m_vecInstructorHintTargetOrigin[3];
 	float m_flInstructorHintEndTime;
 	float m_flInstructorHintRange;
+	float m_flInstructorHintNextOcclusionTest;
+	float m_flInstructorHintNextBindingTick;
+	float m_flInstructorHintIconOffset;
 	int m_iInstructorHintIconMode; // 0 = normal, 1 = move, 2 = hold
 	int m_iInstructorHintFlags;    // LOCATOR_ICON_FX_* compatible bits
 	int m_iInstructorHintColorR;
 	int m_iInstructorHintColorG;
 	int m_iInstructorHintColorB;
+	int m_iInstructorHintBindingChoicesCount;
+	int m_iInstructorHintBindingTick;
 	HSPRITE m_hInstructorHintMoveSprite;
 	HSPRITE m_hInstructorHintHoldSprite;
+	HSPRITE m_hInstructorHintArrowRightSprite;
+	HSPRITE m_hInstructorHintArrowUpSprite;
+	HSPRITE m_hInstructorHintKeyGenericSprite;
+	HSPRITE m_hInstructorHintKeyWideSprite;
+	HSPRITE m_hInstructorHintKeyMouseLeftSprite;
+	HSPRITE m_hInstructorHintKeyMouseRightSprite;
+	HSPRITE m_hInstructorHintKeyMouseThreeSprite;
+	HSPRITE m_hInstructorHintKeyMouseWheelUpSprite;
+	HSPRITE m_hInstructorHintKeyMouseWheelDownSprite;
+	HSPRITE m_hInstructorHintKeyUpSprite;
+	HSPRITE m_hInstructorHintKeyDownSprite;
+	HSPRITE m_hInstructorHintKeyLeftSprite;
+	HSPRITE m_hInstructorHintKeyRightSprite;
 	HSPRITE m_hInstructorHintOnscreenSprite;
 	HSPRITE m_hInstructorHintOffscreenSprite;
 	char m_szInstructorHintIconOnscreen[64];
@@ -647,15 +679,32 @@ public:
 	char m_szInstructorHintReplaceKey[64];
 	char m_szInstructorHintCaption[192];
 	char m_szInstructorHintBinding[64];
+	char m_szInstructorHintBindingCache[64];
+	char m_szInstructorHintBindingChoices[MAX_INSTRUCTOR_BINDING_CHOICES][MAX_INSTRUCTOR_BINDING_NAME];
 
 	CHud() : m_iSpriteCount(0), m_pHudList(NULL),
-		m_bInstructorHintActive(false), m_iInstructorHintId(0),
+		m_iInstructorLocatorTargetHandle(-1),
+		m_bInstructorHintActive(false), m_bInstructorHintManaged(false),
+		m_bInstructorHintFixedPosition(false), m_bInstructorManagedDisplayCounted(false),
+		m_flInstructorHintFixedX(0.5f),
+		m_flInstructorHintFixedY(0.5f), m_flInstructorManagedVisibleSince(0.0f), m_iInstructorHintId(0),
 		m_iInstructorHintTarget(0), m_bInstructorHintHasTargetPosition(false),
 		m_bInstructorHintTargetVisible(false), m_bInstructorHintOccluded(false),
 		m_flInstructorHintEndTime(0.0f), m_flInstructorHintRange(0.0f),
+		m_flInstructorHintNextOcclusionTest(0.0f),
+		m_flInstructorHintNextBindingTick(0.0f),
+		m_flInstructorHintIconOffset(0.0f),
 		m_iInstructorHintIconMode(0), m_iInstructorHintFlags(0),
 		m_iInstructorHintColorR(255), m_iInstructorHintColorG(255), m_iInstructorHintColorB(255),
+		m_iInstructorHintBindingChoicesCount(0), m_iInstructorHintBindingTick(0),
 		m_hInstructorHintMoveSprite(0), m_hInstructorHintHoldSprite(0),
+		m_hInstructorHintArrowRightSprite(0), m_hInstructorHintArrowUpSprite(0),
+		m_hInstructorHintKeyGenericSprite(0), m_hInstructorHintKeyWideSprite(0),
+		m_hInstructorHintKeyMouseLeftSprite(0), m_hInstructorHintKeyMouseRightSprite(0),
+		m_hInstructorHintKeyMouseThreeSprite(0), m_hInstructorHintKeyMouseWheelUpSprite(0),
+		m_hInstructorHintKeyMouseWheelDownSprite(0), m_hInstructorHintKeyUpSprite(0),
+		m_hInstructorHintKeyDownSprite(0), m_hInstructorHintKeyLeftSprite(0),
+		m_hInstructorHintKeyRightSprite(0),
 		m_hInstructorHintOnscreenSprite(0), m_hInstructorHintOffscreenSprite(0)
 	{
 		m_vecInstructorHintTargetOrigin[0] = 0.0f;
@@ -667,6 +716,9 @@ public:
 		m_szInstructorHintReplaceKey[0] = '\0';
 		m_szInstructorHintCaption[0] = '\0';
 		m_szInstructorHintBinding[0] = '\0';
+		m_szInstructorHintBindingCache[0] = '\0';
+		for( int i = 0; i < MAX_INSTRUCTOR_BINDING_CHOICES; ++i )
+			m_szInstructorHintBindingChoices[i][0] = '\0';
 	}  
 	~CHud();			// destructor, frees allocated memory
 
@@ -680,6 +732,7 @@ public:
 	int _cdecl MsgFunc_SetFOV( const char *pszName,  int iSize, void *pbuf );
 	int  _cdecl MsgFunc_Concuss( const char *pszName, int iSize, void *pbuf );
 	int _cdecl MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf );
+	int _cdecl MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf );
 
 	// Screen information
 	SCREENINFO	m_scrinfo;
@@ -705,6 +758,8 @@ public:
 };
 
 extern CHud gHUD;
+
+void HUD_SyncInstructorLocatorTarget( CHud *hud );
 
 extern int g_iPlayerClass;
 extern int g_iTeamNumber;

@@ -1,6 +1,6 @@
 # GoldSrc `env_instructor_hint` backport
 
-This is a GoldSrc/Xash3D single-player port of the public Source `CEnvInstructorHint` entity contract and a subset of the Source locator presentation rules. It intentionally keeps the Half-Life user-message transport and the existing PS2-style world-space use brackets.
+This is a GoldSrc/Xash3D single-player port of the public Source `CEnvInstructorHint` entity contract and a subset of the Source locator presentation rules. Target-following hints render as compact world-space locators; static hints remain screen-space prompts. The Half-Life user-message transport and existing PS2-style world-space use brackets remain independent.
 
 ## Supported keyvalues
 
@@ -21,12 +21,12 @@ This is a GoldSrc/Xash3D single-player port of the public Source `CEnvInstructor
 | `hint_shakeoption` | 0 = none, 1 = narrow, 2 = wide. |
 | `hint_static` | Displays the card at a fixed HUD position rather than following a world target. |
 | `hint_nooffscreen` | Hides the hint when its world target leaves the viewport. |
-| `hint_forcecaption` | Allows the hint caption to remain visible when the target is occluded. |
+| `hint_forcecaption` | Bypasses Source-style caption distance and occlusion suppression. It does not bypass `hint_range` target culling. |
 | `hint_allow_nodraw_target` | Allows a target with `EF_NODRAW` to remain a valid hint target. |
 | `hint_local_player_only` | Retained for map compatibility; the project is single-player, so there is only one recipient. |
-| `hint_replace_key` | Retained in the hint payload. The current single-panel HUD replaces its currently displayed hint when another hint starts. |
+| `hint_replace_key` | Ends other active map-authored hints using the same non-empty replacement key before this hint is displayed. |
 
-Icon identifiers map to optional GoldSrc sprites under `valve/sprites/`: for example, `hint_icon_onscreen "icon_interact"` loads `sprites/icon_interact.spr`. Do not include the directory or `.spr` extension in the identifier. Source's original VGUI/VTF icon assets are not GoldSrc sprites, so the project must provide or convert the artwork. Missing sprites fall back to a text/arrow presentation.
+Icon identifiers map to optional GoldSrc sprites under `valve/sprites/`: for example, `hint_icon_onscreen "icon_interact"` loads `sprites/icon_interact.spr`. Do not include the directory or `.spr` extension in the identifier. Source's original VGUI/VTF icon assets are not GoldSrc sprites, so the project must provide or convert the artwork. Missing sprites fall back to a text/arrow presentation. For a key prompt that changes to the interaction symbol outside the view, set `hint_icon_onscreen "use_binding"`, `hint_icon_offscreen "icon_interact"`, and `hint_binding "+use"`. The off-screen icon is selected when the target leaves the view; the 720-unit distance cutoff does not itself trigger that switch.
 
 ## Activation
 
@@ -37,19 +37,48 @@ Use the entity like a GoldSrc `func_button` target:
 - `USE_SET`: show when the value is greater than 0.5, otherwise end.
 - `USE_TOGGLE`: toggle the current state.
 
-The entity ID owns the active HUD panel. A map hint takes priority over the automatic `func_pushable` prompt. Hints are ended when their activator dies or their timeout expires.
+Each active `env_instructor_hint` remains independently owned by its entity and recipient. The automatic player-use prompt is suppressed while any map-authored hint for that player is active; ending one hint does not release suppression while another remains active. This is derived from the live active-entity set, so a removed hint cannot leave a stale player-side owner ID. Map hints take priority over the automatic player-use prompt. An `env_instructor_hint` still requires its `Use` input to be fired; proximity alone does not activate that map entity. Hints are ended when their activator dies or their timeout expires.
 
-## Pushable action prompt
+## Automatic interaction guidance and pushable action prompt
 
-The move/hold icon is now selected from actual pushable velocity changes in `CPushable::Move`, not merely from the player holding USE. A successful `push` impulse selects move; a successful pull impulse selects hold. The action state decays back to the move prompt after 0.4 seconds without another successful impulse. The optional action art remains `sprites/icon_move.spr` and `sprites/icon_hold.spr`.
+The player's automatic interaction guidance has two stages. The near-field ready prompt uses the resolved `+use` keycap and `Interact` caption only for a visible use-capable entity selected by the original 64-unit forward-cone scan used for the PS2 brackets. When no entity is in that focused-use cone, a separate proximity-only approach scan searches visible use-capable entities within 128 units, rejecting candidates obscured by walls. During this approach stage, `icon_interact` is used both on-screen and off-screen; Source's locator renderer adds a directional arrow when the target is outside the title-safe view. When the entity enters the 64-unit forward-use cone, the same hint transitions to `use_binding` on-screen, `icon_interact` off-screen, and the `Interact` caption. The approach scan never creates a PS2 bracket and never extends actual USE focus or activation beyond the original 64-unit rule. The automatic hint uses `use_binding` as its on-screen icon and `icon_interact` as its off-screen icon. The `Interact` caption uses Xash's active scalable console-font renderer. Since GoldSrc does not expose Source's VGUI `InstructorTitle` font handle, the caption uses a one-pixel tighter glyph advance to approximate the source font's condensed spacing. Each glyph is drawn only once; the Xash console font's own outline provides readability, so no extra bold overdraw or black drop-shadow pass is applied. Caption measurements use the same glyph advances as drawing so label width and placement stay consistent. The exact Univers typeface is not bundled or guaranteed. The key label remains the compact 5x7 glyph treatment, with its RGB intensity driven by the locator's shared fade value. The key label is centered over the keycap and fades from black toward the light keycap face. The automatic `use_binding` key sprite and `icon_interact` are both drawn at their native .spr dimensions (without the general 1.2 locator enlargement), so the icon swap does not change their base size. This automatic prompt is code-driven and does not require a map-authored instructor script. Pushables retain their separate move/hold prompt, selected from actual velocity changes in `CPushable::Move`; the action state decays back to the move prompt after 0.4 seconds without another successful impulse.
 
 ## Deliberate GoldSrc differences
 
-- This is a single active HUD panel, not the full Source `C_GameInstructor` lesson manager with multiple concurrent lessons, priorities, display counters, scripted prerequisites, sounds, or persistence.
-- The HUD uses GoldSrc sprite files and a custom user message rather than Source game events, VGUI locator panels, and VTF materials.
-- Locator pulse/alpha/shake flags are approximated with GoldSrc HUD drawing; their exact Source animation curves and layout/decluttering behavior are not reproduced.
-- Controller-specific button localization and engine binding lookup are not included; `hint_binding` is drawn as literal text.
-- The existing PS2 brackets remain a separate world-space interaction marker and are not replaced by the Source locator.
+- Map-authored hints and scripted managed lessons share the ten-target
+  locator pool. Map hints keep independent lifecycles; the `C_GameInstructor`
+  manager can present multiple eligible lessons tied at the highest selected
+  display priority, subject to the shared pool capacity.
+- Scripted lessons stop when they lose the active presentation slot. Their
+  active start-time clock is reset, so timeout progression pauses while
+  inactive unless `can_timeout_while_inactive` is enabled; `OnOpen` runs
+  again when the lesson becomes active. Active and inactive updates validate
+  target entity indices and reject `EF_NODRAW` targets unless
+  `allow_nodraw_target` is enabled. GoldSrc does not expose Source's
+  `EHANDLE`/dormancy semantics directly, so validation uses the client entity
+  table and its available effect flags.
+- Scripted lesson elements implement Source's `present_start`,
+  `present_end`, and `present_complete` actions. Presentation uses the
+  `locator_lerp_rest` client cvar (default 0.50 seconds in this port (shortened from Source’s 2.25-second stationary hold)) and
+  `locator_lerp_time` (default 1.75 seconds, matching Source’s travel-time default): start restarts the centered
+  presentation interval, end completes it immediately, and complete tests
+  whether the rest interval has elapsed. Managed locator targets are created
+  before `OnOpen` events so those actions can operate on the active target.
+  While presenting, the world locator is centered and its caption remains
+  visible; it then interpolates from center to its target position over
+  `locator_lerp_time`. The permanent static locator effect remains centered.
+  The 1.5-second displayed counter begins only after presentation completes
+  (unless the target uses the static effect). This uses the GoldSrc locator's
+  center-marker/caption layout rather than Source's VGUI static-icon stack.
+- Target-backed hints send position/visibility updates only when the target's encoded `WRITE_COORD` values change (1/8-unit coordinate precision), its target/visibility state changes, or its occlusion state changes. Target-following still ticks at 0.05 seconds, but visibility traces are cached and refreshed at 0.25-second intervals, matching Source's locator occlusion cadence. This avoids repeating identical network packets and expensive traces while preserving responsive moving-target updates.
+- Target-backed hints use a projected world-space icon and a small caption tag while on-screen. Like Source's `ICON_DIST_TOO_FAR`, captions and ordinary inline binding labels are suppressed beyond 720 units (60 feet), measured from the current camera origin; the marker is also reduced to half size. For ordinary map-authored hints, this distance cutoff does not switch icons: when the target crosses Source's title-safe inset (7.5% of screen width) or moves behind the view, the renderer selects `hint_icon_offscreen` and places it on Source's 100-pixel (YRES-scaled) compass ellipse with a directional arrow. `hint_forcecaption` bypasses caption-distance and occlusion suppression, but not the separate `hint_range` culling rule. The automatic `-2` Interact prompt is limited by the server's 64-unit forward-cone use-target scan, so Source's 720-unit distance presentation threshold applies only to longer-range locator hints. Static hints keep a screen-space prompt and are not subject to this distance cutoff. The HUD uses GoldSrc sprite files and a custom user message rather than Source game events, VGUI locator panels, and VTF materials.
+- Locator pulse/alpha/shake timing now follows Source's presentation equations: 1.0–1.75 pulse scale, one-second activation pulse, 0.5–1.0 alpha modulation, random ±2/±5 pixel shake, 0.3-second fades, and the 100-pixel (YRES-scaled) offscreen compass ellipse. GoldSrc still uses `.spr` assets and a different HUD renderer, so its rasterization and layout cannot be pixel-identical to Source's VGUI implementation.
+- Source's locator caption uses a VGUI scheme alias (`InstructorTitle`); in Portal 2's scheme that alias resolves to `UniversLTStd-BoldCn` at 18 px. GoldSrc does not expose Source VGUI `HFont` handles, so the Xash client uses its active scalable console font and approximates the condensed spacing with a one-pixel tighter glyph advance. Each glyph is drawn once, without an extra bold overdraw or shadow pass, because Xash's console font already supplies an outline. Caption width measurement uses the same per-glyph advances as drawing. This is not the literal Univers typeface; the underlying letterforms still come from the installed Xash font. See the [Portal 2 scheme definition](https://www.theportalwiki.com/wiki/Template:PatchDiff/October_4,_2011_Patch/update/pak01_dir.vpk/resource/basemodui_scheme.res).
+- Controller-specific button localization is not included. Keyboard bindings can
+  resolve through the locator's `use_binding` path; stock FWGS Xash3D falls back
+  to the first matching key because its client API lacks alternate-key lookup.
+- The existing PS2 brackets remain a separate world-space interaction marker and are not replaced by the Source locator. The automatic `Interact` keycap is a separate locator attached to the same currently focused usable entity.
+- Keycap labels are drawn as compact 5x7 black glyphs blended over the original key sprite. Short bindings such as E use a 2x scale (10x14 pixels), avoiding the oversized 3x version. `FillRGBABlend` applies the same locator fade alpha, so the black text remains black at full opacity and fades with the keycap. The keycap sprite uses the same per-target fade value through the appended Xash3D `pfnSPR_SetAlpha` client callback. The paired `loonylynn/xash3d-fwgs` engine and this SDK must be rebuilt together; do not use the updated client DLL with an engine that lacks the callback.
 
 The server entity's keyvalue names and base flag semantics are aligned with the publicly available Valve `CEnvInstructorHint` implementation. See the source comments in `dlls/player.cpp` for the Source-compatible flag values and field mapping.
 

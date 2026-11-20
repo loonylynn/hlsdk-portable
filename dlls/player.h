@@ -200,8 +200,8 @@ public:
 	EHANDLE	m_hUseableHighlight;
 	EHANDLE	m_hLastUseableItem;
 	float	m_flNextUseableCheck;
-	int		m_iActiveInstructorHintId;
 	int		m_iUseableInstructorHintTarget;
+	int		m_iUseableInstructorHintId; // -1 = pushable prompt, -2 = generic USE prompt
 	BOOL	m_bUseableInstructorHintActive;
 	int		m_iUseableInstructorHintIconMode;
 	float	m_flUseableInstructorHintActionTime;
@@ -302,8 +302,10 @@ public:
 	void HighlightUseable( CBaseEntity *pObject );
 	void ClearUseableHighlight( void );
 	void UpdatePushableInstructorHint( CBaseEntity *pObject );
+	void UpdateUseableInstructorHint( CBaseEntity *pObject, BOOL bReadyToUse );
 	void ClearPushableInstructorHint( void );
 	void SetPushableInstructorHintAction( CBaseEntity *pObject, int iconMode );
+	void FireInstructorEvent( const char *eventName, CBaseEntity *pEntity, const char *fieldName, const char *stringValue, int integerValue, float floatValue );
 
 	void CheckSuitUpdate();
 	void SetSuitUpdate( const char *name, int fgroup, int iNoRepeat );

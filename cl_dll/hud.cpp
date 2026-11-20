@@ -19,6 +19,7 @@
 //
 
 #include "hud.h"
+#include "game_instructor.h"
 #include "view.h"
 #include "cl_util.h"
 #include <string.h>
@@ -91,6 +92,32 @@ cvar_t *hud_textmode;
 float g_hud_text_color[3];
 
 // HUD-only overscan compensation. Cache the transform once per HUD redraw.
+// Re-load optional GoldSrc instructor sprites after video-mode changes.
+static HSPRITE HUD_ReloadInstructorHintSprite( const char *iconName )
+{
+	if( !iconName || !iconName[0] || stricmp( iconName, "use_binding" ) == 0 )
+		return 0;
+
+	char safeName[64];
+	int out = 0;
+	for( int i = 0; iconName[i] && out < (int)sizeof( safeName ) - 1; ++i )
+	{
+		const char ch = iconName[i];
+		if( ( ch >= 'a' && ch <= 'z' ) || ( ch >= 'A' && ch <= 'Z' ) ||
+			( ch >= '0' && ch <= '9' ) || ch == '_' || ch == '-' )
+			safeName[out++] = ch;
+		else
+			return 0;
+	}
+	safeName[out] = '\0';
+	if( out == 0 )
+		return 0;
+
+	char spritePath[96];
+	snprintf( spritePath, sizeof( spritePath ), "sprites/%s.spr", safeName );
+	return SPR_Load( spritePath );
+}
+
 static cvar_t *hud_overscan = NULL;
 static float g_hudOverscanScale = 1.0f;
 static bool g_hudOverscanEnabled = false;
@@ -180,6 +207,11 @@ int __MsgFunc_ResetHUD( const char *pszName, int iSize, void *pbuf )
 int __MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 {
 	return gHUD.MsgFunc_InstructorHint( pszName, iSize, pbuf );
+}
+
+int __MsgFunc_InstructorEvent( const char *pszName, int iSize, void *pbuf )
+{
+	return gHUD.MsgFunc_InstructorEvent( pszName, iSize, pbuf );
 }
 
 int __MsgFunc_InitHUD( const char *pszName, int iSize, void *pbuf )
@@ -372,6 +404,7 @@ void CHud::Init( void )
 	HOOK_MESSAGE( Logo );
 	HOOK_MESSAGE( ResetHUD );
 	HOOK_MESSAGE( InstructorHint );
+	HOOK_MESSAGE( InstructorEvent );
 	HOOK_MESSAGE( GameMode );
 	HOOK_MESSAGE( InitHUD );
 	HOOK_MESSAGE( ViewMode );
@@ -408,6 +441,7 @@ void CHud::Init( void )
 	HOOK_MESSAGE( VGUIMenu );
 
 	Ragdoll_Init();
+	GameInstructor_Init();
 
 	// Register view controls, including the Portal 2 viewmodel bob and lag cvars.
 	V_Init();
@@ -535,22 +569,26 @@ void CHud::VidInit( void )
 	// Optional action sprites used by the automatic func_pushable hint.
 	m_hInstructorHintMoveSprite = SPR_Load( "sprites/icon_move.spr" );
 	m_hInstructorHintHoldSprite = SPR_Load( "sprites/icon_hold.spr" );
+	m_hInstructorHintArrowRightSprite = SPR_Load( "sprites/icon_arrow_right.spr" );
+	m_hInstructorHintArrowUpSprite = SPR_Load( "sprites/icon_arrow_up.spr" );
+	m_hInstructorHintKeyGenericSprite = SPR_Load( "sprites/icon_key_generic.spr" );
+	// Optional Source key art: load a GoldSrc counterpart only when present.
+	m_hInstructorHintKeyWideSprite = SPR_Load( "sprites/icon_key_wide.spr" );
+	m_hInstructorHintKeyMouseLeftSprite = SPR_Load( "sprites/icon_mouseLeft.spr" );
+	m_hInstructorHintKeyMouseRightSprite = SPR_Load( "sprites/icon_mouseRight.spr" );
+	m_hInstructorHintKeyMouseThreeSprite = SPR_Load( "sprites/icon_mouseThree.spr" );
+	m_hInstructorHintKeyMouseWheelUpSprite = SPR_Load( "sprites/icon_mouseWheel_up.spr" );
+	m_hInstructorHintKeyMouseWheelDownSprite = SPR_Load( "sprites/icon_mouseWheel_down.spr" );
+	m_hInstructorHintKeyUpSprite = SPR_Load( "sprites/icon_key_up.spr" );
+	m_hInstructorHintKeyDownSprite = SPR_Load( "sprites/icon_key_down.spr" );
+	m_hInstructorHintKeyLeftSprite = SPR_Load( "sprites/icon_key_left.spr" );
+	m_hInstructorHintKeyRightSprite = SPR_Load( "sprites/icon_key_right.spr" );
 
 	// Map-authored hints use Source-style icon identifiers mapped to optional
 	// GoldSrc sprites: e.g. hint_icon_onscreen "icon_interact" loads
 	// sprites/icon_interact.spr. The two positions are independent.
-	if( m_szInstructorHintIconOnscreen[0] )
-	{
-		char path[96];
-		snprintf( path, sizeof( path ), "sprites/%s.spr", m_szInstructorHintIconOnscreen );
-		m_hInstructorHintOnscreenSprite = SPR_Load( path );
-	}
-	if( m_szInstructorHintIconOffscreen[0] )
-	{
-		char path[96];
-		snprintf( path, sizeof( path ), "sprites/%s.spr", m_szInstructorHintIconOffscreen );
-		m_hInstructorHintOffscreenSprite = SPR_Load( path );
-	}
+	m_hInstructorHintOnscreenSprite = HUD_ReloadInstructorHintSprite( m_szInstructorHintIconOnscreen );
+	m_hInstructorHintOffscreenSprite = HUD_ReloadInstructorHintSprite( m_szInstructorHintIconOffscreen );
 
 	// a1ba: don't break the loading order here and
 	// don't cause memory leak but check
