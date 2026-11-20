@@ -2712,10 +2712,70 @@ void CBasePlayer::UpdateUseableHighlight( void )
 	}
 	else
 	{
-		// No usable object is within the normal 64-unit forward-cone scan.
-		// Remove both the PS2 bracket and its matching automatic instructor prompt.
-		// Distant interactables must not create an automatic USE locator.
-		ClearUseableHighlight();
+		// No target is inside the narrow forward cone. Remove only the PS2
+		// bracket, then retain a short-range locator scan around the player.
+		// This lets icon_interact + its directional arrow guide the player
+		// toward a nearby visible object before the on-screen USE keycap appears.
+		// The scan is still limited to 64 units and rejects intervening walls.
+		edict_t *pentGraphic = m_hUseableHighlight.Get();
+		CUseableGraphic *pGraphic = pentGraphic ?
+			(CUseableGraphic *)CBaseEntity::Instance( pentGraphic ) : NULL;
+		if( pGraphic )
+			UTIL_Remove( pGraphic );
+		m_hUseableHighlight = NULL;
+		m_hLastUseableItem = NULL;
+
+		CBaseEntity *pHintObject = NULL;
+		CBaseEntity *pHintCandidate = NULL;
+		float flMaxHintDot = -1.0e30f;
+		const Vector vecEye = pev->origin + pev->view_ofs;
+
+		while( ( pHintObject = UTIL_FindEntityInSphere(
+			pHintObject, pev->origin, PLAYER_SEARCH_RADIUS ) ) != NULL )
+		{
+			if( !( pHintObject->ObjectCaps() &
+				( FCAP_IMPULSE_USE | FCAP_CONTINUOUS_USE | FCAP_ONOFF_USE ) ) )
+				continue;
+
+			if( pHintObject->IsPlayer() || pHintObject->MyMonsterPointer() ||
+				FClassnameIs( pHintObject->pev, "func_pushable" ) ||
+				( pHintObject->pev->spawnflags & 0x200 ) )
+				continue;
+
+			Vector hintOrigin = pHintObject->pev->origin;
+			BOOL hintIsBModel = pHintObject->IsBSPModel();
+			if( !hintIsBModel )
+			{
+				const char *pszModel = STRING( pHintObject->pev->model );
+				if( pszModel && pszModel[0] == '*' )
+					hintIsBModel = TRUE;
+			}
+			if( hintIsBModel )
+				hintOrigin = VecBModelOrigin( pHintObject->pev );
+
+			Vector hintLOS = hintOrigin - vecEye;
+			hintLOS = UTIL_ClampVectorToBox( hintLOS, pHintObject->pev->size * 0.5f );
+			const float hintDot = DotProduct( hintLOS, gpGlobals->v_forward );
+
+			TraceResult hintTrace;
+			UTIL_TraceLine( vecEye, vecEye + hintLOS,
+				dont_ignore_monsters, edict(), &hintTrace );
+			if( hintTrace.fStartSolid ||
+				( hintTrace.flFraction < 1.0f && hintTrace.pHit != pHintObject->edict() ) )
+				continue;
+
+			// Prefer the most forward-facing visible candidate. If it is outside
+			// the view, the client projects it to the offscreen locator ellipse.
+			if( hintDot > flMaxHintDot )
+			{
+				pHintCandidate = pHintObject;
+				flMaxHintDot = hintDot;
+			}
+		}
+
+		// A null candidate ends only the automatic prompt; an existing prompt
+		// for the same candidate is updated in place and does not restart its fade.
+		UpdateUseableInstructorHint( pHintCandidate );
 	}
 }
 
