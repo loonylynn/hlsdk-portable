@@ -190,7 +190,7 @@ public:
 	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
 	void HintThink( void );
 	void UpdateOnRemove( void );
-	BOOL IsActiveForPlayer( CBasePlayer *pPlayer ) const;
+	BOOL IsActiveForPlayer( CBasePlayer *pPlayer );
 
 private:
 	void ShowHint( CBasePlayer *pPlayer );
@@ -235,7 +235,7 @@ private:
 
 LINK_ENTITY_TO_CLASS( env_instructor_hint, CEnvInstructorHint );
 
-BOOL CEnvInstructorHint::IsActiveForPlayer( CBasePlayer *pPlayer ) const
+BOOL CEnvInstructorHint::IsActiveForPlayer( CBasePlayer *pPlayer )
 {
 	return m_bActive && pPlayer && m_hActivator.Get() == pPlayer->edict();
 }
