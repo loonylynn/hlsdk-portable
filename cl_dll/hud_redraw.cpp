@@ -1345,8 +1345,22 @@ int CHud::Redraw( float flTime, int intermission )
 			}
 			// Source treats an actively presenting locator as a static icon:
 			// it stays centered until locator_lerp_rest has elapsed.
+			const float presentationRestTime = HUD_GetInstructorPresentationRestTime();
+			const float presentationElapsed = flTime - locatorTarget->m_lerpStart;
+			const float presentationLerpTime = HUD_GetInstructorPresentationLerpTime();
 			const bool locatorPresenting = hasTarget &&
-				locatorTarget->IsPresenting( flTime, HUD_GetInstructorPresentationRestTime() );
+				locatorTarget->IsPresenting( flTime, presentationRestTime );
+			const bool locatorLerping = hasTarget && !locatorPresenting &&
+				presentationLerpTime > 0.0f &&
+				presentationElapsed < presentationRestTime + presentationLerpTime;
+			float locatorLerpFraction = 1.0f;
+			if( locatorLerping )
+			{
+				locatorLerpFraction = ( presentationElapsed - presentationRestTime ) /
+					presentationLerpTime;
+				if( locatorLerpFraction < 0.0f ) locatorLerpFraction = 0.0f;
+				if( locatorLerpFraction > 1.0f ) locatorLerpFraction = 1.0f;
+			}
 			const bool targetOffscreen = hasTarget && !locatorPresenting &&
 				!locatorTarget->m_bOnscreen;
 			const bool targetUsesOffscreenIcon = targetOffscreen;
@@ -1418,12 +1432,22 @@ int CHud::Redraw( float flTime, int intermission )
 					// The renderer adds only transient pulse/shake offsets.
 					if( !locatorPresenting )
 						locatorTarget->CalculateEdgePosition( ScreenWidth, ScreenHeight, locatorEdgeMargin );
-					float locatorX = locatorPresenting ? ScreenWidth * 0.5f :
+					const float screenCenterX = ScreenWidth * 0.5f;
+					const float screenCenterY = ScreenHeight * 0.5f;
+					const float desiredLocatorX =
 						(float)( locatorTarget->m_iconX + locatorTarget->m_offsetX ) +
 							locatorTarget->m_flShakeX;
-					float locatorY = locatorPresenting ? ScreenHeight * 0.5f :
+					const float desiredLocatorY =
 						(float)( locatorTarget->m_iconY + locatorTarget->m_offsetY ) +
 							locatorTarget->m_flShakeY;
+					float locatorX = locatorPresenting ? screenCenterX :
+						locatorLerping ? screenCenterX +
+							( desiredLocatorX - screenCenterX ) * locatorLerpFraction :
+							desiredLocatorX;
+					float locatorY = locatorPresenting ? screenCenterY :
+						locatorLerping ? screenCenterY +
+							( desiredLocatorY - screenCenterY ) * locatorLerpFraction :
+							desiredLocatorY;
 
 					if( locatorX < locatorEdgeMargin ) locatorX = (float)locatorEdgeMargin;
 					if( locatorX > ScreenWidth - locatorEdgeMargin ) locatorX = (float)( ScreenWidth - locatorEdgeMargin );
