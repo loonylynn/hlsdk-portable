@@ -23,6 +23,9 @@ void CInstructorLocatorTarget::ResetState()
 	m_serialNumber = -1;
 	m_widthScaleOnscreen = 1.0f;
 	m_iCaptionColorR = m_iCaptionColorG = m_iCaptionColorB = 255;
+	m_flCompassSin = 0.0f;
+	m_flCompassCos = 1.0f;
+	m_bCompassDirectionValid = false;
 }
 
 void CInstructorLocatorTarget::Activate( int serialNumber, int frameNumber,
@@ -250,10 +253,19 @@ void CInstructorLocatorTarget::CalculateEdgePosition( int screenWidth, int scree
 		if( radius > maxRadiusX ) radius = maxRadiusX;
 		if( radius > maxRadiusY ) radius = maxRadiusY;
 
-		const float direction = atan2f( dx, -dy );
-		m_iconX = m_centerX + (int)( radius * sinf( direction ) + ( dx >= 0.0f ? 0.5f : -0.5f ) );
-		m_iconY = m_centerY - (int)( radius * 0.6f * cosf( direction ) +
-			( dy <= 0.0f ? 0.5f : -0.5f ) );
+		if( m_bCompassDirectionValid )
+		{
+			// Same horizontal bearing formula as Source GetTargetPosition().
+			m_iconX = (int)( (float)m_centerX + radius * m_flCompassSin );
+			m_iconY = (int)( (float)m_centerY - radius * 0.6f * m_flCompassCos );
+		}
+		else
+		{
+			// Fallback for engines without a usable view-angle callback.
+			const float direction = atan2f( dx, -dy );
+			m_iconX = (int)( (float)m_centerX + radius * sinf( direction ) );
+			m_iconY = (int)( (float)m_centerY - radius * 0.6f * cosf( direction ) );
+		}
 
 		// Source tests horizontal title-safe bounds before vertical bounds.
 		if( m_flProjectedX < safe )
@@ -278,6 +290,13 @@ void CInstructorLocatorTarget::CalculateEdgePosition( int screenWidth, int scree
 	if( m_iconX > screenWidth - horizontalMargin ) m_iconX = screenWidth - horizontalMargin;
 	if( m_iconY < verticalMargin ) m_iconY = verticalMargin;
 	if( m_iconY > screenHeight - verticalMargin ) m_iconY = screenHeight - verticalMargin;
+}
+
+void CInstructorLocatorTarget::SetCompassDirection( float sinYaw, float cosYaw, bool valid )
+{
+	m_flCompassSin = sinYaw;
+	m_flCompassCos = cosYaw;
+	m_bCompassDirectionValid = valid;
 }
 
 void CInstructorLocatorTarget::SetVisible( bool visible, float currentTime, float fadeTime )
