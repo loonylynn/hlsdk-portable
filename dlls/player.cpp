@@ -1792,6 +1792,8 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 // PlayerUse - handles USE keypress
 //
 #define	PLAYER_SEARCH_RADIUS	(float)64
+// Approach guidance radius for automatic instructor icons; real USE focus remains 64 units.
+#define	PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS	(float)256
 
 void CBasePlayer::PlayerUse( void )
 {
@@ -2530,7 +2532,7 @@ void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 // Generic interaction prompt for the other FCAP_USE-style targets found by
 // UpdateUseableHighlight. This is shown before IN_USE is pressed, so its
 // keycap teaches the player which binding will activate the focused object.
-void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject )
+void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject, BOOL bReadyToUse )
 {
 	if( m_iActiveInstructorHintId != 0 )
 	{
@@ -2552,34 +2554,46 @@ void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject )
 
 	const int targetIndex = ENTINDEX( pObject->edict() );
 	const Vector targetOrigin = InstructorHintTargetOrigin( pObject );
+	// Mode 0 = approach marker; mode 3 = in-range, forward-focused USE prompt.
+	const int hintMode = bReadyToUse ? 3 : 0;
+	const bool sameTarget = m_bUseableInstructorHintActive &&
+		m_iUseableInstructorHintTarget == targetIndex &&
+		m_iUseableInstructorHintId == -2;
+	const bool stageChanged = sameTarget &&
+		m_iUseableInstructorHintIconMode != hintMode;
 
-	if( !m_bUseableInstructorHintActive ||
-		m_iUseableInstructorHintTarget != targetIndex ||
-		m_iUseableInstructorHintId != -2 )
-	{
+	if( !sameTarget )
 		ClearPushableInstructorHint();
-		m_iUseableInstructorHintId = -2;
 
+	if( !sameTarget || stageChanged )
+	{
+		const char *caption = bReadyToUse ? "Interact" : "";
+		const char *binding = bReadyToUse ? "+use" : "";
+		const char *iconOnscreen = bReadyToUse ? "use_binding" : "icon_interact";
+		const char *iconOffscreen = "icon_interact";
+
+		// A full action-1 packet deliberately reuses the existing hint ID when
+		// changing stages, updating its icon pair without a remove/recreate gap.
 		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pev );
-			WRITE_BYTE( 1 ); // create/show hint
-			WRITE_SHORT( -2 ); // automatic generic usable-object prompt
+			WRITE_BYTE( 1 );
+			WRITE_SHORT( -2 );
 			WRITE_SHORT( targetIndex );
-			WRITE_SHORT( 0 ); // no timeout; the use-target scan owns its lifetime
+			WRITE_SHORT( 0 );
 			WRITE_COORD( targetOrigin.x );
 			WRITE_COORD( targetOrigin.y );
 			WRITE_COORD( targetOrigin.z );
-			WRITE_STRING( "Interact" );
-			WRITE_STRING( "+use" );
+			WRITE_STRING( caption );
+			WRITE_STRING( binding );
 			WRITE_BYTE( 0 );
-			WRITE_STRING( "use_binding" ); // on-screen: show the resolved +use key
-			WRITE_STRING( "icon_interact" ); // off-screen: switch to Source's interaction icon
+			WRITE_STRING( iconOnscreen );
+			WRITE_STRING( iconOffscreen );
 			WRITE_BYTE( 255 );
 			WRITE_BYTE( 255 );
 			WRITE_BYTE( 255 );
 			WRITE_SHORT( 0 );
 			WRITE_COORD( 0.0f );
-			WRITE_BYTE( 0 ); // unobstructed by the use-target scan
-			WRITE_BYTE( 1 ); // visible
+			WRITE_BYTE( 0 );
+			WRITE_BYTE( 1 );
 			WRITE_STRING( "automatic_use" );
 			WRITE_STRING( "automatic_use" );
 		MESSAGE_END();
@@ -2587,13 +2601,13 @@ void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject )
 		m_bUseableInstructorHintActive = TRUE;
 		m_iUseableInstructorHintTarget = targetIndex;
 		m_iUseableInstructorHintId = -2;
-		m_iUseableInstructorHintIconMode = 0;
+		m_iUseableInstructorHintIconMode = hintMode;
 		m_flUseableInstructorHintActionTime = 0.0f;
 		return;
 	}
 
 	MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pev );
-		WRITE_BYTE( 2 ); // update target position
+		WRITE_BYTE( 2 );
 		WRITE_SHORT( -2 );
 		WRITE_SHORT( targetIndex );
 		WRITE_COORD( targetOrigin.x );
@@ -2602,8 +2616,8 @@ void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject )
 		WRITE_BYTE( 0 );
 		WRITE_BYTE( 0 );
 		WRITE_BYTE( 1 );
-		WRITE_STRING( "Interact" );
-		WRITE_STRING( "+use" );
+		WRITE_STRING( bReadyToUse ? "Interact" : "" );
+		WRITE_STRING( bReadyToUse ? "+use" : "" );
 	MESSAGE_END();
 }
 
@@ -2708,7 +2722,7 @@ void CBasePlayer::UpdateUseableHighlight( void )
 		if( FClassnameIs( pClosest->pev, "func_pushable" ) )
 			UpdatePushableInstructorHint( pClosest );
 		else
-			UpdateUseableInstructorHint( pClosest );
+			UpdateUseableInstructorHint( pClosest, TRUE );
 	}
 	else
 	{
@@ -2716,7 +2730,8 @@ void CBasePlayer::UpdateUseableHighlight( void )
 		// bracket, then retain a short-range locator scan around the player.
 		// This lets icon_interact + its directional arrow guide the player
 		// toward a nearby visible object before the on-screen USE keycap appears.
-		// The scan is still limited to 64 units and rejects intervening walls.
+		// The scan extends to 256 units, but rejects intervening walls. It never
+		// creates the PS2 bracket or grants actual USE focus at that distance.
 		edict_t *pentGraphic = m_hUseableHighlight.Get();
 		CUseableGraphic *pGraphic = pentGraphic ?
 			(CUseableGraphic *)CBaseEntity::Instance( pentGraphic ) : NULL;
@@ -2731,7 +2746,7 @@ void CBasePlayer::UpdateUseableHighlight( void )
 		const Vector vecEye = pev->origin + pev->view_ofs;
 
 		while( ( pHintObject = UTIL_FindEntityInSphere(
-			pHintObject, pev->origin, PLAYER_SEARCH_RADIUS ) ) != NULL )
+			pHintObject, pev->origin, PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS ) ) != NULL )
 		{
 			if( !( pHintObject->ObjectCaps() &
 				( FCAP_IMPULSE_USE | FCAP_CONTINUOUS_USE | FCAP_ONOFF_USE ) ) )
@@ -2775,7 +2790,7 @@ void CBasePlayer::UpdateUseableHighlight( void )
 
 		// A null candidate ends only the automatic prompt; an existing prompt
 		// for the same candidate is updated in place and does not restart its fade.
-		UpdateUseableInstructorHint( pHintCandidate );
+		UpdateUseableInstructorHint( pHintCandidate, FALSE );
 	}
 }
 
