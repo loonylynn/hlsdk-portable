@@ -2395,8 +2395,13 @@ void CEnvInstructorHint::HintThink( void )
 		}
 
 		BOOL bTargetVisible = IsTargetVisible( pPlayer, pTarget, targetOrigin );
+		// Compare the encoded WRITE_COORD values, not world-space deltas:
+		// a small move that crosses a 1/8-unit quantization boundary is visible
+		// to the client and therefore needs a packet.
 		const BOOL bOriginChanged = !m_bHasSentTargetUpdate ||
-			( targetOrigin - m_vecLastSentTargetOrigin ).Length() >= 0.125f;
+			(int)( targetOrigin.x * 8.0f ) != (int)( m_vecLastSentTargetOrigin.x * 8.0f ) ||
+			(int)( targetOrigin.y * 8.0f ) != (int)( m_vecLastSentTargetOrigin.y * 8.0f ) ||
+			(int)( targetOrigin.z * 8.0f ) != (int)( m_vecLastSentTargetOrigin.z * 8.0f );
 		const BOOL bNeedsUpdate = !m_bHasSentTargetUpdate ||
 			targetIndex != m_iLastTargetIndex ||
 			bOriginChanged ||
