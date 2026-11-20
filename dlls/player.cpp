@@ -1834,6 +1834,66 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 // Approach guidance radius for automatic instructor icons; real USE focus remains 64 units.
 #define	PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS	(float)128
 
+ 
+// Select the same usable entity for the USE action and its HUD presentation.
+// The returned point is the nearest point on the target bounds that passed the
+// line-of-sight trace, so the locator cannot be anchored at a hidden center.
+static CBaseEntity *FindUseableTarget( CBasePlayer *pPlayer, float searchRadius,
+	BOOL bInstructorApproach, Vector *pVisiblePoint )
+{
+	if( pVisiblePoint )
+		*pVisiblePoint = g_vecZero;
+	if( !pPlayer )
+		return NULL;
+
+	UTIL_MakeVectors( pPlayer->pev->v_angle );
+	const Vector vecEye = pPlayer->pev->origin + pPlayer->pev->view_ofs;
+
+	CBaseEntity *pObject = NULL;
+	CBaseEntity *pClosest = NULL;
+	Vector vecClosestPoint = g_vecZero;
+	float flMaxDot = bInstructorApproach ? -1.0e30f : VIEW_FIELD_NARROW;
+
+	while( ( pObject = UTIL_FindEntityInSphere(
+		pObject, pPlayer->pev->origin, searchRadius ) ) != NULL )
+	{
+		if( !( pObject->ObjectCaps() &
+			( FCAP_IMPULSE_USE | FCAP_CONTINUOUS_USE | FCAP_ONOFF_USE ) ) )
+			continue;
+
+		// The early approach marker is intentionally limited to ordinary
+		// world interactables. The actual 64-unit USE scan has no extra filters,
+		// matching PlayerUse's original entity eligibility.
+		if( bInstructorApproach &&
+			( pObject->IsPlayer() || pObject->MyMonsterPointer() ||
+			  FClassnameIs( pObject->pev, "func_pushable" ) ||
+			  ( pObject->pev->spawnflags & 0x200 ) ) )
+			continue;
+
+		// Match GoldSrc PlayerUse's target origin and nearest-bounds point.
+		Vector vecLOS = VecBModelOrigin( pObject->pev ) - vecEye;
+		vecLOS = UTIL_ClampVectorToBox( vecLOS, pObject->pev->size * 0.5f );
+		const float flDot = DotProduct( vecLOS, gpGlobals->v_forward );
+		if( flDot <= flMaxDot )
+			continue;
+
+		TraceResult tr;
+		UTIL_TraceLine( vecEye, vecEye + vecLOS,
+			dont_ignore_monsters, pPlayer->edict(), &tr );
+		if( tr.fStartSolid ||
+			( tr.flFraction < 1.0f && tr.pHit != pObject->edict() ) )
+			continue;
+
+		pClosest = pObject;
+		flMaxDot = flDot;
+		vecClosestPoint = ( tr.pHit == pObject->edict() ) ? tr.vecEndPos : vecEye + vecLOS;
+	}
+
+	if( pClosest && pVisiblePoint )
+		*pVisiblePoint = vecClosestPoint;
+	return pClosest;
+}
+
 void CBasePlayer::PlayerUse( void )
 {
 	if( IsObserver() )
@@ -1890,39 +1950,7 @@ void CBasePlayer::PlayerUse( void )
 		}
 	}
 
-	CBaseEntity *pObject = NULL;
-	CBaseEntity *pClosest = NULL;
-	Vector vecLOS;
-	float flMaxDot = VIEW_FIELD_NARROW;
-	float flDot;
-
-	UTIL_MakeVectors( pev->v_angle );// so we know which way we are facing
-
-	while( ( pObject = UTIL_FindEntityInSphere( pObject, pev->origin, PLAYER_SEARCH_RADIUS ) ) != NULL )
-	{
-		if( pObject->ObjectCaps() & ( FCAP_IMPULSE_USE | FCAP_CONTINUOUS_USE | FCAP_ONOFF_USE ) )
-		{
-			// !!!PERFORMANCE- should this check be done on a per case basis AFTER we've determined that
-			// this object is actually usable? This dot is being done for every object within PLAYER_SEARCH_RADIUS
-			// when player hits the use key. How many objects can be in that area, anyway? (sjb)
-			vecLOS = ( VecBModelOrigin( pObject->pev ) - ( pev->origin + pev->view_ofs ) );
-
-			// This essentially moves the origin of the target to the corner nearest the player to test to see 
-			// if it's "hull" is in the view cone
-			vecLOS = UTIL_ClampVectorToBox( vecLOS, pObject->pev->size * 0.5 );
-
-			flDot = DotProduct( vecLOS , gpGlobals->v_forward );
-			if( flDot > flMaxDot )
-			{
-				// only if the item is in front of the user
-				pClosest = pObject;
-				flMaxDot = flDot;
-				//ALERT( at_console, "%s : %f\n", STRING( pObject->pev->classname ), flDot );
-			}
-			//ALERT( at_console, "%s : %f\n", STRING( pObject->pev->classname ), flDot );
-		}
-	}
-	pObject = pClosest;
+	CBaseEntity *pObject = FindUseableTarget( this, PLAYER_SEARCH_RADIUS, FALSE, NULL );
 
 	// Found an object
 	if( pObject )
@@ -2647,7 +2675,7 @@ void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 
 // Two-stage interaction guidance for non-pushable FCAP_USE targets:
 // a nearby icon_interact approach marker, then the +use keycap when focused.
-void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject, BOOL bReadyToUse )
+void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject, BOOL bReadyToUse, const Vector &targetOrigin )
 {
 	if( PlayerHasActiveMapInstructorHint( this ) )
 	{
@@ -2668,7 +2696,6 @@ void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject, BOOL bReady
 	}
 
 	const int targetIndex = ENTINDEX( pObject->edict() );
-	const Vector targetOrigin = InstructorHintTargetOrigin( pObject );
 	// Mode 0 = approach marker; mode 3 = in-range, forward-focused USE prompt.
 	const int hintMode = bReadyToUse ? 3 : 0;
 	const bool sameTarget = m_bUseableInstructorHintActive &&
@@ -2786,77 +2813,23 @@ void CBasePlayer::UpdateUseableHighlight( void )
 		return;
 
 	m_flNextUseableCheck = gpGlobals->time + 0.2f;
-	UTIL_MakeVectors( pev->v_angle );
 
-	CBaseEntity *pObject = NULL;
-	CBaseEntity *pClosest = NULL;
-	Vector vecLOS;
-	float flMaxDot = VIEW_FIELD_NARROW;
-	float flDot;
-
-	while( ( pObject = UTIL_FindEntityInSphere( pObject, pev->origin, PLAYER_SEARCH_RADIUS ) ) != NULL )
-	{
-		if( !( pObject->ObjectCaps() & ( FCAP_IMPULSE_USE | FCAP_CONTINUOUS_USE | FCAP_ONOFF_USE ) ) )
-			continue;
-
-		if( pObject->IsPlayer() || pObject->MyMonsterPointer() )
-			continue;
-
-		// Pushables are valid continuous-use targets. They were previously
-		// excluded here, which prevented both the PS2 bracket and its hint.
-		if( pObject->pev->spawnflags & 0x200 )
-			continue;
-
-		Vector vecOrigin = pObject->pev->origin;
-		BOOL fBModel = pObject->IsBSPModel();
-
-		if( !fBModel )
-		{
-			const char *pszModel = STRING( pObject->pev->model );
-			if( pszModel && pszModel[0] == '*' )
-				fBModel = TRUE;
-		}
-
-		if( fBModel )
-			vecOrigin = VecBModelOrigin( pObject->pev );
-
-		Vector vecEye = pev->origin + pev->view_ofs;
-		vecLOS = vecOrigin - vecEye;
-		vecLOS = UTIL_ClampVectorToBox( vecLOS, pObject->pev->size * 0.5f );
-		flDot = DotProduct( vecLOS, gpGlobals->v_forward );
-
-		if( flDot > flMaxDot )
-		{
-			// Do not select usable objects hidden behind world brushes or
-			// another solid entity.
-			TraceResult tr;
-			UTIL_TraceLine( vecEye, vecEye + vecLOS, dont_ignore_monsters, edict(), &tr );
-
-			if( tr.fStartSolid || ( tr.flFraction < 1.0f && tr.pHit != pObject->edict() ) )
-				continue;
-
-			pClosest = pObject;
-			flMaxDot = flDot;
-		}
-	}
+	Vector useTargetPoint;
+	CBaseEntity *pClosest = FindUseableTarget(
+		this, PLAYER_SEARCH_RADIUS, FALSE, &useTargetPoint );
 
 	if( pClosest )
 	{
-		// Keep the original 64-unit scan and its PS2 brackets unchanged.
 		HighlightUseable( pClosest );
 		if( FClassnameIs( pClosest->pev, "func_pushable" ) )
 			UpdatePushableInstructorHint( pClosest );
 		else
-			UpdateUseableInstructorHint( pClosest, TRUE );
+			UpdateUseableInstructorHint( pClosest, TRUE, useTargetPoint );
 	}
 	else
 	{
-		// No target is inside the narrow forward cone. Remove only the PS2
-		// bracket, then retain a short-range locator scan around the player.
-		// This lets icon_interact + its directional arrow guide the player
-		// toward a nearby visible object before the on-screen USE keycap appears.
-		// The scan extends to 128 units, but rejects intervening walls. It never
-		// creates the PS2 bracket or grants actual USE focus at that distance.
+		// No target is inside the normal USE focus cone. Remove only the PS2
+		// bracket, then search a wider radius for an early directional marker.
 		edict_t *pentGraphic = m_hUseableHighlight.Get();
 		CUseableGraphic *pGraphic = pentGraphic ?
 			(CUseableGraphic *)CBaseEntity::Instance( pentGraphic ) : NULL;
@@ -2865,58 +2838,12 @@ void CBasePlayer::UpdateUseableHighlight( void )
 		m_hUseableHighlight = NULL;
 		m_hLastUseableItem = NULL;
 
-		CBaseEntity *pHintObject = NULL;
-		CBaseEntity *pHintCandidate = NULL;
-		float flMaxHintDot = -1.0e30f;
-		const Vector vecEye = pev->origin + pev->view_ofs;
-
-		while( ( pHintObject = UTIL_FindEntityInSphere(
-			pHintObject, pev->origin, PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS ) ) != NULL )
-		{
-			if( !( pHintObject->ObjectCaps() &
-				( FCAP_IMPULSE_USE | FCAP_CONTINUOUS_USE | FCAP_ONOFF_USE ) ) )
-				continue;
-
-			if( pHintObject->IsPlayer() || pHintObject->MyMonsterPointer() ||
-				FClassnameIs( pHintObject->pev, "func_pushable" ) ||
-				( pHintObject->pev->spawnflags & 0x200 ) )
-				continue;
-
-			Vector hintOrigin = pHintObject->pev->origin;
-			BOOL hintIsBModel = pHintObject->IsBSPModel();
-			if( !hintIsBModel )
-			{
-				const char *pszModel = STRING( pHintObject->pev->model );
-				if( pszModel && pszModel[0] == '*' )
-					hintIsBModel = TRUE;
-			}
-			if( hintIsBModel )
-				hintOrigin = VecBModelOrigin( pHintObject->pev );
-
-			Vector hintLOS = hintOrigin - vecEye;
-			hintLOS = UTIL_ClampVectorToBox( hintLOS, pHintObject->pev->size * 0.5f );
-			const float hintDot = DotProduct( hintLOS, gpGlobals->v_forward );
-
-			TraceResult hintTrace;
-			UTIL_TraceLine( vecEye, vecEye + hintLOS,
-				dont_ignore_monsters, edict(), &hintTrace );
-			if( hintTrace.fStartSolid ||
-				( hintTrace.flFraction < 1.0f && hintTrace.pHit != pHintObject->edict() ) )
-				continue;
-
-			// Prefer the most forward-facing visible candidate. If it is outside
-			// the view, the client projects it to the offscreen locator ellipse.
-			if( hintDot > flMaxHintDot )
-			{
-				pHintCandidate = pHintObject;
-				flMaxHintDot = hintDot;
-			}
-		}
-
-		// A null candidate ends only the automatic prompt; an existing prompt
-		// for the same candidate is updated in place and does not restart its fade.
-		UpdateUseableInstructorHint( pHintCandidate, FALSE );
+		Vector approachTargetPoint;
+		CBaseEntity *pHintCandidate = FindUseableTarget(
+			this, PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS, TRUE, &approachTargetPoint );
+		UpdateUseableInstructorHint( pHintCandidate, FALSE, approachTargetPoint );
 	}
+
 }
 
 void CBasePlayer::Jump()
