@@ -1693,7 +1693,7 @@ int CHud::Redraw( float flTime, int intermission )
 						int labelWidth = locatorCaptionWidth + locatorKeyWidth + 24;
 						if( labelWidth < 44 ) labelWidth = 44;
 						if( labelWidth > maxLabelWidth ) labelWidth = maxLabelWidth;
-						const int labelHeight = 20;
+						const int labelHeight = Q_max( 20, HUD_GetInstructorCaptionHeight() + 6 );
 						int labelX = markerX - labelWidth / 2;
 						int labelY = markerY + markerHalfHeight + 7;
 
@@ -1821,7 +1821,7 @@ int CHud::Redraw( float flTime, int intermission )
 							const int maxCaptionX = Q_max( safeLeft, safeRight - sourceCaptionWidth );
 							captionX = Q_max( safeLeft, Q_min( captionX, maxCaptionX ) );
 
-							// Keep the standard Half-Life HUD font and let it use the
+							// Use the caption-specific scalable font and let it use the
 							// full remaining safe width. This prevents the last letters
 							// from being clipped when the icon is near either screen edge.
 							HUD_DrawInstructorCaption( captionX, markerY - fontHeight / 2 - 1,
