@@ -2529,9 +2529,8 @@ void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 	MESSAGE_END();
 }
 
-// Generic interaction prompt for the other FCAP_USE-style targets found by
-// UpdateUseableHighlight. This is shown before IN_USE is pressed, so its
-// keycap teaches the player which binding will activate the focused object.
+// Two-stage interaction guidance for non-pushable FCAP_USE targets:
+// a nearby icon_interact approach marker, then the +use keycap when focused.
 void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject, BOOL bReadyToUse )
 {
 	if( m_iActiveInstructorHintId != 0 )
@@ -2638,7 +2637,17 @@ void CBasePlayer::HighlightUseable( CBaseEntity *pObject )
 		return;
 	}
 
-	ClearUseableHighlight();
+	// Replacing the PS2 bracket must not clear the instructor target here.
+	// The caller updates that target immediately after this function, allowing
+	// the approach icon to transition directly into the ready keycap.
+	edict_t *pentGraphic = m_hUseableHighlight.Get();
+	CUseableGraphic *pOldGraphic = pentGraphic ?
+		(CUseableGraphic *)CBaseEntity::Instance( pentGraphic ) : NULL;
+	if( pOldGraphic )
+		UTIL_Remove( pOldGraphic );
+	m_hUseableHighlight = NULL;
+	m_hLastUseableItem = NULL;
+
 	CUseableGraphic *pGraphic = CUseableGraphic::Create( pObject, this );
 	m_hUseableHighlight = pGraphic;
 	if( pGraphic )
