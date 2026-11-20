@@ -1146,9 +1146,7 @@ int CHud::Redraw( float flTime, int intermission )
 			// final drawing. ResolveDecluttering then offsets from this exact
 			// base position instead of a subtly different second projection.
 			const bool targetOffscreen = !target->m_bOnscreen;
-			const bool farInteractionIcon = target->m_iHintId == -2 &&
-				target->m_flDistFromPlayer > INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE;
-			const bool targetUsesOffscreenIcon = targetOffscreen || farInteractionIcon;
+			const bool targetUsesOffscreenIcon = targetOffscreen;
 			const char *requestedIcon = targetUsesOffscreenIcon ?
 				target->m_szOffscreenIcon : target->m_szOnscreenIcon;
 			const bool sourceBindingIcon = requestedIcon &&
@@ -1346,9 +1344,7 @@ int CHud::Redraw( float flTime, int intermission )
 				locatorTarget->SetCompassDirection( compassSin, compassCos, hasCompassDirection );
 			}
 			const bool targetOffscreen = hasTarget && !locatorTarget->m_bOnscreen;
-			const bool farInteractionIcon = locatorTarget->m_iHintId == -2 &&
-				locatorTarget->m_flDistFromPlayer > INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE;
-			const bool targetUsesOffscreenIcon = targetOffscreen || farInteractionIcon;
+			const bool targetUsesOffscreenIcon = targetOffscreen;
 
 			// "use_binding" is a virtual icon: the resolved key art becomes the locator.
 			char instructorBindingGlyph[32];
@@ -1477,8 +1473,6 @@ int CHud::Redraw( float flTime, int intermission )
 					const int locatorTextB = locatorB * locatorAlpha / 255;
 
 					// Source halves locator icons beyond ICON_DIST_TOO_FAR (720 units).
-					// The automatic -2 Interact prompt also selects its interaction icon
-					// at that distance; other hints switch icons only when off-screen.
 					const float distanceScale =
 						locatorTarget->m_flDistFromPlayer > INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE ?
 						0.5f : 1.0f;
