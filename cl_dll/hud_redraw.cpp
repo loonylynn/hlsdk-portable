@@ -1100,7 +1100,7 @@ int CHud::Redraw( float flTime, int intermission )
 						HUD_GetInstructorKeyBadgeScale() + 0.5f );
 					keyChipWidth = bindingWidth + fallbackPadding * 2;
 				}
-				if( keyChipWidth > 64 ) keyChipWidth = 64;
+				if( !genericKey && keyChipWidth > 64 ) keyChipWidth = 64;
 			}
 
 			HSPRITE icon = (HSPRITE)target->m_hOnscreenSprite;
@@ -1711,7 +1711,7 @@ int CHud::Redraw( float flTime, int intermission )
 									HUD_GetInstructorKeyBadgeScale() + 0.5f );
 								locatorKeyWidth = locatorBindingWidth + fallbackPadding * 2;
 							}
-							if( locatorKeyWidth > 64 )
+							if( !locatorUsesGenericKey && locatorKeyWidth > 64 )
 								locatorKeyWidth = 64;
 						}
 						const int maxLabelWidth = Q_max( 32, ScreenWidth - 24 );
@@ -2328,7 +2328,12 @@ static void HUD_GetInstructorKeyBadgeSize( HSPRITE sprite, int *width, int *heig
 		nativeWidth > 64 || nativeHeight > 64 )
 		nativeWidth = nativeHeight = 32;
 
-	const float scale = HUD_GetInstructorKeyBadgeScale();
+	float scale = HUD_GetInstructorKeyBadgeScale();
+	// Keep the entire sprite inside the 64px HUD-icon limit without clamping
+	// either axis independently; its native aspect ratio is always preserved.
+	const int largestNativeDimension = Q_max( nativeWidth, nativeHeight );
+	if( largestNativeDimension * scale > 64.0f )
+		scale = 64.0f / (float)largestNativeDimension;
 	if( width )
 		*width = Q_max( 1, (int)( nativeWidth * scale + 0.5f ) );
 	if( height )
