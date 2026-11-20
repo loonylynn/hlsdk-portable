@@ -2329,10 +2329,9 @@ static void HUD_DrawInstructorCaptionText( int x, int y, const char *text )
 		memcpy( glyph, text, (size_t)charBytes );
 		glyph[charBytes] = '\0';
 
-		// A one-pixel horizontal overdraw approximates the bold weight of
-		// InstructorTitle without changing the global console font.
+		// Draw each glyph exactly once. Xash's console font already provides
+		// its own outline, so an extra weight or shadow pass is unnecessary.
 		gEngfuncs.pfnDrawConsoleString( drawX, y, glyph );
-		gEngfuncs.pfnDrawConsoleString( drawX + 1, y, glyph );
 
 		drawX += HUD_GetInstructorGlyphAdvance( glyph );
 		text += charBytes;
@@ -2429,12 +2428,6 @@ static int HUD_DrawInstructorCaption( int x, int y, int maxX,
 			visibleText, sizeof( visibleText ), &visibleWidth );
 		if( !visibleText[0] )
 			return x;
-
-		if( r != 0 || g != 0 || b != 0 )
-		{
-			gEngfuncs.pfnDrawSetTextColor( 0.0f, 0.0f, 0.0f );
-			HUD_DrawInstructorCaptionText( drawX + 1, drawY + 1, visibleText );
-		}
 
 		gEngfuncs.pfnDrawSetTextColor( r / 255.0f, g / 255.0f, b / 255.0f );
 		HUD_DrawInstructorCaptionText( drawX, drawY, visibleText );
