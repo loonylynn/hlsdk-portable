@@ -2362,6 +2362,7 @@ static void HUD_CopyInstructorCaptionFit( const char *source, int maxWidth,
 	char *output, size_t outputSize, int *outputWidth )
 {
 	size_t used = 0;
+	int acceptedAdvance = 0;
 	int acceptedWidth = 0;
 
 	if( outputWidth )
@@ -2384,7 +2385,11 @@ static void HUD_CopyInstructorCaptionFit( const char *source, int maxWidth,
 		used += (size_t)charBytes;
 		output[used] = '\0';
 
-		const int candidateWidth = HUD_GetInstructorCaptionWidth( output );
+		char glyph[5];
+		memcpy( glyph, source, (size_t)charBytes );
+		glyph[charBytes] = '\0';
+		const int candidateAdvance = acceptedAdvance + HUD_GetInstructorGlyphAdvance( glyph );
+		const int candidateWidth = candidateAdvance + 2;
 		if( candidateWidth > maxWidth )
 		{
 			used -= (size_t)charBytes;
@@ -2392,6 +2397,7 @@ static void HUD_CopyInstructorCaptionFit( const char *source, int maxWidth,
 			break;
 		}
 
+		acceptedAdvance = candidateAdvance;
 		acceptedWidth = candidateWidth;
 		source += charBytes;
 	}
