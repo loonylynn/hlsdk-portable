@@ -2253,6 +2253,41 @@ static bool HUD_HasInstructorScalableFont( void )
 		gEngfuncs.pfnDrawSetTextColor;
 }
 
+// Source's InstructorTitle is a bold condensed face. GoldSrc does not
+// expose Source's VGUI HFont handle, so tighten the active Xash font's glyph
+// advance by one pixel and add a one-pixel horizontal weight pass. Measuring
+// and drawing use the same glyph-by-glyph metrics to keep locator layout exact.
+static int HUD_GetInstructorGlyphBytes( const char *text )
+{
+	const unsigned char lead = (unsigned char)text[0];
+	int charBytes = 1;
+
+	if( ( lead & 0xE0 ) == 0xC0 ) charBytes = 2;
+	else if( ( lead & 0xF0 ) == 0xE0 ) charBytes = 3;
+	else if( ( lead & 0xF8 ) == 0xF0 ) charBytes = 4;
+
+	for( int i = 1; i < charBytes; ++i )
+	{
+		if( !text[i] || ( ( (unsigned char)text[i] & 0xC0 ) != 0x80 ) )
+			return 1;
+	}
+
+	return charBytes;
+}
+
+static int HUD_GetInstructorGlyphAdvance( const char *glyph )
+{
+	int width = 0;
+	int height = 0;
+
+	gEngfuncs.pfnDrawConsoleStringLen( glyph, &width, &height );
+	if( width <= 1 )
+		return 1;
+
+	// Pull one pixel from each glyph's side bearing for a condensed appearance.
+	return width - 1;
+}
+
 static int HUD_GetInstructorCaptionWidth( const char *text )
 {
 	if( !text || !text[0] )
@@ -2261,13 +2296,47 @@ static int HUD_GetInstructorCaptionWidth( const char *text )
 	if( HUD_HasInstructorScalableFont() )
 	{
 		int width = 0;
-		int height = 0;
-		gEngfuncs.pfnDrawConsoleStringLen( text, &width, &height );
-		if( width >= 0 )
-			return width;
+		bool hasGlyph = false;
+
+		while( text[0] && text[0] != '\\n' )
+		{
+			char glyph[5];
+			const int charBytes = HUD_GetInstructorGlyphBytes( text );
+			memcpy( glyph, text, (size_t)charBytes );
+			glyph[charBytes] = '\\0';
+
+			width += HUD_GetInstructorGlyphAdvance( glyph );
+			hasGlyph = true;
+			text += charBytes;
+		}
+
+		// The second draw pass extends the final glyph one pixel beyond its
+		// normal advance; reserve those pixels in all locator width calculations.
+		return hasGlyph ? width + 2 : 0;
 	}
 
 	return gHUD.DrawHudStringLen( text );
+}
+
+static void HUD_DrawInstructorCaptionText( int x, int y, const char *text )
+{
+	int drawX = x;
+
+	while( text[0] && text[0] != '\\n' )
+	{
+		char glyph[5];
+		const int charBytes = HUD_GetInstructorGlyphBytes( text );
+		memcpy( glyph, text, (size_t)charBytes );
+		glyph[charBytes] = '\\0';
+
+		// A one-pixel horizontal overdraw approximates the bold weight of
+		// InstructorTitle without changing the global console font.
+		gEngfuncs.pfnDrawConsoleString( drawX, y, glyph );
+		gEngfuncs.pfnDrawConsoleString( drawX + 1, y, glyph );
+
+		drawX += HUD_GetInstructorGlyphAdvance( glyph );
+		text += charBytes;
+	}
 }
 
 static int HUD_GetInstructorCaptionHeight( void )
@@ -2306,20 +2375,7 @@ static void HUD_CopyInstructorCaptionFit( const char *source, int maxWidth,
 
 	while( source[0] && source[0] != '\n' )
 	{
-		const unsigned char lead = (unsigned char)source[0];
-		int charBytes = 1;
-		if( ( lead & 0xE0 ) == 0xC0 ) charBytes = 2;
-		else if( ( lead & 0xF0 ) == 0xE0 ) charBytes = 3;
-		else if( ( lead & 0xF8 ) == 0xF0 ) charBytes = 4;
-
-		for( int i = 1; i < charBytes; ++i )
-		{
-			if( !source[i] || ( ( (unsigned char)source[i] & 0xC0 ) != 0x80 ) )
-			{
-				charBytes = 1;
-				break;
-			}
-		}
+		const int charBytes = HUD_GetInstructorGlyphBytes( source );
 
 		if( used + (size_t)charBytes >= outputSize )
 			break;
@@ -2328,9 +2384,7 @@ static void HUD_CopyInstructorCaptionFit( const char *source, int maxWidth,
 		used += (size_t)charBytes;
 		output[used] = '\0';
 
-		int candidateWidth = 0;
-		int candidateHeight = 0;
-		gEngfuncs.pfnDrawConsoleStringLen( output, &candidateWidth, &candidateHeight );
+		const int candidateWidth = HUD_GetInstructorCaptionWidth( output );
 		if( candidateWidth > maxWidth )
 		{
 			used -= (size_t)charBytes;
@@ -2373,11 +2427,11 @@ static int HUD_DrawInstructorCaption( int x, int y, int maxX,
 		if( r != 0 || g != 0 || b != 0 )
 		{
 			gEngfuncs.pfnDrawSetTextColor( 0.0f, 0.0f, 0.0f );
-			gEngfuncs.pfnDrawConsoleString( drawX + 1, drawY + 1, visibleText );
+			HUD_DrawInstructorCaptionText( drawX + 1, drawY + 1, visibleText );
 		}
 
 		gEngfuncs.pfnDrawSetTextColor( r / 255.0f, g / 255.0f, b / 255.0f );
-		gEngfuncs.pfnDrawConsoleString( drawX, drawY, visibleText );
+		HUD_DrawInstructorCaptionText( drawX, drawY, visibleText );
 		return x + visibleWidth;
 	}
 
