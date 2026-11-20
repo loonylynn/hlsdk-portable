@@ -53,8 +53,12 @@ extern vec3_t v_origin;
 // Source hud_locator_target.cpp: ICON_DIST_TOO_FAR = 60 feet * 12 inches.
 #define INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE (60.0f * 12.0f)
 #define INSTRUCTOR_LOCATOR_ICON_SCALE 2.0f
-#define INSTRUCTOR_LOCATOR_CAPTION_SCALE 1.25f
 
+static float HUD_GetInstructorCaptionScale( void );
+static int HUD_GetInstructorKeyHeight( void );
+static int HUD_GetInstructorKeyMinWidth( void );
+static int HUD_GetInstructorKeyPadding( void );
+static int HUD_GetInstructorKeyTextScale( void );
 static int HUD_GetInstructorCaptionWidth( const char *text );
 static int HUD_GetInstructorCaptionHeight( void );
 static int HUD_DrawInstructorCaption( int x, int y, int maxX,
@@ -908,9 +912,9 @@ static void HUD_DrawInstructorBindingName( int centerX, int centerY,
 	if( length > 12 )
 		length = 12;
 
-	// Keep short labels compact: E is 10x14 pixels, not the oversized 15x21
-	// version. Longer labels use the native 5x7 bitmap size.
-	const int scale = length <= 2 ? 2 : 1;
+	// Generic key labels are drawn from a compact 5x7 bitmap. The scale is
+	// adjustable so the letter can be tuned independently from the key art.
+	const int scale = HUD_GetInstructorKeyTextScale();
 	const int totalWidth = length * 6 * scale - scale;
 	const int glyphHeight = 7 * scale;
 	const int startX = centerX - totalWidth / 2;
@@ -1084,8 +1088,10 @@ int CHud::Redraw( float flTime, int intermission )
 			int keyChipWidth = 0;
 			if( managedCard && resolvedBinding[0] )
 			{
-				keyChipWidth = bindingWidth + ( genericKey ? 16 : 18 );
-				if( genericKey && keyChipWidth < 28 ) keyChipWidth = 28;
+				keyChipWidth = bindingWidth + ( genericKey ?
+					HUD_GetInstructorKeyPadding() : 18 );
+				if( genericKey && keyChipWidth < HUD_GetInstructorKeyMinWidth() )
+					keyChipWidth = HUD_GetInstructorKeyMinWidth();
 				if( keyChipWidth > 64 ) keyChipWidth = 64;
 			}
 
@@ -1684,9 +1690,10 @@ int CHud::Redraw( float flTime, int intermission )
 						if( locatorBindingWidth > 0 )
 						{
 							locatorKeyWidth = locatorBindingWidth +
-								( locatorUsesGenericKey ? 16 : 10 );
-							if( locatorUsesGenericKey && locatorKeyWidth < 28 )
-								locatorKeyWidth = 28;
+								( locatorUsesGenericKey ? HUD_GetInstructorKeyPadding() : 10 );
+							if( locatorUsesGenericKey &&
+								locatorKeyWidth < HUD_GetInstructorKeyMinWidth() )
+								locatorKeyWidth = HUD_GetInstructorKeyMinWidth();
 							if( locatorKeyWidth > 64 )
 								locatorKeyWidth = 64;
 						}
@@ -1760,7 +1767,7 @@ int CHud::Redraw( float flTime, int intermission )
 						if( locatorKeyWidth > 0 )
 						{
 							const int keyY = labelY + 2;
-							const int keyHeight = 22;
+							const int keyHeight = HUD_GetInstructorKeyHeight();
 						bool keySpriteDrawn = false;
 						if( locatorUsesGenericKey )
 						{
@@ -2089,19 +2096,20 @@ int CHud::Redraw( float flTime, int intermission )
 							keySpriteDrawn = HUD_DrawInstructorLocatorSprite(
 								m_hInstructorHintKeyGenericSprite, keyX, keyY,
 								keyNativeWidth, keyNativeHeight,
-								keyChipWidth, 22, kRenderTransAlpha, false,
+								keyChipWidth, HUD_GetInstructorKeyHeight(), kRenderTransAlpha, false,
 								false, false, panelAlpha );
 						}
 					}
 					if( !keySpriteDrawn )
 					{
-						FillRGBA( keyX, keyY, keyChipWidth, 22, 10, 14, 21, panelAlpha );
+						const int cardKeyHeight = HUD_GetInstructorKeyHeight();
+						FillRGBA( keyX, keyY, keyChipWidth, cardKeyHeight, 10, 14, 21, panelAlpha );
 						FillRGBA( keyX, keyY, keyChipWidth, 1, hintR, hintG, hintB, panelAlpha );
-						FillRGBA( keyX, keyY + 21, keyChipWidth, 1, 63, 73, 89, panelAlpha );
+						FillRGBA( keyX, keyY + cardKeyHeight - 1, keyChipWidth, 1, 63, 73, 89, panelAlpha );
 					}
 					if( keySpriteDrawn )
 						HUD_DrawInstructorBindingName( keyX + keyChipWidth / 2,
-							keyY + 11, bindingText, panelAlpha );
+							keyY + HUD_GetInstructorKeyHeight() / 2, bindingText, panelAlpha );
 					else
 					{
 						int keyTextX = keyX + ( keyChipWidth - bindingWidth ) / 2;
@@ -2255,9 +2263,9 @@ static bool HUD_HasInstructorScalableFont( void )
 }
 
 // Source's InstructorTitle is a bold condensed face. GoldSrc does not
-// expose Source's VGUI HFont handle, so tighten the active Xash font's glyph
-// advance by one pixel and scale the font locally for instructor captions.
-// Measuring and drawing use the same glyph-by-glyph metrics for exact layout.
+// expose Source's VGUI HFont handle, so scale the active Xash font locally.
+// Caption scale is read from a live cvar; measuring and drawing use matching
+// scaled-font metrics for stable layout.
 static int HUD_GetInstructorGlyphBytes( const char *text )
 {
 	const unsigned char lead = (unsigned char)text[0];
@@ -2276,6 +2284,46 @@ static int HUD_GetInstructorGlyphBytes( const char *text )
 	return charBytes;
 }
 
+static float HUD_GetInstructorCaptionScale( void )
+{
+	float scale = CVAR_GET_FLOAT( "hud_instructor_caption_scale" );
+	if( scale < 0.5f ) scale = 0.5f;
+	if( scale > 2.0f ) scale = 2.0f;
+	return scale;
+}
+
+static int HUD_GetInstructorKeyHeight( void )
+{
+	int height = (int)( CVAR_GET_FLOAT( "hud_instructor_key_height" ) + 0.5f );
+	if( height < 12 ) height = 12;
+	if( height > 40 ) height = 40;
+	return height;
+}
+
+static int HUD_GetInstructorKeyMinWidth( void )
+{
+	int width = (int)( CVAR_GET_FLOAT( "hud_instructor_key_min_width" ) + 0.5f );
+	if( width < 12 ) width = 12;
+	if( width > 64 ) width = 64;
+	return width;
+}
+
+static int HUD_GetInstructorKeyPadding( void )
+{
+	int padding = (int)( CVAR_GET_FLOAT( "hud_instructor_key_padding" ) + 0.5f );
+	if( padding < 0 ) padding = 0;
+	if( padding > 32 ) padding = 32;
+	return padding;
+}
+
+static int HUD_GetInstructorKeyTextScale( void )
+{
+	int scale = (int)( CVAR_GET_FLOAT( "hud_instructor_key_text_scale" ) + 0.5f );
+	if( scale < 1 ) scale = 1;
+	if( scale > 4 ) scale = 4;
+	return scale;
+}
+
 static int HUD_GetInstructorGlyphAdvance( const char *glyph )
 {
 	int width = 0;
@@ -2283,7 +2331,7 @@ static int HUD_GetInstructorGlyphAdvance( const char *glyph )
 
 	if( gEngfuncs.pfnDrawConsoleStringLenScaled )
 		gEngfuncs.pfnDrawConsoleStringLenScaled( glyph, &width, &height,
-			INSTRUCTOR_LOCATOR_CAPTION_SCALE );
+			HUD_GetInstructorCaptionScale() );
 	else
 		gEngfuncs.pfnDrawConsoleStringLen( glyph, &width, &height );
 	if( width <= 1 )
@@ -2332,7 +2380,7 @@ static void HUD_DrawInstructorCaptionText( int x, int y, const char *text )
 	// glyph advances without per-character integer rounding or overlap.
 	if( gEngfuncs.pfnDrawConsoleStringScaled )
 		gEngfuncs.pfnDrawConsoleStringScaled( x, y, text,
-			INSTRUCTOR_LOCATOR_CAPTION_SCALE );
+			HUD_GetInstructorCaptionScale() );
 	else
 		gEngfuncs.pfnDrawConsoleString( x, y, (char *)text );
 }
@@ -2345,7 +2393,7 @@ static int HUD_GetInstructorCaptionHeight( void )
 		int height = 0;
 		if( gEngfuncs.pfnDrawConsoleStringLenScaled )
 			gEngfuncs.pfnDrawConsoleStringLenScaled( "M", &width, &height,
-				INSTRUCTOR_LOCATOR_CAPTION_SCALE );
+				HUD_GetInstructorCaptionScale() );
 		else
 			gEngfuncs.pfnDrawConsoleStringLen( "M", &width, &height );
 		if( height > 0 )
