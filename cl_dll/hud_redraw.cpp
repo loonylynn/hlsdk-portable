@@ -53,7 +53,7 @@ extern vec3_t v_origin;
 // Source hud_locator_target.cpp: ICON_DIST_TOO_FAR = 60 feet * 12 inches.
 #define INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE (60.0f * 12.0f)
 #define INSTRUCTOR_LOCATOR_ICON_SCALE 2.0f
-#define INSTRUCTOR_LOCATOR_CAPTION_SCALE 1.20f
+#define INSTRUCTOR_LOCATOR_CAPTION_SCALE 1.25f
 
 static int HUD_GetInstructorCaptionWidth( const char *text );
 static int HUD_GetInstructorCaptionHeight( void );
@@ -1084,8 +1084,8 @@ int CHud::Redraw( float flTime, int intermission )
 			int keyChipWidth = 0;
 			if( managedCard && resolvedBinding[0] )
 			{
-				keyChipWidth = bindingWidth + ( genericKey ? 12 : 18 );
-				if( genericKey && keyChipWidth < 24 ) keyChipWidth = 24;
+				keyChipWidth = bindingWidth + ( genericKey ? 16 : 18 );
+				if( genericKey && keyChipWidth < 28 ) keyChipWidth = 28;
 				if( keyChipWidth > 64 ) keyChipWidth = 64;
 			}
 
@@ -1684,9 +1684,9 @@ int CHud::Redraw( float flTime, int intermission )
 						if( locatorBindingWidth > 0 )
 						{
 							locatorKeyWidth = locatorBindingWidth +
-								( locatorUsesGenericKey ? 14 : 10 );
-							if( locatorUsesGenericKey && locatorKeyWidth < 24 )
-								locatorKeyWidth = 24;
+								( locatorUsesGenericKey ? 16 : 10 );
+							if( locatorUsesGenericKey && locatorKeyWidth < 28 )
+								locatorKeyWidth = 28;
 							if( locatorKeyWidth > 64 )
 								locatorKeyWidth = 64;
 						}
@@ -1760,7 +1760,7 @@ int CHud::Redraw( float flTime, int intermission )
 						if( locatorKeyWidth > 0 )
 						{
 							const int keyY = labelY + 2;
-							const int keyHeight = 18;
+							const int keyHeight = 22;
 						bool keySpriteDrawn = false;
 						if( locatorUsesGenericKey )
 						{
@@ -2289,8 +2289,9 @@ static int HUD_GetInstructorGlyphAdvance( const char *glyph )
 	if( width <= 1 )
 		return 1;
 
-	// Pull one pixel from each glyph's side bearing for a condensed appearance.
-	return width - 1;
+	// Keep the measured advance identical to Xash's scaled string renderer.
+	// Extra condensation here made adjacent glyph quads overlap at enlarged sizes.
+	return width;
 }
 
 static int HUD_GetInstructorCaptionWidth( const char *text )
@@ -2324,26 +2325,16 @@ static int HUD_GetInstructorCaptionWidth( const char *text )
 
 static void HUD_DrawInstructorCaptionText( int x, int y, const char *text )
 {
-	int drawX = x;
+	if( !text || !text[0] )
+		return;
 
-	while( text[0] && text[0] != '\n' )
-	{
-		char glyph[5];
-		const int charBytes = HUD_GetInstructorGlyphBytes( text );
-		memcpy( glyph, text, (size_t)charBytes );
-		glyph[charBytes] = '\0';
-
-		// Draw each glyph exactly once. Xash's console font already provides
-		// its own outline, so an extra weight or shadow pass is unnecessary.
-		if( gEngfuncs.pfnDrawConsoleStringScaled )
-			gEngfuncs.pfnDrawConsoleStringScaled( drawX, y, glyph,
-				INSTRUCTOR_LOCATOR_CAPTION_SCALE );
-		else
-			gEngfuncs.pfnDrawConsoleString( drawX, y, glyph );
-
-		drawX += HUD_GetInstructorGlyphAdvance( glyph );
-		text += charBytes;
-	}
+	// Submit the complete caption in one pass. This lets Xash apply its normal
+	// glyph advances without per-character integer rounding or overlap.
+	if( gEngfuncs.pfnDrawConsoleStringScaled )
+		gEngfuncs.pfnDrawConsoleStringScaled( x, y, text,
+			INSTRUCTOR_LOCATOR_CAPTION_SCALE );
+	else
+		gEngfuncs.pfnDrawConsoleString( x, y, (char *)text );
 }
 
 static int HUD_GetInstructorCaptionHeight( void )
