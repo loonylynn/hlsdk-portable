@@ -60,7 +60,7 @@ The player's automatic interaction guidance has two stages. The near-field ready
 - Scripted lesson elements implement Source's `present_start`,
   `present_end`, and `present_complete` actions. Presentation uses the
   `locator_lerp_rest` client cvar (default 2.25 seconds) and
-  `locator_lerp_time` (default 0.65 seconds in this port; intentionally faster than Source’s 1.75-second default): start restarts the centered
+  `locator_lerp_time` (default 0.30 seconds in this port; intentionally much faster than Source’s 1.75-second default): start restarts the centered
   presentation interval, end completes it immediately, and complete tests
   whether the rest interval has elapsed. Managed locator targets are created
   before `OnOpen` events so those actions can operate on the active target.
