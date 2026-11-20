@@ -2716,6 +2716,7 @@ void CBasePlayer::UpdateUseableHighlight( void )
 		// Remove both the PS2 bracket and its matching automatic instructor prompt.
 		// Distant interactables must not create an automatic USE locator.
 		ClearUseableHighlight();
+	}
 }
 
 void CBasePlayer::Jump()
