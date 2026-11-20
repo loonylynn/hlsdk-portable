@@ -52,6 +52,7 @@ extern vec3_t v_origin;
 
 // Source hud_locator_target.cpp: ICON_DIST_TOO_FAR = 60 feet * 12 inches.
 #define INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE (60.0f * 12.0f)
+#define INSTRUCTOR_LOCATOR_CAPTION_SCALE 1.20f
 
 static int HUD_GetInstructorCaptionWidth( const char *text );
 static int HUD_GetInstructorCaptionHeight( void );
@@ -1192,7 +1193,7 @@ int CHud::Redraw( float flTime, int intermission )
 				const int iconHeight = SPR_Height( icon, 0 );
 				if( iconWidth > 0 && iconHeight > 0 && iconWidth <= 64 && iconHeight <= 64 )
 				{
-					const float iconScale = target->m_iHintId == -2 ? 1.0f : 1.2f;
+					const float iconScale = target->m_iHintId == -2 ? 1.0f : 1.3f;
 					target->m_wide = (int)( iconWidth * iconScale + 0.5f );
 					target->m_tall = (int)( iconHeight * iconScale + 0.5f );
 				}
@@ -1519,12 +1520,12 @@ int CHud::Redraw( float flTime, int intermission )
 						locatorTarget->m_flDistFromPlayer > INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE ?
 						0.5f : 1.0f;
 
-					// A 20% increase keeps the 32x32 art compact while making
+					// A 30% increase keeps the 32x32 art compact while making
 					// the locator easier to pick out at normal gameplay distance.
 					if( sourceBindingIcon && locatorIconHeight > 0 && locatorIconWidth > 0 )
 						sourceBindingIconWidth = Q_max( 1, (int)( sourceBindingIconHeight *
 							( (float)locatorIconWidth / (float)locatorIconHeight ) + 0.5f ) );
-					const float locatorIconScale = locatorTarget->m_iHintId == -2 ? 1.0f : 1.20f;
+					const float locatorIconScale = locatorTarget->m_iHintId == -2 ? 1.0f : 1.30f;
 					const int locatorBaseWidth = sourceBindingIcon ? sourceBindingIconWidth :
 						( locatorSprite ? (int)( locatorIconWidth * locatorIconScale + 0.5f ) : 0 );
 					const int locatorBaseHeight = sourceBindingIcon ? sourceBindingIconHeight :
@@ -1683,9 +1684,9 @@ int CHud::Redraw( float flTime, int intermission )
 						if( locatorBindingWidth > 0 )
 						{
 							locatorKeyWidth = locatorBindingWidth +
-								( locatorUsesGenericKey ? 12 : 10 );
-							if( locatorUsesGenericKey && locatorKeyWidth < 22 )
-								locatorKeyWidth = 22;
+								( locatorUsesGenericKey ? 14 : 10 );
+							if( locatorUsesGenericKey && locatorKeyWidth < 24 )
+								locatorKeyWidth = 24;
 							if( locatorKeyWidth > 64 )
 								locatorKeyWidth = 64;
 						}
@@ -1759,7 +1760,7 @@ int CHud::Redraw( float flTime, int intermission )
 						if( locatorKeyWidth > 0 )
 						{
 							const int keyY = labelY + 2;
-							const int keyHeight = 16;
+							const int keyHeight = 18;
 						bool keySpriteDrawn = false;
 						if( locatorUsesGenericKey )
 						{
@@ -2255,8 +2256,8 @@ static bool HUD_HasInstructorScalableFont( void )
 
 // Source's InstructorTitle is a bold condensed face. GoldSrc does not
 // expose Source's VGUI HFont handle, so tighten the active Xash font's glyph
-// advance by one pixel and add a one-pixel horizontal weight pass. Measuring
-// and drawing use the same glyph-by-glyph metrics to keep locator layout exact.
+// advance by one pixel and scale the font locally for instructor captions.
+// Measuring and drawing use the same glyph-by-glyph metrics for exact layout.
 static int HUD_GetInstructorGlyphBytes( const char *text )
 {
 	const unsigned char lead = (unsigned char)text[0];
@@ -2280,7 +2281,11 @@ static int HUD_GetInstructorGlyphAdvance( const char *glyph )
 	int width = 0;
 	int height = 0;
 
-	gEngfuncs.pfnDrawConsoleStringLen( glyph, &width, &height );
+	if( gEngfuncs.pfnDrawConsoleStringLenScaled )
+		gEngfuncs.pfnDrawConsoleStringLenScaled( glyph, &width, &height,
+			INSTRUCTOR_LOCATOR_CAPTION_SCALE );
+	else
+		gEngfuncs.pfnDrawConsoleStringLen( glyph, &width, &height );
 	if( width <= 1 )
 		return 1;
 
@@ -2310,8 +2315,7 @@ static int HUD_GetInstructorCaptionWidth( const char *text )
 			text += charBytes;
 		}
 
-		// The second draw pass extends the final glyph one pixel beyond its
-		// normal advance; reserve those pixels in all locator width calculations.
+		// Keep a small allowance for the final glyph's edge pixels in locator layout.
 		return hasGlyph ? width + 2 : 0;
 	}
 
@@ -2331,7 +2335,11 @@ static void HUD_DrawInstructorCaptionText( int x, int y, const char *text )
 
 		// Draw each glyph exactly once. Xash's console font already provides
 		// its own outline, so an extra weight or shadow pass is unnecessary.
-		gEngfuncs.pfnDrawConsoleString( drawX, y, glyph );
+		if( gEngfuncs.pfnDrawConsoleStringScaled )
+			gEngfuncs.pfnDrawConsoleStringScaled( drawX, y, glyph,
+				INSTRUCTOR_LOCATOR_CAPTION_SCALE );
+		else
+			gEngfuncs.pfnDrawConsoleString( drawX, y, glyph );
 
 		drawX += HUD_GetInstructorGlyphAdvance( glyph );
 		text += charBytes;
@@ -2344,7 +2352,11 @@ static int HUD_GetInstructorCaptionHeight( void )
 	{
 		int width = 0;
 		int height = 0;
-		gEngfuncs.pfnDrawConsoleStringLen( "M", &width, &height );
+		if( gEngfuncs.pfnDrawConsoleStringLenScaled )
+			gEngfuncs.pfnDrawConsoleStringLenScaled( "M", &width, &height,
+				INSTRUCTOR_LOCATOR_CAPTION_SCALE );
+		else
+			gEngfuncs.pfnDrawConsoleStringLen( "M", &width, &height );
 		if( height > 0 )
 			return height;
 	}
@@ -2405,11 +2417,9 @@ static void HUD_CopyInstructorCaptionFit( const char *source, int maxWidth,
 		*outputWidth = acceptedWidth;
 }
 
-// Source's CLocatorPanel draws the caption once in black one pixel down/right,
-// then draws the colored caption on top. GoldSrc has no Source VGUI HFont
-// handles, so Xash uses its scalable console-font renderer for these captions;
-// the engine-selected HUD console font supplies the closest available
-// variable-width face. Non-Xash engines retain the native HUD font fallback.
+// GoldSrc has no Source VGUI HFont handles. Xash's scaled console-font
+// callback enlarges these captions locally without changing console text;
+// non-Xash engines retain the native HUD-font fallback.
 static int HUD_DrawInstructorCaption( int x, int y, int maxX,
 	const char *text, int r, int g, int b )
 {
