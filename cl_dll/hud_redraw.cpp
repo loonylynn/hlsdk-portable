@@ -1350,7 +1350,10 @@ int CHud::Redraw( float flTime, int intermission )
 			const float presentationLerpTime = HUD_GetInstructorPresentationLerpTime();
 			const bool locatorPresenting = hasTarget &&
 				locatorTarget->IsPresenting( flTime, presentationRestTime );
-			const bool locatorLerping = hasTarget && !locatorPresenting &&
+			const bool locatorStatic = hasTarget &&
+				( locatorPresenting ||
+					( locatorTarget->m_iEffectsFlags & LOCATOR_ICON_FX_STATIC ) );
+			const bool locatorLerping = hasTarget && !locatorStatic &&
 				presentationLerpTime > 0.0f &&
 				presentationElapsed < presentationRestTime + presentationLerpTime;
 			float locatorLerpFraction = 1.0f;
@@ -1361,7 +1364,7 @@ int CHud::Redraw( float flTime, int intermission )
 				if( locatorLerpFraction < 0.0f ) locatorLerpFraction = 0.0f;
 				if( locatorLerpFraction > 1.0f ) locatorLerpFraction = 1.0f;
 			}
-			const bool targetOffscreen = hasTarget && !locatorPresenting &&
+			const bool targetOffscreen = hasTarget && !locatorStatic &&
 				!locatorTarget->m_bOnscreen;
 			const bool targetUsesOffscreenIcon = targetOffscreen;
 
@@ -1430,7 +1433,7 @@ int CHud::Redraw( float flTime, int intermission )
 
 					// Projection and edge placement belong to the target model.
 					// The renderer adds only transient pulse/shake offsets.
-					if( !locatorPresenting )
+					if( !locatorStatic )
 						locatorTarget->CalculateEdgePosition( ScreenWidth, ScreenHeight, locatorEdgeMargin );
 					const float screenCenterX = ScreenWidth * 0.5f;
 					const float screenCenterY = ScreenHeight * 0.5f;
@@ -1440,11 +1443,11 @@ int CHud::Redraw( float flTime, int intermission )
 					const float desiredLocatorY =
 						(float)( locatorTarget->m_iconY + locatorTarget->m_offsetY ) +
 							locatorTarget->m_flShakeY;
-					float locatorX = locatorPresenting ? screenCenterX :
+					float locatorX = locatorStatic ? screenCenterX :
 						locatorLerping ? screenCenterX +
 							( desiredLocatorX - screenCenterX ) * locatorLerpFraction :
 							desiredLocatorX;
-					float locatorY = locatorPresenting ? screenCenterY :
+					float locatorY = locatorStatic ? screenCenterY :
 						locatorLerping ? screenCenterY +
 							( desiredLocatorY - screenCenterY ) * locatorLerpFraction :
 							desiredLocatorY;
@@ -1461,7 +1464,7 @@ int CHud::Redraw( float flTime, int intermission )
 					// tether must still originate at the actual entity anchor.
 					// This also connects brush-model locators from their computed
 					// world-space center instead of the brush's often-zero origin.
-					if( !locatorPresenting && !targetOffscreen && hasEntityAnchor && !entityAnchorBehind &&
+					if( !locatorStatic && !targetOffscreen && hasEntityAnchor && !entityAnchorBehind &&
 						entityAnchorX >= 0.0f && entityAnchorX < ScreenWidth &&
 						entityAnchorY >= 0.0f && entityAnchorY < ScreenHeight )
 					{
@@ -1666,7 +1669,7 @@ int CHud::Redraw( float flTime, int intermission )
 					// FORCE_CAPTION bypasses both distance and occlusion limits.
 					const bool forceCaption =
 						( locatorTarget->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
-					const bool captionWithinSourceRange = locatorPresenting || forceCaption ||
+					const bool captionWithinSourceRange = locatorStatic || forceCaption ||
 						locatorTarget->m_flDistFromPlayer <= INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE;
 					if( hasLocatorText && !sourceBindingIcon && !targetOffscreen &&
 						captionWithinSourceRange )
