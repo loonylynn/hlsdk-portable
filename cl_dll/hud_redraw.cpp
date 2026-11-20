@@ -1187,10 +1187,8 @@ int CHud::Redraw( float flTime, int intermission )
 					ignoredGlyph, sizeof( ignoredGlyph ) );
 				if( keySprite )
 				{
-					sourceBindingIconWidth = SPR_Width( keySprite, 0 );
-					sourceBindingIconHeight = SPR_Height( keySprite, 0 );
-					if( sourceBindingIconWidth > 64 || sourceBindingIconHeight > 64 )
-						sourceBindingIconWidth = sourceBindingIconHeight = 0;
+					HUD_GetInstructorKeyBadgeSize( keySprite,
+						&sourceBindingIconWidth, &sourceBindingIconHeight );
 				}
 			}
 			target->m_iEdgeMargin = hasDirectionalLocatorSprites ?
@@ -1407,12 +1405,11 @@ int CHud::Redraw( float flTime, int intermission )
 					locatorTarget->m_szBindingChoices[locatorTarget->m_iBindingTick % locatorTarget->m_iBindingChoicesCount] : NULL;
 				instructorBindingSprite = HUD_GetInstructorBindingImage( this, keyName,
 					instructorBindingGlyph, sizeof( instructorBindingGlyph ) );
-				sourceBindingIconWidth = instructorBindingSprite ?
-					SPR_Width( instructorBindingSprite, 0 ) : 0;
-				sourceBindingIconHeight = instructorBindingSprite ?
-					SPR_Height( instructorBindingSprite, 0 ) : 0;
-				if( sourceBindingIconWidth > 64 || sourceBindingIconHeight > 64 )
-					sourceBindingIconWidth = sourceBindingIconHeight = 0;
+				if( instructorBindingSprite )
+				{
+					HUD_GetInstructorKeyBadgeSize( instructorBindingSprite,
+						&sourceBindingIconWidth, &sourceBindingIconHeight );
+				}
 			}
 
 			// Source counts a lesson only after its icon has remained on-screen
