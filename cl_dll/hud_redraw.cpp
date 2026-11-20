@@ -1701,7 +1701,8 @@ int CHud::Redraw( float flTime, int intermission )
 						int labelWidth = locatorCaptionWidth + locatorKeyWidth + 24;
 						if( labelWidth < 44 ) labelWidth = 44;
 						if( labelWidth > maxLabelWidth ) labelWidth = maxLabelWidth;
-						const int labelHeight = Q_max( 20, HUD_GetInstructorCaptionHeight() + 6 );
+						const int labelHeight = Q_max( HUD_GetInstructorKeyHeight() + 4,
+							Q_max( 20, HUD_GetInstructorCaptionHeight() + 6 ) );
 						int labelX = markerX - labelWidth / 2;
 						int labelY = markerY + markerHalfHeight + 7;
 
@@ -2082,7 +2083,8 @@ int CHud::Redraw( float flTime, int intermission )
 
 				if( bindingText[0] )
 				{
-					const int keyY = panelY + 22;
+					const int cardKeyHeight = HUD_GetInstructorKeyHeight();
+					const int keyY = panelY + 33 - cardKeyHeight / 2;
 					bool keySpriteDrawn = false;
 					if( cardUsesGenericKey )
 					{
@@ -2096,20 +2098,19 @@ int CHud::Redraw( float flTime, int intermission )
 							keySpriteDrawn = HUD_DrawInstructorLocatorSprite(
 								m_hInstructorHintKeyGenericSprite, keyX, keyY,
 								keyNativeWidth, keyNativeHeight,
-								keyChipWidth, HUD_GetInstructorKeyHeight(), kRenderTransAlpha, false,
+								keyChipWidth, cardKeyHeight, kRenderTransAlpha, false,
 								false, false, panelAlpha );
 						}
 					}
 					if( !keySpriteDrawn )
 					{
-						const int cardKeyHeight = HUD_GetInstructorKeyHeight();
 						FillRGBA( keyX, keyY, keyChipWidth, cardKeyHeight, 10, 14, 21, panelAlpha );
 						FillRGBA( keyX, keyY, keyChipWidth, 1, hintR, hintG, hintB, panelAlpha );
 						FillRGBA( keyX, keyY + cardKeyHeight - 1, keyChipWidth, 1, 63, 73, 89, panelAlpha );
 					}
 					if( keySpriteDrawn )
 						HUD_DrawInstructorBindingName( keyX + keyChipWidth / 2,
-							keyY + HUD_GetInstructorKeyHeight() / 2, bindingText, panelAlpha );
+							keyY + cardKeyHeight / 2, bindingText, panelAlpha );
 					else
 					{
 						int keyTextX = keyX + ( keyChipWidth - bindingWidth ) / 2;
