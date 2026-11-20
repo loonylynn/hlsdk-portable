@@ -252,5 +252,8 @@ void HUD_SetManagedInstructorHint(const char *lessonName, int instanceSerial, co
 void HUD_PruneManagedInstructorHints();
 void HUD_ClearManagedInstructorHint();
 void HUD_PlayInstructorSound(const char *soundName);
+float HUD_GetInstructorPresentationRestTime();
+bool HUD_ApplyManagedInstructorPresentation(const char *lessonName, int instanceSerial, bool start);
+bool HUD_IsManagedInstructorPresentationComplete(const char *lessonName, int instanceSerial);
 
 #endif
