@@ -1343,7 +1343,12 @@ int CHud::Redraw( float flTime, int intermission )
 					HUD_GetInstructorCompassDirection( locatorWorldOrigin, &compassSin, &compassCos );
 				locatorTarget->SetCompassDirection( compassSin, compassCos, hasCompassDirection );
 			}
-			const bool targetOffscreen = hasTarget && !locatorTarget->m_bOnscreen;
+			// Source treats an actively presenting locator as a static icon:
+			// it stays centered until locator_lerp_rest has elapsed.
+			const bool locatorPresenting = hasTarget &&
+				locatorTarget->IsPresenting( flTime, HUD_GetInstructorPresentationRestTime() );
+			const bool targetOffscreen = hasTarget && !locatorPresenting &&
+				!locatorTarget->m_bOnscreen;
 			const bool targetUsesOffscreenIcon = targetOffscreen;
 
 			// "use_binding" is a virtual icon: the resolved key art becomes the locator.
@@ -1376,7 +1381,9 @@ int CHud::Redraw( float flTime, int intermission )
 			if( locatorTarget->m_bManaged && !locatorTarget->m_bManagedDisplayCounted )
 			{
 				const bool countsAsVisible = locatorTarget->m_bOriginInScreenspace ||
-					( hasTarget && !targetOffscreen );
+					( hasTarget && !targetOffscreen &&
+						( !locatorPresenting ||
+							( locatorTarget->m_iEffectsFlags & LOCATOR_ICON_FX_STATIC ) ) );
 				if( countsAsVisible )
 				{
 					if( locatorTarget->m_flVisibleSince <= 0.0f )
@@ -1409,11 +1416,14 @@ int CHud::Redraw( float flTime, int intermission )
 
 					// Projection and edge placement belong to the target model.
 					// The renderer adds only transient pulse/shake offsets.
-					locatorTarget->CalculateEdgePosition( ScreenWidth, ScreenHeight, locatorEdgeMargin );
-					float locatorX = (float)( locatorTarget->m_iconX + locatorTarget->m_offsetX ) +
-						locatorTarget->m_flShakeX;
-					float locatorY = (float)( locatorTarget->m_iconY + locatorTarget->m_offsetY ) +
-						locatorTarget->m_flShakeY;
+					if( !locatorPresenting )
+						locatorTarget->CalculateEdgePosition( ScreenWidth, ScreenHeight, locatorEdgeMargin );
+					float locatorX = locatorPresenting ? ScreenWidth * 0.5f :
+						(float)( locatorTarget->m_iconX + locatorTarget->m_offsetX ) +
+							locatorTarget->m_flShakeX;
+					float locatorY = locatorPresenting ? ScreenHeight * 0.5f :
+						(float)( locatorTarget->m_iconY + locatorTarget->m_offsetY ) +
+							locatorTarget->m_flShakeY;
 
 					if( locatorX < locatorEdgeMargin ) locatorX = (float)locatorEdgeMargin;
 					if( locatorX > ScreenWidth - locatorEdgeMargin ) locatorX = (float)( ScreenWidth - locatorEdgeMargin );
@@ -1427,7 +1437,7 @@ int CHud::Redraw( float flTime, int intermission )
 					// tether must still originate at the actual entity anchor.
 					// This also connects brush-model locators from their computed
 					// world-space center instead of the brush's often-zero origin.
-					if( !targetOffscreen && hasEntityAnchor && !entityAnchorBehind &&
+					if( !locatorPresenting && !targetOffscreen && hasEntityAnchor && !entityAnchorBehind &&
 						entityAnchorX >= 0.0f && entityAnchorX < ScreenWidth &&
 						entityAnchorY >= 0.0f && entityAnchorY < ScreenHeight )
 					{
@@ -1632,7 +1642,7 @@ int CHud::Redraw( float flTime, int intermission )
 					// FORCE_CAPTION bypasses both distance and occlusion limits.
 					const bool forceCaption =
 						( locatorTarget->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
-					const bool captionWithinSourceRange = forceCaption ||
+					const bool captionWithinSourceRange = locatorPresenting || forceCaption ||
 						locatorTarget->m_flDistFromPlayer <= INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE;
 					if( hasLocatorText && !sourceBindingIcon && !targetOffscreen &&
 						captionWithinSourceRange )
