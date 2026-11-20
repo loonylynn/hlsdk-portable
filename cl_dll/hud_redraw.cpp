@@ -2370,8 +2370,11 @@ static int HUD_DrawInstructorCaption( int x, int y, int maxX,
 		if( !visibleText[0] )
 			return x;
 
-		gEngfuncs.pfnDrawSetTextColor( 0.0f, 0.0f, 0.0f );
-		gEngfuncs.pfnDrawConsoleString( drawX + 1, drawY + 1, visibleText );
+		if( r != 0 || g != 0 || b != 0 )
+		{
+			gEngfuncs.pfnDrawSetTextColor( 0.0f, 0.0f, 0.0f );
+			gEngfuncs.pfnDrawConsoleString( drawX + 1, drawY + 1, visibleText );
+		}
 
 		gEngfuncs.pfnDrawSetTextColor( r / 255.0f, g / 255.0f, b / 255.0f );
 		gEngfuncs.pfnDrawConsoleString( drawX, drawY, visibleText );
@@ -2379,8 +2382,9 @@ static int HUD_DrawInstructorCaption( int x, int y, int maxX,
 	}
 
 	// The legacy fallback also receives the Source-style offset shadow.
-	HUD_DrawHudStringAt( x + 1, HUD_AdjustX( x ) + 1,
-		y + 1, maxX + 1, text, 0, 0, 0 );
+	if( r != 0 || g != 0 || b != 0 )
+		HUD_DrawHudStringAt( x + 1, HUD_AdjustX( x ) + 1,
+			y + 1, maxX + 1, text, 0, 0, 0 );
 	return HUD_DrawHudStringAt( x, HUD_AdjustX( x ),
 		y, maxX, text, r, g, b );
 }
