@@ -99,8 +99,10 @@ static void HUD_DrawInstructorLocatorTether( int x0, int y0, int x1, int y1,
 
 	for( ;; )
 	{
-		FillRGBA( x0, y0, 2, 2, 0, 0, 0, alpha / 2 );
-		FillRGBA( x0, y0, 1, 1, r, g, b, alpha );
+		FillRGBA( x0, y0, HUD_ScaleInstructorPixel( 2 ),
+			HUD_ScaleInstructorPixel( 2 ), 0, 0, 0, alpha / 2 );
+		FillRGBA( x0, y0, HUD_ScaleInstructorPixel( 1 ),
+			HUD_ScaleInstructorPixel( 1 ), r, g, b, alpha );
 		if( x0 == x1 && y0 == y1 )
 			break;
 
@@ -1118,8 +1120,9 @@ int CHud::Redraw( float flTime, int intermission )
 			const int textWidth = managedCard ?
 				captionWidth + ( keyChipWidth ? keyChipWidth + 12 : 0 ) :
 				Q_max( captionWidth, bindingWidth );
-			int panelWidth = textWidth + ( iconWidth ? iconWidth + 12 : 0 ) +
-				( managedCard ? 44 : 36 );
+			int panelWidth = textWidth +
+				( iconWidth ? iconWidth + HUD_ScaleInstructorPixel( 12 ) : 0 ) +
+				HUD_ScaleInstructorPixel( managedCard ? 44 : 36 );
 			const int maxPanelWidth = Q_max( 1, ScreenWidth - HUD_ScaleInstructorPixel( 24 ) );
 			if( panelWidth > maxPanelWidth ) panelWidth = maxPanelWidth;
 			const int minPanelWidth = HUD_ScaleInstructorPixel( managedCard ? 224 : 180 );
@@ -1132,7 +1135,7 @@ int CHud::Redraw( float flTime, int intermission )
 				Q_max( iconHeight + HUD_ScaleInstructorPixel( managedCard ? 24 : 16 ),
 					keyChipHeight > 0 ? keyChipHeight + HUD_ScaleInstructorPixel( 24 ) : 0 ) );
 			int panelX = ( ScreenWidth - panelWidth ) / 2;
-			int panelY = ScreenHeight - panelHeight - 30;
+			int panelY = ScreenHeight - panelHeight - HUD_ScaleInstructorPixel( 30 );
 			if( target->m_bFixedPosition )
 			{
 				panelX = (int)( target->m_vecOrigin[0] * ScreenWidth - panelWidth * 0.5f );
@@ -1156,8 +1159,8 @@ int CHud::Redraw( float flTime, int intermission )
 			target->m_vecOrigin[1],
 			target->m_vecOrigin[2] + target->m_flIconOffset
 		};
-		target->m_wide = 40;
-		target->m_tall = 40;
+		target->m_wide = HUD_ScaleInstructorPixel( 40 );
+		target->m_tall = HUD_ScaleInstructorPixel( 40 );
 		if( HUD_GetInstructorHintScreenPosition( worldOrigin, &screenX, &screenY, &behind ) )
 		{
 			target->UpdateProjection( screenX, screenY, behind,
@@ -1231,15 +1234,17 @@ int CHud::Redraw( float flTime, int intermission )
 			if( target->m_bOnscreen &&
 				( forceCaption || target->m_flDistFromPlayer <= INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE ) )
 			{
-				const int captionFootprint = HUD_GetInstructorCaptionWidth( target->m_szCaption ) + 24;
+				const int captionFootprint = HUD_GetInstructorCaptionWidth( target->m_szCaption ) +
+					HUD_ScaleInstructorPixel( 24 );
 				if( target->m_wide < captionFootprint )
 					target->m_wide = Q_min( Q_max( 40, captionFootprint ), Q_max( 40, ScreenWidth / 2 ) );
 			}
-			if( target->m_tall < 48 )
-				target->m_tall = 48;
+			if( target->m_tall < HUD_ScaleInstructorPixel( 48 ) )
+				target->m_tall = HUD_ScaleInstructorPixel( 48 );
 		}
 	}
-	m_InstructorLocatorPanel.ResolveDecluttering( ScreenWidth, ScreenHeight, 56, 8 );
+	m_InstructorLocatorPanel.ResolveDecluttering( ScreenWidth, ScreenHeight,
+		HUD_ScaleInstructorPixel( 56 ), HUD_ScaleInstructorPixel( 8 ) );
 
 	m_flTimeDelta = (double)( m_flTime - m_fOldTime );
 	static float m_flShotTime = 0;
@@ -1731,7 +1736,8 @@ int CHud::Redraw( float flTime, int intermission )
 							if( !locatorUsesGenericKey && locatorKeyWidth > 64 )
 								locatorKeyWidth = 64;
 						}
-						const int maxLabelWidth = Q_max( 32, ScreenWidth - 24 );
+						const int maxLabelWidth = Q_max( HUD_ScaleInstructorPixel( 32 ),
+							ScreenWidth - HUD_ScaleInstructorPixel( 24 ) );
 						int labelWidth = locatorCaptionWidth + locatorKeyWidth +
 							HUD_ScaleInstructorPixel( 24 );
 						if( labelWidth < HUD_ScaleInstructorPixel( 44 ) )
@@ -1745,17 +1751,17 @@ int CHud::Redraw( float flTime, int intermission )
 
 						if( targetOffscreen )
 						{
-							if( markerX <= locatorEdgeMargin + 2 )
+							if( markerX <= locatorEdgeMargin + HUD_ScaleInstructorPixel( 2 ) )
 							{
 								labelX = markerX + markerHalfWidth + HUD_ScaleInstructorPixel( 6 );
 								labelY = markerY - labelHeight / 2;
 							}
-							else if( markerX >= ScreenWidth - locatorEdgeMargin - 2 )
+							else if( markerX >= ScreenWidth - locatorEdgeMargin - HUD_ScaleInstructorPixel( 2 ) )
 							{
 								labelX = markerX - markerHalfWidth - labelWidth - HUD_ScaleInstructorPixel( 6 );
 								labelY = markerY - labelHeight / 2;
 							}
-							else if( markerY <= locatorEdgeMargin + 2 )
+							else if( markerY <= locatorEdgeMargin + HUD_ScaleInstructorPixel( 2 ) )
 							{
 								labelY = markerY + markerHalfHeight + HUD_ScaleInstructorPixel( 6 );
 							}
@@ -1764,9 +1770,9 @@ int CHud::Redraw( float flTime, int intermission )
 								labelY = markerY - markerHalfHeight - labelHeight - HUD_ScaleInstructorPixel( 6 );
 							}
 						}
-						else if( labelY + labelHeight > ScreenHeight - 8 )
+						else if( labelY + labelHeight > ScreenHeight - HUD_ScaleInstructorPixel( 8 ) )
 						{
-							labelY = markerY - markerHalfHeight - labelHeight - 7;
+							labelY = markerY - markerHalfHeight - labelHeight - HUD_ScaleInstructorPixel( 7 );
 						}
 
 						const int minLabelX = HUD_ScaleInstructorPixel( 8 );
@@ -1843,7 +1849,8 @@ int CHud::Redraw( float flTime, int intermission )
 						int keyTextX = keyX + ( locatorKeyWidth - locatorBindingWidth ) / 2;
 						if( keyTextX < keyX + 3 )
 							keyTextX = keyX + 3;
-						DrawHudString( keyTextX, keyY + 4, keyX + locatorKeyWidth - 3,
+						DrawHudString( keyTextX, keyY + HUD_ScaleInstructorPixel( 4 ),
+						keyX + locatorKeyWidth - HUD_ScaleInstructorPixel( 3 ),
 							locatorBinding, locatorTextR, locatorTextG, locatorTextB );
 					}
 						}
@@ -1946,7 +1953,7 @@ int CHud::Redraw( float flTime, int intermission )
 				captionWidth + ( keyChipWidth ? keyChipWidth + 12 : 0 ) :
 				Q_max( captionWidth, bindingWidth );
 			const int contentWidth = contentTextWidth + ( hintIcon ? iconWidth + 12 : 0 );
-			int panelWidth = contentWidth + ( managedCard ? 44 : 36 );
+			int panelWidth = contentWidth + HUD_ScaleInstructorPixel( managedCard ? 44 : 36 );
 			const int maxPanelWidth = Q_max( 1, ScreenWidth - HUD_ScaleInstructorPixel( 24 ) );
 			if( panelWidth > maxPanelWidth )
 				panelWidth = maxPanelWidth;
@@ -1954,12 +1961,13 @@ int CHud::Redraw( float flTime, int intermission )
 			if( panelWidth < minPanelWidth && maxPanelWidth >= minPanelWidth )
 				panelWidth = minPanelWidth;
 
-			const int basePanelHeight = managedCard ? 62 : ( bindingText[0] ? 58 : 42 );
+			const int basePanelHeight = HUD_ScaleInstructorPixel(
+				managedCard ? 62 : ( bindingText[0] ? 58 : 42 ) );
 			const int panelHeight = Q_max( basePanelHeight,
 				Q_max( iconHeight + HUD_ScaleInstructorPixel( managedCard ? 24 : 16 ),
 					keyChipHeight > 0 ? keyChipHeight + HUD_ScaleInstructorPixel( 24 ) : 0 ) );
 			int panelX = ( ScreenWidth - panelWidth ) / 2;
-			int panelY = ScreenHeight - panelHeight - 30;
+			int panelY = ScreenHeight - panelHeight - HUD_ScaleInstructorPixel( 30 );
 
 			if( locatorTarget->m_bFixedPosition )
 			{
@@ -2099,13 +2107,25 @@ int CHud::Redraw( float flTime, int intermission )
 					hintTextB = hintB * panelAlpha / 255;
 				}
 
-				FillRGBA( panelX + 2, panelY + 3, panelWidth, panelHeight, 0, 0, 0, panelAlpha / 2 );
+				const int cardBorder = HUD_ScaleInstructorPixel( 1 );
+				const int cardShadowX = HUD_ScaleInstructorPixel( 2 );
+				const int cardShadowY = HUD_ScaleInstructorPixel( 3 );
+				const int cardSideAccent = HUD_ScaleInstructorPixel( 3 );
+				FillRGBA( panelX + cardShadowX, panelY + cardShadowY, panelWidth, panelHeight,
+					0, 0, 0, panelAlpha / 2 );
 				FillRGBA( panelX, panelY, panelWidth, panelHeight, 4, 6, 10, panelAlpha );
-				FillRGBA( panelX + 1, panelY + 1, panelWidth - 2, panelHeight - 2, 19, 24, 33, panelAlpha );
-				FillRGBA( panelX + 1, panelY + 1, panelWidth - 2, 1, 74, 86, 104, panelAlpha );
-				FillRGBA( panelX + 1, panelY + panelHeight - 2, panelWidth - 2, 1, 5, 7, 11, panelAlpha );
-				FillRGBA( panelX + 1, panelY + 1, 3, panelHeight - 2, hintR, hintG, hintB, panelAlpha );
-				FillRGBA( panelX + 5, panelY + 5, 1, panelHeight - 10, hintR, hintG, hintB, panelAlpha / 3 );
+				FillRGBA( panelX + cardBorder, panelY + cardBorder,
+					panelWidth - 2 * cardBorder, panelHeight - 2 * cardBorder,
+					19, 24, 33, panelAlpha );
+				FillRGBA( panelX + cardBorder, panelY + cardBorder,
+					panelWidth - 2 * cardBorder, cardBorder, 74, 86, 104, panelAlpha );
+				FillRGBA( panelX + cardBorder, panelY + panelHeight - 2 * cardBorder,
+					panelWidth - 2 * cardBorder, cardBorder, 5, 7, 11, panelAlpha );
+				FillRGBA( panelX + cardBorder, panelY + cardBorder,
+					cardSideAccent, panelHeight - 2 * cardBorder, hintR, hintG, hintB, panelAlpha );
+				FillRGBA( panelX + HUD_ScaleInstructorPixel( 5 ),
+					panelY + HUD_ScaleInstructorPixel( 5 ), cardBorder,
+					panelHeight - HUD_ScaleInstructorPixel( 10 ), hintR, hintG, hintB, panelAlpha / 3 );
 			}
 			else
 			{
@@ -2146,15 +2166,16 @@ int CHud::Redraw( float flTime, int intermission )
 
 			if( managedCard )
 			{
-				DrawHudString( textAreaX, panelY + 9, textAreaRight,
+				DrawHudString( textAreaX, panelY + HUD_ScaleInstructorPixel( 9 ), textAreaRight,
 					"INSTRUCTION", hintTextR, hintTextG, hintTextB );
-				HUD_DrawInstructorCaption( textAreaX, panelY + 31, textAreaRight,
+				HUD_DrawInstructorCaption( textAreaX, panelY + HUD_ScaleInstructorPixel( 31 ), textAreaRight,
 					locatorTarget->m_szCaption, whiteText, whiteText, whiteText );
 
 				if( bindingText[0] )
 				{
 					const int cardKeyHeight = keyChipHeight;
-					const int keyY = panelY + ( panelHeight - cardKeyHeight ) / 2 + 2;
+					const int keyY = panelY + ( panelHeight - cardKeyHeight ) / 2 +
+						HUD_ScaleInstructorPixel( 2 );
 					bool keySpriteDrawn = false;
 					if( cardUsesGenericKey )
 					{
@@ -2184,9 +2205,10 @@ int CHud::Redraw( float flTime, int intermission )
 					else
 					{
 						int keyTextX = keyX + ( keyChipWidth - bindingWidth ) / 2;
-						if( keyTextX < keyX + 3 )
-							keyTextX = keyX + 3;
-						DrawHudString( keyTextX, keyY + 6, keyX + keyChipWidth - 5,
+						if( keyTextX < keyX + HUD_ScaleInstructorPixel( 3 ) )
+							keyTextX = keyX + HUD_ScaleInstructorPixel( 3 );
+						DrawHudString( keyTextX, keyY + HUD_ScaleInstructorPixel( 6 ),
+							keyX + keyChipWidth - HUD_ScaleInstructorPixel( 5 ),
 							bindingText, hintTextR, hintTextG, hintTextB );
 					}
 				}
@@ -2392,8 +2414,8 @@ static void HUD_GetInstructorSpriteSize( HSPRITE sprite, float baseScale,
 	float scale = HUD_GetInstructorScale() * baseScale;
 	// Bound the largest rendered side while preserving the sprite's native aspect ratio.
 	const int largestNativeDimension = Q_max( nativeWidth, nativeHeight );
-	if( largestNativeDimension * scale > 128.0f )
-		scale = 128.0f / (float)largestNativeDimension;
+	if( largestNativeDimension * scale > 256.0f )
+		scale = 256.0f / (float)largestNativeDimension;
 	if( width )
 		*width = Q_max( 1, (int)( nativeWidth * scale + 0.5f ) );
 	if( height )
