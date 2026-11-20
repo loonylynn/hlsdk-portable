@@ -451,6 +451,14 @@ void CHud::Init( void )
 	hud_textmode = CVAR_CREATE ( "hud_textmode", "0", FCVAR_ARCHIVE );
 	hud_overscan = CVAR_CREATE( "hud_overscan", "0.025", FCVAR_ARCHIVE );
 
+	// Game Instructor presentation controls. These are read by the HUD at draw
+	// time, so they can be tuned live from the console without a restart.
+	CVAR_CREATE( "hud_instructor_caption_scale", "1.25", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_instructor_key_height", "22", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_instructor_key_min_width", "28", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_instructor_key_padding", "16", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_instructor_key_text_scale", "2", FCVAR_ARCHIVE );
+
 	m_iLogo = 0;
 	m_iFOV = 0;
 	m_inScope = false;
