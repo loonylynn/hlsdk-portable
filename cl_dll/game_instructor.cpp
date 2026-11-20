@@ -891,7 +891,8 @@ CScriptedIconLesson::CScriptedIconLesson(const char *name, bool definition)
 	  m_flFloat1(0.0f),
 	  m_flFloat2(0.0f),
 	  m_pDefinition(NULL),
-	  m_flNextUpdateEvent(0.0f)
+	  m_flNextUpdateEvent(0.0f),
+	  m_flNextTargetValidation(0.0f)
 {
 }
 
