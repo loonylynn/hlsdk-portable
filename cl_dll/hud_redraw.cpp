@@ -53,6 +53,11 @@ extern vec3_t v_origin;
 // Source hud_locator_target.cpp: ICON_DIST_TOO_FAR = 60 feet * 12 inches.
 #define INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE (60.0f * 12.0f)
 
+static int HUD_GetInstructorCaptionWidth( const char *text );
+static int HUD_GetInstructorCaptionHeight( void );
+static int HUD_DrawInstructorCaption( int x, int y, int maxX,
+	const char *text, int r, int g, int b );
+
 // Source AnimateIconSize keeps the same absolute height increase for wide icons.
 static void HUD_AnimateInstructorIconSize( const CInstructorLocatorTarget *target,
 	int *wide, int *tall )
@@ -1068,7 +1073,7 @@ int CHud::Redraw( float flTime, int intermission )
 			char resolvedBinding[64];
 			HUD_ResolveInstructorBinding( target->m_szBinding,
 				resolvedBinding, sizeof( resolvedBinding ) );
-			const int captionWidth = DrawHudStringLen( target->m_szCaption );
+			const int captionWidth = HUD_GetInstructorCaptionWidth( target->m_szCaption );
 			const int bindingWidth = DrawHudStringLen( resolvedBinding );
 			const bool managedCard = target->m_bManaged;
 			const bool genericKey = m_hInstructorHintKeyGenericSprite &&
@@ -1205,7 +1210,7 @@ int CHud::Redraw( float flTime, int intermission )
 			if( target->m_bOnscreen &&
 				( forceCaption || target->m_flDistFromPlayer <= INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE ) )
 			{
-				const int captionFootprint = DrawHudStringLen( target->m_szCaption ) + 24;
+				const int captionFootprint = HUD_GetInstructorCaptionWidth( target->m_szCaption ) + 24;
 				if( target->m_wide < captionFootprint )
 					target->m_wide = Q_min( Q_max( 40, captionFootprint ), Q_max( 40, ScreenWidth / 2 ) );
 			}
@@ -1310,7 +1315,7 @@ int CHud::Redraw( float flTime, int intermission )
 				snprintf( bindingText, sizeof( bindingText ),
 					locatorTarget->m_bManaged ? "%s" : "[ %s ]", resolvedBinding );
 
-			int captionWidth = DrawHudStringLen( locatorTarget->m_szCaption );
+			int captionWidth = HUD_GetInstructorCaptionWidth( locatorTarget->m_szCaption );
 			int bindingWidth = DrawHudStringLen( bindingText );
 
 			// Project the current world target before selecting its on/off-screen icon.
@@ -1657,7 +1662,7 @@ int CHud::Redraw( float flTime, int intermission )
 					if( resolvedBinding[0] )
 						snprintf( locatorBinding, sizeof( locatorBinding ), "%s", resolvedBinding );
 
-					const int locatorCaptionWidth = DrawHudStringLen( locatorTarget->m_szCaption );
+					const int locatorCaptionWidth = HUD_GetInstructorCaptionWidth( locatorTarget->m_szCaption );
 					const int locatorBindingWidth = DrawHudStringLen( locatorBinding );
 					const bool locatorUsesGenericKey = m_hInstructorHintKeyGenericSprite &&
 						locatorBinding[0] && locatorBinding[1] && !locatorBinding[2] ? true :
@@ -1748,7 +1753,7 @@ int CHud::Redraw( float flTime, int intermission )
 						const int keyX = labelX + labelWidth - locatorKeyWidth - 5;
 						const int captionRight = locatorKeyWidth > 0 ? keyX - 6 : labelX + labelWidth - 6;
 						if( locatorCaptionWidth > 0 )
-							DrawHudString( labelTextX, labelTextY, captionRight,
+							HUD_DrawInstructorCaption( labelTextX, labelTextY, captionRight,
 								locatorTarget->m_szCaption, locatorTextR, locatorTextG, locatorTextB );
 
 						if( locatorKeyWidth > 0 )
@@ -1800,11 +1805,10 @@ int CHud::Redraw( float flTime, int intermission )
 						if( targetOffscreen || captionWithinSourceRange )
 							HUD_DrawInstructorBindingName( markerX, markerY,
 								instructorBindingGlyph, locatorAlpha );
-						const int sourceCaptionWidth = DrawHudStringLen( locatorTarget->m_szCaption );
+						const int sourceCaptionWidth = HUD_GetInstructorCaptionWidth( locatorTarget->m_szCaption );
 						if( !targetOffscreen && captionWithinSourceRange && sourceCaptionWidth > 0 )
 						{
-							const int fontHeight = m_scrinfo.iCharHeight > 0 ? m_scrinfo.iCharHeight :
-								( m_iFontHeight > 0 ? m_iFontHeight : 12 );
+							const int fontHeight = HUD_GetInstructorCaptionHeight();
 							const int safeLeft = 8;
 							const int safeRight = Q_max( safeLeft + 1, ScreenWidth - 8 );
 							const int rightCaptionX = markerX + markerHalfWidth + 5;
@@ -1820,7 +1824,7 @@ int CHud::Redraw( float flTime, int intermission )
 							// Keep the standard Half-Life HUD font and let it use the
 							// full remaining safe width. This prevents the last letters
 							// from being clipped when the icon is near either screen edge.
-							DrawHudString( captionX, markerY - fontHeight / 2 - 1,
+							HUD_DrawInstructorCaption( captionX, markerY - fontHeight / 2 - 1,
 								safeRight, locatorTarget->m_szCaption,
 								locatorTextR, locatorTextG, locatorTextB );
 						}
@@ -2065,7 +2069,7 @@ int CHud::Redraw( float flTime, int intermission )
 			{
 				DrawHudString( textAreaX, panelY + 9, textAreaRight,
 					"INSTRUCTION", hintTextR, hintTextG, hintTextB );
-				DrawHudString( textAreaX, panelY + 31, textAreaRight,
+				HUD_DrawInstructorCaption( textAreaX, panelY + 31, textAreaRight,
 					locatorTarget->m_szCaption, whiteText, whiteText, whiteText );
 
 				if( bindingText[0] )
@@ -2113,7 +2117,7 @@ int CHud::Redraw( float flTime, int intermission )
 				if( textX < textAreaX )
 					textX = textAreaX;
 				const int textOffsetY = ( panelHeight - basePanelHeight ) / 2;
-				DrawHudString( textX, panelY + textOffsetY + 9, textAreaRight,
+				HUD_DrawInstructorCaption( textX, panelY + textOffsetY + 9, textAreaRight,
 					locatorTarget->m_szCaption, whiteText, whiteText, whiteText );
 
 				if( bindingText[0] )
@@ -2239,6 +2243,146 @@ static int HUD_DrawHudStringAt( int xpos, int drawXpos, int ypos, int iMaxX, con
 	}
 
 	return xpos;
+}
+
+
+static bool HUD_HasInstructorScalableFont( void )
+{
+	return gEngfuncs.pfnDrawConsoleString &&
+		gEngfuncs.pfnDrawConsoleStringLen &&
+		gEngfuncs.pfnDrawSetTextColor;
+}
+
+static int HUD_GetInstructorCaptionWidth( const char *text )
+{
+	if( !text || !text[0] )
+		return 0;
+
+	if( HUD_HasInstructorScalableFont() )
+	{
+		int width = 0;
+		int height = 0;
+		gEngfuncs.pfnDrawConsoleStringLen( text, &width, &height );
+		if( width >= 0 )
+			return width;
+	}
+
+	return gHUD.DrawHudStringLen( text );
+}
+
+static int HUD_GetInstructorCaptionHeight( void )
+{
+	if( HUD_HasInstructorScalableFont() )
+	{
+		int width = 0;
+		int height = 0;
+		gEngfuncs.pfnDrawConsoleStringLen( "M", &width, &height );
+		if( height > 0 )
+			return height;
+	}
+
+	if( gHUD.m_scrinfo.iCharHeight > 0 )
+		return gHUD.m_scrinfo.iCharHeight;
+	return gHUD.m_iFontHeight > 0 ? gHUD.m_iFontHeight : 12;
+}
+
+// Build the longest complete UTF-8 prefix that fits the caption's available
+// width. Xash's console-font renderer has accurate variable-width metrics, but
+// unlike DrawHudString it does not accept a right-edge clipping coordinate.
+static void HUD_CopyInstructorCaptionFit( const char *source, int maxWidth,
+	char *output, size_t outputSize, int *outputWidth )
+{
+	size_t used = 0;
+	int acceptedWidth = 0;
+
+	if( outputWidth )
+		*outputWidth = 0;
+	if( !output || outputSize == 0 )
+		return;
+	output[0] = '\0';
+
+	if( !source || maxWidth <= 0 )
+		return;
+
+	while( source[0] && source[0] != '\n' )
+	{
+		const unsigned char lead = (unsigned char)source[0];
+		int charBytes = 1;
+		if( ( lead & 0xE0 ) == 0xC0 ) charBytes = 2;
+		else if( ( lead & 0xF0 ) == 0xE0 ) charBytes = 3;
+		else if( ( lead & 0xF8 ) == 0xF0 ) charBytes = 4;
+
+		for( int i = 1; i < charBytes; ++i )
+		{
+			if( !source[i] || ( ( (unsigned char)source[i] & 0xC0 ) != 0x80 ) )
+			{
+				charBytes = 1;
+				break;
+			}
+		}
+
+		if( used + (size_t)charBytes >= outputSize )
+			break;
+
+		memcpy( output + used, source, (size_t)charBytes );
+		used += (size_t)charBytes;
+		output[used] = '\0';
+
+		int candidateWidth = 0;
+		int candidateHeight = 0;
+		gEngfuncs.pfnDrawConsoleStringLen( output, &candidateWidth, &candidateHeight );
+		if( candidateWidth > maxWidth )
+		{
+			used -= (size_t)charBytes;
+			output[used] = '\0';
+			break;
+		}
+
+		acceptedWidth = candidateWidth;
+		source += charBytes;
+	}
+
+	if( outputWidth )
+		*outputWidth = acceptedWidth;
+}
+
+// Source's CLocatorPanel draws the caption once in black one pixel down/right,
+// then draws the colored caption on top. GoldSrc has no Source VGUI HFont
+// handles, so Xash uses its scalable console-font renderer for these captions;
+// the engine-selected HUD console font supplies the closest available
+// variable-width face. Non-Xash engines retain the native HUD font fallback.
+static int HUD_DrawInstructorCaption( int x, int y, int maxX,
+	const char *text, int r, int g, int b )
+{
+	if( !text || !text[0] || maxX <= x )
+		return x;
+
+	if( HUD_HasInstructorScalableFont() )
+	{
+		const int drawX = HUD_AdjustX( x );
+		const int drawY = HUD_AdjustY( y );
+		const int drawMaxX = HUD_AdjustX( maxX );
+		char visibleText[256];
+		int visibleWidth = 0;
+
+		HUD_CopyInstructorCaptionFit( text, drawMaxX - drawX,
+			visibleText, sizeof( visibleText ), &visibleWidth );
+		if( !visibleText[0] )
+			return x;
+
+		gEngfuncs.pfnDrawSetTextColor( 0.0f, 0.0f, 0.0f );
+		gEngfuncs.pfnDrawConsoleString( drawX + 1, drawY + 1, visibleText );
+
+		gEngfuncs.pfnDrawSetTextColor( r / 255.0f, g / 255.0f, b / 255.0f );
+		gEngfuncs.pfnDrawConsoleString( drawX, drawY, visibleText );
+		return x + visibleWidth;
+	}
+
+	// The legacy fallback also receives the Source-style offset shadow.
+	HUD_DrawHudStringAt( x + 1, HUD_AdjustX( x ) + 1,
+		y + 1, maxX + 1, text, 0, 0, 0 );
+	return HUD_DrawHudStringAt( x, HUD_AdjustX( x ),
+		y, maxX, text, r, g, b );
 }
 
 int CHud::DrawHudString( int xpos, int ypos, int iMaxX, const char *szIt, int r, int g, int b )
