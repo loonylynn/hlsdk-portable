@@ -238,7 +238,10 @@ int CHud::MsgFunc_InstructorHint( const char *pszName, int iSize, void *pbuf )
 	{
 		CInstructorLocatorTarget *target = HUD_FindInstructorMapTarget( this, hintId );
 		if( target )
-			m_InstructorLocatorPanel.RemoveTarget( target->m_serialNumber, m_flTime, 0.3f );
+		{
+			const float removalFade = hintId < 0 ? 0.08f : 0.3f;
+			m_InstructorLocatorPanel.RemoveTarget( target->m_serialNumber, m_flTime, removalFade );
+		}
 		return 1;
 	}
 
