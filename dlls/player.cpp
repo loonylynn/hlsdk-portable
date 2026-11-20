@@ -1837,31 +1837,12 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 #define	PLAYER_INSTRUCTOR_HINT_APPROACH_DOT	0.5f
 #define	PLAYER_USE_TARGET_DOT	0.8f
 
-// Return the entity currently represented by the automatic Instructor hint.
-// Keeping this target preferred across both scan stages avoids target flicker
-// and makes the displayed target agree with the next USE action.
-static CBaseEntity *GetActiveUseableInstructorHintTarget( CBasePlayer *pPlayer )
-{
-	if( !pPlayer || !pPlayer->m_bUseableInstructorHintActive ||
-		( pPlayer->m_iUseableInstructorHintId != -1 &&
-		  pPlayer->m_iUseableInstructorHintId != -2 ) ||
-		pPlayer->m_iUseableInstructorHintTarget <= 0 )
-		return NULL;
-
-	edict_t *pentPreferred = g_engfuncs.pfnPEntityOfEntIndex(
-		pPlayer->m_iUseableInstructorHintTarget );
-	if( FNullEnt( pentPreferred ) )
-		return NULL;
-
-	return CBaseEntity::Instance( pentPreferred );
-}
-
 // Source's FindUseEntity() radial pass selects the usable object closest to
 // the player's forward view line, not the object with the largest forward
 // projection. The trace is only a visibility test; the locator is anchored
 // to the entity's stable world origin, just like Source's CIconLesson.
 static CBaseEntity *FindUseableTarget( CBasePlayer *pPlayer, float searchRadius,
-	BOOL bInstructorApproach, Vector *pTargetOrigin, CBaseEntity *pPreferredTarget )
+	BOOL bInstructorApproach, Vector *pTargetOrigin )
 {
 	if( pTargetOrigin )
 		*pTargetOrigin = g_vecZero;
@@ -1875,9 +1856,7 @@ static CBaseEntity *FindUseableTarget( CBasePlayer *pPlayer, float searchRadius,
 
 	CBaseEntity *pObject = NULL;
 	CBaseEntity *pClosest = NULL;
-	CBaseEntity *pPreferred = NULL;
 	Vector vecClosestOrigin = g_vecZero;
-	Vector vecPreferredOrigin = g_vecZero;
 	float flBestLineDistance = 1.0e30f;
 	float flBestTargetDistance = 1.0e30f;
 
@@ -1930,26 +1909,10 @@ static CBaseEntity *FindUseableTarget( CBasePlayer *pPlayer, float searchRadius,
 		// Do not use tr.vecEndPos here. Its position slides across an object's
 		// surface as the player moves, while Source anchors the locator to the
 		// target entity itself.
-		const Vector targetOrigin = InstructorHintTargetOrigin( pObject );
-
-		if( pObject == pPreferredTarget )
-		{
-			pPreferred = pObject;
-			vecPreferredOrigin = targetOrigin;
-		}
-
 		pClosest = pObject;
 		flBestLineDistance = flLineDistance;
 		flBestTargetDistance = flDistance;
-		vecClosestOrigin = targetOrigin;
-	}
-
-	// Retain the displayed target while it remains within range, forward-facing,
-	// and visible. Both PlayerUse() and the HUD use this same preference.
-	if( pPreferred )
-	{
-		pClosest = pPreferred;
-		vecClosestOrigin = vecPreferredOrigin;
+		vecClosestOrigin = InstructorHintTargetOrigin( pObject );
 	}
 
 	if( pClosest && pTargetOrigin )
@@ -2014,8 +1977,7 @@ void CBasePlayer::PlayerUse( void )
 	}
 
 	CBaseEntity *pObject = FindUseableTarget(
-		this, PLAYER_SEARCH_RADIUS, FALSE, NULL,
-		GetActiveUseableInstructorHintTarget( this ) );
+		this, PLAYER_SEARCH_RADIUS, FALSE, NULL );
 
 	// Found an object
 	if( pObject )
@@ -2765,8 +2727,6 @@ void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject, BOOL bReady
 	const int hintMode = bReadyToUse ? 3 : 0;
 	const bool sameHint = m_bUseableInstructorHintActive &&
 		m_iUseableInstructorHintId == -2;
-	const bool sameTarget = sameHint &&
-		m_iUseableInstructorHintTarget == targetIndex;
 	const bool stageChanged = sameHint &&
 		m_iUseableInstructorHintIconMode != hintMode;
 
@@ -2886,11 +2846,9 @@ void CBasePlayer::UpdateUseableHighlight( void )
 
 	m_flNextUseableCheck = gpGlobals->time + 0.2f;
 
-	CBaseEntity *pPreferredHintTarget =
-		GetActiveUseableInstructorHintTarget( this );
 	Vector useTargetOrigin;
 	CBaseEntity *pClosest = FindUseableTarget(
-		this, PLAYER_SEARCH_RADIUS, FALSE, &useTargetOrigin, pPreferredHintTarget );
+		this, PLAYER_SEARCH_RADIUS, FALSE, &useTargetOrigin );
 
 	if( pClosest )
 	{
@@ -2915,7 +2873,7 @@ void CBasePlayer::UpdateUseableHighlight( void )
 		Vector approachTargetOrigin;
 		CBaseEntity *pHintCandidate = FindUseableTarget(
 			this, PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS, TRUE,
-			&approachTargetOrigin, pPreferredHintTarget );
+			&approachTargetOrigin );
 		UpdateUseableInstructorHint( pHintCandidate, FALSE, approachTargetOrigin );
 	}
 
