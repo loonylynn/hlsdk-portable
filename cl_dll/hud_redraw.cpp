@@ -2298,12 +2298,12 @@ static int HUD_GetInstructorCaptionWidth( const char *text )
 		int width = 0;
 		bool hasGlyph = false;
 
-		while( text[0] && text[0] != '\\n' )
+		while( text[0] && text[0] != '\n' )
 		{
 			char glyph[5];
 			const int charBytes = HUD_GetInstructorGlyphBytes( text );
 			memcpy( glyph, text, (size_t)charBytes );
-			glyph[charBytes] = '\\0';
+			glyph[charBytes] = '\0';
 
 			width += HUD_GetInstructorGlyphAdvance( glyph );
 			hasGlyph = true;
@@ -2322,12 +2322,12 @@ static void HUD_DrawInstructorCaptionText( int x, int y, const char *text )
 {
 	int drawX = x;
 
-	while( text[0] && text[0] != '\\n' )
+	while( text[0] && text[0] != '\n' )
 	{
 		char glyph[5];
 		const int charBytes = HUD_GetInstructorGlyphBytes( text );
 		memcpy( glyph, text, (size_t)charBytes );
-		glyph[charBytes] = '\\0';
+		glyph[charBytes] = '\0';
 
 		// A one-pixel horizontal overdraw approximates the bold weight of
 		// InstructorTitle without changing the global console font.
