@@ -1128,11 +1128,20 @@ bool CScriptedIconLesson::ProcessElements(const InstructorEventData *event,
 			m_flLockTime = gHUD.m_flTime;
 			continue;
 		}
-		if (action == "present start" || action == "present end")
+		if (action == "present start")
+		{
+			HUD_ApplyManagedInstructorPresentation(m_Name.c_str(), m_iInstanceSerial, true);
 			continue;
+		}
+		if (action == "present end")
+		{
+			HUD_ApplyManagedInstructorPresentation(m_Name.c_str(), m_iInstanceSerial, false);
+			continue;
+		}
 		if (action == "present complete")
 		{
-			const bool complete = m_bWasDisplayed;
+			const bool complete = HUD_IsManagedInstructorPresentationComplete(
+				m_Name.c_str(), m_iInstanceSerial);
 			if (negate ? complete : !complete)
 			{
 				if (scopeDepth > 0)
@@ -1570,6 +1579,9 @@ bool C_GameInstructor::Init()
 	CVAR_CREATE("gameinstructor_enable", "1", FCVAR_ARCHIVE);
 	CVAR_CREATE("gameinstructor_verbose", "0", 0);
 	CVAR_CREATE("gameinstructor_find_errors", "0", 0);
+	// Source locator presentation stays centered for this many seconds after
+	// StartPresent; the name/default match locator_lerp_rest.
+	CVAR_CREATE("locator_lerp_rest", "2.25", 0);
 
 	m_bNoDraw = false;
 	m_bHiddenDueToOtherElements = false;
@@ -1936,6 +1948,11 @@ void C_GameInstructor::UpdateActiveLesson(CScriptedIconLesson *lesson)
 	{
 		lesson->m_flStartTime = gHUD.m_flTime;
 		lesson->m_bStarted = true;
+
+		// Source creates the icon/locator target in CIconLesson::Start before
+		// scripted OnOpen events run. Create the GoldSrc managed target here so
+		// present_start/end actions in OnOpen can address it immediately.
+		DisplayLesson(lesson, gHUD.m_flTime);
 		lesson->OnOpen();
 	}
 	if (lesson->IsInstructing())
