@@ -1955,7 +1955,7 @@ void CBasePlayer::PlayerUse( void )
 	// Found an object
 	if( pObject )
 	{
-		//!!!UNDONE: traceline here to prevent USEing buttons through walls			
+		// The shared selector has already confirmed a clear line of sight.
 		int caps = pObject->ObjectCaps();
 
 		if( m_afButtonPressed & IN_USE )
