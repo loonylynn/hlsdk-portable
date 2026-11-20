@@ -200,7 +200,6 @@ public:
 	EHANDLE	m_hUseableHighlight;
 	EHANDLE	m_hLastUseableItem;
 	float	m_flNextUseableCheck;
-	int		m_iActiveInstructorHintId;
 	int		m_iUseableInstructorHintTarget;
 	int		m_iUseableInstructorHintId; // -1 = pushable prompt, -2 = generic USE prompt
 	BOOL	m_bUseableInstructorHintActive;
