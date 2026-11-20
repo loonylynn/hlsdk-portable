@@ -2850,7 +2850,10 @@ void CBasePlayer::UpdateUseableHighlight( void )
 	CBaseEntity *pClosest = FindUseableTarget(
 		this, PLAYER_SEARCH_RADIUS, FALSE, &useTargetOrigin );
 
-	if( pClosest )
+	// Automatic Instructor hints are for world interactables, not NPCs or
+	// players. PlayerUse() still uses the shared selector without this HUD-only
+	// filter, so legitimate NPC USE behaviour is unchanged.
+	if( pClosest && !pClosest->IsPlayer() && !pClosest->MyMonsterPointer() )
 	{
 		HighlightUseable( pClosest );
 		if( FClassnameIs( pClosest->pev, "func_pushable" ) )
@@ -2860,8 +2863,9 @@ void CBasePlayer::UpdateUseableHighlight( void )
 	}
 	else
 	{
-		// No target is inside the normal USE focus cone. Remove only the PS2
-		// bracket, then search a wider radius for an early directional marker.
+		// No eligible world interactable is inside the normal USE focus cone.
+		// Remove only the PS2 bracket, then search a wider radius for an early
+		// directional marker. The approach selector also excludes NPCs/players.
 		edict_t *pentGraphic = m_hUseableHighlight.Get();
 		CUseableGraphic *pGraphic = pentGraphic ?
 			(CUseableGraphic *)CBaseEntity::Instance( pentGraphic ) : NULL;
