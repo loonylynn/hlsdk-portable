@@ -1582,7 +1582,7 @@ bool C_GameInstructor::Init()
 	// Source locator presentation stays centered for this many seconds after
 	// StartPresent; the name/default match locator_lerp_rest.
 	CVAR_CREATE("locator_lerp_rest", "2.25", 0);
-	CVAR_CREATE("locator_lerp_time", "1.75", 0);
+	CVAR_CREATE("locator_lerp_time", "0.65", 0);
 
 	m_bNoDraw = false;
 	m_bHiddenDueToOtherElements = false;
