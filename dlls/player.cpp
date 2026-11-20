@@ -1831,15 +1831,18 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 // PlayerUse - handles USE keypress
 //
 #define	PLAYER_SEARCH_RADIUS	(float)64
-// Approach guidance radius for automatic instructor icons; real USE focus remains 64 units.
-#define	PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS	(float)128
+// Approach guidance is deliberately shorter and narrower than actual USE focus.
+// The 0.5 facing threshold is cos(60 degrees): no automatic hint behind the player.
+#define	PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS	(float)96
+#define	PLAYER_INSTRUCTOR_HINT_MIN_FACING_DOT	0.5f
 
- 
 // Select the same usable entity for the USE action and its HUD presentation.
 // The returned point is the nearest point on the target bounds that passed the
 // line-of-sight trace, so the locator cannot be anchored at a hidden center.
+// Approach mode can retain a still-valid target to prevent nearby objects from
+// repeatedly stealing the hint as the player moves or turns.
 static CBaseEntity *FindUseableTarget( CBasePlayer *pPlayer, float searchRadius,
-	BOOL bInstructorApproach, Vector *pVisiblePoint )
+	BOOL bInstructorApproach, Vector *pVisiblePoint, CBaseEntity *pPreferredTarget )
 {
 	if( pVisiblePoint )
 		*pVisiblePoint = g_vecZero;
@@ -1851,8 +1854,12 @@ static CBaseEntity *FindUseableTarget( CBasePlayer *pPlayer, float searchRadius,
 
 	CBaseEntity *pObject = NULL;
 	CBaseEntity *pClosest = NULL;
+	CBaseEntity *pPreferred = NULL;
 	Vector vecClosestPoint = g_vecZero;
-	float flMaxDot = bInstructorApproach ? -1.0e30f : VIEW_FIELD_NARROW;
+	Vector vecPreferredPoint = g_vecZero;
+	float flMaxDot = VIEW_FIELD_NARROW;
+	float flBestFacing = -1.0f;
+	float flBestDistance = 1.0e30f;
 
 	while( ( pObject = UTIL_FindEntityInSphere(
 		pObject, pPlayer->pev->origin, searchRadius ) ) != NULL )
@@ -1874,8 +1881,20 @@ static CBaseEntity *FindUseableTarget( CBasePlayer *pPlayer, float searchRadius,
 		Vector vecLOS = VecBModelOrigin( pObject->pev ) - vecEye;
 		vecLOS = UTIL_ClampVectorToBox( vecLOS, pObject->pev->size * 0.5f );
 		const float flDot = DotProduct( vecLOS, gpGlobals->v_forward );
-		if( flDot <= flMaxDot )
+		const float flDistance = vecLOS.Length();
+		const float flFacing = flDistance > 0.001f ? flDot / flDistance : 1.0f;
+
+		if( bInstructorApproach )
+		{
+			// Keep off-screen guidance in front of the player only. A full
+			// 360-degree search caused prompts to jump between unrelated objects.
+			if( flFacing < PLAYER_INSTRUCTOR_HINT_MIN_FACING_DOT )
+				continue;
+		}
+		else if( flDot <= flMaxDot )
+		{
 			continue;
+		}
 
 		TraceResult tr;
 		UTIL_TraceLine( vecEye, vecEye + vecLOS,
@@ -1884,9 +1903,42 @@ static CBaseEntity *FindUseableTarget( CBasePlayer *pPlayer, float searchRadius,
 			( tr.flFraction < 1.0f && tr.pHit != pObject->edict() ) )
 			continue;
 
-		pClosest = pObject;
-		flMaxDot = flDot;
-		vecClosestPoint = ( tr.pHit == pObject->edict() ) ? tr.vecEndPos : vecEye + vecLOS;
+		const Vector vecCandidatePoint =
+			( tr.pHit == pObject->edict() ) ? tr.vecEndPos : vecEye + vecLOS;
+
+		if( bInstructorApproach )
+		{
+			// Prefer the current approach target while it remains valid. This
+			// hysteresis prevents rapid target swapping between nearby objects.
+			if( pObject == pPreferredTarget )
+			{
+				pPreferred = pObject;
+				vecPreferredPoint = vecCandidatePoint;
+			}
+
+			// Otherwise choose the best-aligned target, using distance only as
+			// a tie-breaker instead of favoring whichever object is farthest ahead.
+			if( flFacing > flBestFacing ||
+				( flFacing == flBestFacing && flDistance < flBestDistance ) )
+			{
+				pClosest = pObject;
+				flBestFacing = flFacing;
+				flBestDistance = flDistance;
+				vecClosestPoint = vecCandidatePoint;
+			}
+		}
+		else
+		{
+			pClosest = pObject;
+			flMaxDot = flDot;
+			vecClosestPoint = vecCandidatePoint;
+		}
+	}
+
+	if( bInstructorApproach && pPreferred )
+	{
+		pClosest = pPreferred;
+		vecClosestPoint = vecPreferredPoint;
 	}
 
 	if( pClosest && pVisiblePoint )
@@ -1950,7 +2002,7 @@ void CBasePlayer::PlayerUse( void )
 		}
 	}
 
-	CBaseEntity *pObject = FindUseableTarget( this, PLAYER_SEARCH_RADIUS, FALSE, NULL );
+	CBaseEntity *pObject = FindUseableTarget( this, PLAYER_SEARCH_RADIUS, FALSE, NULL, NULL );
 
 	// Found an object
 	if( pObject )
@@ -2838,9 +2890,24 @@ void CBasePlayer::UpdateUseableHighlight( void )
 		m_hUseableHighlight = NULL;
 		m_hLastUseableItem = NULL;
 
+		// Reuse the active approach target while it remains in range, visible,
+		// and inside the forward guidance cone.
+		CBaseEntity *pPreferredHintTarget = NULL;
+		if( m_bUseableInstructorHintActive &&
+			m_iUseableInstructorHintId == -2 &&
+			m_iUseableInstructorHintIconMode == 0 &&
+			m_iUseableInstructorHintTarget > 0 )
+		{
+			edict_t *pentPreferred = g_engfuncs.pfnPEntityOfEntIndex(
+				m_iUseableInstructorHintTarget );
+			if( !FNullEnt( pentPreferred ) )
+				pPreferredHintTarget = CBaseEntity::Instance( pentPreferred );
+		}
+
 		Vector approachTargetPoint;
 		CBaseEntity *pHintCandidate = FindUseableTarget(
-			this, PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS, TRUE, &approachTargetPoint );
+			this, PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS, TRUE,
+			&approachTargetPoint, pPreferredHintTarget );
 		UpdateUseableInstructorHint( pHintCandidate, FALSE, approachTargetPoint );
 	}
 
