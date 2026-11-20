@@ -1892,13 +1892,22 @@ int CHud::Redraw( float flTime, int intermission )
 				bindingText[0] && bindingText[1] && !bindingText[2] ? true :
 				( m_hInstructorHintKeyGenericSprite && bindingText[0] && !bindingText[1] );
 			int keyChipWidth = 0;
+			int keyChipHeight = 0;
 			if( managedCard && bindingText[0] )
 			{
-				keyChipWidth = bindingWidth +
-					( cardUsesGenericKey ? 12 : 18 );
-				if( cardUsesGenericKey && keyChipWidth < 24 )
-					keyChipWidth = 24;
-				if( keyChipWidth > 64 )
+				if( cardUsesGenericKey )
+				{
+					HUD_GetInstructorKeyBadgeSize( m_hInstructorHintKeyGenericSprite,
+						&keyChipWidth, &keyChipHeight );
+				}
+				else
+				{
+					HUD_GetInstructorKeyBadgeSize( 0, NULL, &keyChipHeight );
+					const int fallbackPadding = (int)( 8.0f *
+						HUD_GetInstructorKeyBadgeScale() + 0.5f );
+					keyChipWidth = bindingWidth + fallbackPadding * 2;
+				}
+				if( !cardUsesGenericKey && keyChipWidth > 64 )
 					keyChipWidth = 64;
 			}
 			const int contentTextWidth = managedCard ?
@@ -1914,7 +1923,9 @@ int CHud::Redraw( float flTime, int intermission )
 				panelWidth = minPanelWidth;
 
 			const int basePanelHeight = managedCard ? 62 : ( bindingText[0] ? 58 : 42 );
-			const int panelHeight = Q_max( basePanelHeight, iconHeight + ( managedCard ? 24 : 16 ) );
+			const int panelHeight = Q_max( basePanelHeight,
+				Q_max( iconHeight + ( managedCard ? 24 : 16 ),
+					keyChipHeight > 0 ? keyChipHeight + 24 : 0 ) );
 			int panelX = ( ScreenWidth - panelWidth ) / 2;
 			int panelY = ScreenHeight - panelHeight - 30;
 
