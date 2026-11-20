@@ -60,6 +60,8 @@ public:
 	bool m_bBehindCamera;
 	float m_flProjectedX, m_flProjectedY;
 	float m_flVisibilityMargin;
+	float m_flCompassSin, m_flCompassCos;
+	bool m_bCompassDirectionValid;
 	bool m_bOccluded;
 	bool m_bVisible;
 	bool m_bIsDrawing;
@@ -113,6 +115,7 @@ public:
 	void UpdateProjection( float screenX, float screenY, bool behind,
 		int screenWidth, int screenHeight, float visibilityMargin, float currentTime );
 	void CalculateEdgePosition( int screenWidth, int screenHeight, int edgeMargin );
+	void SetCompassDirection( float sinYaw, float cosYaw, bool valid );
 	void SetVisible( bool visible, float currentTime, float fadeTime );
 	bool IsStatic() const;
 	bool IsPresenting( float currentTime, float restTime ) const;
