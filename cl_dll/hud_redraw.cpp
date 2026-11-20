@@ -52,6 +52,7 @@ extern vec3_t v_origin;
 
 // Source hud_locator_target.cpp: ICON_DIST_TOO_FAR = 60 feet * 12 inches.
 #define INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE (60.0f * 12.0f)
+#define INSTRUCTOR_LOCATOR_ICON_SCALE 2.0f
 #define INSTRUCTOR_LOCATOR_CAPTION_SCALE 1.20f
 
 static int HUD_GetInstructorCaptionWidth( const char *text );
@@ -1193,7 +1194,7 @@ int CHud::Redraw( float flTime, int intermission )
 				const int iconHeight = SPR_Height( icon, 0 );
 				if( iconWidth > 0 && iconHeight > 0 && iconWidth <= 64 && iconHeight <= 64 )
 				{
-					const float iconScale = target->m_iHintId == -2 ? 1.0f : 1.3f;
+					const float iconScale = target->m_iHintId == -2 ? 1.0f : INSTRUCTOR_LOCATOR_ICON_SCALE;
 					target->m_wide = (int)( iconWidth * iconScale + 0.5f );
 					target->m_tall = (int)( iconHeight * iconScale + 0.5f );
 				}
@@ -1520,12 +1521,11 @@ int CHud::Redraw( float flTime, int intermission )
 						locatorTarget->m_flDistFromPlayer > INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE ?
 						0.5f : 1.0f;
 
-					// A 30% increase keeps the 32x32 art compact while making
-					// the locator easier to pick out at normal gameplay distance.
+					// Double the 32x32 locator art to 64x64 at normal gameplay distance.
 					if( sourceBindingIcon && locatorIconHeight > 0 && locatorIconWidth > 0 )
 						sourceBindingIconWidth = Q_max( 1, (int)( sourceBindingIconHeight *
 							( (float)locatorIconWidth / (float)locatorIconHeight ) + 0.5f ) );
-					const float locatorIconScale = locatorTarget->m_iHintId == -2 ? 1.0f : 1.30f;
+					const float locatorIconScale = locatorTarget->m_iHintId == -2 ? 1.0f : INSTRUCTOR_LOCATOR_ICON_SCALE;
 					const int locatorBaseWidth = sourceBindingIcon ? sourceBindingIconWidth :
 						( locatorSprite ? (int)( locatorIconWidth * locatorIconScale + 0.5f ) : 0 );
 					const int locatorBaseHeight = sourceBindingIcon ? sourceBindingIconHeight :
