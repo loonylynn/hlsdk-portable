@@ -455,7 +455,7 @@ void CHud::Init( void )
 	// time, so they can be tuned live from the console without a restart.
 	CVAR_CREATE( "hud_instructor_caption_scale", "1.72", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_instructor_scale", "1.5", FCVAR_ARCHIVE );
-	CVAR_CREATE( "hud_instructor_key_text_scale", "2", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_instructor_key_text_scale", "1", FCVAR_ARCHIVE );
 
 	m_iLogo = 0;
 	m_iFOV = 0;
