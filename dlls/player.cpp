@@ -189,6 +189,7 @@ public:
 	void KeyValue( KeyValueData *pkvd );
 	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
 	void HintThink( void );
+	void UpdateOnRemove( void );
 	BOOL IsActiveForPlayer( CBasePlayer *pPlayer ) const;
 
 private:
@@ -2305,6 +2306,14 @@ void CEnvInstructorHint::ShowHint( CBasePlayer *pPlayer )
 		SetThink( NULL );
 		pev->nextthink = 0;
 	}
+}
+
+void CEnvInstructorHint::UpdateOnRemove( void )
+{
+	// UTIL_Remove calls this before marking the edict for deletion. End the
+	// client locator now so neither its HUD entry nor active state is orphaned.
+	EndHint();
+	CPointEntity::UpdateOnRemove();
 }
 
 void CEnvInstructorHint::EndHint( void )
