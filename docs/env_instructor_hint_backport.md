@@ -59,15 +59,17 @@ The player's automatic interaction guidance has two stages. The near-field ready
   table and its available effect flags.
 - Scripted lesson elements implement Source's `present_start`,
   `present_end`, and `present_complete` actions. Presentation uses the
-  `locator_lerp_rest` client cvar (default 2.25 seconds): start restarts the
-  centered presentation interval, end completes it immediately, and complete
-  tests whether the interval has elapsed. Managed locator targets are created
+  `locator_lerp_rest` client cvar (default 2.25 seconds) and
+  `locator_lerp_time` (default 1.75 seconds): start restarts the centered
+  presentation interval, end completes it immediately, and complete tests
+  whether the rest interval has elapsed. Managed locator targets are created
   before `OnOpen` events so those actions can operate on the active target.
   While presenting, the world locator is centered and its caption remains
-  visible; the 1.5-second displayed counter begins only after presentation
-  completes (unless the target uses the static effect). This uses the GoldSrc
-  locator's center-marker/caption layout rather than Source's VGUI static-icon
-  stack.
+  visible; it then interpolates from center to its target position over
+  `locator_lerp_time`. The permanent static locator effect remains centered.
+  The 1.5-second displayed counter begins only after presentation completes
+  (unless the target uses the static effect). This uses the GoldSrc locator's
+  center-marker/caption layout rather than Source's VGUI static-icon stack.
 - Target-backed hints send position/visibility updates only when the target's encoded `WRITE_COORD` values change (1/8-unit coordinate precision), its target/visibility state changes, or its occlusion state changes. Target-following still ticks at 0.05 seconds, but visibility traces are cached and refreshed at 0.25-second intervals, matching Source's locator occlusion cadence. This avoids repeating identical network packets and expensive traces while preserving responsive moving-target updates.
 - Target-backed hints use a projected world-space icon and a small caption tag while on-screen. Like Source's `ICON_DIST_TOO_FAR`, captions and ordinary inline binding labels are suppressed beyond 720 units (60 feet), measured from the current camera origin; the marker is also reduced to half size. For ordinary map-authored hints, this distance cutoff does not switch icons: when the target crosses Source's title-safe inset (7.5% of screen width) or moves behind the view, the renderer selects `hint_icon_offscreen` and places it on Source's 100-pixel (YRES-scaled) compass ellipse with a directional arrow. `hint_forcecaption` bypasses caption-distance and occlusion suppression, but not the separate `hint_range` culling rule. The automatic `-2` Interact prompt is limited by the server's 64-unit forward-cone use-target scan, so Source's 720-unit distance presentation threshold applies only to longer-range locator hints. Static hints keep a screen-space prompt and are not subject to this distance cutoff. The HUD uses GoldSrc sprite files and a custom user message rather than Source game events, VGUI locator panels, and VTF materials.
 - Locator pulse/alpha/shake timing now follows Source's presentation equations: 1.0–1.75 pulse scale, one-second activation pulse, 0.5–1.0 alpha modulation, random ±2/±5 pixel shake, 0.3-second fades, and the 100-pixel (YRES-scaled) offscreen compass ellipse. GoldSrc still uses `.spr` assets and a different HUD renderer, so its rasterization and layout cannot be pixel-identical to Source's VGUI implementation.
