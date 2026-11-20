@@ -2868,7 +2868,7 @@ void CBasePlayer::UpdateUseableHighlight( void )
 
 	Vector useTargetPoint;
 	CBaseEntity *pClosest = FindUseableTarget(
-		this, PLAYER_SEARCH_RADIUS, FALSE, &useTargetPoint );
+		this, PLAYER_SEARCH_RADIUS, FALSE, &useTargetPoint, NULL );
 
 	if( pClosest )
 	{
