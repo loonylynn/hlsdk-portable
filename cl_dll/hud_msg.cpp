@@ -463,6 +463,12 @@ float HUD_GetInstructorPresentationRestTime()
 	return restTime > 0.0f ? restTime : 0.0f;
 }
 
+float HUD_GetInstructorPresentationLerpTime()
+{
+	float lerpTime = CVAR_GET_FLOAT( "locator_lerp_time" );
+	return lerpTime > 0.0f ? lerpTime : 0.0f;
+}
+
 bool HUD_ApplyManagedInstructorPresentation( const char *lessonName,
 	int instanceSerial, bool start )
 {
