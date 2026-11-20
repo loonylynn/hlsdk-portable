@@ -908,7 +908,8 @@ CScriptedIconLesson::CScriptedIconLesson(const CScriptedIconLesson &definition)
 	  m_flFloat1(0.0f),
 	  m_flFloat2(0.0f),
 	  m_pDefinition(&definition),
-	  m_flNextUpdateEvent(0.0f)
+	  m_flNextUpdateEvent(0.0f),
+	  m_flNextTargetValidation(0.0f)
 {
 	m_pRoot = const_cast<CScriptedIconLesson *>(&definition);
 	m_InstanceType = definition.m_InstanceType;
@@ -1444,16 +1445,67 @@ void CScriptedIconLesson::OnOpen()
 
 void CScriptedIconLesson::Update(float now)
 {
-	if (now < m_flNextUpdateEvent)
-		return;
-	m_flNextUpdateEvent = now + (m_flUpdateInterval > 0.0f ? m_flUpdateInterval : 0.5f);
-	for (size_t i = 0; i < m_UpdateEvents.size(); ++i)
-		ProcessElements(NULL, m_UpdateEvents[i].elements);
+	// Source runs scripted update events at their configured interval, but the
+	// icon lesson's target validation runs every frame independently.
+	if (now >= m_flNextUpdateEvent)
+	{
+		m_flNextUpdateEvent = now + (m_flUpdateInterval > 0.0f ? m_flUpdateInterval : 0.5f);
+		for (size_t i = 0; i < m_UpdateEvents.size(); ++i)
+			ProcessElements(NULL, m_UpdateEvents[i].elements);
+	}
+
+	ValidateIconTarget(now);
 }
 
 void CScriptedIconLesson::UpdateInactive(float now)
 {
-	(void)now;
+	// Source's CIconLesson::UpdateInactive keeps target handles valid even when
+	// another lesson owns the HUD. GoldSrc has no EHANDLE/dormancy API, so use
+	// the client entity index and the NODRAW bit exposed by cl_entity_t.
+	ValidateIconTarget(now);
+}
+
+bool CScriptedIconLesson::ValidateIconTarget(float now)
+{
+	if (m_bCloseRequested || now < m_flNextTargetValidation)
+		return !m_bCloseRequested;
+
+	m_flNextTargetValidation = now + 0.1f;
+
+	if (m_iIconTarget <= 0)
+	{
+		if (!m_bNoIconTarget)
+		{
+			m_bCloseRequested = true;
+			SetCloseReason("Lost our icon target handle returned NULL.");
+			return false;
+		}
+		return true;
+	}
+
+	if (!gEngfuncs.GetEntityByIndex)
+		return true;
+
+	cl_entity_t *target = gEngfuncs.GetEntityByIndex(m_iIconTarget);
+	if (!target)
+	{
+		if (!m_bNoIconTarget)
+		{
+			m_bCloseRequested = true;
+			SetCloseReason("Lost our icon target handle returned NULL.");
+			return false;
+		}
+		return true;
+	}
+
+	if ((target->curstate.effects & EF_NODRAW) && !m_bAllowNodrawTarget)
+	{
+		m_bCloseRequested = true;
+		SetCloseReason("Icon Target is using effect NODRAW and allow_nodraw_target is false!");
+		return false;
+	}
+
+	return true;
 }
 
 void CScriptedIconLesson::ProcessEvent(const InstructorEventData &event, int eventType)
@@ -1894,9 +1946,15 @@ void C_GameInstructor::UpdateInactiveLesson(CScriptedIconLesson *lesson, float n
 	if (!lesson)
 		return;
 
-	// Source keeps lesson instances alive while they are not the currently
-	// selected locator. In GoldSrc this means another lesson temporarily owns
-	// the one HUD card; do not restart this lesson's timeout or OnOpen state.
+	// Source stops a lesson when it loses the active presentation slot. Its
+	// start-time clock is reset, so timeout only advances while active unless
+	// can_timeout_while_inactive is set. On the next activation OnOpen runs again.
+	if (lesson->IsInstructing())
+	{
+		lesson->m_bStarted = false;
+		lesson->m_flStartTime = 0.0f;
+	}
+
 	lesson->UpdateInactive(now);
 }
 
