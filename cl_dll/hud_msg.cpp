@@ -457,6 +457,39 @@ static CInstructorLocatorTarget *HUD_FindManagedInstructorTarget( CHud *hud,
 	return NULL;
 }
 
+float HUD_GetInstructorPresentationRestTime()
+{
+	float restTime = CVAR_GET_FLOAT( "locator_lerp_rest" );
+	return restTime > 0.0f ? restTime : 0.0f;
+}
+
+bool HUD_ApplyManagedInstructorPresentation( const char *lessonName,
+	int instanceSerial, bool start )
+{
+	CInstructorLocatorTarget *target =
+		HUD_FindManagedInstructorTarget( &gHUD, lessonName, instanceSerial );
+	if( !target )
+		return false;
+
+	if( start )
+		target->StartPresent( gHUD.m_flTime );
+	else
+		target->EndPresent( gHUD.m_flTime, HUD_GetInstructorPresentationRestTime() );
+	return true;
+}
+
+bool HUD_IsManagedInstructorPresentationComplete( const char *lessonName,
+	int instanceSerial )
+{
+	CInstructorLocatorTarget *target =
+		HUD_FindManagedInstructorTarget( &gHUD, lessonName, instanceSerial );
+	if( !target )
+		return false;
+
+	return !target->IsPresenting( gHUD.m_flTime,
+		HUD_GetInstructorPresentationRestTime() );
+}
+
 void HUD_SetManagedInstructorHint( const char *lessonName, int instanceSerial, const char *caption,
 	const char *binding, const char *onscreenIcon, const char *offscreenIcon,
 	int targetIndex, int priority, float timeout, int flags, int colorR, int colorG, int colorB,
