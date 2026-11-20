@@ -1832,7 +1832,7 @@ void CBasePlayer::StartObserver( Vector vecPosition, Vector vecViewAngle )
 //
 #define	PLAYER_SEARCH_RADIUS	(float)64
 // Approach guidance radius for automatic instructor icons; real USE focus remains 64 units.
-#define	PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS	(float)256
+#define	PLAYER_INSTRUCTOR_HINT_APPROACH_RADIUS	(float)128
 
 void CBasePlayer::PlayerUse( void )
 {
@@ -2855,7 +2855,7 @@ void CBasePlayer::UpdateUseableHighlight( void )
 		// bracket, then retain a short-range locator scan around the player.
 		// This lets icon_interact + its directional arrow guide the player
 		// toward a nearby visible object before the on-screen USE keycap appears.
-		// The scan extends to 256 units, but rejects intervening walls. It never
+		// The scan extends to 128 units, but rejects intervening walls. It never
 		// creates the PS2 bracket or grants actual USE focus at that distance.
 		edict_t *pentGraphic = m_hUseableHighlight.Get();
 		CUseableGraphic *pGraphic = pentGraphic ?
