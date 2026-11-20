@@ -303,7 +303,7 @@ public:
 	void HighlightUseable( CBaseEntity *pObject );
 	void ClearUseableHighlight( void );
 	void UpdatePushableInstructorHint( CBaseEntity *pObject );
-	void UpdateUseableInstructorHint( CBaseEntity *pObject );
+	void UpdateUseableInstructorHint( CBaseEntity *pObject, BOOL bReadyToUse );
 	void ClearPushableInstructorHint( void );
 	void SetPushableInstructorHintAction( CBaseEntity *pObject, int iconMode );
 	void FireInstructorEvent( const char *eventName, CBaseEntity *pEntity, const char *fieldName, const char *stringValue, int integerValue, float floatValue );
