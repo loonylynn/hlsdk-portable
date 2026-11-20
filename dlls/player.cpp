@@ -174,7 +174,14 @@ public:
 		m_bAllowNoDrawTarget( FALSE ),
 		m_bLocalPlayerOnly( FALSE ),
 		m_bActive( FALSE ),
-		m_bTargetLostNotified( FALSE )
+		m_bTargetLostNotified( FALSE ),
+		m_flNextOcclusionCheck( 0.0f ),
+		m_iLastTargetIndex( 0 ),
+		m_vecLastSentTargetOrigin( 0, 0, 0 ),
+		m_bCachedOccluded( FALSE ),
+		m_bLastSentOccluded( FALSE ),
+		m_bLastTargetVisible( FALSE ),
+		m_bHasSentTargetUpdate( FALSE )
 	{
 	}
 
@@ -182,6 +189,7 @@ public:
 	void KeyValue( KeyValueData *pkvd );
 	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
 	void HintThink( void );
+	BOOL IsActiveForPlayer( CBasePlayer *pPlayer ) const;
 
 private:
 	void ShowHint( CBasePlayer *pPlayer );
@@ -215,9 +223,39 @@ private:
 	BOOL m_bTargetLostNotified;
 	EHANDLE m_hActivator;
 	EHANDLE m_hHintTarget;
+	float m_flNextOcclusionCheck;
+	int m_iLastTargetIndex;
+	Vector m_vecLastSentTargetOrigin;
+	BOOL m_bCachedOccluded;
+	BOOL m_bLastSentOccluded;
+	BOOL m_bLastTargetVisible;
+	BOOL m_bHasSentTargetUpdate;
 };
 
 LINK_ENTITY_TO_CLASS( env_instructor_hint, CEnvInstructorHint );
+
+BOOL CEnvInstructorHint::IsActiveForPlayer( CBasePlayer *pPlayer ) const
+{
+	return m_bActive && pPlayer && m_hActivator.Get() == pPlayer->edict();
+}
+
+// Map-authored hints are independent entities. Query the live entity set rather
+// than storing one "current hint ID" on the player: any active hint suppresses
+// the automatic USE prompt, and removing/ending one hint cannot release another.
+static BOOL PlayerHasActiveMapInstructorHint( CBasePlayer *pPlayer )
+{
+	if( !pPlayer )
+		return FALSE;
+
+	CBaseEntity *pEntity = NULL;
+	while( ( pEntity = UTIL_FindEntityByClassname( pEntity, "env_instructor_hint" ) ) != NULL )
+	{
+		CEnvInstructorHint *pHint = (CEnvInstructorHint *)pEntity;
+		if( pHint->IsActiveForPlayer( pPlayer ) )
+			return TRUE;
+	}
+	return FALSE;
+}
 
 int CEnvInstructorHint::BuildIconFlags( void ) const
 {
@@ -2175,6 +2213,23 @@ void CEnvInstructorHint::ShowHint( CBasePlayer *pPlayer )
 	if( !pPlayer )
 		return;
 
+	// If this map entity is reassigned to another player while active, remove
+	// its old client-side instance before sending the new recipient's instance.
+	if( m_bActive && m_hActivator.Get() != pPlayer->edict() )
+	{
+		edict_t *oldActivatorEdict = m_hActivator.Get();
+		CBaseEntity *oldActivator = oldActivatorEdict ?
+			CBaseEntity::Instance( oldActivatorEdict ) : NULL;
+		if( oldActivator && oldActivator->IsPlayer() )
+		{
+			CBasePlayer *oldPlayer = (CBasePlayer *)oldActivator;
+			MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, oldPlayer->pev );
+				WRITE_BYTE( 0 );
+				WRITE_SHORT( ENTINDEX( edict() ) );
+			MESSAGE_END();
+		}
+	}
+
 	CBaseEntity *pTarget = NULL;
 	if( m_iszHintTarget )
 		pTarget = UTIL_FindEntityByTargetname( NULL, STRING( m_iszHintTarget ) );
@@ -2224,12 +2279,21 @@ void CEnvInstructorHint::ShowHint( CBasePlayer *pPlayer )
 		WRITE_STRING( replaceKey );
 	MESSAGE_END();
 
-	pPlayer->m_iActiveInstructorHintId = ENTINDEX( edict() );
 	m_bActive = TRUE;
 	m_hActivator = pPlayer;
 	m_hHintTarget = pTarget;
 	m_bTargetLostNotified = FALSE;
 	m_flExpireTime = m_flTimeout > 0.0f ? gpGlobals->time + m_flTimeout : 0.0f;
+
+	// Prime the occlusion cache with the initial trace. Source checks locator
+	// occlusion at 0.25-second intervals rather than on every target update.
+	m_flNextOcclusionCheck = gpGlobals->time + 0.25f;
+	m_iLastTargetIndex = targetIndex;
+	m_vecLastSentTargetOrigin = targetOrigin;
+	m_bCachedOccluded = bOccluded;
+	m_bLastSentOccluded = bOccluded;
+	m_bLastTargetVisible = bTargetVisible;
+	m_bHasSentTargetUpdate = TRUE;
 
 	if( pTarget || m_flExpireTime > 0.0f )
 	{
@@ -2251,9 +2315,6 @@ void CEnvInstructorHint::EndHint( void )
 	if( m_bActive && pActivator && pActivator->IsPlayer() )
 	{
 		CBasePlayer *pPlayer = (CBasePlayer *)pActivator;
-		if( pPlayer->m_iActiveInstructorHintId == ENTINDEX( edict() ) )
-			pPlayer->m_iActiveInstructorHintId = 0;
-
 		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pPlayer->pev );
 			WRITE_BYTE( 0 ); // end hint
 			WRITE_SHORT( ENTINDEX( edict() ) );
@@ -2265,6 +2326,13 @@ void CEnvInstructorHint::EndHint( void )
 	m_hHintTarget = NULL;
 	m_flExpireTime = 0.0f;
 	m_bTargetLostNotified = FALSE;
+	m_flNextOcclusionCheck = 0.0f;
+	m_iLastTargetIndex = 0;
+	m_vecLastSentTargetOrigin = Vector( 0, 0, 0 );
+	m_bCachedOccluded = FALSE;
+	m_bLastSentOccluded = FALSE;
+	m_bLastTargetVisible = FALSE;
+	m_bHasSentTargetUpdate = FALSE;
 	SetThink( NULL );
 	pev->nextthink = 0;
 }
@@ -2301,22 +2369,56 @@ void CEnvInstructorHint::HintThink( void )
 		Vector targetOrigin = InstructorHintTargetOrigin( pTarget );
 		targetOrigin.z += m_flIconOffset;
 
-		BOOL bOccluded = pTarget ? InstructorHintIsOccluded( pPlayer, pTarget, targetOrigin ) : FALSE;
-		BOOL bTargetVisible = IsTargetVisible( pPlayer, pTarget, targetOrigin );
+		const int targetIndex = pTarget ? ENTINDEX( pTarget->edict() ) : 0;
+		BOOL bOccluded = m_bCachedOccluded;
+		if( pTarget && ( !m_bHasSentTargetUpdate ||
+			targetIndex != m_iLastTargetIndex ||
+			gpGlobals->time >= m_flNextOcclusionCheck ) )
+		{
+			bOccluded = InstructorHintIsOccluded( pPlayer, pTarget, targetOrigin );
+			m_bCachedOccluded = bOccluded;
+			m_flNextOcclusionCheck = gpGlobals->time + 0.25f;
+		}
+		else if( !pTarget )
+		{
+			bOccluded = FALSE;
+			m_bCachedOccluded = FALSE;
+		}
 
-		MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pPlayer->pev );
-			WRITE_BYTE( 2 ); // target/visibility update
-			WRITE_SHORT( ENTINDEX( edict() ) );
-			WRITE_SHORT( pTarget ? ENTINDEX( pTarget->edict() ) : 0 );
-			WRITE_COORD( targetOrigin.x );
-			WRITE_COORD( targetOrigin.y );
-			WRITE_COORD( targetOrigin.z );
-			WRITE_BYTE( 0 );
-			WRITE_BYTE( bOccluded ? 1 : 0 );
-			WRITE_BYTE( bTargetVisible ? 1 : 0 );
-			WRITE_STRING( "" );
-			WRITE_STRING( "" );
-		MESSAGE_END();
+		BOOL bTargetVisible = IsTargetVisible( pPlayer, pTarget, targetOrigin );
+		const BOOL bOriginChanged = !m_bHasSentTargetUpdate ||
+			( targetOrigin - m_vecLastSentTargetOrigin ).Length() >= 0.125f;
+		const BOOL bNeedsUpdate = !m_bHasSentTargetUpdate ||
+			targetIndex != m_iLastTargetIndex ||
+			bOriginChanged ||
+			bOccluded != m_bLastSentOccluded ||
+			bTargetVisible != m_bLastTargetVisible;
+
+		// Keep moving locators current, but don't send identical packets every
+		// 0.05 seconds. WRITE_COORD has 1/8-unit precision, so sub-quantum motion
+		// does not need another target update.
+		if( bNeedsUpdate )
+		{
+			MESSAGE_BEGIN( MSG_ONE, gmsgInstructorHint, NULL, pPlayer->pev );
+				WRITE_BYTE( 2 ); // target/visibility update
+				WRITE_SHORT( ENTINDEX( edict() ) );
+				WRITE_SHORT( targetIndex );
+				WRITE_COORD( targetOrigin.x );
+				WRITE_COORD( targetOrigin.y );
+				WRITE_COORD( targetOrigin.z );
+				WRITE_BYTE( 0 );
+				WRITE_BYTE( bOccluded ? 1 : 0 );
+				WRITE_BYTE( bTargetVisible ? 1 : 0 );
+				WRITE_STRING( "" );
+				WRITE_STRING( "" );
+			MESSAGE_END();
+
+			m_iLastTargetIndex = targetIndex;
+			m_vecLastSentTargetOrigin = targetOrigin;
+			m_bLastSentOccluded = bOccluded;
+			m_bLastTargetVisible = bTargetVisible;
+			m_bHasSentTargetUpdate = TRUE;
+		}
 	}
 	else if( !m_bTargetLostNotified )
 	{
@@ -2452,7 +2554,7 @@ void CBasePlayer::FireInstructorEvent( const char *eventName, CBaseEntity *pEnti
 
 void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 {
-	if( m_iActiveInstructorHintId != 0 )
+	if( PlayerHasActiveMapInstructorHint( this ) )
 	{
 		ClearPushableInstructorHint();
 		return;
@@ -2533,7 +2635,7 @@ void CBasePlayer::UpdatePushableInstructorHint( CBaseEntity *pObject )
 // a nearby icon_interact approach marker, then the +use keycap when focused.
 void CBasePlayer::UpdateUseableInstructorHint( CBaseEntity *pObject, BOOL bReadyToUse )
 {
-	if( m_iActiveInstructorHintId != 0 )
+	if( PlayerHasActiveMapInstructorHint( this ) )
 	{
 		ClearPushableInstructorHint();
 		return;
@@ -4205,7 +4307,6 @@ void CBasePlayer::Spawn( void )
 	m_hUseableHighlight = NULL;
 	m_hLastUseableItem = NULL;
 	m_flNextUseableCheck = gpGlobals->time;
-	m_iActiveInstructorHintId = 0;
 	m_iUseableInstructorHintTarget = 0;
 	m_iUseableInstructorHintId = 0;
 	m_bUseableInstructorHintActive = FALSE;
