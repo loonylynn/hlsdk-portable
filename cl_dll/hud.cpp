@@ -454,7 +454,7 @@ void CHud::Init( void )
 	// Game Instructor presentation controls. These are read by the HUD at draw
 	// time, so they can be tuned live from the console without a restart.
 	CVAR_CREATE( "hud_instructor_caption_scale", "1.72", FCVAR_ARCHIVE );
-	CVAR_CREATE( "hud_instructor_key_badge_scale", "0.70", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_instructor_key_badge_scale", "1.0", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_instructor_key_text_scale", "2", FCVAR_ARCHIVE );
 
 	m_iLogo = 0;
