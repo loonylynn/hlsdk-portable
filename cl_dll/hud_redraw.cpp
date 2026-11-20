@@ -52,7 +52,10 @@ extern vec3_t v_origin;
 
 // Source hud_locator_target.cpp: ICON_DIST_TOO_FAR = 60 feet * 12 inches.
 #define INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE (60.0f * 12.0f)
-#define INSTRUCTOR_LOCATOR_ICON_BASE_SCALE 2.0f
+// All Instructor sprites share the same master multiplier. Do not add a
+// second base multiplier here: that made locator icons twice the size of
+// equal-sized key badges at the same hud_instructor_scale value.
+#define INSTRUCTOR_LOCATOR_ICON_BASE_SCALE 1.0f
 
 static float HUD_GetInstructorCaptionScale( void );
 static float HUD_GetInstructorScale( void );
