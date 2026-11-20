@@ -176,6 +176,52 @@ static bool HUD_GetInstructorHintScreenPosition( const float *worldOrigin, float
 	return true;
 }
 
+// Reproduce Source GetTargetPosition's horizontal camera-relative bearing.
+// The locator compass is intentionally independent of the target's pitch/elevation.
+static bool HUD_GetInstructorCompassDirection( const float *worldOrigin,
+	float *sinYaw, float *cosYaw )
+{
+	if( !worldOrigin || !sinYaw || !cosYaw ||
+		!gEngfuncs.GetViewAngles || !gEngfuncs.pfnAngleVectors )
+		return false;
+
+	float angles[3] = { 0.0f, 0.0f, 0.0f };
+	float forward[3], right[3], up[3];
+	gEngfuncs.GetViewAngles( angles );
+	gEngfuncs.pfnAngleVectors( angles, forward, right, up );
+
+	forward[2] = 0.0f;
+	const float forwardLength = sqrtf( forward[0] * forward[0] +
+		forward[1] * forward[1] );
+	if( forwardLength < 0.0001f )
+		return false;
+	forward[0] /= forwardLength;
+	forward[1] /= forwardLength;
+
+	// Source constructs right = CrossProduct( worldUp, flattenedForward ).
+	right[0] = -forward[1];
+	right[1] = forward[0];
+	right[2] = 0.0f;
+
+	const float delta[3] =
+	{
+		worldOrigin[0] - v_origin[0],
+		worldOrigin[1] - v_origin[1],
+		worldOrigin[2] - v_origin[2]
+	};
+	const float front = delta[0] * forward[0] +
+		delta[1] * forward[1];
+	const float side = delta[0] * right[0] +
+		delta[1] * right[1];
+
+	const float rotation = atan2f( -side, -front ) +
+		3.14159265358979323846f;
+	const float yawRadians = -rotation;
+	*sinYaw = sinf( yawRadians );
+	*cosYaw = cosf( yawRadians );
+	return true;
+}
+
 // Source-style client locator visibility trace. Map-authored env_instructor_hint
 // already receives this result from the server; this fills the gap for lessons
 // scheduled entirely by the client-side GameInstructor manager.
@@ -1090,6 +1136,10 @@ int CHud::Redraw( float flTime, int intermission )
 		{
 			target->UpdateProjection( screenX, screenY, behind,
 				ScreenWidth, ScreenHeight, ScreenWidth * 0.075f, m_flTime );
+			float compassSin = 0.0f, compassCos = 1.0f;
+			const bool hasCompassDirection =
+				HUD_GetInstructorCompassDirection( worldOrigin, &compassSin, &compassCos );
+			target->SetCompassDirection( compassSin, compassCos, hasCompassDirection );
 			if( !target->m_bOnscreen && ( target->m_iEffectsFlags & LOCATOR_ICON_FX_NO_OFFSCREEN ) )
 				continue;
 			// Use the same target-specific safe edge margin during layout and
@@ -1287,8 +1337,14 @@ int CHud::Redraw( float flTime, int intermission )
 			// and direction arrow, including targets near the screen corners.
 			const float edgeMargin = ScreenWidth * 0.075f;
 			if( hasTarget )
+			{
 				locatorTarget->UpdateProjection( targetX, targetY, targetBehind,
 					ScreenWidth, ScreenHeight, edgeMargin, flTime );
+				float compassSin = 0.0f, compassCos = 1.0f;
+				const bool hasCompassDirection =
+					HUD_GetInstructorCompassDirection( locatorWorldOrigin, &compassSin, &compassCos );
+				locatorTarget->SetCompassDirection( compassSin, compassCos, hasCompassDirection );
+			}
 			const bool targetOffscreen = hasTarget && !locatorTarget->m_bOnscreen;
 			const bool farInteractionIcon = locatorTarget->m_iHintId == -2 &&
 				locatorTarget->m_flDistFromPlayer > INSTRUCTOR_LOCATOR_CAPTION_MAX_DISTANCE;
@@ -1909,8 +1965,6 @@ int CHud::Redraw( float flTime, int intermission )
 
 			// Approximate Source locator FX flags using the GoldSrc HUD primitives.
 			int panelAlpha = locatorTarget->GetRenderAlpha( 205 );
-			if( locatorTarget->m_iEffectsFlags & 0x00000007 )
-				panelAlpha = Q_min( 255, panelAlpha + (int)( 28.0f * locatorTarget->m_flPulse ) );
 			panelX += (int)( locatorTarget->m_flShakeX * 1.5f );
 			panelY += (int)( locatorTarget->m_flShakeY );
 
