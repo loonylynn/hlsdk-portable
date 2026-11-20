@@ -55,9 +55,8 @@ extern vec3_t v_origin;
 #define INSTRUCTOR_LOCATOR_ICON_SCALE 2.0f
 
 static float HUD_GetInstructorCaptionScale( void );
-static int HUD_GetInstructorKeyHeight( void );
-static int HUD_GetInstructorKeyMinWidth( void );
-static int HUD_GetInstructorKeyPadding( void );
+static float HUD_GetInstructorKeyBadgeScale( void );
+static void HUD_GetInstructorKeyBadgeSize( HSPRITE sprite, int *width, int *height );
 static int HUD_GetInstructorKeyTextScale( void );
 static int HUD_GetInstructorCaptionWidth( const char *text );
 static int HUD_GetInstructorCaptionHeight( void );
@@ -1086,12 +1085,21 @@ int CHud::Redraw( float flTime, int intermission )
 				resolvedBinding[0] && resolvedBinding[1] && !resolvedBinding[2] ? true :
 				( m_hInstructorHintKeyGenericSprite && resolvedBinding[0] && !resolvedBinding[1] );
 			int keyChipWidth = 0;
+			int keyChipHeight = 0;
 			if( managedCard && resolvedBinding[0] )
 			{
-				keyChipWidth = bindingWidth + ( genericKey ?
-					HUD_GetInstructorKeyPadding() : 18 );
-				if( genericKey && keyChipWidth < HUD_GetInstructorKeyMinWidth() )
-					keyChipWidth = HUD_GetInstructorKeyMinWidth();
+				if( genericKey )
+				{
+					HUD_GetInstructorKeyBadgeSize( m_hInstructorHintKeyGenericSprite,
+						&keyChipWidth, &keyChipHeight );
+				}
+				else
+				{
+					HUD_GetInstructorKeyBadgeSize( 0, NULL, &keyChipHeight );
+					const int fallbackPadding = (int)( 8.0f *
+						HUD_GetInstructorKeyBadgeScale() + 0.5f );
+					keyChipWidth = bindingWidth + fallbackPadding * 2;
+				}
 				if( keyChipWidth > 64 ) keyChipWidth = 64;
 			}
 
@@ -1117,7 +1125,8 @@ int CHud::Redraw( float flTime, int intermission )
 
 			const int basePanelHeight = managedCard ? 62 : ( resolvedBinding[0] ? 58 : 42 );
 			const int panelHeight = Q_max( basePanelHeight,
-				iconHeight + ( managedCard ? 24 : 16 ) );
+				Q_max( iconHeight + ( managedCard ? 24 : 16 ),
+					keyChipHeight > 0 ? keyChipHeight + 24 : 0 ) );
 			int panelX = ( ScreenWidth - panelWidth ) / 2;
 			int panelY = ScreenHeight - panelHeight - 30;
 			if( target->m_bFixedPosition )
@@ -1687,13 +1696,21 @@ int CHud::Redraw( float flTime, int intermission )
 						captionWithinSourceRange )
 					{
 						int locatorKeyWidth = 0;
+						int locatorKeyHeight = 0;
 						if( locatorBindingWidth > 0 )
 						{
-							locatorKeyWidth = locatorBindingWidth +
-								( locatorUsesGenericKey ? HUD_GetInstructorKeyPadding() : 10 );
-							if( locatorUsesGenericKey &&
-								locatorKeyWidth < HUD_GetInstructorKeyMinWidth() )
-								locatorKeyWidth = HUD_GetInstructorKeyMinWidth();
+							if( locatorUsesGenericKey )
+							{
+								HUD_GetInstructorKeyBadgeSize( m_hInstructorHintKeyGenericSprite,
+									&locatorKeyWidth, &locatorKeyHeight );
+							}
+							else
+							{
+								HUD_GetInstructorKeyBadgeSize( 0, NULL, &locatorKeyHeight );
+								const int fallbackPadding = (int)( 5.0f *
+									HUD_GetInstructorKeyBadgeScale() + 0.5f );
+								locatorKeyWidth = locatorBindingWidth + fallbackPadding * 2;
+							}
 							if( locatorKeyWidth > 64 )
 								locatorKeyWidth = 64;
 						}
@@ -1701,7 +1718,7 @@ int CHud::Redraw( float flTime, int intermission )
 						int labelWidth = locatorCaptionWidth + locatorKeyWidth + 24;
 						if( labelWidth < 44 ) labelWidth = 44;
 						if( labelWidth > maxLabelWidth ) labelWidth = maxLabelWidth;
-						const int labelHeight = Q_max( HUD_GetInstructorKeyHeight() + 4,
+						const int labelHeight = Q_max( locatorKeyHeight + 4,
 							Q_max( 20, HUD_GetInstructorCaptionHeight() + 6 ) );
 						int labelX = markerX - labelWidth / 2;
 						int labelY = markerY + markerHalfHeight + 7;
@@ -1767,8 +1784,8 @@ int CHud::Redraw( float flTime, int intermission )
 
 						if( locatorKeyWidth > 0 )
 						{
-							const int keyY = labelY + 2;
-							const int keyHeight = HUD_GetInstructorKeyHeight();
+							const int keyHeight = locatorKeyHeight;
+							const int keyY = labelY + ( labelHeight - keyHeight ) / 2;
 						bool keySpriteDrawn = false;
 						if( locatorUsesGenericKey )
 						{
@@ -2083,8 +2100,8 @@ int CHud::Redraw( float flTime, int intermission )
 
 				if( bindingText[0] )
 				{
-					const int cardKeyHeight = HUD_GetInstructorKeyHeight();
-					const int keyY = panelY + 33 - cardKeyHeight / 2;
+					const int cardKeyHeight = keyChipHeight;
+					const int keyY = panelY + ( panelHeight - cardKeyHeight ) / 2 + 2;
 					bool keySpriteDrawn = false;
 					if( cardUsesGenericKey )
 					{
@@ -2293,28 +2310,29 @@ static float HUD_GetInstructorCaptionScale( void )
 	return scale;
 }
 
-static int HUD_GetInstructorKeyHeight( void )
+static float HUD_GetInstructorKeyBadgeScale( void )
 {
-	int height = (int)( CVAR_GET_FLOAT( "hud_instructor_key_height" ) + 0.5f );
-	if( height < 12 ) height = 12;
-	if( height > 40 ) height = 40;
-	return height;
+	float scale = CVAR_GET_FLOAT( "hud_instructor_key_badge_scale" );
+	if( scale < 0.5f ) scale = 0.5f;
+	if( scale > 2.0f ) scale = 2.0f;
+	return scale;
 }
 
-static int HUD_GetInstructorKeyMinWidth( void )
+static void HUD_GetInstructorKeyBadgeSize( HSPRITE sprite, int *width, int *height )
 {
-	int width = (int)( CVAR_GET_FLOAT( "hud_instructor_key_min_width" ) + 0.5f );
-	if( width < 12 ) width = 12;
-	if( width > 64 ) width = 64;
-	return width;
-}
+	int nativeWidth = sprite ? SPR_Width( sprite, 0 ) : 32;
+	int nativeHeight = sprite ? SPR_Height( sprite, 0 ) : 32;
 
-static int HUD_GetInstructorKeyPadding( void )
-{
-	int padding = (int)( CVAR_GET_FLOAT( "hud_instructor_key_padding" ) + 0.5f );
-	if( padding < 0 ) padding = 0;
-	if( padding > 32 ) padding = 32;
-	return padding;
+	// Missing/invalid optional artwork uses a square 32px fallback badge.
+	if( nativeWidth <= 0 || nativeHeight <= 0 ||
+		nativeWidth > 64 || nativeHeight > 64 )
+		nativeWidth = nativeHeight = 32;
+
+	const float scale = HUD_GetInstructorKeyBadgeScale();
+	if( width )
+		*width = Q_max( 1, (int)( nativeWidth * scale + 0.5f ) );
+	if( height )
+		*height = Q_max( 1, (int)( nativeHeight * scale + 0.5f ) );
 }
 
 static int HUD_GetInstructorKeyTextScale( void )
