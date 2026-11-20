@@ -24,7 +24,7 @@ This is a GoldSrc/Xash3D single-player port of the public Source `CEnvInstructor
 | `hint_forcecaption` | Bypasses Source-style caption distance and occlusion suppression. It does not bypass `hint_range` target culling. |
 | `hint_allow_nodraw_target` | Allows a target with `EF_NODRAW` to remain a valid hint target. |
 | `hint_local_player_only` | Retained for map compatibility; the project is single-player, so there is only one recipient. |
-| `hint_replace_key` | Retained in the hint payload. The current single-panel HUD replaces its currently displayed hint when another hint starts. |
+| `hint_replace_key` | Ends other active map-authored hints using the same non-empty replacement key before this hint is displayed. |
 
 Icon identifiers map to optional GoldSrc sprites under `valve/sprites/`: for example, `hint_icon_onscreen "icon_interact"` loads `sprites/icon_interact.spr`. Do not include the directory or `.spr` extension in the identifier. Source's original VGUI/VTF icon assets are not GoldSrc sprites, so the project must provide or convert the artwork. Missing sprites fall back to a text/arrow presentation. For a key prompt that changes to the interaction symbol outside the view, set `hint_icon_onscreen "use_binding"`, `hint_icon_offscreen "icon_interact"`, and `hint_binding "+use"`. The off-screen icon is selected when the target leaves the view; the 720-unit distance cutoff does not itself trigger that switch.
 
@@ -37,7 +37,7 @@ Use the entity like a GoldSrc `func_button` target:
 - `USE_SET`: show when the value is greater than 0.5, otherwise end.
 - `USE_TOGGLE`: toggle the current state.
 
-The entity ID owns the active map-authored instructor presentation. Map hints take priority over the automatic player-use prompt. An `env_instructor_hint` still requires its `Use` input to be fired; proximity alone does not activate that map entity. Hints are ended when their activator dies or their timeout expires.
+Each active `env_instructor_hint` remains independently owned by its entity and recipient. The automatic player-use prompt is suppressed while any map-authored hint for that player is active; ending one hint does not release suppression while another remains active. This is derived from the live active-entity set, so a removed hint cannot leave a stale player-side owner ID. Map hints take priority over the automatic player-use prompt. An `env_instructor_hint` still requires its `Use` input to be fired; proximity alone does not activate that map entity. Hints are ended when their activator dies or their timeout expires.
 
 ## Automatic interaction guidance and pushable action prompt
 
@@ -49,6 +49,7 @@ The player's automatic interaction guidance has two stages. The near-field ready
   locator pool. Map hints keep independent lifecycles; the `C_GameInstructor`
   manager can present multiple eligible lessons tied at the highest selected
   display priority, subject to the shared pool capacity.
+- Target-backed hints send position/visibility updates only when the locator's target origin changes by at least the GoldSrc coordinate quantum (1/8 unit), its target/visibility state changes, or its occlusion state changes. Target-following still ticks at 0.05 seconds, but visibility traces are cached and refreshed at 0.25-second intervals, matching Source's locator occlusion cadence. This avoids repeating identical network packets and expensive traces while preserving responsive moving-target updates.
 - Target-backed hints use a projected world-space icon and a small caption tag while on-screen. Like Source's `ICON_DIST_TOO_FAR`, captions and ordinary inline binding labels are suppressed beyond 720 units (60 feet), measured from the current camera origin; the marker is also reduced to half size. For ordinary map-authored hints, this distance cutoff does not switch icons: when the target crosses Source's title-safe inset (7.5% of screen width) or moves behind the view, the renderer selects `hint_icon_offscreen` and places it on Source's 100-pixel (YRES-scaled) compass ellipse with a directional arrow. `hint_forcecaption` bypasses caption-distance and occlusion suppression, but not the separate `hint_range` culling rule. The automatic `-2` Interact prompt is limited by the server's 64-unit forward-cone use-target scan, so Source's 720-unit distance presentation threshold applies only to longer-range locator hints. Static hints keep a screen-space prompt and are not subject to this distance cutoff. The HUD uses GoldSrc sprite files and a custom user message rather than Source game events, VGUI locator panels, and VTF materials.
 - Locator pulse/alpha/shake timing now follows Source's presentation equations: 1.0–1.75 pulse scale, one-second activation pulse, 0.5–1.0 alpha modulation, random ±2/±5 pixel shake, 0.3-second fades, and the 100-pixel (YRES-scaled) offscreen compass ellipse. GoldSrc still uses `.spr` assets and a different HUD renderer, so its rasterization and layout cannot be pixel-identical to Source's VGUI implementation.
 - Controller-specific button localization is not included. Keyboard bindings can
