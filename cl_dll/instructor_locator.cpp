@@ -94,7 +94,9 @@ bool CInstructorLocatorTarget::ShouldDraw() const
 int CInstructorLocatorTarget::GetRenderAlpha( int baseAlpha ) const
 {
 	const int alphaFlags = m_iEffectsFlags & 0x00000038;
-	int alpha = alphaFlags ? m_iEffectAlpha : baseAlpha;
+	int alpha = baseAlpha;
+	if( alphaFlags )
+		alpha = alpha * m_iEffectAlpha / 255;
 	if( alpha < 0 ) alpha = 0;
 	if( alpha > 255 ) alpha = 255;
 	alpha = alpha * m_alpha / 255;
