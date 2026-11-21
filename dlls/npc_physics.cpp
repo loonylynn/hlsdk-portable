@@ -24,6 +24,7 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
@@ -5486,7 +5487,8 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 	edict_t **hitEntity,
 	bool applyImpulse,
 	bool sendImpactMark,
-	edict_t *requiredTarget )
+	edict_t *requiredTarget,
+	edict_t *ignoredActorEntity )
 {
 	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
 		!start || !end || !hitFraction || !hitPosition || !hitEntity ||
@@ -5508,6 +5510,24 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 		rayDirection );
 	JPH::RayCastResult hit;
 	hit.mFraction = maxFraction;
+
+	// GoldSrc's trace already ignores the shooter. Mirror that exclusion in
+	// the auxiliary Jolt query so the ray cannot immediately hit its own hull.
+	JPH::BodyID ignoredActorBodyID;
+	if( ignoredActorEntity && !ignoredActorEntity->free )
+	{
+		const int colliderIndex =
+			NPCPhysics_FindActorCollider( ENTINDEX( ignoredActorEntity ) );
+		if( colliderIndex >= 0 )
+		{
+			const NPCPhysicsActorCollider &collider =
+				g_actorColliders[colliderIndex];
+			if( collider.serialNumber == ignoredActorEntity->serialnumber &&
+				!collider.bodyID.IsInvalid() )
+				ignoredActorBodyID = collider.bodyID;
+		}
+	}
+	const JPH::IgnoreSingleBodyFilter bodyFilter( ignoredActorBodyID );
 	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
@@ -5516,7 +5536,9 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 			maxFraction, rayLength
 		);
 
-	if( !g_npcPhysics.system->GetNarrowPhaseQuery().CastRay( ray, hit ) )
+	if( !g_npcPhysics.system->GetNarrowPhaseQuery().CastRay(
+		ray, hit, JPH::BroadPhaseLayerFilter(),
+		JPH::ObjectLayerFilter(), bodyFilter ) )
 	{
 		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
 			ALERT( at_console, "[NPC projectile] Jolt ray did not hit any physics body.\n" );
@@ -5662,11 +5684,13 @@ int NPCPhysics_TraceAndApplyImpact(
 	float impulseMagnitude,
 	float *hitFraction,
 	float *hitPosition,
-	edict_t **hitEntity )
+	edict_t **hitEntity,
+	edict_t *ignoredEntity )
 {
 	return NPCPhysics_TraceRagdollImpactInternal(
 		start, end, maxFraction, impulseMagnitude,
-		hitFraction, hitPosition, hitEntity, true, true, NULL );
+		hitFraction, hitPosition, hitEntity, true, true, NULL,
+		ignoredEntity );
 }
 
 int NPCPhysics_TraceRagdollImpact(
@@ -5679,7 +5703,7 @@ int NPCPhysics_TraceRagdollImpact(
 {
 	return NPCPhysics_TraceRagdollImpactInternal(
 		start, end, maxFraction, 0.0f,
-		hitFraction, hitPosition, hitEntity, false, false, NULL );
+		hitFraction, hitPosition, hitEntity, false, false, NULL, NULL );
 }
 
 int NPCPhysics_SendRagdollImpactMark(
@@ -5697,7 +5721,7 @@ int NPCPhysics_SendRagdollImpactMark(
 	return NPCPhysics_TraceRagdollImpactInternal(
 		start, end, maxFraction, 0.0f,
 		&hitFraction, hitPosition, &hitEntity,
-		false, true, targetEntity );
+		false, true, targetEntity, NULL );
 }
 
 int NPCPhysics_TraceTargetAndApplyImpact(
@@ -5717,7 +5741,7 @@ int NPCPhysics_TraceTargetAndApplyImpact(
 	return NPCPhysics_TraceRagdollImpactInternal(
 		start, end, maxFraction, impulseMagnitude,
 		&hitFraction, hitPosition, &hitEntity,
-		true, true, targetEntity );
+		true, true, targetEntity, NULL );
 }
 
 int NPCPhysics_ApplyImpactImpulseToRagdoll(
