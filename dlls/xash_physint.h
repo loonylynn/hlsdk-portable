@@ -166,7 +166,8 @@ int NPCPhysics_TraceAndApplyImpact(
 	float impulseMagnitude,
 	float *hitFraction,
 	float *hitPosition,
-	edict_t **hitEntity
+	edict_t **hitEntity,
+	edict_t *ignoredEntity
 );
 int NPCPhysics_TraceRagdollImpact(
 	const float *start,
