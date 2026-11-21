@@ -5699,11 +5699,13 @@ int NPCPhysics_TraceRagdollImpact(
 	float maxFraction,
 	float *hitFraction,
 	float *hitPosition,
-	edict_t **hitEntity )
+	edict_t **hitEntity,
+	edict_t *ignoredEntity )
 {
 	return NPCPhysics_TraceRagdollImpactInternal(
 		start, end, maxFraction, 0.0f,
-		hitFraction, hitPosition, hitEntity, false, false, NULL, NULL );
+		hitFraction, hitPosition, hitEntity, false, false, NULL,
+		ignoredEntity );
 }
 
 int NPCPhysics_SendRagdollImpactMark(
