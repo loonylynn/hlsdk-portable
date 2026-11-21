@@ -70,6 +70,7 @@ namespace
 	static constexpr ObjectLayer BRUSH_KINEMATIC_OBJECT_LAYER = 2;
 	static constexpr ObjectLayer PUSHABLE_KINEMATIC_OBJECT_LAYER = 3;
 	static constexpr ObjectLayer MOVABLE_KINEMATIC_OBJECT_LAYER = 4;
+	static constexpr ObjectLayer PLAYER_KINEMATIC_OBJECT_LAYER = 5;
 	static constexpr uint32_t RAGDOLL_MAX_BODIES = 4096;
 	static constexpr uint32_t RAGDOLL_MAX_BODY_PAIRS = 8192;
 	static constexpr uint32_t RAGDOLL_MAX_CONTACT_CONSTRAINTS = 8192;
@@ -118,6 +119,8 @@ namespace
 	// Sampled on the main thread before each Jolt frame; declared before the
 	// contact listener that reads it during Jolt callbacks.
 	static bool g_npcPhysicsContactDebugEnabled = false;
+	// Updated from sv_npc_vphysics_static_corpses before each physics frame.
+	static bool g_npcPhysicsStaticCorpsesEnabled = true;
 
 	class RagdollBroadPhaseLayers final : public BroadPhaseLayerInterface
 	{
@@ -134,7 +137,9 @@ namespace
 			return layer == WORLD_STATIC_OBJECT_LAYER ||
 				layer == BRUSH_KINEMATIC_OBJECT_LAYER ||
 				layer == PUSHABLE_KINEMATIC_OBJECT_LAYER ||
-				layer == MOVABLE_KINEMATIC_OBJECT_LAYER;
+				layer == MOVABLE_KINEMATIC_OBJECT_LAYER ||
+				( !g_npcPhysicsStaticCorpsesEnabled &&
+					layer == PLAYER_KINEMATIC_OBJECT_LAYER );
 		}
 	};
 
@@ -145,9 +150,13 @@ namespace
 		{
 			// The world BSP and inline brush models are triangle meshes. Jolt
 			// does not support mesh-vs-mesh contacts when one mesh is kinematic.
-			// Living actors are represented by kinematic box hulls on the same
-			// layer. Only convex articulated ragdoll bodies need contacts with
-			// environment geometry or actor hulls.
+			// Player hulls use a dedicated layer so static-corpse mode can let
+			// players pass through corpses without disabling world/NPC contacts.
+			if( g_npcPhysicsStaticCorpsesEnabled &&
+				( ( layer1 == RAGDOLL_OBJECT_LAYER && layer2 == PLAYER_KINEMATIC_OBJECT_LAYER ) ||
+				  ( layer2 == RAGDOLL_OBJECT_LAYER && layer1 == PLAYER_KINEMATIC_OBJECT_LAYER ) ) )
+				return false;
+
 			return layer1 == RAGDOLL_OBJECT_LAYER || layer2 == RAGDOLL_OBJECT_LAYER;
 		}
 	};
@@ -290,6 +299,7 @@ namespace
 		bool wasMoving;
 		bool isPushable;
 		bool isMovableObject;
+		bool isPlayer;
 
 		NPCPhysicsActorCollider()
 			: entityIndex( -1 ),
@@ -300,7 +310,8 @@ namespace
 			  halfExtents( 0.0f, 0.0f, 0.0f ),
 			  wasMoving( false ),
 			  isPushable( false ),
-			  isMovableObject( false )
+			  isMovableObject( false ),
+			  isPlayer( false )
 		{
 		}
 	};
@@ -347,6 +358,7 @@ namespace
 		std::vector<Mat44> physicsPoseModelSpace;
 		std::vector<Mat44> studioPoseModelSpace;
 		bool addedToPhysicsSystem;
+		bool isStatic;
 
 		NPCPhysicsRagdoll()
 			: entity( NULL ),
@@ -377,7 +389,8 @@ namespace
 			  blastDebugRootStartPosition( 0.0f, 0.0f, 0.0f ),
 			  blastDebugTime( 0.0f ),
 			  blastDebugPending( false ),
-			  addedToPhysicsSystem( false )
+			  addedToPhysicsSystem( false ),
+			  isStatic( false )
 		{
 		}
 	};
@@ -1267,6 +1280,7 @@ namespace
 	static cvar_t g_svNpcVPhysicsPlayerPushMass = { "sv_npc_vphysics_player_push_mass", "350", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsPlayerPushSpeed = { "sv_npc_vphysics_player_push_speed", "50", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsSleepAfterTime = { "sv_npc_vphysics_sleep_after_time", "5.0", FCVAR_SERVER };
+	static cvar_t g_svNpcVPhysicsStaticCorpses = { "sv_npc_vphysics_static_corpses", "1", FCVAR_SERVER | FCVAR_ARCHIVE };
 	static cvar_t g_svNpcVPhysicsMaxRagdolls = { "sv_npc_vphysics_max_ragdolls", "8", FCVAR_SERVER | FCVAR_ARCHIVE };
 	static cvar_t g_svNpcVPhysicsMaxImportantRagdolls = { "sv_npc_vphysics_max_important_ragdolls", "2", FCVAR_SERVER };
 	static cvar_t g_svNpcVPhysicsFadeOnRetire = { "sv_npc_vphysics_fade_on_retire", "1", FCVAR_SERVER };
@@ -2329,6 +2343,7 @@ namespace
 			const bool isMovableObject = !isPushable &&
 				( ent->v.movetype == MOVETYPE_TOSS ||
 				  ent->v.movetype == MOVETYPE_BOUNCE );
+			const bool isPlayer = ( ent->v.flags & FL_CLIENT ) != 0;
 			const float minimumHalfExtent = isMovableObject ? 0.5f : 1.0f;
 			const Vec3 mins( ent->v.mins[0], ent->v.mins[1], ent->v.mins[2] );
 			const Vec3 maxs( ent->v.maxs[0], ent->v.maxs[1], ent->v.maxs[2] );
@@ -2361,6 +2376,7 @@ namespace
 				if( existing.serialNumber != ent->serialnumber ||
 					existing.isPushable != isPushable ||
 					existing.isMovableObject != isMovableObject ||
+					existing.isPlayer != isPlayer ||
 					extentDelta.LengthSq() > 0.0001f )
 				{
 					NPCPhysics_DestroyActorCollider( existing );
@@ -2382,8 +2398,9 @@ namespace
 					Quat::sIdentity(),
 					EMotionType::Kinematic,
 					isPushable ? PUSHABLE_KINEMATIC_OBJECT_LAYER :
-						( isMovableObject ? MOVABLE_KINEMATIC_OBJECT_LAYER
-							: BRUSH_KINEMATIC_OBJECT_LAYER )
+						( isMovableObject ? MOVABLE_KINEMATIC_OBJECT_LAYER :
+							( isPlayer ? PLAYER_KINEMATIC_OBJECT_LAYER
+								: BRUSH_KINEMATIC_OBJECT_LAYER ) )
 				);
 				bodySettings.mUserData = static_cast<uint64_t>( entityIndex );
 				bodySettings.mFriction = 0.65f;
@@ -2405,6 +2422,7 @@ namespace
 				collider.halfExtents = halfExtents;
 				collider.isPushable = isPushable;
 				collider.isMovableObject = isMovableObject;
+				collider.isPlayer = isPlayer;
 				g_actorColliders.push_back( collider );
 
 				ALERT(
@@ -3691,7 +3709,8 @@ namespace
 		NPCPhysicsRagdoll &ragdoll, BodyInterface &bodyInterface )
 	{
 		if( !ragdoll.entity || ragdoll.entity->free || !gpGlobals ||
-			!ragdoll.physicsRagdoll.GetPtr() || ragdoll.bodyCount <= 0 )
+			!ragdoll.physicsRagdoll.GetPtr() || ragdoll.bodyCount <= 0 ||
+			ragdoll.isStatic )
 			return;
 
 		const float sleepAfterTime = NPCPhysics_GetCvar(
@@ -3752,18 +3771,46 @@ namespace
 		}
 
 		const float stationaryTime = gpGlobals->time - ragdoll.lastOriginChangeTime;
-		if( stationaryTime < sleepAfterTime || !anyActive )
+		if( stationaryTime < sleepAfterTime )
 			return;
 
-		// Sleep the articulated island only after all its bodies have stayed
-		// below the linear and angular velocity thresholds for the full delay.
-		bodyInterface.DeactivateBodies( bodyIDs.data(), static_cast<int>( bodyIDs.size() ) );
-		ALERT(
-			at_console,
-			"[NPC physics] Forced ragdoll sleep after %.2f seconds stationary: entity=%d id=%d bodies=%d.\n",
-			stationaryTime, ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.bodyCount
-		);
-		// Start a fresh settle window if an impact wakes the ragdoll again.
+		if( g_npcPhysicsStaticCorpsesEnabled )
+		{
+			// Keep the final articulated pose and collision hulls in the Jolt
+			// world, but remove the corpse from dynamic simulation permanently.
+			// Static corpses still block world geometry and remain raycastable
+			// for damage/decal handling; the dedicated player layer is filtered
+			// by RagdollObjectLayerFilter above.
+			for( size_t body = 0; body < bodyIDs.size(); ++body )
+			{
+				bodyInterface.SetLinearVelocity( bodyIDs[body], Vec3( 0.0f, 0.0f, 0.0f ) );
+				bodyInterface.SetAngularVelocity( bodyIDs[body], Vec3( 0.0f, 0.0f, 0.0f ) );
+				bodyInterface.SetMotionType(
+					bodyIDs[body], EMotionType::Static, EActivation::DontActivate );
+			}
+			ragdoll.isStatic = true;
+			ALERT(
+				at_console,
+				"[NPC physics] Settled ragdoll converted to static after %.2f seconds: entity=%d id=%d bodies=%d.\n",
+				stationaryTime, ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.bodyCount
+			);
+		}
+		else
+		{
+			if( !anyActive )
+				return;
+
+			// Preserve the previous configurable sleep behavior when static
+			// corpse mode is disabled.
+			bodyInterface.DeactivateBodies( bodyIDs.data(), static_cast<int>( bodyIDs.size() ) );
+			ALERT(
+				at_console,
+				"[NPC physics] Forced ragdoll sleep after %.2f seconds stationary: entity=%d id=%d bodies=%d.\n",
+				stationaryTime, ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.bodyCount
+			);
+		}
+
+		// Start a fresh settle window if an impact wakes a dynamic corpse again.
 		ragdoll.lastOriginChangeTime = gpGlobals->time;
 	}
 
@@ -5120,6 +5167,10 @@ namespace
 
 		g_npcPhysicsContactDebugEnabled =
 			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f;
+		const float staticCorpses = NPCPhysics_GetCvar(
+			"sv_npc_vphysics_static_corpses", 1.0f );
+		g_npcPhysicsStaticCorpsesEnabled =
+			std::isfinite( staticCorpses ) && staticCorpses >= 0.5f;
 
 		NPCPhysics_UpdateRetiringCorpses();
 		NPCPhysics_RemoveGibbedRagdolls();
@@ -5242,9 +5293,12 @@ namespace
 				g_engfuncs.pfnSetOrigin( ragdoll.entity, entityOrigin );
 			}
 
-			NPCPhysics_UpdateRagdollSeparation( ragdoll, bodyInterface );
-			NPCPhysics_UpdateRagdollAnimatedFriction( ragdoll, bodyInterface );
-			NPCPhysics_UpdateRagdollSleep( ragdoll, bodyInterface );
+			if( !ragdoll.isStatic )
+			{
+				NPCPhysics_UpdateRagdollSeparation( ragdoll, bodyInterface );
+				NPCPhysics_UpdateRagdollAnimatedFriction( ragdoll, bodyInterface );
+				NPCPhysics_UpdateRagdollSleep( ragdoll, bodyInterface );
+			}
 
 			if( gpGlobals->time >= ragdoll.nextPoseTime )
 			{
@@ -5322,7 +5376,7 @@ int NPCPhysics_ApplyBlastImpulse(
 		}
 	}
 
-	if( !targetRagdoll || targetRagdoll->bodyCount <= 0 ||
+	if( !targetRagdoll || targetRagdoll->isStatic || targetRagdoll->bodyCount <= 0 ||
 		targetRagdoll->bodyMasses.size() != static_cast<size_t>( targetRagdoll->bodyCount ) ||
 		targetRagdoll->rootElement < 0 ||
 		targetRagdoll->rootElement >= targetRagdoll->bodyCount )
@@ -5592,10 +5646,13 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 		JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
 		impulse = NPCPhysics_ClampVector( impulse, RAGDOLL_WEAPON_IMPULSE_LIMIT );
 		JPH::BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
-		// Source's client ragdoll applies a localized force to the struck physics
-		// object. Explicit activation guarantees that a sleeping Jolt limb wakes.
-		bodyInterface.ActivateBody( hit.mBodyID );
-		bodyInterface.AddImpulse( hit.mBodyID, impulse, impactPoint );
+		// Static corpses keep receiving impact/decal events but do not wake or
+		// re-enter dynamic simulation.
+		if( bodyInterface.GetMotionType( hit.mBodyID ) == JPH::EMotionType::Dynamic )
+		{
+			bodyInterface.ActivateBody( hit.mBodyID );
+			bodyInterface.AddImpulse( hit.mBodyID, impulse, impactPoint );
+		}
 	}
 
 	// A sleeping corpse normally sends only a 5 Hz heartbeat. A weapon strike
@@ -5771,7 +5828,7 @@ int NPCPhysics_ApplyImpactImpulseToRagdoll(
 			break;
 		}
 	}
-	if( !targetRagdoll || targetRagdoll->bodyCount <= 0 )
+	if( !targetRagdoll || targetRagdoll->isStatic || targetRagdoll->bodyCount <= 0 )
 		return FALSE;
 
 	Vec3 impulseDirection( direction[0], direction[1], direction[2] );
@@ -5956,6 +6013,7 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushMass );
 	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushSpeed );
 	CVAR_REGISTER( &g_svNpcVPhysicsSleepAfterTime );
+	CVAR_REGISTER( &g_svNpcVPhysicsStaticCorpses );
 	CVAR_REGISTER( &g_svNpcVPhysicsMaxRagdolls );
 	CVAR_REGISTER( &g_svNpcVPhysicsMaxImportantRagdolls );
 	CVAR_REGISTER( &g_svNpcVPhysicsFadeOnRetire );
