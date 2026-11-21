@@ -5276,10 +5276,31 @@ namespace
 				ragdoll.blastDebugPending = false;
 			}
 
-			// Move the carrier edict with the simulated root element. Besides
-			// keeping the corpse's network origin useful, this keeps renderer
-			// culling and the entity's PVS bounds near a ragdoll that has fallen.
-			if( ragdoll.rootElement >= 0 &&
+			// Allow the archived cvar to restore already-frozen corpses as
+			// dynamic bodies when static-corpse mode is disabled at runtime.
+			if( ragdoll.isStatic && !g_npcPhysicsStaticCorpsesEnabled )
+			{
+				for( int body = 0; body < ragdoll.bodyCount; ++body )
+					bodyInterface.SetMotionType(
+						ragdoll.physicsRagdoll->GetBodyID( body ),
+						EMotionType::Dynamic, EActivation::Activate );
+				ragdoll.isStatic = false;
+				ragdoll.lastOriginChangeTime = gpGlobals->time;
+				ragdoll.lastSleepOrigin = Vec3(
+					ragdoll.entity->v.origin[0],
+					ragdoll.entity->v.origin[1],
+					ragdoll.entity->v.origin[2] );
+				ALERT(
+					at_console,
+					"[NPC physics] Restored dynamic ragdoll: entity=%d id=%d bodies=%d (static-corpse mode disabled).\\n",
+					ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.bodyCount
+				);
+			}
+
+			// Move only live ragdoll carriers. A static corpse's edict origin was
+			// synchronized on the frame it was frozen and no longer needs updates.
+			if( !ragdoll.isStatic &&
+				ragdoll.rootElement >= 0 &&
 				ragdoll.rootElement < ragdoll.bodyCount &&
 				g_engfuncs.pfnSetOrigin )
 			{
