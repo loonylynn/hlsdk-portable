@@ -5292,7 +5292,7 @@ namespace
 					ragdoll.entity->v.origin[2] );
 				ALERT(
 					at_console,
-					"[NPC physics] Restored dynamic ragdoll: entity=%d id=%d bodies=%d (static-corpse mode disabled).\\n",
+					"[NPC physics] Restored dynamic ragdoll: entity=%d id=%d bodies=%d (static-corpse mode disabled).\n",
 					ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.bodyCount
 				);
 			}
