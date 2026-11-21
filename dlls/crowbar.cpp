@@ -270,7 +270,7 @@ int CCrowbar::Swing( int fFirst )
 	if( NPCPhysics_TraceAndApplyImpact(
 		&vecSrc[0], &vecEnd[0], tr.flFraction,
 		impactDamage * 75.0f * 4.0f * crowbarImpactScale,
-		&hitFraction, hitPosition, &hitEntity ) )
+		&hitFraction, hitPosition, &hitEntity, m_pPlayer->edict() ) )
 	{
 		tr.flFraction = hitFraction;
 		tr.vecEndPos = Vector( hitPosition[0], hitPosition[1], hitPosition[2] );
