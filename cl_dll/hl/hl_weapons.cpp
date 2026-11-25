@@ -19,6 +19,7 @@
 #include "monsters.h"
 #include "weapons.h"
 #include "nodes.h"
+#include "weapon_registry.h"
 #include "player.h"
 
 #include "usercmd.h"
@@ -579,6 +580,10 @@ void HUD_InitClientWeapons( void )
 		return;
 
 	initialized = 1;
+
+	// Keep the client registry aligned with the server's reference weapon.
+	WeaponFramework::GetRegistry().RegisterLegacy(
+		WeaponFramework::WeaponDefinition(WEAPON_GLOCK, "goldsrc:weapon/glock", "weapon_9mmhandgun"));
 
 	// Set up pointer ( dummy object )
 	gpGlobals = &Globals;

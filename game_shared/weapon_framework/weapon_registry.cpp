@@ -3,6 +3,7 @@
  */
 #include "weapon_registry.h"
 
+#include <stddef.h>
 #include <string.h>
 
 namespace WeaponFramework

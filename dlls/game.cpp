@@ -16,6 +16,8 @@
 #include "eiface.h"
 #include "util.h"
 #include "game.h"
+#include "weapons.h"
+#include "weapon_registry.h"
 #include "vcs_info.h"
 
 static cvar_t build_commit = { "sv_game_build_commit", g_VCSInfo_Commit };
@@ -500,6 +502,10 @@ cvar_t tdmg_bleeding_damage3 = { "tdmg_bleeding_damage3", "1" };
 // This gets called one time when the game is initialied
 void GameDLLInit( void )
 {
+	// Register the existing Glock as the first shared-registry reference weapon.
+	WeaponFramework::GetRegistry().RegisterLegacy(
+		WeaponFramework::WeaponDefinition(WEAPON_GLOCK, "goldsrc:weapon/glock", "weapon_9mmhandgun"));
+
 	g_psv_gravity = CVAR_GET_POINTER( "sv_gravity" );
 	g_psv_aim = CVAR_GET_POINTER( "sv_aim" );
 	g_psv_allow_autoaim = CVAR_GET_POINTER( "sv_allow_autoaim" );

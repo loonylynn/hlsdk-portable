@@ -10,7 +10,12 @@ is compiled into both the server and client game DLLs.
 - Assigns add-on weapons an available numeric ID.
 - Looks weapons up by ID, textual name, or entity classname.
 
-This is a catalogue only. It does **not** spawn weapons, replace
+The current reference entry is the existing Glock (ID 2, classname
+`weapon_9mmhandgun`), registered during both server and client initialization.
+This exercises the same definition and numeric ID on both sides without
+changing the original pistol implementation.
+
+This is still a catalogue only. It does **not** spawn weapons, replace
 `CBasePlayerWeapon`, parse JSON, execute scripts, or change prediction. Those
 systems will be added after the identity contract is established.
 
