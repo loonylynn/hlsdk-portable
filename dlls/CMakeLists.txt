@@ -149,6 +149,8 @@ set (SVDLL_SOURCES
 	zombie.cpp
 	npc_physics.cpp
 	../game_shared/voice_gamemgr.cpp
+	../game_shared/weapon_framework/weapon_definition.cpp
+	../game_shared/weapon_framework/weapon_registry.cpp
 	../pm_shared/pm_debug.c
 	../pm_shared/pm_math.c
 	../pm_shared/pm_shared.c
