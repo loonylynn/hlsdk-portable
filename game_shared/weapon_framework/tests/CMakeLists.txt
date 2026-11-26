@@ -10,6 +10,7 @@ get_filename_component(HLSDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUT
 
 add_executable(weapon_framework_tests
 	"${HLSDK_ROOT}/game_shared/weapon_framework/weapon_definition.cpp"
+	"${HLSDK_ROOT}/game_shared/weapon_framework/weapon_behavior.cpp"
 	"${HLSDK_ROOT}/game_shared/weapon_framework/weapon_registry.cpp"
 	"${HLSDK_ROOT}/game_shared/weapon_framework/weapon_json.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/weapon_framework_tests.cpp"
