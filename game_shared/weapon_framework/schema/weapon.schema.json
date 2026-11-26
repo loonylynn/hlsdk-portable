@@ -209,7 +209,7 @@
   "$defs": {
     "model_path": {
       "type": "string",
-      "minLength": 11,
+      "minLength": 12,
       "maxLength": 127,
       "pattern": "^models/.+\\.mdl$"
     }
