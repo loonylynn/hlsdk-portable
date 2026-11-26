@@ -43,6 +43,7 @@ def build(bld):
 		'../engine',
 		'../pm_shared',
 		'../game_shared',
+		'../game_shared/weapon_framework',
 		'../public'
 	]
 
