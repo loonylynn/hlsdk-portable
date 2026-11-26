@@ -115,7 +115,8 @@
               "additionalProperties": false,
               "required": [
                 "type",
-                "max_carry"
+                "max_carry",
+                "pickup_amount"
               ],
               "properties": {
                 "type": {
@@ -128,6 +129,12 @@
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 32767
+                },
+                "pickup_amount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 32767,
+                  "description": "Amount of primary ammo granted by a matching ammo pickup."
                 }
               }
             }
