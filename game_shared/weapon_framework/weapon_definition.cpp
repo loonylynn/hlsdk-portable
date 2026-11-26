@@ -31,6 +31,22 @@ namespace
 			return true;
 		return CopyRequiredText(destination, capacity, source);
 	}
+
+	bool IsValidBehaviorName(const char *name)
+	{
+		const char *p;
+		if (!name || name[0] == '\0')
+			return false;
+
+		for (p = name; *p; ++p)
+		{
+			const char c = *p;
+			if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+				c == '_' || c == '-' || c == '.' || c == '/'))
+				return false;
+		}
+		return true;
+	}
 }
 
 namespace WeaponFramework
@@ -45,6 +61,7 @@ namespace WeaponFramework
 	{
 		m_name[0] = '\0';
 		m_entityClassname[0] = '\0';
+		m_behaviorName[0] = '\0';
 		m_primaryAmmoType[0] = '\0';
 		m_secondaryAmmoType[0] = '\0';
 		m_viewModel[0] = '\0';
@@ -91,6 +108,8 @@ namespace WeaponFramework
 		m_valid =
 			CopyRequiredText(m_name, sizeof(m_name), data.name) &&
 			CopyRequiredText(m_entityClassname, sizeof(m_entityClassname), data.entityClassname) &&
+			CopyOptionalText(m_behaviorName, sizeof(m_behaviorName), data.behaviorName) &&
+			(!m_behaviorName[0] || IsValidBehaviorName(m_behaviorName)) &&
 			CopyOptionalText(m_primaryAmmoType, sizeof(m_primaryAmmoType), data.primaryAmmoType) &&
 			CopyOptionalText(m_secondaryAmmoType, sizeof(m_secondaryAmmoType), data.secondaryAmmoType) &&
 			CopyOptionalText(m_viewModel, sizeof(m_viewModel), data.viewModel) &&
@@ -107,7 +126,7 @@ namespace WeaponFramework
 			((m_secondaryAmmoType[0] == '\0' && m_secondaryAmmoMax == -1) ||
 			 (m_secondaryAmmoType[0] != '\0' && m_secondaryAmmoMax >= 0)) &&
 			(m_actionType == WeaponActionNone ||
-			 (m_actionType == WeaponActionHitscan && m_bulletType >= 1 && m_bulletType <= 4 &&
+			 (m_actionType == WeaponActionHitscan && m_behaviorName[0] != '\0' && m_bulletType >= 1 && m_bulletType <= 4 &&
 			  m_damage > 0 && m_damage <= 32767 && m_pellets > 0 && m_pellets <= 32 &&
 			  m_range > 0 && m_range <= 8192 && m_spread >= 0.0f && m_spread <= 1.0f &&
 			  m_fireRate >= 0.01f && m_fireRate <= 10.0f &&
