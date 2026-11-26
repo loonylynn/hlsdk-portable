@@ -363,7 +363,17 @@ class CGlockAmmo : public CBasePlayerAmmo
 
 	BOOL AddAmmo( CBaseEntity *pOther )
 	{
-		if( pOther->GiveAmmo( AMMO_GLOCKCLIP_GIVE, "9mm", _9MM_MAX_CARRY ) != -1 )
+		const WeaponFramework::WeaponDefinition *pDefinition =
+			WeaponFramework::GetRegistry().FindById( WEAPON_GLOCK );
+		const char *ammoType = pDefinition ?
+			pDefinition->GetPrimaryAmmoType() : "9mm";
+		const int pickupAmount = pDefinition ?
+			pDefinition->GetPrimaryAmmoPickupAmount() : AMMO_GLOCKCLIP_GIVE;
+		const int maxCarry = pDefinition ?
+			pDefinition->GetPrimaryAmmoMax() : _9MM_MAX_CARRY;
+
+		if( ammoType && pickupAmount > 0 &&
+			pOther->GiveAmmo( pickupAmount, ammoType, maxCarry ) != -1 )
 		{
 			EMIT_SOUND( ENT( pev ), CHAN_ITEM, "items/9mmclip1.wav", 1, ATTN_NORM );
 			return TRUE;
