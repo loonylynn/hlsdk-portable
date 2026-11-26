@@ -41,6 +41,9 @@ namespace WeaponFramework
 	// The client and server DLLs each own an instance. Both must load add-ons
 	// in the same deterministic order so numeric IDs agree.
 	WeaponRegistry &GetRegistry();
+
+	// Register built-in reference definitions identically in both DLLs.
+	bool RegisterBuiltinWeapons();
 }
 
 #endif // WEAPON_FRAMEWORK_REGISTRY_H

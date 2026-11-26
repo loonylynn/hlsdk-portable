@@ -5,6 +5,7 @@
 
 #include <stddef.h>
 #include <string.h>
+#include "weapons.h"
 
 namespace WeaponFramework
 {
@@ -30,7 +31,7 @@ namespace WeaponFramework
 		if (!definition.IsValid() || id == 0 || !IsUnique(definition))
 			return 0;
 
-		if (!RegisterAtId(WeaponDefinition(id, definition.GetName(), definition.GetEntityClassname()), id))
+		if (!RegisterAtId(definition, id))
 			return 0;
 
 		return id;
@@ -44,7 +45,8 @@ namespace WeaponFramework
 		if (m_registered[id] || !IsUnique(definition))
 			return false;
 
-		m_definitions[id] = WeaponDefinition(id, definition.GetName(), definition.GetEntityClassname());
+		m_definitions[id] = definition;
+		m_definitions[id].m_id = id;
 		if (!m_definitions[id].IsValid())
 			return false;
 
@@ -138,5 +140,26 @@ namespace WeaponFramework
 	{
 		static WeaponRegistry registry;
 		return registry;
+	}
+
+	bool RegisterBuiltinWeapons()
+	{
+		WeaponDefinitionData glock = {};
+		glock.id = WEAPON_GLOCK;
+		glock.name = "goldsrc:weapon/glock";
+		glock.entityClassname = "weapon_9mmhandgun";
+		glock.slot = 1;
+		glock.position = 0;
+		glock.weight = GLOCK_WEIGHT;
+		glock.flags = 0;
+		glock.clipSize = GLOCK_MAX_CLIP;
+		glock.primaryAmmoType = "9mm";
+		glock.primaryAmmoMax = _9MM_MAX_CARRY;
+		glock.secondaryAmmoType = NULL;
+		glock.secondaryAmmoMax = -1;
+		glock.viewModel = "models/v_9mmhandgun.mdl";
+		glock.worldModel = "models/w_9mmhandgun.mdl";
+		glock.playerModel = "models/p_9mmhandgun.mdl";
+		return GetRegistry().RegisterLegacy(WeaponDefinition(glock));
 	}
 }

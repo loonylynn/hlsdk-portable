@@ -62,3 +62,14 @@ The next implementation step is to parse and validate this format into the
 shared definition/registry, then make the existing Glock metadata read from that
 definition. Weapon firing, animation sequences, and prediction remain in the
 existing native code during that migration.
+
+## Metadata is now used by the reference weapon
+
+The Glock is still implemented by its original native class, but its item
+metadata (slot, position, weight, flags, clip size, ammo types/capacities) and
+model paths are now supplied through the shared registry. The built-in reference
+definition is registered once in each DLL from the same shared function.
+
+The JSON file is not loaded at runtime yet. It is the configuration contract
+for the next step: replacing the temporary built-in C++ registration data with
+a loader that reads the same fields from the JSON definition.

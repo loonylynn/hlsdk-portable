@@ -19,6 +19,7 @@
 #include "monsters.h"
 #include "weapons.h"
 #include "nodes.h"
+#include "weapon_registry.h"
 #include "player.h"
 
 #define PISTOL_FASTEST_REFIRE_TIME		0.1f
@@ -50,8 +51,12 @@ void CGlock::Spawn()
 {
 	pev->classname = MAKE_STRING( "weapon_9mmhandgun" ); // hack to allow for old names
 	Precache();
-	m_iId = WEAPON_GLOCK;
-	SET_MODEL( ENT( pev ), "models/w_9mmhandgun.mdl" );
+
+	const WeaponFramework::WeaponDefinition *pDefinition =
+		WeaponFramework::GetRegistry().FindById( WEAPON_GLOCK );
+	m_iId = pDefinition ? pDefinition->GetId() : WEAPON_GLOCK;
+	SET_MODEL( ENT( pev ), pDefinition && pDefinition->GetWorldModel() ?
+		pDefinition->GetWorldModel() : "models/w_9mmhandgun.mdl" );
 
 	m_iDefaultAmmo = GLOCK_DEFAULT_GIVE;
 
@@ -63,9 +68,15 @@ void CGlock::Spawn()
 
 void CGlock::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_9mmhandgun.mdl" );
-	PRECACHE_MODEL( "models/w_9mmhandgun.mdl" );
-	PRECACHE_MODEL( "models/p_9mmhandgun.mdl" );
+	const WeaponFramework::WeaponDefinition *pDefinition =
+		WeaponFramework::GetRegistry().FindById( WEAPON_GLOCK );
+
+	PRECACHE_MODEL( pDefinition && pDefinition->GetViewModel() ?
+		pDefinition->GetViewModel() : "models/v_9mmhandgun.mdl" );
+	PRECACHE_MODEL( pDefinition && pDefinition->GetWorldModel() ?
+		pDefinition->GetWorldModel() : "models/w_9mmhandgun.mdl" );
+	PRECACHE_MODEL( pDefinition && pDefinition->GetPlayerModel() ?
+		pDefinition->GetPlayerModel() : "models/p_9mmhandgun.mdl" );
 
 	m_iShell = PRECACHE_MODEL( "models/shell.mdl" );// brass shell
 
@@ -82,18 +93,37 @@ void CGlock::Precache( void )
 
 int CGlock::GetItemInfo( ItemInfo *p )
 {
+	const WeaponFramework::WeaponDefinition *pDefinition =
+		WeaponFramework::GetRegistry().FindById( WEAPON_GLOCK );
 	p->pszName = STRING( pev->classname );
-	p->pszAmmo1 = "9mm";
-	p->iMaxAmmo1 = _9MM_MAX_CARRY;
-	p->pszAmmo2 = NULL;
-	p->iMaxAmmo2 = -1;
-	p->iMaxClip = GLOCK_MAX_CLIP;
-	p->iSlot = 1;
-	p->iPosition = 0;
-	p->iFlags = 0;
-	p->iId = m_iId = WEAPON_GLOCK;
-	p->iWeight = GLOCK_WEIGHT;
 
+	if( pDefinition )
+	{
+		p->pszAmmo1 = pDefinition->GetPrimaryAmmoType();
+		p->iMaxAmmo1 = pDefinition->GetPrimaryAmmoMax();
+		p->pszAmmo2 = pDefinition->GetSecondaryAmmoType();
+		p->iMaxAmmo2 = pDefinition->GetSecondaryAmmoMax();
+		p->iMaxClip = pDefinition->GetClipSize();
+		p->iSlot = pDefinition->GetSlot();
+		p->iPosition = pDefinition->GetPosition();
+		p->iFlags = pDefinition->GetFlags();
+		p->iId = m_iId = pDefinition->GetId();
+		p->iWeight = pDefinition->GetWeight();
+	}
+	else
+	{
+		// Keep the original values as a safe fallback if registration fails.
+		p->pszAmmo1 = "9mm";
+		p->iMaxAmmo1 = _9MM_MAX_CARRY;
+		p->pszAmmo2 = NULL;
+		p->iMaxAmmo2 = -1;
+		p->iMaxClip = GLOCK_MAX_CLIP;
+		p->iSlot = 1;
+		p->iPosition = 0;
+		p->iFlags = 0;
+		p->iId = m_iId = WEAPON_GLOCK;
+		p->iWeight = GLOCK_WEIGHT;
+	}
 	return 1;
 }
 
@@ -111,8 +141,15 @@ int CGlock::AddToPlayer( CBasePlayer *pPlayer )
 
 BOOL CGlock::Deploy()
 {
+	const WeaponFramework::WeaponDefinition *pDefinition =
+		WeaponFramework::GetRegistry().FindById( WEAPON_GLOCK );
+	const char *viewModel = pDefinition && pDefinition->GetViewModel() ?
+		pDefinition->GetViewModel() : "models/v_9mmhandgun.mdl";
+	const char *playerModel = pDefinition && pDefinition->GetPlayerModel() ?
+		pDefinition->GetPlayerModel() : "models/p_9mmhandgun.mdl";
+
 	// pev->body = 1;
-	return DefaultDeploy( "models/v_9mmhandgun.mdl", "models/p_9mmhandgun.mdl", GLOCK_DRAW, "onehanded", /*UseDecrement() ? 1 : 0*/ 0 );
+	return DefaultDeploy( viewModel, playerModel, GLOCK_DRAW, "onehanded", /*UseDecrement() ? 1 : 0*/ 0 );
 }
 
 void CGlock::PrimaryAttack( void )

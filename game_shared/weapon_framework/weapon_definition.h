@@ -1,5 +1,5 @@
 /*
- * Shared weapon identity definition.
+ * Shared weapon identity and metadata definition.
  * Compiled into both the server and client game DLLs.
  */
 #pragma once
@@ -14,10 +14,32 @@ namespace WeaponFramework
 	{
 		WeaponNameCapacity = 64,
 		EntityClassnameCapacity = 64,
+		AmmoNameCapacity = 32,
+		ModelPathCapacity = 128,
 		FirstLegacyWeaponId = 1,
 		LastLegacyWeaponId = 16,
 		FirstAddonWeaponId = 17,
 		LastAddonWeaponId = WEAPON_SUIT - 1
+	};
+
+	// Input data used by built-in adapters now and by the JSON loader later.
+	struct WeaponDefinitionData
+	{
+		int id;
+		const char *name;
+		const char *entityClassname;
+		int slot;
+		int position;
+		int weight;
+		int flags;
+		int clipSize;
+		const char *primaryAmmoType;
+		int primaryAmmoMax;
+		const char *secondaryAmmoType;
+		int secondaryAmmoMax;
+		const char *viewModel;
+		const char *worldModel;
+		const char *playerModel;
 	};
 
 	class WeaponDefinition
@@ -25,16 +47,41 @@ namespace WeaponFramework
 	public:
 		WeaponDefinition();
 		WeaponDefinition(int id, const char *name, const char *entityClassname);
-
+		explicit WeaponDefinition(const WeaponDefinitionData &data);
 		int GetId() const;
 		const char *GetName() const;
 		const char *GetEntityClassname() const;
 		bool IsValid() const;
+		int GetSlot() const;
+		int GetPosition() const;
+		int GetWeight() const;
+		int GetFlags() const;
+		int GetClipSize() const;
+		const char *GetPrimaryAmmoType() const;
+		int GetPrimaryAmmoMax() const;
+		const char *GetSecondaryAmmoType() const;
+		int GetSecondaryAmmoMax() const;
+		const char *GetViewModel() const;
+		const char *GetWorldModel() const;
+		const char *GetPlayerModel() const;
 
 	private:
+		friend class WeaponRegistry;
 		int m_id;
 		char m_name[WeaponNameCapacity];
 		char m_entityClassname[EntityClassnameCapacity];
+		int m_slot;
+		int m_position;
+		int m_weight;
+		int m_flags;
+		int m_clipSize;
+		char m_primaryAmmoType[AmmoNameCapacity];
+		int m_primaryAmmoMax;
+		char m_secondaryAmmoType[AmmoNameCapacity];
+		int m_secondaryAmmoMax;
+		char m_viewModel[ModelPathCapacity];
+		char m_worldModel[ModelPathCapacity];
+		char m_playerModel[ModelPathCapacity];
 		bool m_valid;
 	};
 }

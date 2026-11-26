@@ -581,9 +581,8 @@ void HUD_InitClientWeapons( void )
 
 	initialized = 1;
 
-	// Keep the client registry aligned with the server's reference weapon.
-	WeaponFramework::GetRegistry().RegisterLegacy(
-		WeaponFramework::WeaponDefinition(WEAPON_GLOCK, "goldsrc:weapon/glock", "weapon_9mmhandgun"));
+	// Keep prediction metadata aligned with the server registry.
+	WeaponFramework::RegisterBuiltinWeapons();
 
 	// Set up pointer ( dummy object )
 	gpGlobals = &Globals;

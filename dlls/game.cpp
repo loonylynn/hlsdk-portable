@@ -502,9 +502,8 @@ cvar_t tdmg_bleeding_damage3 = { "tdmg_bleeding_damage3", "1" };
 // This gets called one time when the game is initialied
 void GameDLLInit( void )
 {
-	// Register the existing Glock as the first shared-registry reference weapon.
-	WeaponFramework::GetRegistry().RegisterLegacy(
-		WeaponFramework::WeaponDefinition(WEAPON_GLOCK, "goldsrc:weapon/glock", "weapon_9mmhandgun"));
+	// Register shared built-in metadata before worldspawn precaches weapons.
+	WeaponFramework::RegisterBuiltinWeapons();
 
 	g_psv_gravity = CVAR_GET_POINTER( "sv_gravity" );
 	g_psv_aim = CVAR_GET_POINTER( "sv_aim" );
