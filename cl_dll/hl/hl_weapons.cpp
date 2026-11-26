@@ -130,7 +130,12 @@ void HUD_PrepEntity( CBaseEntity *pEntity, CBasePlayer *pWeaponOwner )
 
 		if( ( (CBasePlayerWeapon *)pEntity )->GetItemInfo( &info ) &&
 			info.iId > 0 && info.iId < MAX_WEAPONS )
+		{
+			// The client weapon frame reads ammo names, clip limits and item
+			// flags through this shared GoldSrc table as well as g_pWpns.
+			CBasePlayerItem::ItemInfoArray[info.iId] = info;
 			g_pWpns[info.iId] = (CBasePlayerWeapon *)pEntity;
+		}
 	}
 }
 

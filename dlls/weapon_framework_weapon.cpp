@@ -102,7 +102,7 @@ void CFrameworkWeapon::Spawn(void)
 #else
 	if (!CBasePlayerItem::ItemInfoArray[definition->GetId()].pszName)
 	{
-		ALERT(at_console, "WeaponFramework: %s is unavailable because its ammo types could not be registered\\n",
+		ALERT(at_console, "WeaponFramework: %s is unavailable because its ammo types could not be registered\n",
 			definition->GetEntityClassname());
 		UTIL_Remove(this);
 		return;
@@ -221,7 +221,7 @@ void WeaponFramework_PrecacheAddonWeapons(void)
 
 		if (!ammoReady)
 		{
-			ALERT(at_console, "WeaponFramework: skipping %s because the GoldSrc ammo table is full\\n",
+			ALERT(at_console, "WeaponFramework: skipping %s because the GoldSrc ammo table is full\n",
 				definition->GetName());
 			continue;
 		}

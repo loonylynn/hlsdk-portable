@@ -247,7 +247,7 @@ bool AddAmmoNameToAmmoRegistry( const char *szAmmoname )
 
 	if( giAmmoIndex + 1 >= MAX_AMMO_SLOTS )
 	{
-		ALERT( at_console, "Ammo registry full; cannot register '%s' (maximum %d ammo types)\\n",
+		ALERT( at_console, "Ammo registry full; cannot register '%s' (maximum %d ammo types)\n",
 			szAmmoname, MAX_AMMO_SLOTS - 1 );
 		return false;
 	}
@@ -291,7 +291,7 @@ void UTIL_PrecacheOtherWeapon( const char *szClassname )
 			if( ammoReady )
 				CBasePlayerItem::ItemInfoArray[II.iId] = II;
 			else
-				ALERT( at_console, "Weapon %s was not registered because the ammo table is full\\n",
+				ALERT( at_console, "Weapon %s was not registered because the ammo table is full\n",
 					szClassname );
 		}
 	}

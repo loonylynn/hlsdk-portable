@@ -189,8 +189,10 @@ The first native behavior exposes bullet family (9mm, MP5, .357, buckshot),
 damage, pellet count, range, spread, fire interval, reload duration, automatic
 or semi-automatic input, fire sound, and draw/fire/reload/idle animation
 indices. It uses GoldSrc's existing `CBasePlayerWeapon`, seeded
-`FireBulletsPlayer`, weapon data slots, and client prediction path. Built-in
-weapons keep their original C++ implementations and IDs.
+`FireBulletsPlayer`, weapon data slots, and client prediction path. During
+client weapon initialization, each prediction object also copies its item
+metadata into the shared GoldSrc item-info table used by reload and inventory
+logic. Built-in weapons keep their original C++ implementations and IDs.
 
 Metadata-only add-ons remain valid in the catalogue, but the generic
 `weapon_framework` entity rejects them until they declare a supported

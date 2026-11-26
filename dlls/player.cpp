@@ -4749,12 +4749,12 @@ void CBasePlayer::GiveNamedItem( const char *pszName )
 		pDefinition->GetId() <= WeaponFramework::LastAddonWeaponId;
 	if (bKnownAddon && pDefinition->GetActionType() != WeaponFramework::WeaponActionHitscan)
 	{
-		ALERT(at_console, "WeaponFramework: add-on %s has no supported behavior\\n", pszName);
+		ALERT(at_console, "WeaponFramework: add-on %s has no supported behavior\n", pszName);
 		return;
 	}
 	if (bKnownAddon && !CBasePlayerItem::ItemInfoArray[pDefinition->GetId()].pszName)
 	{
-		ALERT(at_console, "WeaponFramework: add-on %s is unavailable because its ammo types could not be registered\\n",
+		ALERT(at_console, "WeaponFramework: add-on %s is unavailable because its ammo types could not be registered\n",
 			pszName);
 		return;
 	}
