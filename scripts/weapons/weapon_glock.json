@@ -15,7 +15,8 @@
     "clip_size": 17,
     "primary": {
       "type": "9mm",
-      "max_carry": 250
+      "max_carry": 250,
+      "pickup_amount": 17
     },
     "secondary": null,
     "default_ammo": 17
