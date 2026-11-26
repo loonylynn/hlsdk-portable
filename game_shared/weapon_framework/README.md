@@ -15,9 +15,10 @@ The current reference entry is the existing Glock (ID 2, classname
 This exercises the same definition and numeric ID on both sides without
 changing the original pistol implementation.
 
-This is still a catalogue only. It does **not** spawn weapons, replace
-`CBasePlayerWeapon`, parse JSON, execute scripts, or change prediction. Those
-systems will be added after the identity contract is established.
+The shared layer now stores identity and gameplay metadata and can read version-1
+JSON definitions. It still does **not** spawn new weapon entities, replace
+`CBasePlayerWeapon`, execute scripts, or change prediction. Those capabilities
+will be built on top of this definition layer.
 
 ## Numeric ID compatibility
 
@@ -69,12 +70,11 @@ remain in the existing native code.
 
 The Glock is still implemented by its original native class, but its item
 metadata (slot, position, weight, flags, clip size, ammo types/capacities) and
-model paths are now supplied through the shared registry. The built-in reference
-definition is registered once in each DLL from the same shared function.
+model paths are now supplied through the shared registry. The JSON reference
+definition is registered once in each DLL through the same shared parser.
 
-The JSON file is not loaded at runtime yet. It is the configuration contract
-for the next step: replacing the temporary built-in C++ registration data with
-a loader that reads the same fields from the JSON definition.
+The JSON definition is loaded at runtime. The C++ built-in definition remains
+only as a fallback when the file is absent or fails validation.
 
 The ammunition block also specifies `default_ammo`, the initial reserve given when the weapon is spawned. Clip size is used by the native reload path, not merely displayed to the HUD.
 
