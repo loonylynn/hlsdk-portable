@@ -198,7 +198,7 @@ void CFrameworkWeapon::WeaponIdle(void)
 	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 3.0f;
 }
 #ifndef CLIENT_DLL
-extern bool AddAmmoNameToAmmoRegistry(const char *szAmmoname);
+extern bool AddAmmoNamesToAmmoRegistry(const char *szAmmoName1, const char *szAmmoName2);
 void WeaponFramework_PrecacheAddonWeapons(void)
 {
 	for (int id = WeaponFramework::FirstAddonWeaponId; id <= WeaponFramework::LastAddonWeaponId; ++id)
@@ -211,13 +211,7 @@ void WeaponFramework_PrecacheAddonWeapons(void)
 		preview.Precache();
 		if (!preview.GetItemInfo(&info)) continue;
 
-		bool ammoReady = true;
-		if (info.pszAmmo1 && *info.pszAmmo1 &&
-			!AddAmmoNameToAmmoRegistry(info.pszAmmo1))
-			ammoReady = false;
-		if (info.pszAmmo2 && *info.pszAmmo2 &&
-			!AddAmmoNameToAmmoRegistry(info.pszAmmo2))
-			ammoReady = false;
+		const bool ammoReady = AddAmmoNamesToAmmoRegistry(info.pszAmmo1, info.pszAmmo2);
 
 		if (!ammoReady)
 		{
