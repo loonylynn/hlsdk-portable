@@ -18,6 +18,7 @@ namespace WeaponFramework
 		EntityClassnameCapacity = 64,
 		AmmoNameCapacity = 32,
 		ModelPathCapacity = 128,
+		WeaponBehaviorNameCapacity = 64,
 		FirstLegacyWeaponId = 1,
 		LastLegacyWeaponId = 16,
 		FirstAddonWeaponId = 17,
@@ -30,6 +31,7 @@ namespace WeaponFramework
 		int id;
 		const char *name;
 		const char *entityClassname;
+		const char *behaviorName;
 		int slot;
 		int position;
 		int weight;
@@ -60,6 +62,7 @@ namespace WeaponFramework
 		int GetId() const;
 		const char *GetName() const;
 		const char *GetEntityClassname() const;
+		const char *GetBehaviorName() const;
 		bool IsValid() const;
 		int GetSlot() const;
 		int GetPosition() const;
@@ -95,6 +98,7 @@ namespace WeaponFramework
 		int m_id;
 		char m_name[WeaponNameCapacity];
 		char m_entityClassname[EntityClassnameCapacity];
+		char m_behaviorName[WeaponBehaviorNameCapacity];
 		int m_slot;
 		int m_position;
 		int m_weight;
