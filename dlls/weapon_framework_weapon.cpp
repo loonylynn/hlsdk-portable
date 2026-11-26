@@ -8,7 +8,112 @@
 #include "player.h"
 #include "weapons.h"
 #include "weapon_framework_weapon.h"
+#include "weapon_behavior.h"
 #include <string.h>
+
+namespace
+{
+	class CFrameworkWeaponActionHost : public WeaponFramework::IWeaponActionHost
+	{
+	public:
+		explicit CFrameworkWeaponActionHost(CFrameworkWeapon &weapon)
+			: m_weapon(weapon)
+		{
+		}
+
+		int GetReserveAmmo(const char *ammoName) const
+		{
+			if (!m_weapon.m_pPlayer || !ammoName || !ammoName[0])
+				return 0;
+
+			const int ammoIndex = CBasePlayer::GetAmmoIndex(ammoName);
+			if (ammoIndex < 0 || ammoIndex >= MAX_AMMO_SLOTS)
+				return 0;
+			return m_weapon.m_pPlayer->m_rgAmmo[ammoIndex];
+		}
+
+		bool ConsumeReserveAmmo(const char *ammoName, int amount)
+		{
+			if (amount <= 0 || GetReserveAmmo(ammoName) < amount)
+				return false;
+
+			const int ammoIndex = CBasePlayer::GetAmmoIndex(ammoName);
+			if (ammoIndex < 0 || ammoIndex >= MAX_AMMO_SLOTS)
+				return false;
+
+			m_weapon.m_pPlayer->m_rgAmmo[ammoIndex] -= amount;
+			NotifyAmmoChanged();
+			return true;
+		}
+
+		bool FireHitscan(const WeaponFramework::WeaponHitscanRequest &request)
+		{
+			if (!m_weapon.m_pPlayer || request.bulletType <= 0 ||
+				request.pellets <= 0 || request.range <= 0.0f || request.damage <= 0.0f)
+				return false;
+
+			CBasePlayer *player = m_weapon.m_pPlayer;
+			player->m_iWeaponVolume = LOUD_GUN_VOLUME;
+			player->m_iWeaponFlash = NORMAL_GUN_FLASH;
+
+			const Vector source = player->GetGunPosition();
+			const Vector aiming = player->GetAutoaimVector(AUTOAIM_10DEGREES);
+			const float spread = request.spread;
+			player->FireBulletsPlayer((ULONG)request.pellets, source, aiming,
+				Vector(spread, spread, spread), request.range, request.bulletType,
+				0, (int)request.damage, player->pev, player->random_seed);
+			return true;
+		}
+
+		void PlayAnimation(const char *activityName)
+		{
+			const WeaponFramework::WeaponDefinition *definition = m_weapon.GetDefinition();
+			if (definition && activityName && strcmp(activityName, "fire") == 0)
+				m_weapon.SendWeaponAnim(definition->GetFireAnimation(),
+					m_weapon.UseDecrement() ? 1 : 0);
+		}
+
+		void PlaySound(const char *soundEvent)
+		{
+			if (!m_weapon.m_pPlayer || !soundEvent || !soundEvent[0])
+				return;
+			if (strcmp(soundEvent, "empty") == 0)
+				m_weapon.PlayEmptySound();
+			else
+				EMIT_SOUND(ENT(m_weapon.m_pPlayer->pev), CHAN_WEAPON,
+					soundEvent, 1.0, ATTN_NORM);
+		}
+
+		void EmitEffect(const char *effectName)
+		{
+			if (m_weapon.m_pPlayer && effectName &&
+				strcmp(effectName, "muzzle_flash") == 0)
+				m_weapon.m_pPlayer->pev->effects |= EF_MUZZLEFLASH;
+		}
+
+		void SetOwnerAttackAnimation()
+		{
+			if (m_weapon.m_pPlayer)
+				m_weapon.m_pPlayer->SetAnimation(PLAYER_ATTACK1);
+		}
+
+		bool IsOwnerUnderwater() const
+		{
+			return m_weapon.m_pPlayer && m_weapon.m_pPlayer->pev->waterlevel == 3;
+		}
+
+		void NotifyAmmoChanged()
+		{
+#ifndef CLIENT_DLL
+			if (m_weapon.m_pPlayer)
+				m_weapon.m_pPlayer->TabulateAmmo();
+#endif
+		}
+
+	private:
+		CFrameworkWeapon &m_weapon;
+	};
+}
 
 #ifndef CLIENT_DLL
 LINK_ENTITY_TO_CLASS(weapon_framework, CFrameworkWeapon)
@@ -157,13 +262,51 @@ void CFrameworkWeapon::PrimaryAttack(void)
 {
 	const WeaponFramework::WeaponDefinition *definition = GetDefinition();
 	if (!definition || !m_pPlayer) return;
-	if (!definition->IsAutomatic() && !(m_pPlayer->m_afButtonPressed & IN_ATTACK)) return;
 	if (m_iClip <= 0)
 	{
 		if (m_iPrimaryAmmoType >= 0 && m_iPrimaryAmmoType < MAX_AMMO_SLOTS && m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] > 0) Reload();
 		else { PlayEmptySound(); m_flNextPrimaryAttack = UTIL_WeaponTimeBase() + 0.2f; }
 		return;
 	}
+
+	const WeaponFramework::WeaponBehavior *behavior =
+		WeaponFramework::GetBehaviorRegistry().FindForDefinition(*definition);
+	if (behavior)
+	{
+		WeaponFramework::WeaponInstanceState instance;
+		WeaponFramework::WeaponBehaviorContext context;
+		CFrameworkWeaponActionHost actionHost(*this);
+
+		instance.Reset(m_iClip);
+		instance.lifecycle = WeaponFramework::WeaponLifecycleReady;
+		instance.nextPrimaryAttackTime = m_flNextPrimaryAttack;
+		instance.nextIdleTime = m_flTimeWeaponIdle;
+
+		context.definition = definition;
+		context.instance = &instance;
+		context.host = &actionHost;
+		context.input.primaryDown = (m_pPlayer->pev->button & IN_ATTACK) != 0;
+		context.input.primaryPressed = (m_pPlayer->m_afButtonPressed & IN_ATTACK) != 0;
+		context.input.primaryReleased = (m_pPlayer->m_afButtonReleased & IN_ATTACK) != 0;
+		context.currentTime = UTIL_WeaponTimeBase();
+		context.frameTime = gpGlobals->frametime;
+#ifndef CLIENT_DLL
+		context.authoritative = true;
+#else
+		context.authoritative = false;
+#endif
+		context.predicting = UseDecrement() ? true : false;
+
+		if (behavior->PrimaryAttack(context))
+		{
+			m_iClip = instance.loadedAmmo;
+			m_flNextPrimaryAttack = instance.nextPrimaryAttackTime;
+			m_flTimeWeaponIdle = instance.nextIdleTime;
+		}
+		return;
+	}
+
+	if (!definition->IsAutomatic() && !(m_pPlayer->m_afButtonPressed & IN_ATTACK)) return;
 	--m_iClip;
 #ifndef CLIENT_DLL
 	m_pPlayer->TabulateAmmo();
