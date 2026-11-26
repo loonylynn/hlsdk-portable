@@ -299,7 +299,7 @@ bool AddAmmoNamesToAmmoRegistry( const char *szAmmoName1, const char *szAmmoName
 	if( requiredSlots > availableSlots )
 	{
 		ALERT( at_console,
-			"Ammo registry full; cannot register weapon ammo '%s'/'%s' (need %d slots, %d available)\\n",
+			"Ammo registry full; cannot register weapon ammo '%s'/'%s' (need %d slots, %d available)\n",
 			szAmmoName1 ? szAmmoName1 : "",
 			szAmmoName2 ? szAmmoName2 : "",
 			requiredSlots, availableSlots );
