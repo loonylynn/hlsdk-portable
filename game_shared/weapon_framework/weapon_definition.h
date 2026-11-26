@@ -10,6 +10,8 @@
 
 namespace WeaponFramework
 {
+	enum WeaponActionType { WeaponActionNone = 0, WeaponActionHitscan = 1 };
+
 	enum
 	{
 		WeaponNameCapacity = 64,
@@ -42,6 +44,11 @@ namespace WeaponFramework
 		const char *viewModel;
 		const char *worldModel;
 		const char *playerModel;
+		int actionType, bulletType, damage, pellets, range;
+		float spread, fireRate, reloadTime;
+		bool automatic;
+		int drawAnimation, fireAnimation, reloadAnimation, idleAnimation;
+		const char *fireSound;
 	};
 
 	class WeaponDefinition
@@ -68,6 +75,20 @@ namespace WeaponFramework
 		const char *GetViewModel() const;
 		const char *GetWorldModel() const;
 		const char *GetPlayerModel() const;
+		int GetActionType() const;
+		int GetBulletType() const;
+		int GetDamage() const;
+		int GetPellets() const;
+		int GetRange() const;
+		float GetSpread() const;
+		float GetFireRate() const;
+		float GetReloadTime() const;
+		bool IsAutomatic() const;
+		int GetDrawAnimation() const;
+		int GetFireAnimation() const;
+		int GetReloadAnimation() const;
+		int GetIdleAnimation() const;
+		const char *GetFireSound() const;
 
 	private:
 		friend class WeaponRegistry;
@@ -88,6 +109,11 @@ namespace WeaponFramework
 		char m_viewModel[ModelPathCapacity];
 		char m_worldModel[ModelPathCapacity];
 		char m_playerModel[ModelPathCapacity];
+		int m_actionType, m_bulletType, m_damage, m_pellets, m_range;
+		float m_spread, m_fireRate, m_reloadTime;
+		bool m_automatic;
+		int m_drawAnimation, m_fireAnimation, m_reloadAnimation, m_idleAnimation;
+		char m_fireSound[ModelPathCapacity];
 		bool m_valid;
 	};
 }

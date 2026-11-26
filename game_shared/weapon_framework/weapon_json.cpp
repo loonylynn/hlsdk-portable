@@ -668,6 +668,31 @@ namespace
 		return true;
 	}
 
+	bool ReadFloat(const JsonParser &parser, int tokenIndex, float minimum, float maximum, float &value)
+	{
+		char number[48];
+		size_t length;
+		char *end = NULL;
+		double parsed;
+		if (tokenIndex < 0 || parser.tokens[tokenIndex].type != JSON_NUMBER) return false;
+		length = parser.tokens[tokenIndex].end - parser.tokens[tokenIndex].start;
+		if (!length || length >= sizeof(number)) return false;
+		memcpy(number, parser.data + parser.tokens[tokenIndex].start, length);
+		number[length] = '\0';
+		parsed = strtod(number, &end);
+		if (!end || end == number || *end || parsed < minimum || parsed > maximum) return false;
+		value = (float)parsed;
+		return true;
+	}
+
+	bool ReadBoolean(const JsonParser &parser, int tokenIndex, bool &value)
+	{
+		if (tokenIndex < 0) return false;
+		if (parser.tokens[tokenIndex].type == JSON_TRUE) { value = true; return true; }
+		if (parser.tokens[tokenIndex].type == JSON_FALSE) { value = false; return true; }
+		return false;
+	}
+
 	bool ReadString(const JsonParser &parser, int tokenIndex, char *output, size_t capacity)
 	{
 		return tokenIndex >= 0 && DecodeString(parser, tokenIndex, output, capacity);
@@ -846,10 +871,60 @@ namespace
 		return true;
 	}
 
+	bool IsValidSoundPath(const char *path)
+	{
+		const size_t length = path ? strlen(path) : 0;
+		const char *p;
+		if (length < 12 || length >= ModelPathCapacity || strncmp(path, "weapons/", 8) ||
+			strcmp(path + length - 4, ".wav") || strstr(path, "..") ||
+			strstr(path, "//") || strchr(path, '\\')) return false;
+		for (p = path + 8; *p; ++p)
+		{
+			const char c = *p;
+			if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+				c == '_' || c == '-' || c == '.' || c == '/')) return false;
+		}
+		return true;
+	}
+
+	bool ParseHitscanBehavior(const JsonParser &parser, int behaviorToken,
+		WeaponDefinitionData &data, char *fireSound, size_t fireSoundCapacity)
+	{
+		static const char *const keys[] = {"type","bullet_type","damage","pellets","range","spread","fire_rate","reload_time","automatic","fire_sound","animations"};
+		static const char *const animationKeys[] = {"draw","fire","reload","idle"};
+		char type[32], bullet[32];
+		int animations, token;
+		if (!ValidateKeys(parser, behaviorToken, keys, 11) || parser.tokens[behaviorToken].children != 11) return false;
+		if (!GetRequiredMember(parser, behaviorToken, "type", token) ||
+			!ReadString(parser, token, type, sizeof(type)) || strcmp(type, "hitscan")) return false;
+		if (!GetRequiredMember(parser, behaviorToken, "bullet_type", token) || !ReadString(parser, token, bullet, sizeof(bullet))) return false;
+		if (!strcmp(bullet, "9mm")) data.bulletType = BULLET_PLAYER_9MM;
+		else if (!strcmp(bullet, "mp5")) data.bulletType = BULLET_PLAYER_MP5;
+		else if (!strcmp(bullet, "357")) data.bulletType = BULLET_PLAYER_357;
+		else if (!strcmp(bullet, "buckshot")) data.bulletType = BULLET_PLAYER_BUCKSHOT;
+		else return false;
+		if (!GetRequiredMember(parser, behaviorToken, "damage", token) || !ReadInteger(parser, token, 1, 32767, data.damage)) return false;
+		if (!GetRequiredMember(parser, behaviorToken, "pellets", token) || !ReadInteger(parser, token, 1, 32, data.pellets)) return false;
+		if (!GetRequiredMember(parser, behaviorToken, "range", token) || !ReadInteger(parser, token, 1, 8192, data.range)) return false;
+		if (!GetRequiredMember(parser, behaviorToken, "spread", token) || !ReadFloat(parser, token, 0.0f, 1.0f, data.spread)) return false;
+		if (!GetRequiredMember(parser, behaviorToken, "fire_rate", token) || !ReadFloat(parser, token, 0.01f, 10.0f, data.fireRate)) return false;
+		if (!GetRequiredMember(parser, behaviorToken, "reload_time", token) || !ReadFloat(parser, token, 0.1f, 30.0f, data.reloadTime)) return false;
+		if (!GetRequiredMember(parser, behaviorToken, "automatic", token) || !ReadBoolean(parser, token, data.automatic)) return false;
+		if (!GetRequiredMember(parser, behaviorToken, "fire_sound", token) || !ReadString(parser, token, fireSound, fireSoundCapacity) || !IsValidSoundPath(fireSound)) return false;
+		if (!GetRequiredMember(parser, behaviorToken, "animations", animations) || !ValidateKeys(parser, animations, animationKeys, 4) || parser.tokens[animations].children != 4) return false;
+		if (!GetRequiredMember(parser, animations, "draw", token) || !ReadInteger(parser, token, 0, 255, data.drawAnimation)) return false;
+		if (!GetRequiredMember(parser, animations, "fire", token) || !ReadInteger(parser, token, 0, 255, data.fireAnimation)) return false;
+		if (!GetRequiredMember(parser, animations, "reload", token) || !ReadInteger(parser, token, 0, 255, data.reloadAnimation)) return false;
+		if (!GetRequiredMember(parser, animations, "idle", token) || !ReadInteger(parser, token, 0, 255, data.idleAnimation)) return false;
+		data.actionType = WeaponActionHitscan;
+		data.fireSound = fireSound;
+		return true;
+	}
+
 	bool ParseWeapon(const JsonParser &parser, WeaponDefinition &outDefinition)
 	{
 		static const char *const rootKeys[] = {
-			"format_version", "identity", "inventory", "ammo", "models"
+			"format_version", "identity", "inventory", "ammo", "models", "behavior"
 		};
 		static const char *const identityKeys[] = { "name", "entity_classname", "legacy_id" };
 		static const char *const inventoryKeys[] = { "slot", "position", "weight", "flags" };
@@ -863,6 +938,8 @@ namespace
 		char viewModel[ModelPathCapacity];
 		char worldModel[ModelPathCapacity];
 		char playerModel[ModelPathCapacity];
+		char fireSound[ModelPathCapacity];
+		int behavior;
 		int root = 0;
 		int identity;
 		int inventory;
@@ -872,8 +949,8 @@ namespace
 		int legacyId = 0;
 		int formatVersion = 0;
 
-		if (!ValidateKeys(parser, root, rootKeys, 5) ||
-			parser.tokens[root].children != 5)
+		if (!ValidateKeys(parser, root, rootKeys, 6) ||
+			(parser.tokens[root].children != 5 && parser.tokens[root].children != 6))
 			return false;
 
 		if (!GetRequiredMember(parser, root, "format_version", token) ||
@@ -962,6 +1039,14 @@ namespace
 		{
 			return false;
 		}
+
+		behavior = FindMember(parser, root, "behavior");
+		fireSound[0] = '\0';
+		if (behavior >= 0)
+		{
+			if (legacyId != 0 || !ParseHitscanBehavior(parser, behavior, data, fireSound, sizeof(fireSound))) return false;
+		}
+		if (data.actionType == WeaponActionHitscan && (data.clipSize <= 0 || primaryAmmo[0] == '\0')) return false;
 
 		data.id = legacyId;
 		data.name = stableName;

@@ -30,6 +30,7 @@
 #include "soundent.h"
 #include "decals.h"
 #include "gamerules.h"
+#include "weapon_framework_weapon.h"
 
 extern CGraph WorldGraph;
 extern int gEvilImpulse101;
@@ -364,6 +365,9 @@ void W_Precache( void )
 		UTIL_PrecacheOther( "weaponbox" );// container for dropped deathmatch weapons
 	}
 #endif
+	#ifndef CLIENT_DLL
+	WeaponFramework_PrecacheAddonWeapons();
+	#endif
 	g_sModelIndexFireball = PRECACHE_MODEL( "sprites/zerogxplode.spr" );// fireball
 	g_sModelIndexWExplosion = PRECACHE_MODEL( "sprites/WXplo1.spr" );// underwater fireball
 	g_sModelIndexSmoke = PRECACHE_MODEL( "sprites/steam1.spr" );// smoke
@@ -1540,7 +1544,7 @@ BOOL CWeaponBox::HasWeapon( CBasePlayerItem *pCheckItem )
 
 	while( pItem )
 	{
-		if( FClassnameIs( pItem->pev, STRING( pCheckItem->pev->classname ) ) )
+		if( pItem->m_iId == pCheckItem->m_iId )
 		{
 			return TRUE;
 		}

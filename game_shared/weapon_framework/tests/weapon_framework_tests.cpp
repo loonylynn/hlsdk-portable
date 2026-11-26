@@ -35,6 +35,22 @@ namespace
 		"\"models\":{\"view\":\"models/v_alpha.mdl\",\"world\":\"models/w_alpha.mdl\",\"player\":null}"
 		"}";
 
+
+	const char kHitscanDefinition[] =
+		"{"
+		"\"format_version\":1,"
+		"\"identity\":{\"name\":\"sample:weapon/hitscan\",\"entity_classname\":\"weapon_test_hitscan\"},"
+		"\"inventory\":{\"slot\":1,\"position\":2,\"weight\":9,\"flags\":[]},"
+		"\"ammo\":{\"clip_size\":12,\"default_ammo\":36,"
+			"\"primary\":{\"type\":\"9mm\",\"max_carry\":250,\"pickup_amount\":12},"
+			"\"secondary\":null},"
+		"\"models\":{\"view\":\"models/v_test.mdl\",\"world\":\"models/w_test.mdl\",\"player\":null},"
+		"\"behavior\":{\"type\":\"hitscan\",\"bullet_type\":\"9mm\",\"damage\":20,"
+			"\"pellets\":1,\"range\":4096,\"spread\":0.02,\"fire_rate\":0.25,"
+			"\"reload_time\":1.2,\"automatic\":false,\"fire_sound\":\"weapons/test_fire.wav\","
+			"\"animations\":{\"draw\":0,\"fire\":1,\"reload\":2,\"idle\":0}}"
+		"}";
+
 	const char kUnknownFieldDefinition[] =
 		"{"
 		"\"format_version\":1,"
@@ -278,6 +294,29 @@ namespace
 		CHECK(!ParseWeaponDefinitionJson("{", 1, definition));
 	}
 
+
+	void TestHitscanBehaviorParsing()
+	{
+		WeaponDefinition definition;
+		CHECK(ParseWeaponDefinitionJson(kHitscanDefinition, strlen(kHitscanDefinition), definition));
+		CHECK(definition.IsValid());
+		CHECK(definition.GetId() == 0);
+		CHECK(definition.GetActionType() == WeaponActionHitscan);
+		CHECK(definition.GetBulletType() == 1);
+		CHECK(definition.GetDamage() == 20);
+		CHECK(definition.GetPellets() == 1);
+		CHECK(definition.GetRange() == 4096);
+		CHECK(definition.GetSpread() > 0.019f && definition.GetSpread() < 0.021f);
+		CHECK(definition.GetFireRate() > 0.24f && definition.GetFireRate() < 0.26f);
+		CHECK(definition.GetReloadTime() > 1.19f && definition.GetReloadTime() < 1.21f);
+		CHECK(!definition.IsAutomatic());
+		CHECK(definition.GetFireSound() != NULL);
+		CHECK(definition.GetDrawAnimation() == 0);
+		CHECK(definition.GetFireAnimation() == 1);
+		CHECK(definition.GetReloadAnimation() == 2);
+		CHECK(definition.GetIdleAnimation() == 0);
+	}
+
 	void TestRegistryRejectsDuplicates()
 	{
 		WeaponRegistry registry;
@@ -351,6 +390,7 @@ namespace
 int main()
 {
 	TestDefinitionParsing();
+	TestHitscanBehaviorParsing();
 	TestRegistryRejectsDuplicates();
 	TestDeterministicPackageLoading();
 	TestFailedLoadDoesNotPublishPartialRegistry();

@@ -149,3 +149,30 @@ rejection, deterministic add-on IDs when package and weapon arrays are
 reordered, and preservation of the last valid registry when a catalogue load
 fails. They validate the metadata layer only; they do not exercise GoldSrc
 entity spawning, firing, or client prediction.
+
+
+## Native add-on weapon execution (v1)
+
+A package definition may include a `behavior` object with `type: "hitscan"`.
+GoldSrc has one engine-registered factory classname, `weapon_framework`; map
+entities use the `weapon_name` key to select a stable package weapon name:
+
+```
+"classname" "weapon_framework"
+"weapon_name" "sample:weapon/pistol"
+```
+
+The definition's `entity_classname` (for example `weapon_sample_pistol`)
+is the public name for the weapon list, console selection and `GiveNamedItem`.
+It is not a separately registered engine classname.
+
+The first native behavior exposes bullet family (9mm, MP5, .357, buckshot),
+damage, pellet count, range, spread, fire interval, reload duration, automatic
+or semi-automatic input, fire sound, and draw/fire/reload/idle animation
+indices. It uses GoldSrc's existing `CBasePlayerWeapon`, seeded
+`FireBulletsPlayer`, weapon data slots, and client prediction path. Built-in
+weapons keep their original C++ implementations and IDs.
+
+Metadata-only add-ons remain valid in the catalogue; until they declare a
+supported behavior, the native factory will not spawn/predict them. Projectile,
+melee, charge, custom-input, and script-driven behaviors are future work.

@@ -21,6 +21,7 @@
 #include "nodes.h"
 #include "weapon_registry.h"
 #include "weapon_json.h"
+#include "weapon_framework_weapon.h"
 #include "player.h"
 
 #include "usercmd.h"
@@ -48,6 +49,7 @@ static CBasePlayer player;
 static globalvars_t Globals; 
 
 static CBasePlayerWeapon *g_pWpns[MAX_WEAPONS];
+static CFrameworkWeapon g_AddonWeapons[WeaponFramework::LastAddonWeaponId - WeaponFramework::FirstAddonWeaponId + 1];
 
 float g_flApplyVel = 0.0;
 int g_irunninggausspred = 0;
@@ -126,9 +128,9 @@ void HUD_PrepEntity( CBaseEntity *pEntity, CBasePlayer *pWeaponOwner )
 
 		( (CBasePlayerWeapon *)pEntity )->m_pPlayer = pWeaponOwner;
 
-		( (CBasePlayerWeapon *)pEntity )->GetItemInfo( &info );
-
-		g_pWpns[info.iId] = (CBasePlayerWeapon *)pEntity;
+		if( ( (CBasePlayerWeapon *)pEntity )->GetItemInfo( &info ) &&
+			info.iId > 0 && info.iId < MAX_WEAPONS )
+			g_pWpns[info.iId] = (CBasePlayerWeapon *)pEntity;
 	}
 }
 
@@ -653,6 +655,14 @@ void HUD_InitClientWeapons( void )
 	HUD_PrepEntity( &g_Satchel, &player );
 	HUD_PrepEntity( &g_Tripmine, &player );
 	HUD_PrepEntity( &g_Snark, &player );
+	for( int id = WeaponFramework::FirstAddonWeaponId; id <= WeaponFramework::LastAddonWeaponId; ++id )
+	{
+		const WeaponFramework::WeaponDefinition *definition = WeaponFramework::GetRegistry().FindById(id);
+		if (!definition || definition->GetActionType() != WeaponFramework::WeaponActionHitscan) continue;
+		CFrameworkWeapon &weapon = g_AddonWeapons[id - WeaponFramework::FirstAddonWeaponId];
+		weapon.SetDefinitionId(id);
+		HUD_PrepEntity(&weapon, &player);
+	}
 }
 
 /*
@@ -760,6 +770,11 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 			break;
 		case WEAPON_SNARK:
 			pWeapon = &g_Snark;
+			break;
+		default:
+			if (from->client.m_iId >= WeaponFramework::FirstAddonWeaponId &&
+				from->client.m_iId <= WeaponFramework::LastAddonWeaponId)
+				pWeapon = g_pWpns[from->client.m_iId];
 			break;
 	}
 

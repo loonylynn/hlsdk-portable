@@ -144,6 +144,7 @@ set (SVDLL_SOURCES
 	util.cpp
 	vehicle.cpp
 	weapons.cpp
+	weapon_framework_weapon.cpp
 	world.cpp
 	xen.cpp
 	zombie.cpp
