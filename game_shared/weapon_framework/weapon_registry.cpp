@@ -156,6 +156,7 @@ namespace WeaponFramework
 		glock.defaultAmmo = GLOCK_DEFAULT_GIVE;
 		glock.primaryAmmoType = "9mm";
 		glock.primaryAmmoMax = _9MM_MAX_CARRY;
+		glock.primaryAmmoPickupAmount = AMMO_GLOCKCLIP_GIVE;
 		glock.secondaryAmmoType = NULL;
 		glock.secondaryAmmoMax = -1;
 		glock.viewModel = "models/v_9mmhandgun.mdl";
