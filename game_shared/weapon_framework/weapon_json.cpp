@@ -3,7 +3,6 @@
  */
 #include "weapon_json.h"
 #include "weapon_registry.h"
-#include "weapons.h"
 
 #include <limits.h>
 #include <stddef.h>
@@ -13,6 +12,28 @@
 namespace
 {
 	using namespace WeaponFramework;
+
+	// Keep the JSON reader independent of engine/game headers so it can be
+	// compiled by the standalone tests. These numeric values mirror the
+	// GoldSrc definitions in dlls/weapons.h and are consumed by the native
+	// weapon adapter.
+	enum GoldSrcItemFlag
+	{
+		WF_ITEM_FLAG_SELECTONEMPTY = 1,
+		WF_ITEM_FLAG_NOAUTORELOAD = 2,
+		WF_ITEM_FLAG_NOAUTOSWITCHEMPTY = 4,
+		WF_ITEM_FLAG_LIMITINWORLD = 8,
+		WF_ITEM_FLAG_EXHAUSTIBLE = 16,
+		WF_ITEM_FLAG_NOAUTOSWITCHTO = 32
+	};
+
+	enum GoldSrcBulletType
+	{
+		WF_BULLET_PLAYER_9MM = 1,
+		WF_BULLET_PLAYER_MP5 = 2,
+		WF_BULLET_PLAYER_357 = 3,
+		WF_BULLET_PLAYER_BUCKSHOT = 4
+	};
 
 	enum JsonType
 	{
@@ -848,17 +869,17 @@ namespace
 				return false;
 
 			if (strcmp(flag, "select_on_empty") == 0)
-				bit = ITEM_FLAG_SELECTONEMPTY;
+				bit = WF_ITEM_FLAG_SELECTONEMPTY;
 			else if (strcmp(flag, "no_auto_reload") == 0)
-				bit = ITEM_FLAG_NOAUTORELOAD;
+				bit = WF_ITEM_FLAG_NOAUTORELOAD;
 			else if (strcmp(flag, "no_auto_switch_empty") == 0)
-				bit = ITEM_FLAG_NOAUTOSWITCHEMPTY;
+				bit = WF_ITEM_FLAG_NOAUTOSWITCHEMPTY;
 			else if (strcmp(flag, "limit_in_world") == 0)
-				bit = ITEM_FLAG_LIMITINWORLD;
+				bit = WF_ITEM_FLAG_LIMITINWORLD;
 			else if (strcmp(flag, "exhaustible") == 0)
-				bit = ITEM_FLAG_EXHAUSTIBLE;
+				bit = WF_ITEM_FLAG_EXHAUSTIBLE;
 			else if (strcmp(flag, "no_auto_switch_to") == 0)
-				bit = ITEM_FLAG_NOAUTOSWITCHTO;
+				bit = WF_ITEM_FLAG_NOAUTOSWITCHTO;
 			else
 				return false;
 
@@ -898,10 +919,10 @@ namespace
 		if (!GetRequiredMember(parser, behaviorToken, "type", token) ||
 			!ReadString(parser, token, type, sizeof(type)) || strcmp(type, "hitscan")) return false;
 		if (!GetRequiredMember(parser, behaviorToken, "bullet_type", token) || !ReadString(parser, token, bullet, sizeof(bullet))) return false;
-		if (!strcmp(bullet, "9mm")) data.bulletType = BULLET_PLAYER_9MM;
-		else if (!strcmp(bullet, "mp5")) data.bulletType = BULLET_PLAYER_MP5;
-		else if (!strcmp(bullet, "357")) data.bulletType = BULLET_PLAYER_357;
-		else if (!strcmp(bullet, "buckshot")) data.bulletType = BULLET_PLAYER_BUCKSHOT;
+		if (!strcmp(bullet, "9mm")) data.bulletType = WF_BULLET_PLAYER_9MM;
+		else if (!strcmp(bullet, "mp5")) data.bulletType = WF_BULLET_PLAYER_MP5;
+		else if (!strcmp(bullet, "357")) data.bulletType = WF_BULLET_PLAYER_357;
+		else if (!strcmp(bullet, "buckshot")) data.bulletType = WF_BULLET_PLAYER_BUCKSHOT;
 		else return false;
 		if (!GetRequiredMember(parser, behaviorToken, "damage", token) || !ReadInteger(parser, token, 1, 32767, data.damage)) return false;
 		if (!GetRequiredMember(parser, behaviorToken, "pellets", token) || !ReadInteger(parser, token, 1, 32, data.pellets)) return false;
