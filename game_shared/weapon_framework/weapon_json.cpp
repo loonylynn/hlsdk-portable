@@ -51,6 +51,25 @@ namespace
 		bool failed;
 	};
 
+	enum
+	{
+		MAX_WEAPON_PACKAGES = 32,
+		MAX_WEAPONS_PER_PACKAGE = 32,
+		WEAPON_VFS_PATH_CAPACITY = 128
+	};
+
+	struct PackageCatalogEntry
+	{
+		char name[WeaponNameCapacity];
+		char manifestPath[WEAPON_VFS_PATH_CAPACITY];
+	};
+
+	struct PackageWeaponEntry
+	{
+		char name[WeaponNameCapacity];
+		char filePath[WEAPON_VFS_PATH_CAPACITY];
+	};
+
 	bool IsWhitespace(char c)
 	{
 		return c == ' ' || c == '\t' || c == '\r' || c == '\n';
@@ -956,8 +975,201 @@ namespace
 		outDefinition = WeaponDefinition(data);
 		return outDefinition.IsValid();
 	}
-}
 
+
+	bool IsValidVfsJsonPath(const char *path)
+	{
+		const size_t length = path ? strlen(path) : 0;
+		const char *p;
+
+		if (length < 6 || length >= WEAPON_VFS_PATH_CAPACITY ||
+			path[0] == '/' || path[0] == '.' ||
+			strcmp(path + length - 5, ".json") != 0 ||
+			strstr(path, "..") || strstr(path, "//") || strchr(path, '\\'))
+			return false;
+
+		for (p = path; *p; ++p)
+		{
+			const char c = *p;
+			if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') || c == '_' || c == '-' ||
+				c == '.' || c == '/'))
+				return false;
+
+			if (c == '.' && (p == path || p[-1] == '/' ||
+				p[1] == '/' || p[1] == '\0'))
+				return false;
+		}
+
+		return true;
+	}
+
+	bool ParsePackageCatalog(const JsonParser &parser,
+		PackageCatalogEntry *packages, int &packageCount)
+	{
+		static const char *const rootKeys[] = { "format_version", "packages" };
+		static const char *const packageKeys[] = { "name", "manifest" };
+		int token;
+		int version;
+		int item;
+		int i;
+
+		packageCount = 0;
+		if (!packages || parser.tokens[0].type != JSON_OBJECT ||
+			!ValidateKeys(parser, 0, rootKeys, 2) ||
+			parser.tokens[0].children != 2)
+			return false;
+
+		if (!GetRequiredMember(parser, 0, "format_version", token) ||
+			!ReadInteger(parser, token, 1, 1, version) || version != 1)
+			return false;
+
+		if (!GetRequiredMember(parser, 0, "packages", token) ||
+			parser.tokens[token].type != JSON_ARRAY ||
+			parser.tokens[token].children <= 0 ||
+			parser.tokens[token].children > MAX_WEAPON_PACKAGES)
+			return false;
+
+		packageCount = parser.tokens[token].children;
+		item = token + 1;
+		for (i = 0; i < packageCount; ++i)
+		{
+			int nameToken;
+			int manifestToken;
+			int previous;
+
+			if (parser.tokens[item].type != JSON_OBJECT ||
+				!ValidateKeys(parser, item, packageKeys, 2) ||
+				parser.tokens[item].children != 2 ||
+				!GetRequiredMember(parser, item, "name", nameToken) ||
+				!ReadString(parser, nameToken, packages[i].name, sizeof(packages[i].name)) ||
+				!IsValidStableName(packages[i].name) ||
+				!GetRequiredMember(parser, item, "manifest", manifestToken) ||
+				!ReadString(parser, manifestToken, packages[i].manifestPath,
+					sizeof(packages[i].manifestPath)) ||
+				!IsValidVfsJsonPath(packages[i].manifestPath))
+				return false;
+
+			for (previous = 0; previous < i; ++previous)
+			{
+				if (strcmp(packages[previous].name, packages[i].name) == 0 ||
+					strcmp(packages[previous].manifestPath, packages[i].manifestPath) == 0)
+					return false;
+			}
+
+			item = parser.tokens[item].next;
+		}
+
+		// Sort package names independently of the order in the root catalogue.
+		for (i = 1; i < packageCount; ++i)
+		{
+			PackageCatalogEntry current = packages[i];
+			int j = i;
+			while (j > 0 && strcmp(packages[j - 1].name, current.name) > 0)
+			{
+				packages[j] = packages[j - 1];
+				--j;
+			}
+			packages[j] = current;
+		}
+
+		return true;
+	}
+
+	bool ParsePackageManifest(const JsonParser &parser, const char *expectedPackageName,
+		PackageWeaponEntry *weapons, int &weaponCount)
+	{
+		static const char *const rootKeys[] = { "format_version", "name", "weapons" };
+		static const char *const weaponKeys[] = { "name", "file" };
+		int token;
+		int version;
+		int nameToken;
+		int item;
+		int i;
+		char packageName[WeaponNameCapacity];
+
+		weaponCount = 0;
+		if (!weapons || !expectedPackageName ||
+			parser.tokens[0].type != JSON_OBJECT ||
+			!ValidateKeys(parser, 0, rootKeys, 3) ||
+			parser.tokens[0].children != 3)
+			return false;
+
+		if (!GetRequiredMember(parser, 0, "format_version", token) ||
+			!ReadInteger(parser, token, 1, 1, version) || version != 1)
+			return false;
+
+		if (!GetRequiredMember(parser, 0, "name", nameToken) ||
+			!ReadString(parser, nameToken, packageName, sizeof(packageName)) ||
+			!IsValidStableName(packageName) ||
+			strcmp(packageName, expectedPackageName) != 0)
+			return false;
+
+		if (!GetRequiredMember(parser, 0, "weapons", token) ||
+			parser.tokens[token].type != JSON_ARRAY ||
+			parser.tokens[token].children <= 0 ||
+			parser.tokens[token].children > MAX_WEAPONS_PER_PACKAGE)
+			return false;
+
+		weaponCount = parser.tokens[token].children;
+		item = token + 1;
+		for (i = 0; i < weaponCount; ++i)
+		{
+			int weaponNameToken;
+			int fileToken;
+			int previous;
+
+			if (parser.tokens[item].type != JSON_OBJECT ||
+				!ValidateKeys(parser, item, weaponKeys, 2) ||
+				parser.tokens[item].children != 2 ||
+				!GetRequiredMember(parser, item, "name", weaponNameToken) ||
+				!ReadString(parser, weaponNameToken, weapons[i].name, sizeof(weapons[i].name)) ||
+				!IsValidStableName(weapons[i].name) ||
+				!GetRequiredMember(parser, item, "file", fileToken) ||
+				!ReadString(parser, fileToken, weapons[i].filePath, sizeof(weapons[i].filePath)) ||
+				!IsValidVfsJsonPath(weapons[i].filePath))
+				return false;
+
+			for (previous = 0; previous < i; ++previous)
+			{
+				if (strcmp(weapons[previous].name, weapons[i].name) == 0 ||
+					strcmp(weapons[previous].filePath, weapons[i].filePath) == 0)
+					return false;
+			}
+
+			item = parser.tokens[item].next;
+		}
+
+		// Stable names determine add-on IDs, not the order in a package file.
+		for (i = 1; i < weaponCount; ++i)
+		{
+			PackageWeaponEntry current = weapons[i];
+			int j = i;
+			while (j > 0 && strcmp(weapons[j - 1].name, current.name) > 0)
+			{
+				weapons[j] = weapons[j - 1];
+				--j;
+			}
+			weapons[j] = current;
+		}
+
+		return true;
+	}
+
+	bool RegisterWeaponDefinition(WeaponRegistry &registry,
+		const WeaponDefinition &definition)
+	{
+		if (definition.GetId() >= FirstLegacyWeaponId &&
+			definition.GetId() <= LastLegacyWeaponId)
+			return registry.RegisterLegacy(definition);
+
+		if (definition.GetId() == 0)
+			return registry.RegisterAddon(definition) != 0;
+
+		return false;
+	}
+}
+ 
 namespace WeaponFramework
 {
 	bool ParseWeaponDefinitionJson(const char *json, size_t length, WeaponDefinition &outDefinition)
@@ -987,4 +1199,84 @@ namespace WeaponFramework
 
 		return false;
 	}
+
+
+	bool LoadWeaponPackageCatalog(const char *catalogPath,
+		WeaponFileLoadCallback loadFile, WeaponFileFreeCallback freeFile)
+	{
+		WeaponRegistry stagedRegistry;
+		PackageCatalogEntry packages[MAX_WEAPON_PACKAGES];
+		PackageWeaponEntry weapons[MAX_WEAPONS_PER_PACKAGE];
+		JsonParser parser;
+		int fileLength = 0;
+		int packageCount = 0;
+		int packageIndex;
+
+		if (!catalogPath || !IsValidVfsJsonPath(catalogPath) || !loadFile || !freeFile)
+			return false;
+
+		unsigned char *fileData = loadFile(catalogPath, &fileLength);
+		if (!fileData || fileLength <= 0 || fileLength > MAX_JSON_BYTES)
+		{
+			if (fileData)
+				freeFile(fileData);
+			return false;
+		}
+
+		memset(&parser, 0, sizeof(parser));
+		bool parsed = ParseDocument(parser, (const char *)fileData, (size_t)fileLength) &&
+			ParsePackageCatalog(parser, packages, packageCount);
+		freeFile(fileData);
+		if (!parsed)
+			return false;
+
+		for (packageIndex = 0; packageIndex < packageCount; ++packageIndex)
+		{
+			int weaponCount = 0;
+			int weaponIndex;
+
+			fileLength = 0;
+			fileData = loadFile(packages[packageIndex].manifestPath, &fileLength);
+			if (!fileData || fileLength <= 0 || fileLength > MAX_JSON_BYTES)
+			{
+				if (fileData)
+					freeFile(fileData);
+				return false;
+			}
+
+			memset(&parser, 0, sizeof(parser));
+			parsed = ParseDocument(parser, (const char *)fileData, (size_t)fileLength) &&
+				ParsePackageManifest(parser, packages[packageIndex].name, weapons, weaponCount);
+			freeFile(fileData);
+			if (!parsed)
+				return false;
+
+			for (weaponIndex = 0; weaponIndex < weaponCount; ++weaponIndex)
+			{
+				WeaponDefinition definition;
+
+				fileLength = 0;
+				fileData = loadFile(weapons[weaponIndex].filePath, &fileLength);
+				if (!fileData || fileLength <= 0 || fileLength > MAX_JSON_BYTES)
+				{
+					if (fileData)
+						freeFile(fileData);
+					return false;
+				}
+
+				parsed = ParseWeaponDefinitionJson((const char *)fileData,
+					(size_t)fileLength, definition);
+				freeFile(fileData);
+				if (!parsed || strcmp(definition.GetName(), weapons[weaponIndex].name) != 0 ||
+					!RegisterWeaponDefinition(stagedRegistry, definition))
+					return false;
+			}
+		}
+
+		// Publish only a complete catalogue. A malformed package cannot leave
+		// the live registry partially populated.
+		GetRegistry().ReplaceWith(stagedRegistry);
+		return true;
+	}
+
 }
