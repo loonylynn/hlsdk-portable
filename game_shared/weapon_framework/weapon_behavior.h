@@ -24,13 +24,14 @@ namespace WeaponFramework
 	struct WeaponHitscanRequest
 	{
 		const char *damageProfile;
+		int bulletType;
 		float damage;
 		int pellets;
 		float range;
 		float spread;
 
 		WeaponHitscanRequest()
-			: damageProfile(NULL), damage(0.0f), pellets(1), range(0.0f), spread(0.0f)
+			: damageProfile(NULL), bulletType(0), damage(0.0f), pellets(1), range(0.0f), spread(0.0f)
 		{
 		}
 	};
