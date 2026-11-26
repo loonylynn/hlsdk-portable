@@ -27,6 +27,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "player.h"
 #include "effects.h"
 #include <math.h>
@@ -772,8 +773,8 @@ void CTeleportGrenade::Spawn( void )
 	Precache();
 
 	m_iId = WEAPON_TELEPORT;
-	SET_MODEL( ENT( pev ), "models/w_grenade.mdl" );
-	m_iDefaultAmmo = 0;
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_TELEPORT, "models/w_grenade.mdl" ) );
+	m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_TELEPORT, 0 );
 	m_iClip = WEAPON_NOCLIP;
 	m_fInSpecialReload = FALSE;
 	m_iProjectileActive = FALSE;
@@ -785,9 +786,9 @@ void CTeleportGrenade::Spawn( void )
 
 void CTeleportGrenade::Precache( void )
 {
-	PRECACHE_MODEL( "models/w_grenade.mdl" );
-	PRECACHE_MODEL( "models/v_grenade.mdl" );
-	PRECACHE_MODEL( "models/p_grenade.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_TELEPORT, "models/w_grenade.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_TELEPORT, "models/v_grenade.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_TELEPORT, "models/p_grenade.mdl" ) );
 
 #if !CLIENT_DLL
 	UTIL_PrecacheOther( "teleport_projectile" );
@@ -810,6 +811,8 @@ int CTeleportGrenade::GetItemInfo( ItemInfo *p )
 	p->iWeight = 7;
 	p->iFlags = ITEM_FLAG_LIMITINWORLD;
 
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_TELEPORT ) )
+		m_iId = p->iId;
 	return 1;
 }
 
@@ -842,7 +845,7 @@ BOOL CTeleportGrenade::IsUseable( void )
 BOOL CTeleportGrenade::Deploy( void )
 {
 	m_fInSpecialReload = FALSE;
-	return DefaultDeploy( "models/v_grenade.mdl", "models/p_grenade.mdl", TELEPORT_GRENADE_DRAW, "crowbar" );
+	return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_TELEPORT, "models/v_grenade.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_TELEPORT, "models/p_grenade.mdl" ), TELEPORT_GRENADE_DRAW, "crowbar" );
 }
 
 BOOL CTeleportGrenade::CanHolster( void )

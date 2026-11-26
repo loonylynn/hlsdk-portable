@@ -18,6 +18,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "nodes.h"
 #include "player.h"
 #include "gamerules.h"
@@ -98,7 +99,7 @@ void CCrowbar::Spawn()
 {
 	Precache();
 	m_iId = WEAPON_CROWBAR;
-	SET_MODEL( ENT( pev ), "models/w_crowbar.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_CROWBAR, "models/w_crowbar.mdl" ) );
 	m_iClip = -1;
 
 	FallInit();// get ready to fall down.
@@ -106,9 +107,9 @@ void CCrowbar::Spawn()
 
 void CCrowbar::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_crowbar.mdl" );
-	PRECACHE_MODEL( "models/w_crowbar.mdl" );
-	PRECACHE_MODEL( "models/p_crowbar.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_CROWBAR, "models/v_crowbar.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_CROWBAR, "models/w_crowbar.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_CROWBAR, "models/p_crowbar.mdl" ) );
 	PRECACHE_SOUND( "weapons/cbar_hit1.wav" );
 	PRECACHE_SOUND( "weapons/cbar_hit2.wav" );
 	PRECACHE_SOUND( "weapons/cbar_hitbod1.wav" );
@@ -131,6 +132,8 @@ int CCrowbar::GetItemInfo( ItemInfo *p )
 	p->iPosition = 0;
 	p->iId = WEAPON_CROWBAR;
 	p->iWeight = CROWBAR_WEIGHT;
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_CROWBAR ) )
+		m_iId = p->iId;
 	return 1;
 }
 
@@ -148,7 +151,7 @@ int CCrowbar::AddToPlayer( CBasePlayer *pPlayer )
 
 BOOL CCrowbar::Deploy()
 {
-	return DefaultDeploy( "models/v_crowbar.mdl", "models/p_crowbar.mdl", CROWBAR_DRAW, "crowbar" );
+	return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_CROWBAR, "models/v_crowbar.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_CROWBAR, "models/p_crowbar.mdl" ), CROWBAR_DRAW, "crowbar" );
 }
 
 void CCrowbar::Holster( int skiplocal /* = 0 */ )

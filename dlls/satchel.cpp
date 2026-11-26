@@ -19,6 +19,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "nodes.h"
 #include "player.h"
 #include "gamerules.h"
@@ -81,7 +82,7 @@ void CSatchelCharge::Spawn( void )
 	pev->movetype = MOVETYPE_BOUNCE;
 	pev->solid = SOLID_BBOX;
 
-	SET_MODEL( ENT( pev ), "models/w_satchel.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_SATCHEL, "models/w_satchel.mdl" ) );
 	//UTIL_SetSize( pev, Vector( -16, -16, -4 ), Vector( 16, 16, 32 ) );	// Old box -- size of headcrab monsters/players get blocked by this
 	UTIL_SetSize( pev, Vector( -4, -4, -4 ), Vector( 4, 4, 4 ) );	// Uses point-sized, and can be stepped over
 	UTIL_SetOrigin( pev, pev->origin );
@@ -163,7 +164,7 @@ void CSatchelCharge::SatchelThink( void )
 
 void CSatchelCharge::Precache( void )
 {
-	PRECACHE_MODEL( "models/w_satchel.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_SATCHEL, "models/w_satchel.mdl" ) );
 	PRECACHE_SOUND( "weapons/g_bounce1.wav" );
 	PRECACHE_SOUND( "weapons/g_bounce2.wav" );
 	PRECACHE_SOUND( "weapons/g_bounce3.wav" );
@@ -248,19 +249,19 @@ void CSatchel::Spawn()
 {
 	Precache();
 	m_iId = WEAPON_SATCHEL;
-	SET_MODEL( ENT( pev ), "models/w_satchel.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_SATCHEL, "models/w_satchel.mdl" ) );
 
-	m_iDefaultAmmo = SATCHEL_DEFAULT_GIVE;
+	m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_SATCHEL, SATCHEL_DEFAULT_GIVE );
 		
 	FallInit();// get ready to fall down.
 }
 
 void CSatchel::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_satchel.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_SATCHEL, "models/v_satchel.mdl" ) );
 	PRECACHE_MODEL( "models/v_satchel_radio.mdl" );
-	PRECACHE_MODEL( "models/w_satchel.mdl" );
-	PRECACHE_MODEL( "models/p_satchel.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_SATCHEL, "models/w_satchel.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_SATCHEL, "models/p_satchel.mdl" ) );
 	PRECACHE_MODEL( "models/p_satchel_radio.mdl" );
 
 	UTIL_PrecacheOther( "monster_satchel" );
@@ -280,6 +281,8 @@ int CSatchel::GetItemInfo( ItemInfo *p )
 	p->iId = m_iId = WEAPON_SATCHEL;
 	p->iWeight = SATCHEL_WEIGHT;
 
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_SATCHEL ) )
+		m_iId = p->iId;
 	return 1;
 }
 
@@ -315,7 +318,7 @@ BOOL CSatchel::Deploy()
 	if( m_chargeReady )
 		result = DefaultDeploy( "models/v_satchel_radio.mdl", "models/p_satchel_radio.mdl", SATCHEL_RADIO_DRAW, "hive" );
 	else
-		result = DefaultDeploy( "models/v_satchel.mdl", "models/p_satchel.mdl", SATCHEL_DRAW, "trip" );
+		result = DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_SATCHEL, "models/v_satchel.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_SATCHEL, "models/p_satchel.mdl" ), SATCHEL_DRAW, "trip" );
 	
 #if WEAPONS_ANIMATION_TIMES_FIX
 	if ( result )
@@ -497,10 +500,10 @@ void CSatchel::WeaponIdle( void )
 		}
 
 #if !CLIENT_DLL
-		m_pPlayer->pev->viewmodel = MAKE_STRING( "models/v_satchel.mdl" );
-		m_pPlayer->pev->weaponmodel = MAKE_STRING( "models/p_satchel.mdl" );
+		m_pPlayer->pev->viewmodel = MAKE_STRING( WeaponFramework_GetViewModel( WEAPON_SATCHEL, "models/v_satchel.mdl" ) );
+		m_pPlayer->pev->weaponmodel = MAKE_STRING( WeaponFramework_GetPlayerModel( WEAPON_SATCHEL, "models/p_satchel.mdl" ) );
 #else
-		LoadVModel( "models/v_satchel.mdl", m_pPlayer );
+		LoadVModel( WeaponFramework_GetViewModel( WEAPON_SATCHEL, "models/v_satchel.mdl" ), m_pPlayer );
 #endif
 		SendWeaponAnim( SATCHEL_DRAW );
 

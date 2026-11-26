@@ -19,6 +19,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "nodes.h"
 #include "player.h"
 #include "gamerules.h"
@@ -352,7 +353,7 @@ void CRpg::Spawn()
 	Precache();
 	m_iId = WEAPON_RPG;
 
-	SET_MODEL( ENT( pev ), "models/w_rpg.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_RPG, "models/w_rpg.mdl" ) );
 	m_fSpotActive = 1;
 
 #if CLIENT_DLL
@@ -362,11 +363,11 @@ void CRpg::Spawn()
 #endif
 	{
 		// more default ammo in multiplay. 
-		m_iDefaultAmmo = RPG_DEFAULT_GIVE * 2;
+		m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_RPG, RPG_DEFAULT_GIVE ) * 2;
 	}
 	else
 	{
-		m_iDefaultAmmo = RPG_DEFAULT_GIVE;
+		m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_RPG, RPG_DEFAULT_GIVE );
 	}
 
 	FallInit();// get ready to fall down.
@@ -374,9 +375,9 @@ void CRpg::Spawn()
 
 void CRpg::Precache( void )
 {
-	PRECACHE_MODEL( "models/w_rpg.mdl" );
-	PRECACHE_MODEL( "models/v_rpg.mdl" );
-	PRECACHE_MODEL( "models/p_rpg.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_RPG, "models/w_rpg.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_RPG, "models/v_rpg.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_RPG, "models/p_rpg.mdl" ) );
 
 	PRECACHE_SOUND( "items/9mmclip1.wav" );
 
@@ -403,6 +404,8 @@ int CRpg::GetItemInfo( ItemInfo *p )
 	p->iFlags = ITEM_FLAG_NOAUTOSWITCHTO;
 	p->iWeight = RPG_WEIGHT;
 
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_RPG ) )
+		m_iId = p->iId;
 	return 1;
 }
 
@@ -422,10 +425,10 @@ BOOL CRpg::Deploy()
 {
 	if( m_iClip == 0 )
 	{
-		return DefaultDeploy( "models/v_rpg.mdl", "models/p_rpg.mdl", RPG_DRAW_UL, "rpg" );
+		return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_RPG, "models/v_rpg.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_RPG, "models/p_rpg.mdl" ), RPG_DRAW_UL, "rpg" );
 	}
 
-	return DefaultDeploy( "models/v_rpg.mdl", "models/p_rpg.mdl", RPG_DRAW1, "rpg" );
+	return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_RPG, "models/v_rpg.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_RPG, "models/p_rpg.mdl" ), RPG_DRAW1, "rpg" );
 }
 
 BOOL CRpg::CanHolster( void )
@@ -600,6 +603,8 @@ class CRpgAmmo : public CBasePlayerAmmo
 	BOOL AddAmmo( CBaseEntity *pOther ) 
 	{ 
 		int iGive;
+		const char *ammoType = WeaponFramework_GetPrimaryAmmoType( WEAPON_RPG, "rockets" );
+		const int maxCarry = WeaponFramework_GetPrimaryAmmoMax( WEAPON_RPG, ROCKET_MAX_CARRY );
 #if CLIENT_DLL
 	if( bIsMultiplayer() )
 #else
@@ -607,14 +612,14 @@ class CRpgAmmo : public CBasePlayerAmmo
 #endif
 		{
 			// hand out more ammo per rocket in multiplayer.
-			iGive = AMMO_RPGCLIP_GIVE * 2;
+			iGive = WeaponFramework_GetPrimaryAmmoPickupAmount( WEAPON_RPG, AMMO_RPGCLIP_GIVE ) * 2;
 		}
 		else
 		{
-			iGive = AMMO_RPGCLIP_GIVE;
+			iGive = WeaponFramework_GetPrimaryAmmoPickupAmount( WEAPON_RPG, AMMO_RPGCLIP_GIVE );
 		}
 
-		if( pOther->GiveAmmo( iGive, "rockets", ROCKET_MAX_CARRY ) != -1 )
+		if( ammoType && iGive > 0 && pOther->GiveAmmo( iGive, ammoType, maxCarry ) != -1 )
 		{
 			EMIT_SOUND( ENT( pev ), CHAN_ITEM, "items/9mmclip1.wav", 1, ATTN_NORM );
 			return TRUE;

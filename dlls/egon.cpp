@@ -20,6 +20,7 @@
 #include "player.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "nodes.h"
 #include "effects.h"
 #include "customentity.h"
@@ -55,18 +56,18 @@ void CEgon::Spawn()
 {
 	Precache();
 	m_iId = WEAPON_EGON;
-	SET_MODEL( ENT( pev ), "models/w_egon.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_EGON, "models/w_egon.mdl" ) );
 
-	m_iDefaultAmmo = EGON_DEFAULT_GIVE;
+	m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_EGON, EGON_DEFAULT_GIVE );
 
 	FallInit();// get ready to fall down.
 }
 
 void CEgon::Precache( void )
 {
-	PRECACHE_MODEL( "models/w_egon.mdl" );
-	PRECACHE_MODEL( "models/v_egon.mdl" );
-	PRECACHE_MODEL( "models/p_egon.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_EGON, "models/w_egon.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_EGON, "models/v_egon.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_EGON, "models/p_egon.mdl" ) );
 
 	PRECACHE_MODEL( "models/w_9mmclip.mdl" );
 	PRECACHE_SOUND( "items/9mmclip1.wav" );
@@ -88,7 +89,7 @@ BOOL CEgon::Deploy( void )
 {
 	m_deployed = FALSE;
 	m_fireState = FIRE_OFF;
-	return DefaultDeploy( "models/v_egon.mdl", "models/p_egon.mdl", EGON_DRAW, "egon" );
+	return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_EGON, "models/v_egon.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_EGON, "models/p_egon.mdl" ), EGON_DRAW, "egon" );
 }
 
 int CEgon::AddToPlayer( CBasePlayer *pPlayer )
@@ -125,6 +126,8 @@ int CEgon::GetItemInfo( ItemInfo *p )
 	p->iFlags = 0;
 	p->iWeight = EGON_WEIGHT;
 
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_EGON ) )
+		m_iId = p->iId;
 	return 1;
 }
 
@@ -542,7 +545,10 @@ class CEgonAmmo : public CBasePlayerAmmo
 
 	BOOL AddAmmo( CBaseEntity *pOther )
 	{
-		if( pOther->GiveAmmo( AMMO_URANIUMBOX_GIVE, "uranium", URANIUM_MAX_CARRY ) != -1 )
+		const char *ammoType = WeaponFramework_GetPrimaryAmmoType( WEAPON_EGON, "uranium" );
+		const int pickupAmount = WeaponFramework_GetPrimaryAmmoPickupAmount( WEAPON_EGON, AMMO_URANIUMBOX_GIVE );
+		const int maxCarry = WeaponFramework_GetPrimaryAmmoMax( WEAPON_EGON, URANIUM_MAX_CARRY );
+		if( ammoType && pickupAmount > 0 && pOther->GiveAmmo( pickupAmount, ammoType, maxCarry ) != -1 )
 		{
 			EMIT_SOUND( ENT( pev ), CHAN_ITEM, "items/9mmclip1.wav", 1, ATTN_NORM );
 			return TRUE;
