@@ -6,15 +6,16 @@ Proposed architecture for the single-player Xash3D project. This document is a d
 
 ## Scope and priorities
 
-The immediate goal is to replace the difficult parts of the GoldSrc weapon architecture for the built-in Half-Life weapon set and this project's own weapons.
+This is not a Half-Life remake or a project that intends to preserve the Half-Life weapon roster. The existing HL1 weapons are a temporary compatibility baseline and a useful set of test cases. The actual goal is a clean, reusable weapon foundation for this project's own original weapon roster, allowing most stock weapons to be replaced over time.
 
 In scope:
 
 - A consistent way to define, tune, equip, fire, reload, holster, save and restore weapons.
 - Reusable mechanics so adding a conventional weapon does not require copying a whole weapon class.
 - Native C++ behaviour for mechanics that need custom logic.
-- A small, validated JSON definition for built-in weapon data and assembly.
-- Compatibility with the current Xash3D player, HUD, ammo and entity interfaces during migration.
+- A Source 1-style, manifest-loaded database of validated JSON weapon definitions, parsed once into typed runtime data.
+- Reusable native C++ behaviour implementations selected by each definition.
+- Compatibility with the current Xash3D player, HUD, ammo and entity interfaces during migration, without making those legacy interfaces the permanent design.
 
 Explicitly deferred:
 
@@ -22,6 +23,20 @@ Explicitly deferred:
 - Luau or another embedded scripting language.
 - Multiplayer support as a design target.
 - Rewriting every unique weapon mechanic as data.
+
+## Selected foundation: Source 1's weapon-info and lifecycle pattern
+
+Use the practical Source 1 pattern as the foundation: a manifest identifies per-weapon scripts, the scripts are parsed once into typed weapon-info objects, and a shared native weapon lifecycle dispatches to focused C++ implementations. Keep the file format as strict JSON rather than copying Valve's KeyValues parser. The important part is the contract and separation, not the syntax.
+
+This means:
+
+- One canonical weapon definition per weapon, loaded and cached at startup.
+- A typed common weapon-info structure for identity, inventory, ammo, models, presentation and attack/reload configuration.
+- A native behaviour key in each definition, resolved through an explicit C++ behaviour registry.
+- One shared lifecycle for input, deploy/holster, busy states, attack scheduling, reload transitions and idle handling.
+- Focused native implementations for genuinely distinct mechanics. A different damage value, clip size, model or fire rate must not require a new weapon class.
+
+Source 1 is the selected architecture. Source 2 VData and Alyx's generic pistol remain useful comparisons, but they are not implementation targets for this project.
 
 ## What the current SDK makes difficult
 
@@ -221,3 +236,80 @@ References:
 6. Store animation and presentation as authored data references, but let a behaviour explicitly request the appropriate action/activity so data does not become a giant brittle animation-number table.
 7. Add debug inspection for the effective resolved definition and current instance state.
 8. Migrate the built-in weapons one at a time and retain the original C++ implementation as a fallback until gameplay parity is verified.
+
+
+## Source 1 implementation contract
+
+This section turns the architectural choice into concrete boundaries. Names below are proposed API names; they are not claims that these classes already exist.
+
+### Definition files and loading
+
+Keep one definition file per weapon under `scripts/weapons/` and one explicit root manifest that lists the definitions to load. The loader parses each file once during initialization, validates it, resolves its native behaviour, and stores an immutable typed result. The runtime never parses JSON during firing, reloading, switching or save/load.
+
+The current `packages.json` catalogue can remain as a temporary loader entry point while we migrate. Third-party packages, downloadable packages and a public package API are not part of this redesign. If the package indirection adds no value to the built-in roster, we can simplify it to a single manifest later.
+
+A definition's canonical identity is its stable string name, for example `project:weapon/sidearm`. The following are compatibility bindings, not identity:
+
+- `legacy_id`: optional numeric ID used by the existing GoldSrc HUD, inventory bitmask and weapon messages.
+- `entity_classname`: optional old map/pickup classname used to spawn an existing stock entity.
+- Ammo registry indices: assigned by the engine adapter from stable ammo names.
+
+New definitions must not be required to pretend to be `weapon_glock`, `weapon_mp5` or any other stock classname. A generic map-spawn entity can carry a definition name for new weapon pickups while old map classnames continue to resolve through compatibility bindings.
+
+### Typed data contract
+
+The common typed definition should be shaped around these groups:
+
+| Group | Responsibility |
+| --- | --- |
+| Identity | Stable name, display token, optional legacy ID and old entity aliases |
+| Behaviour | Native behaviour/archetype key and explicitly supported options |
+| Inventory | HUD slot/order, selection weight and switch policy |
+| Ammo | Named ammo resources, clip capacity, reserve limits and starting amounts |
+| Models | View, world and player models |
+| Presentation | Animation activities/sequences, sound events, muzzle/effect references and animation prefix |
+| Primary / secondary | Action mode and typed tuning values supported by that behaviour |
+| Reload | Reload policy and its typed timing/animation parameters |
+
+Fields that only make sense for one behaviour belong in that behaviour's typed data, rather than being added as unrelated fields to every weapon. For example, pellet count and spread belong to a hitscan-firearm configuration; charge duration belongs to a charge behaviour; staged shell insertion belongs to a per-shell reload policy.
+
+The definition is immutable after loading. Missing optional values receive documented defaults. Unknown keys, duplicate keys, unsupported behaviour names, invalid ranges and incompatible field combinations fail validation with a useful diagnostic. Do not silently ignore a misspelled tuning property.
+
+### Native behaviour contract
+
+A definition selects a registered native behaviour by a stable key such as `firearm.semiauto` or `firearm.automatic`. The registry maps that key to a known C++ implementation. The JSON file cannot name arbitrary C++ symbols or instantiate arbitrary code.
+
+The shared lifecycle owns the common rules and invokes behaviour callbacks at clear points:
+
+- spawn/precache and initialisation;
+- can-deploy, deploy and holster;
+- pre-frame, post-frame and busy-frame processing;
+- primary and secondary action requests;
+- reload start, update, finish and abort;
+- idle and empty-action handling.
+
+A behaviour owns the mechanics of its action: hitscan traces, projectile launches, melee hit windows, beam sustain, charge/release or a special device. It does not independently reimplement weapon selection, inventory ownership, generic cooldown policy or the whole input loop. Do not replace the current per-weapon class problem with one giant `switch (weaponName)` statement; use an explicit behaviour registry and narrow interfaces.
+
+### Runtime instance and save data
+
+Each owned weapon has a runtime instance separate from the shared definition. Common runtime data includes loaded ammo, lifecycle/reload state, attack timers and any common action progress. Behaviour-specific state is stored in a versioned, serializable state block owned by that behaviour.
+
+The behaviour implementation itself should be stateless where practical. If a behaviour object is reconstructed, it is selected again from the definition's behaviour key. Never save raw pointers, vtable addresses, registry addresses or transient engine handles. Save/load must preserve important mid-action cases such as a reload, charge, beam sustain or remote-device state.
+
+### Lifecycle and controller boundary
+
+The long-term owner of switching, action scheduling and input routing is one shared per-player weapon controller. The first implementation should integrate with the existing `CBasePlayer` and `CBasePlayerWeapon` frame loop rather than replacing the entire player inventory system in one step. We can move the implementation behind the controller boundary first, then replace linked-list inventory and fixed arrays only when their engine/HUD dependencies are mapped.
+
+The lifecycle should expose distinct ready, deploying, holstered, busy, primary-action, secondary-action and reloading states as needed. Each state must have explicit entry/exit and interruption rules. A reload is not just a timer if it inserts rounds in stages; the common lifecycle provides the hooks, while the selected reload policy determines the sequence.
+
+### Compatibility limits to isolate
+
+The current GoldSrc layer uses `MAX_WEAPONS`, bit-based ownership, `ItemInfoArray`, fixed ammo arrays and numeric HUD messages. The new system uses stable string identities internally and maps to those old values only at the adapter boundary. This avoids spreading legacy IDs into every new class, but it does not magically remove the engine's fixed limits. Expanding beyond those limits requires a separate migration of player inventory, HUD messages and client data.
+
+The current JSON parser also contains GoldSrc-specific item-flag and bullet-type values. Move those mappings to the compatibility/behaviour layer. Shared definition parsing should understand stable symbolic values and typed weapon concepts, not depend on GoldSrc enum numbers.
+
+### First proof of the contract
+
+Use a conventional semi-automatic pistol as the first vertical slice. The existing Glock is a convenient parity test because its current ammo, clip, animation and firing behaviour are known; using it as the test does not commit the project to keeping the Glock as a final game weapon. The pilot must prove that one native pistol behaviour can serve multiple definitions by changing only data, while unique mechanics remain implementable as separate native behaviours.
+
+The first slice should cover definition loading, validation, behaviour lookup, common lifecycle, primary fire, reload, animation/sound selection, save/restore and client/server agreement. Only after this works should we move more stock weapons or replace the current generic hitscan adapter.
