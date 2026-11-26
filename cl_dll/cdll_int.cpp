@@ -81,7 +81,7 @@ static void LoadWeaponDefinitionsFromClientFiles(void)
 	if (!gEngfuncs.COM_LoadFile || !gEngfuncs.COM_FreeFile)
 	{
 		if (gEngfuncs.Con_Printf)
-			gEngfuncs.Con_Printf("WeaponFramework: client filesystem callbacks unavailable; using built-in Glock metadata\\n");
+			gEngfuncs.Con_Printf("WeaponFramework: client filesystem callbacks unavailable; using built-in Glock metadata\n");
 		WeaponFramework::RegisterBuiltinWeapons();
 		return;
 	}
@@ -93,13 +93,13 @@ static void LoadWeaponDefinitionsFromClientFiles(void)
 	if (!loaded)
 	{
 		if (gEngfuncs.Con_Printf)
-			gEngfuncs.Con_Printf("WeaponFramework: client package catalogue failed to load; using built-in Glock metadata\\n");
+			gEngfuncs.Con_Printf("WeaponFramework: client package catalogue failed to load; using built-in Glock metadata\n");
 		WeaponFramework::RegisterBuiltinWeapons();
 		return;
 	}
 
 	if (gEngfuncs.Con_Printf)
-		gEngfuncs.Con_Printf("WeaponFramework: client package catalogue loaded successfully\\n");
+		gEngfuncs.Con_Printf("WeaponFramework: client package catalogue loaded successfully\n");
 }
 
 /*
