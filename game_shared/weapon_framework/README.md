@@ -8,7 +8,7 @@ adapter remains in place while that boundary is implemented incrementally.
 
 ## What it does now
 
-- Stores a weapon's stable textual name, optional legacy entity classname, and
+- Stores a weapon's stable textual name, legacy entity classname, and
   optional stable native behaviour key.
 - Defines per-instance lifecycle, reload, clip and timing state without storing
   engine pointers or mutating the shared definition.
