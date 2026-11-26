@@ -71,13 +71,20 @@ namespace
 		{
 			using namespace WeaponFramework;
 			WeaponHitscanRequest request;
+
+			// Validate the adapter/context before reading instance or definition
+			// pointers. Behaviours may be called by tests or future adapters that
+			// have not constructed a complete context yet.
+			if (!context.IsValid())
+				return false;
+
 			WeaponInstanceState &instance = *context.instance;
 			const WeaponDefinition &definition = *context.definition;
 			const bool wantsFire = definition.IsAutomatic() ?
 				context.input.primaryDown : context.input.primaryPressed;
 
-			if (!context.IsValid() || instance.lifecycle != WeaponLifecycleReady ||
-				!wantsFire || context.currentTime < instance.nextPrimaryAttackTime ||
+			if (instance.lifecycle != WeaponLifecycleReady || !wantsFire ||
+				context.currentTime < instance.nextPrimaryAttackTime ||
 				instance.loadedAmmo <= 0)
 				return false;
 
