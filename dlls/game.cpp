@@ -501,22 +501,26 @@ cvar_t tdmg_bleeding_damage3 = { "tdmg_bleeding_damage3", "1" };
 
 // Register your console variables here
 // This gets called one time when the game is initialied
-static bool LoadWeaponDefinitionsFromGameFiles()
+static unsigned char *LoadWeaponFrameworkServerFile(const char *path, int *fileLength)
 {
-	int fileLength = 0;
-	byte *fileData = LOAD_FILE_FOR_ME("scripts/weapons/weapon_glock.json", &fileLength);
-	bool loaded = false;
+	return (unsigned char *)LOAD_FILE_FOR_ME(path, fileLength);
+}
 
-	if (fileData && fileLength > 0)
-		loaded = WeaponFramework::RegisterWeaponDefinitionJson(
-			(const char *)fileData, (size_t)fileLength);
-
+static void FreeWeaponFrameworkServerFile(unsigned char *fileData)
+{
 	if (fileData)
 		FREE_FILE(fileData);
+}
+
+static bool LoadWeaponDefinitionsFromGameFiles()
+{
+	const bool loaded = WeaponFramework::LoadWeaponPackageCatalog(
+		"scripts/weapons/packages.json",
+		LoadWeaponFrameworkServerFile, FreeWeaponFrameworkServerFile);
 
 	if (!loaded)
 	{
-		ALERT(at_console, "WeaponFramework: could not load scripts/weapons/weapon_glock.json; using built-in Glock metadata\n");
+		ALERT(at_console, "WeaponFramework: package catalogue or one of its definitions failed to load; using built-in Glock metadata\n");
 		return WeaponFramework::RegisterBuiltinWeapons();
 	}
 
