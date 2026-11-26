@@ -16,7 +16,7 @@
 
 namespace WeaponFramework
 {
-	enum { WeaponBehaviorNameCapacity = 64, MaxRegisteredWeaponBehaviors = 32 };
+	enum { MaxRegisteredWeaponBehaviors = 32 };
 
 	// The behaviour asks the engine adapter to perform effects through this
 	// narrow interface. Implementations may be backed by GoldSrc today and a
