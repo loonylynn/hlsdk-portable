@@ -258,6 +258,65 @@ bool AddAmmoNameToAmmoRegistry( const char *szAmmoname )
 	return true;
 }
 
+/*
+ * Register both ammo names as one operation. A weapon using two distinct ammo
+ * types must not consume the last free slot for its first type and then fail
+ * on its second type, leaving an orphaned entry in GoldSrc's fixed table.
+ */
+bool AddAmmoNamesToAmmoRegistry( const char *szAmmoName1, const char *szAmmoName2 )
+{
+	const char *requested[2] = { szAmmoName1, szAmmoName2 };
+	int requiredSlots = 0;
+
+	for( int i = 0; i < 2; ++i )
+	{
+		if( !requested[i] || !requested[i][0] )
+			continue;
+
+		bool alreadyRegistered = false;
+		for( int j = 1; j < MAX_AMMO_SLOTS; ++j )
+		{
+			const char *registeredName = CBasePlayerItem::AmmoInfoArray[j].pszName;
+			if( registeredName && stricmp( registeredName, requested[i] ) == 0 )
+			{
+				alreadyRegistered = true;
+				break;
+			}
+		}
+
+		for( int previous = 0; !alreadyRegistered && previous < i; ++previous )
+		{
+			if( requested[previous] && requested[previous][0] &&
+				stricmp( requested[previous], requested[i] ) == 0 )
+				alreadyRegistered = true;
+		}
+
+		if( !alreadyRegistered )
+			++requiredSlots;
+	}
+
+	const int availableSlots = MAX_AMMO_SLOTS - 1 - giAmmoIndex;
+	if( requiredSlots > availableSlots )
+	{
+		ALERT( at_console,
+			"Ammo registry full; cannot register weapon ammo '%s'/'%s' (need %d slots, %d available)\\n",
+			szAmmoName1 ? szAmmoName1 : "",
+			szAmmoName2 ? szAmmoName2 : "",
+			requiredSlots, availableSlots );
+		return false;
+	}
+
+	// Capacity has been preflighted, so these writes cannot leave a partial pair.
+	if( szAmmoName1 && szAmmoName1[0] &&
+		!AddAmmoNameToAmmoRegistry( szAmmoName1 ) )
+		return false;
+	if( szAmmoName2 && szAmmoName2[0] &&
+		!AddAmmoNameToAmmoRegistry( szAmmoName2 ) )
+		return false;
+
+	return true;
+}
+
 // Precaches the weapon and queues the weapon info for sending to clients
 void UTIL_PrecacheOtherWeapon( const char *szClassname )
 {
@@ -278,15 +337,7 @@ void UTIL_PrecacheOtherWeapon( const char *szClassname )
 		pEntity->Precache();
 		if( ( (CBasePlayerItem*)pEntity )->GetItemInfo( &II ) )
 		{
-			bool ammoReady = true;
-
-			if( II.pszAmmo1 && *II.pszAmmo1 &&
-				!AddAmmoNameToAmmoRegistry( II.pszAmmo1 ) )
-				ammoReady = false;
-
-			if( II.pszAmmo2 && *II.pszAmmo2 &&
-				!AddAmmoNameToAmmoRegistry( II.pszAmmo2 ) )
-				ammoReady = false;
+			const bool ammoReady = AddAmmoNamesToAmmoRegistry( II.pszAmmo1, II.pszAmmo2 );
 
 			if( ammoReady )
 				CBasePlayerItem::ItemInfoArray[II.iId] = II;
