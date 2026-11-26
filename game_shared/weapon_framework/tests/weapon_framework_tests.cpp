@@ -398,6 +398,7 @@ namespace
 		TestActionHost host;
 		WeaponInstanceState instance;
 		WeaponBehaviorContext context;
+		WeaponBehaviorContext invalidContext;
 		WeaponInputState input;
 		char error[128] = { 0 };
 
@@ -409,6 +410,7 @@ namespace
 		CHECK(hitscan != NULL);
 		if (hitscan)
 		{
+			CHECK(!hitscan->PrimaryAttack(invalidContext));
 			CHECK(registry.Register(hitscan));
 			CHECK(registry.Find("firearm.hitscan") == hitscan);
 			CHECK(registry.FindForDefinition(definition) == hitscan);
