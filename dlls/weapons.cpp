@@ -229,26 +229,33 @@ void ExplodeModel( const Vector &vecOrigin, float speed, int model, int count )
 
 int giAmmoIndex = 0;
 
-// Precaches the ammo and queues the ammo info for sending to clients
-void AddAmmoNameToAmmoRegistry( const char *szAmmoname )
+// Precaches an ammo name and queues its stable ID for clients.
+// Index zero is reserved by GetAmmoIndex(); never wrap and overwrite a live
+// ammo definition when the fixed GoldSrc table runs out.
+bool AddAmmoNameToAmmoRegistry( const char *szAmmoname )
 {
-	// make sure it's not already in the registry
-	for( int i = 0; i < MAX_AMMO_SLOTS; i++ )
-	{
-		if( !CBasePlayerItem::AmmoInfoArray[i].pszName)
-			continue;
+	if( !szAmmoname || !szAmmoname[0] )
+		return false;
 
-		if( stricmp( CBasePlayerItem::AmmoInfoArray[i].pszName, szAmmoname ) == 0 )
-			return; // ammo already in registry, just quite
+	// Reuse an existing ID for ammo types shared by multiple weapons.
+	for( int i = 1; i < MAX_AMMO_SLOTS; i++ )
+	{
+		if( CBasePlayerItem::AmmoInfoArray[i].pszName &&
+			stricmp( CBasePlayerItem::AmmoInfoArray[i].pszName, szAmmoname ) == 0 )
+			return true;
 	}
 
-	giAmmoIndex++;
-	ASSERT( giAmmoIndex < MAX_AMMO_SLOTS );
-	if( giAmmoIndex >= MAX_AMMO_SLOTS )
-		giAmmoIndex = 0;
+	if( giAmmoIndex + 1 >= MAX_AMMO_SLOTS )
+	{
+		ALERT( at_console, "Ammo registry full; cannot register '%s' (maximum %d ammo types)\\n",
+			szAmmoname, MAX_AMMO_SLOTS - 1 );
+		return false;
+	}
 
+	++giAmmoIndex;
 	CBasePlayerItem::AmmoInfoArray[giAmmoIndex].pszName = szAmmoname;
-	CBasePlayerItem::AmmoInfoArray[giAmmoIndex].iId = giAmmoIndex;   // yes, this info is redundant
+	CBasePlayerItem::AmmoInfoArray[giAmmoIndex].iId = giAmmoIndex;
+	return true;
 }
 
 // Precaches the weapon and queues the weapon info for sending to clients
@@ -271,17 +278,21 @@ void UTIL_PrecacheOtherWeapon( const char *szClassname )
 		pEntity->Precache();
 		if( ( (CBasePlayerItem*)pEntity )->GetItemInfo( &II ) )
 		{
-			CBasePlayerItem::ItemInfoArray[II.iId] = II;
+			bool ammoReady = true;
 
-			if( II.pszAmmo1 && *II.pszAmmo1 )
-			{
-				AddAmmoNameToAmmoRegistry( II.pszAmmo1 );
-			}
+			if( II.pszAmmo1 && *II.pszAmmo1 &&
+				!AddAmmoNameToAmmoRegistry( II.pszAmmo1 ) )
+				ammoReady = false;
 
-			if( II.pszAmmo2 && *II.pszAmmo2 )
-			{
-				AddAmmoNameToAmmoRegistry( II.pszAmmo2 );
-			}
+			if( II.pszAmmo2 && *II.pszAmmo2 &&
+				!AddAmmoNameToAmmoRegistry( II.pszAmmo2 ) )
+				ammoReady = false;
+
+			if( ammoReady )
+				CBasePlayerItem::ItemInfoArray[II.iId] = II;
+			else
+				ALERT( at_console, "Weapon %s was not registered because the ammo table is full\\n",
+					szClassname );
 		}
 	}
 

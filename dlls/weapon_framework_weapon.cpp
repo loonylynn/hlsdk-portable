@@ -16,9 +16,29 @@ LINK_ENTITY_TO_CLASS(weapon_framework, CFrameworkWeapon)
 
 CFrameworkWeapon::CFrameworkWeapon()
 {
+	// CBasePlayerWeapon is a legacy POD-style entity. Initialize every field
+	// the generic adapter reads instead of depending on engine allocator state.
+	m_pPlayer = NULL;
+	m_pNext = NULL;
 	m_iId = 0;
+
+	m_iPlayEmptySound = 0;
+	m_fFireOnEmpty = FALSE;
+	m_flPumpTime = 0.0f;
+	m_fInSpecialReload = FALSE;
+	m_flNextPrimaryAttack = 0.0f;
+	m_flNextSecondaryAttack = 0.0f;
+	m_flTimeWeaponIdle = 0.0f;
+	m_iPrimaryAmmoType = 0;
+	m_iSecondaryAmmoType = 0;
 	m_iClip = 0;
+	m_iClientClip = 0;
+	m_iClientWeaponState = 0;
+	m_fInReload = FALSE;
 	m_iDefaultAmmo = 0;
+	m_flPrevPrimaryAttack = 0.0f;
+	m_flLastFireTime = 0.0f;
+
 	m_definitionName[0] = '\0';
 }
 void CFrameworkWeapon::SetDefinitionId(int id)
@@ -80,6 +100,13 @@ void CFrameworkWeapon::Spawn(void)
 #ifdef CLIENT_DLL
 	pev->classname = MAKE_STRING(definition->GetEntityClassname());
 #else
+	if (!CBasePlayerItem::ItemInfoArray[definition->GetId()].pszName)
+	{
+		ALERT(at_console, "WeaponFramework: %s is unavailable because its ammo types could not be registered\\n",
+			definition->GetEntityClassname());
+		UTIL_Remove(this);
+		return;
+	}
 	Precache();
 	if (!definition->GetWorldModel()) { UTIL_Remove(this); return; }
 	SET_MODEL(ENT(pev), definition->GetWorldModel());
@@ -171,7 +198,7 @@ void CFrameworkWeapon::WeaponIdle(void)
 	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 3.0f;
 }
 #ifndef CLIENT_DLL
-extern void AddAmmoNameToAmmoRegistry(const char *szAmmoname);
+extern bool AddAmmoNameToAmmoRegistry(const char *szAmmoname);
 void WeaponFramework_PrecacheAddonWeapons(void)
 {
 	for (int id = WeaponFramework::FirstAddonWeaponId; id <= WeaponFramework::LastAddonWeaponId; ++id)
@@ -183,9 +210,23 @@ void WeaponFramework_PrecacheAddonWeapons(void)
 		preview.SetDefinitionId(id);
 		preview.Precache();
 		if (!preview.GetItemInfo(&info)) continue;
+
+		bool ammoReady = true;
+		if (info.pszAmmo1 && *info.pszAmmo1 &&
+			!AddAmmoNameToAmmoRegistry(info.pszAmmo1))
+			ammoReady = false;
+		if (info.pszAmmo2 && *info.pszAmmo2 &&
+			!AddAmmoNameToAmmoRegistry(info.pszAmmo2))
+			ammoReady = false;
+
+		if (!ammoReady)
+		{
+			ALERT(at_console, "WeaponFramework: skipping %s because the GoldSrc ammo table is full\\n",
+				definition->GetName());
+			continue;
+		}
+
 		CBasePlayerItem::ItemInfoArray[id] = info;
-		if (info.pszAmmo1 && *info.pszAmmo1) AddAmmoNameToAmmoRegistry(info.pszAmmo1);
-		if (info.pszAmmo2 && *info.pszAmmo2) AddAmmoNameToAmmoRegistry(info.pszAmmo2);
 	}
 }
 #endif

@@ -57,6 +57,12 @@ extension is designed. The current loader accepts up to 32 packages and up to
 32 definition entries per package; those are catalogue limits, not extra live
 weapon slots.
 
+GoldSrc also has a fixed table of 32 ammo slots, with slot zero reserved, so
+only 31 distinct ammo names can be registered at once across the game. The
+server now refuses to wrap that table and overwrite existing ammo IDs. An
+add-on whose ammo names cannot be registered is omitted from the server's
+weapon list and rejected when spawned or granted.
+
 The registry does not enlarge `MAX_WEAPONS`, alter `pev->weapons`, or change
 `WeaponList`, `CurWeapon`, or prediction data. Add-on weapons require a
 framework-enabled client DLL and matching catalogue/package files on the
