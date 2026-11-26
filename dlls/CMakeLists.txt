@@ -151,6 +151,7 @@ set (SVDLL_SOURCES
 	npc_physics.cpp
 	../game_shared/voice_gamemgr.cpp
 	../game_shared/weapon_framework/weapon_definition.cpp
+	../game_shared/weapon_framework/weapon_behavior.cpp
 	../game_shared/weapon_framework/weapon_registry.cpp
 	../game_shared/weapon_framework/weapon_json.cpp
 	../pm_shared/pm_debug.c
