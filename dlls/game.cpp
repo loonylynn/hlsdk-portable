@@ -16,7 +16,6 @@
 #include "eiface.h"
 #include "util.h"
 #include "game.h"
-#include "weapons.h"
 #include "weapon_registry.h"
 #include "weapon_json.h"
 #include "vcs_info.h"
