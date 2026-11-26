@@ -76,7 +76,7 @@ definition is registered once in each DLL through the same shared parser.
 The JSON definition is loaded at runtime. The C++ built-in definition remains
 only as a fallback when the file is absent or fails validation.
 
-The ammunition block also specifies `default_ammo`, the initial reserve given when the weapon is spawned. Clip size is used by the native reload path, not merely displayed to the HUD.
+The ammunition block specifies `default_ammo`, the initial reserve given when the weapon is spawned. Its primary ammo entry also specifies `pickup_amount`, so the Glock's map ammo pickup grants the configured ammo type, amount, and carry limit. Clip size is used by the native reload path, not merely displayed to the HUD.
 
 
 ## Runtime file loading
