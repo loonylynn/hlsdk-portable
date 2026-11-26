@@ -136,6 +136,17 @@ namespace WeaponFramework
 		}
 	}
 
+	void WeaponRegistry::ReplaceWith(const WeaponRegistry &other)
+	{
+		int id;
+
+		for (id = 0; id < MAX_WEAPONS; ++id)
+		{
+			m_definitions[id] = other.m_definitions[id];
+			m_registered[id] = other.m_registered[id];
+		}
+	}
+
 	WeaponRegistry &GetRegistry()
 	{
 		static WeaponRegistry registry;
