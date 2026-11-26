@@ -37,7 +37,8 @@ namespace WeaponFramework
 {
 	WeaponDefinition::WeaponDefinition()
 		: m_id(0), m_slot(0), m_position(0), m_weight(0), m_flags(0),
-		  m_clipSize(-1), m_defaultAmmo(0), m_primaryAmmoMax(-1), m_secondaryAmmoMax(-1), m_valid(false)
+		  m_clipSize(-1), m_defaultAmmo(0), m_primaryAmmoMax(-1),
+		  m_primaryAmmoPickupAmount(0), m_secondaryAmmoMax(-1), m_valid(false)
 	{
 		m_name[0] = '\0';
 		m_entityClassname[0] = '\0';
@@ -67,6 +68,7 @@ namespace WeaponFramework
 		m_clipSize = data.clipSize;
 		m_defaultAmmo = data.defaultAmmo;
 		m_primaryAmmoMax = data.primaryAmmoMax;
+		m_primaryAmmoPickupAmount = data.primaryAmmoPickupAmount;
 		m_secondaryAmmoMax = data.secondaryAmmoMax;
 
 		m_valid =
@@ -81,8 +83,9 @@ namespace WeaponFramework
 			m_position >= 0 && m_position <= 255 &&
 			m_clipSize >= -1 &&
 			m_defaultAmmo >= 0 && m_defaultAmmo <= 32767 &&
-			((m_primaryAmmoType[0] == '\0' && m_primaryAmmoMax == -1) ||
-			 (m_primaryAmmoType[0] != '\0' && m_primaryAmmoMax >= 0)) &&
+			((m_primaryAmmoType[0] == '\0' && m_primaryAmmoMax == -1 && m_primaryAmmoPickupAmount == 0) ||
+			 (m_primaryAmmoType[0] != '\0' && m_primaryAmmoMax >= 0 &&
+			  m_primaryAmmoPickupAmount >= 0 && m_primaryAmmoPickupAmount <= 32767)) &&
 			((m_secondaryAmmoType[0] == '\0' && m_secondaryAmmoMax == -1) ||
 			 (m_secondaryAmmoType[0] != '\0' && m_secondaryAmmoMax >= 0));
 	}
@@ -99,6 +102,7 @@ namespace WeaponFramework
 	int WeaponDefinition::GetDefaultAmmo() const { return m_defaultAmmo; }
 	const char *WeaponDefinition::GetPrimaryAmmoType() const { return m_primaryAmmoType[0] ? m_primaryAmmoType : NULL; }
 	int WeaponDefinition::GetPrimaryAmmoMax() const { return m_primaryAmmoMax; }
+	int WeaponDefinition::GetPrimaryAmmoPickupAmount() const { return m_primaryAmmoPickupAmount; }
 	const char *WeaponDefinition::GetSecondaryAmmoType() const { return m_secondaryAmmoType[0] ? m_secondaryAmmoType : NULL; }
 	int WeaponDefinition::GetSecondaryAmmoMax() const { return m_secondaryAmmoMax; }
 	const char *WeaponDefinition::GetViewModel() const { return m_viewModel[0] ? m_viewModel : NULL; }
