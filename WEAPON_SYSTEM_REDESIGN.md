@@ -173,6 +173,18 @@ A replacement is not complete just because it compiles or the weapon appears in 
 - Make one weapon migration at a time, with build and in-game checks before removing old code.
 
 
+
+## Implementation checkpoint
+
+The first Source 1-style contracts have been added to the shared framework:
+
+- `weapon_runtime.h` defines input snapshots and pointer-free per-instance lifecycle/reload/ammo/timer state.
+- `weapon_behavior.h/.cpp` defines the native behaviour callback contract, engine-action host, keyed custom-state archive, and stable-key behaviour registry.
+- `WeaponDefinition` now exposes an optional native behaviour key. The current JSON `hitscan` action resolves to `firearm.hitscan`.
+- Both client and server DLL targets compile the behaviour registry; the standalone framework tests cover registration, definition resolution, validation and runtime-state initialization.
+
+The new behaviour registry is not yet connected to the live weapon entity/controller, and no behaviour is registered for live gameplay. The existing GoldSrc adapter remains the active firing path. This separation is intentional: the next step is to implement the first shared semi-automatic firearm behaviour and route one pilot weapon through it, while retaining the legacy implementation as a fallback.
+
 ## Valve references and lessons (research, 2026-11-26)
 
 This section records patterns observed in Valve's public Source SDK code, Source 2 weapon data, and Half-Life: Alyx Workshop materials. These are references for design, not a requirement to reproduce Valve's engine architecture.
