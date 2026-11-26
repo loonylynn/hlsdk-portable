@@ -43,6 +43,73 @@ namespace
 		memcpy(error, message, length);
 		error[length] = '\0';
 	}
+
+	class HitscanFirearmBehavior : public WeaponFramework::WeaponBehavior
+	{
+	public:
+		const char *GetBehaviorId() const
+		{
+			return "firearm.hitscan";
+		}
+
+		bool ValidateDefinition(const WeaponFramework::WeaponDefinition &definition,
+			char *error, size_t errorCapacity) const
+		{
+			if (!WeaponBehavior::ValidateDefinition(definition, error, errorCapacity))
+				return false;
+
+			if (definition.GetActionType() != WeaponFramework::WeaponActionHitscan)
+			{
+				SetError(error, errorCapacity, "firearm.hitscan requires a hitscan weapon definition");
+				return false;
+			}
+
+			return true;
+		}
+
+		bool PrimaryAttack(WeaponFramework::WeaponBehaviorContext &context) const
+		{
+			using namespace WeaponFramework;
+			WeaponHitscanRequest request;
+			WeaponInstanceState &instance = *context.instance;
+			const WeaponDefinition &definition = *context.definition;
+			const bool wantsFire = definition.IsAutomatic() ?
+				context.input.primaryDown : context.input.primaryPressed;
+
+			if (!context.IsValid() || instance.lifecycle != WeaponLifecycleReady ||
+				!wantsFire || context.currentTime < instance.nextPrimaryAttackTime ||
+				instance.loadedAmmo <= 0)
+				return false;
+
+			request.bulletType = definition.GetBulletType();
+			request.damage = (float)definition.GetDamage();
+			request.pellets = definition.GetPellets();
+			request.range = (float)definition.GetRange();
+			request.spread = definition.GetSpread();
+
+			// Do not consume ammunition or advance timers when the engine adapter
+			// rejects the shot. Prediction and authoritative simulation use the
+			// same result contract.
+			if (!context.host->FireHitscan(request))
+				return false;
+
+			--instance.loadedAmmo;
+			instance.nextPrimaryAttackTime = context.currentTime + definition.GetFireRate();
+			instance.nextIdleTime = context.currentTime + 1.0f;
+			instance.actionStartTime = context.currentTime;
+			instance.actionEndTime = instance.nextPrimaryAttackTime;
+			instance.lifecycle = WeaponLifecyclePrimaryAction;
+			++instance.actionSequence;
+
+			context.host->SetOwnerAttackAnimation();
+			context.host->PlayAnimation("fire");
+			if (definition.GetFireSound())
+				context.host->PlaySound(definition.GetFireSound());
+			context.host->EmitEffect("muzzle_flash");
+			context.host->NotifyAmmoChanged();
+			return true;
+		}
+	};
 }
 
 namespace WeaponFramework
@@ -168,6 +235,13 @@ namespace WeaponFramework
 	WeaponBehaviorRegistry &GetBehaviorRegistry()
 	{
 		static WeaponBehaviorRegistry registry;
+		static HitscanFirearmBehavior hitscanBehavior;
+
+		// Register built-ins lazily so the client and server each initialise
+		// their own identical native behaviour registry on first use.
+		if (!registry.Find(hitscanBehavior.GetBehaviorId()))
+			registry.Register(&hitscanBehavior);
+
 		return registry;
 	}
 }
