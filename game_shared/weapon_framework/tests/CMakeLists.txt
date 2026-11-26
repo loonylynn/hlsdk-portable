@@ -15,14 +15,12 @@ add_executable(weapon_framework_tests
 	"${CMAKE_CURRENT_SOURCE_DIR}/weapon_framework_tests.cpp"
 )
 
+# Only the shared GoldSrc constants and framework headers are required.
+# Do not add dlls/wpn_shared or the engine include trees: these tests must
+# compile the metadata/registry layer without game entity declarations.
 target_include_directories(weapon_framework_tests PRIVATE
 	"${HLSDK_ROOT}/dlls"
-	"${HLSDK_ROOT}/dlls/wpn_shared"
-	"${HLSDK_ROOT}/common"
-	"${HLSDK_ROOT}/engine"
-	"${HLSDK_ROOT}/pm_shared"
 	"${HLSDK_ROOT}/game_shared"
-	"${HLSDK_ROOT}/public"
 )
 
 enable_testing()
