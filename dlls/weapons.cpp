@@ -556,7 +556,29 @@ CBaseEntity* CBasePlayerItem::Respawn( void )
 {
 	// make a copy of this weapon that is invisible and inaccessible to players (no touch function). The weapon spawn/respawn code
 	// will decide when to make the weapon visible and touchable.
-	CBaseEntity *pNewWeapon = CBaseEntity::Create( STRING( pev->classname ), g_pGameRules->VecWeaponRespawnSpot( this ), pev->angles, pev->owner );
+	CBaseEntity *pNewWeapon = NULL;
+	const Vector respawnOrigin = g_pGameRules->VecWeaponRespawnSpot( this );
+
+	if( FClassnameIs( pev, "weapon_framework" ) )
+	{
+		// The generic classname is shared by every add-on. Carry its assigned
+		// ID into the new edict before DispatchSpawn so Spawn can resolve the
+		// correct package definition instead of creating an anonymous weapon.
+		edict_t *pent = CREATE_NAMED_ENTITY( MAKE_STRING( "weapon_framework" ) );
+		if( !FNullEnt( pent ) )
+		{
+			pNewWeapon = CBaseEntity::Instance( pent );
+			pNewWeapon->pev->owner = pev->owner;
+			pNewWeapon->pev->origin = respawnOrigin;
+			pNewWeapon->pev->angles = pev->angles;
+			pNewWeapon->pev->iuser4 = m_iId;
+			DispatchSpawn( pent );
+		}
+	}
+	else
+	{
+		pNewWeapon = CBaseEntity::Create( STRING( pev->classname ), respawnOrigin, pev->angles, pev->owner );
+	}
 
 	if( pNewWeapon )
 	{

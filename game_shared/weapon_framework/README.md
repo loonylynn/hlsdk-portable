@@ -16,6 +16,10 @@ game DLLs.
   assigning add-on IDs.
 - Publishes the catalogue atomically, so a failed package cannot leave a
   partially registered set of weapons.
+- Provides one generic native entity classname for supported package weapons.
+- Registers matching client-side weapon objects for deterministic prediction.
+- Executes the initial JSON-configured hitscan behavior using GoldSrc's native
+  weapon and bullet systems.
 
 The current reference entry is the existing Glock (ID 2, classname
 `weapon_9mmhandgun`). It is listed in the `goldsrc:base` package and loaded
@@ -24,9 +28,16 @@ same definition and numeric ID on both sides without changing the original
 pistol implementation.
 
 The shared layer stores identity and gameplay metadata and reads version-1
-JSON definitions. It still does **not** spawn arbitrary new weapon entities,
-replace `CBasePlayerWeapon`, execute scripts, or change prediction. Those
-capabilities will be built on top of this definition and package layer.
+JSON definitions. A single native server entity, `weapon_framework`, can
+represent a package weapon using its stable `weapon_name` key or assigned
+numeric ID. The client builds a matching prediction object for each supported
+add-on ID. The first executable behavior is data-driven hitscan, implemented
+with the existing `CBasePlayerWeapon` lifecycle and GoldSrc prediction
+contract. Built-in weapons retain their original classes and behavior.
+
+This is an initial native adapter, not a replacement for every specialized
+Half-Life weapon or a script runtime. Projectile, melee, charge, custom-input,
+and Luau behaviors remain future work.
 
 ## Numeric ID compatibility
 
@@ -104,8 +115,10 @@ runtime copy is `scripts/weapons/weapon_glock.json`.
 
 The loader rejects unsupported versions, unknown/duplicate fields, invalid
 value types, invalid model paths, and values outside the schema's bounds.
-Weapon firing, animation sequences, and prediction remain in the existing
-native code.
+When a `behavior` object is present, the native adapter executes the declared
+behavior parameters. The initial `hitscan` behavior selects a supported bullet
+family, damage, pellets, range, spread, fire interval, reload duration, input
+mode, sound, and animation indices. No script interpreter is required.
 
 ## Metadata used by the reference weapon
 
@@ -173,6 +186,9 @@ indices. It uses GoldSrc's existing `CBasePlayerWeapon`, seeded
 `FireBulletsPlayer`, weapon data slots, and client prediction path. Built-in
 weapons keep their original C++ implementations and IDs.
 
-Metadata-only add-ons remain valid in the catalogue; until they declare a
-supported behavior, the native factory will not spawn/predict them. Projectile,
-melee, charge, custom-input, and script-driven behaviors are future work.
+Metadata-only add-ons remain valid in the catalogue, but the generic
+`weapon_framework` entity rejects them until they declare a supported
+behavior. The framework also carries an add-on's numeric ID when GoldSrc
+recreates a picked-up weapon for its respawn timer. This keeps the replacement
+entity attached to the same package definition. Projectile, melee, charge,
+custom-input, and script-driven behaviors are future work.
