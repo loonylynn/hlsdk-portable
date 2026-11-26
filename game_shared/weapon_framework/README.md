@@ -50,3 +50,15 @@ sort packages and weapon names before calling `RegisterAddon`.
 A stable textual name can look like `sample:weapon/pistol`; its GoldSrc entity
 classname can be `weapon_sample_pistol`. Both names must be unique and fit in
 63 characters.
+
+## JSON definition contract (version 1)
+
+The initial JSON contract is in `schema/weapon.schema.json`. The Glock file in
+`examples/weapon_glock.json` records the metadata currently returned by
+`CGlock::GetItemInfo()` and the existing deploy model paths.
+
+This is a **format specification and reference example**, not a live loader yet.
+The next implementation step is to parse and validate this format into the
+shared definition/registry, then make the existing Glock metadata read from that
+definition. Weapon firing, animation sequences, and prediction remain in the
+existing native code during that migration.

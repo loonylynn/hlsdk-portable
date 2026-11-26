@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:xash-sdk:weapon-definition:v1",
+  "title": "Weapon Definition",
+  "description": "Declarative identity, inventory, ammunition, and model metadata for one GoldSrc-compatible weapon.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "identity",
+    "inventory",
+    "ammo",
+    "models"
+  ],
+  "properties": {
+    "format_version": {
+      "const": 1
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "entity_classname"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+          "description": "Stable namespaced framework identity. It is not the numeric GoldSrc weapon ID."
+        },
+        "entity_classname": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 63,
+          "pattern": "^weapon_[a-zA-Z0-9_]+$",
+          "description": "GoldSrc-facing entity classname used by maps and the legacy entity system."
+        },
+        "legacy_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16,
+          "description": "Only for definitions that adapt one of the original built-in weapons."
+        }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot",
+        "position",
+        "weight",
+        "flags"
+      ],
+      "properties": {
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": -32768,
+          "maximum": 32767
+        },
+        "flags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "select_on_empty",
+              "no_auto_reload",
+              "no_auto_switch_empty",
+              "limit_in_world",
+              "exhaustible",
+              "no_auto_switch_to"
+            ]
+          }
+        }
+      }
+    },
+    "ammo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clip_size",
+        "primary",
+        "secondary"
+      ],
+      "properties": {
+        "clip_size": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 32767,
+          "description": "-1 means the weapon does not use a clip."
+        },
+        "primary": {
+          "description": "Set to null for weapons without primary ammunition.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "max_carry"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 31,
+                  "pattern": "^[a-zA-Z0-9_]+$"
+                },
+                "max_carry": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 32767
+                }
+              }
+            }
+          ]
+        },
+        "secondary": {
+          "description": "Set to null for weapons without secondary ammunition.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "max_carry"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 31,
+                  "pattern": "^[a-zA-Z0-9_]+$"
+                },
+                "max_carry": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 32767
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "view",
+        "world",
+        "player"
+      ],
+      "properties": {
+        "view": {
+          "$ref": "#/$defs/model_path"
+        },
+        "world": {
+          "$ref": "#/$defs/model_path"
+        },
+        "player": {
+          "description": "Third-person player model; use null when the weapon has no separate player model.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/model_path"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "model_path": {
+      "type": "string",
+      "minLength": 11,
+      "maxLength": 127,
+      "pattern": "^models/.+\\.mdl$"
+    }
+  }
+}
