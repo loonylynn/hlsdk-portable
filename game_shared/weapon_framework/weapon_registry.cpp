@@ -5,7 +5,20 @@
 
 #include <stddef.h>
 #include <string.h>
-#include "weapons.h"
+
+namespace
+{
+	// Keep the fallback Glock metadata independent of dlls/weapons.h.
+	// These values mirror the stock definitions in that header.
+	enum
+	{
+		LEGACY_GLOCK_WEAPON_ID = 2,
+		LEGACY_GLOCK_WEIGHT = 10,
+		LEGACY_GLOCK_MAX_CLIP = 17,
+		LEGACY_GLOCK_DEFAULT_GIVE = 17,
+		LEGACY_9MM_MAX_CARRY = 250
+	};
+}
 
 namespace WeaponFramework
 {
@@ -156,18 +169,18 @@ namespace WeaponFramework
 	bool RegisterBuiltinWeapons()
 	{
 		WeaponDefinitionData glock = {};
-		glock.id = WEAPON_GLOCK;
+		glock.id = LEGACY_GLOCK_WEAPON_ID;
 		glock.name = "goldsrc:weapon/glock";
 		glock.entityClassname = "weapon_9mmhandgun";
 		glock.slot = 1;
 		glock.position = 0;
-		glock.weight = GLOCK_WEIGHT;
+		glock.weight = LEGACY_GLOCK_WEIGHT;
 		glock.flags = 0;
-		glock.clipSize = GLOCK_MAX_CLIP;
-		glock.defaultAmmo = GLOCK_DEFAULT_GIVE;
+		glock.clipSize = LEGACY_GLOCK_MAX_CLIP;
+		glock.defaultAmmo = LEGACY_GLOCK_DEFAULT_GIVE;
 		glock.primaryAmmoType = "9mm";
-		glock.primaryAmmoMax = _9MM_MAX_CARRY;
-		glock.primaryAmmoPickupAmount = AMMO_GLOCKCLIP_GIVE;
+		glock.primaryAmmoMax = LEGACY_9MM_MAX_CARRY;
+		glock.primaryAmmoPickupAmount = LEGACY_GLOCK_MAX_CLIP;
 		glock.secondaryAmmoType = NULL;
 		glock.secondaryAmmoMax = -1;
 		glock.viewModel = "models/v_9mmhandgun.mdl";
