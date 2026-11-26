@@ -29,6 +29,7 @@ namespace WeaponFramework
 		bool IsRegistered(int id) const;
 		int FindFreeAddonId() const;
 		void Clear();
+		void ReplaceWith(const WeaponRegistry &other);
 
 	private:
 		bool IsUnique(const WeaponDefinition &definition) const;
