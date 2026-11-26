@@ -176,14 +176,16 @@ A replacement is not complete just because it compiles or the weapon appears in 
 
 ## Implementation checkpoint
 
-The first Source 1-style contracts have been added to the shared framework:
+The shared contracts and the first native hitscan dispatch slice now exist on `weapon-framework/foundation`:
 
 - `weapon_runtime.h` defines input snapshots and pointer-free per-instance lifecycle/reload/ammo/timer state.
 - `weapon_behavior.h/.cpp` defines the native behaviour callback contract, engine-action host, keyed custom-state archive, and stable-key behaviour registry.
-- `WeaponDefinition` now exposes an optional native behaviour key. The current JSON `hitscan` action resolves to `firearm.hitscan`.
-- Both client and server DLL targets compile the behaviour registry; the standalone framework tests cover registration, definition resolution, validation and runtime-state initialization.
+- `WeaponDefinition` exposes an optional native behaviour key. A JSON `hitscan` action resolves to `firearm.hitscan`.
+- The built-in `firearm.hitscan` behaviour is registered lazily by the shared registry. It supports semi-automatic press-edge input and automatic held input, attack cooldowns, clip consumption after a successful engine action, and fire presentation callbacks.
+- The existing generic JSON hitscan adapter dispatches through the native behaviour and translates the request to GoldSrc's bullet, animation, sound and muzzle-flash APIs. Its previous firing implementation remains as a fallback if no behaviour resolves.
+- Both client and server DLL targets include the behaviour registry and the generic adapter. Focused tests cover registration/validation, semi-auto input edges, cooldowns, ammo consumption, rejected shots and invalid contexts.
 
-The new behaviour registry is not yet connected to the live weapon entity/controller, and no behaviour is registered for live gameplay. The existing GoldSrc adapter remains the active firing path. This separation is intentional: the next step is to implement the first shared semi-automatic firearm behaviour and route one pilot weapon through it, while retaining the legacy implementation as a fallback.
+**Current boundary:** the generic adapter is the first live entity integration, not the completed player controller. It currently builds a temporary runtime snapshot from the legacy clip/timer fields for each attack and copies the result back. Persistent per-instance runtime storage, save/restore integration, shared reload lifecycle and controller-owned switching are not implemented yet. The stock Glock remains on its original C++ implementation; its custom trigger-release cadence, accuracy recovery and event-based firing have not been migrated. The new behaviour/test changes still require a fresh focused test run and 32-bit client/server build before they are considered validated.
 
 ## Valve references and lessons (research, 2026-11-26)
 
@@ -324,4 +326,4 @@ The current JSON parser also contains GoldSrc-specific item-flag and bullet-type
 
 Use a conventional semi-automatic pistol as the first vertical slice. The existing Glock is a convenient parity test because its current ammo, clip, animation and firing behaviour are known; using it as the test does not commit the project to keeping the Glock as a final game weapon. The pilot must prove that one native pistol behaviour can serve multiple definitions by changing only data, while unique mechanics remain implementable as separate native behaviours.
 
-The first slice should cover definition loading, validation, behaviour lookup, common lifecycle, primary fire, reload, animation/sound selection, save/restore and client/server agreement. Only after this works should we move more stock weapons or replace the current generic hitscan adapter.
+The initial behaviour-dispatch slice now covers definition lookup, native behaviour validation, primary-fire dispatch, semi-automatic press-edge handling, cooldowns, engine hitscan execution and fire presentation callbacks through the generic adapter. This is not yet the full pilot: reload lifecycle, persistent instance storage, save/restore, controller-owned switching and in-game client/server parity still need implementation and verification. The stock Glock must remain unchanged until its special timing, accuracy recovery and event presentation can be represented by the new architecture.
