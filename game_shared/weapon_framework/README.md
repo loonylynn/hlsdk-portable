@@ -86,3 +86,7 @@ callback. The client uses its `COM_LoadFile` callback. Both call the same
 allocation-free parser and release the engine-owned file buffer afterwards.
 If the JSON is missing or rejected, both sides register the same built-in Glock
 fallback so the original weapon remains usable.
+
+The root build scripts also install `scripts/weapons/*.json` into the selected
+game directory, under `scripts/weapons`. This keeps the runtime definition
+available to both the server and client VFS loaders after installation.
