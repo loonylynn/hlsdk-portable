@@ -21,6 +21,7 @@ add_executable(weapon_framework_tests
 target_include_directories(weapon_framework_tests PRIVATE
 	"${HLSDK_ROOT}/dlls"
 	"${HLSDK_ROOT}/game_shared"
+	"${HLSDK_ROOT}/game_shared/weapon_framework"
 )
 
 enable_testing()
