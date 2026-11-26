@@ -723,7 +723,7 @@ namespace
 	{
 		const size_t length = path ? strlen(path) : 0;
 		const char *p;
-		if (length < 11 || length >= ModelPathCapacity ||
+		if (length < 12 || length >= ModelPathCapacity ||
 			strncmp(path, "models/", 7) != 0 ||
 			strcmp(path + length - 4, ".mdl") != 0 ||
 			strstr(path, "..") || strchr(path, '\\'))
