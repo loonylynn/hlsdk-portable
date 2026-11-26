@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "name": "goldsrc:base",
+  "weapons": [
+    {
+      "name": "goldsrc:weapon/glock",
+      "file": "scripts/weapons/weapon_glock.json"
+    }
+  ]
+}
