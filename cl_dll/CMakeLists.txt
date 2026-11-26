@@ -168,7 +168,7 @@ else()
 		../external/openbsd/strlcat.c)
 endif()
 
-include_directories (. hl/ ../dlls ../dlls/wpn_shared ../common ../engine ../pm_shared ../game_shared ../public)
+include_directories (. hl/ ../dlls ../dlls/wpn_shared ../common ../engine ../pm_shared ../game_shared ../game_shared/weapon_framework ../public)
 
 if (GOLDSOURCE_SUPPORT)
 	include_directories (../external/)
