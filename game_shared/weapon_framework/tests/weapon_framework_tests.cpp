@@ -18,15 +18,35 @@ namespace
 	class TestActionHost : public IWeaponActionHost
 	{
 	public:
+		TestActionHost()
+			: fireSucceeds(true), fireCalls(0), animationCalls(0), soundCalls(0),
+			  effectCalls(0), attackAnimationCalls(0), ammoChangedCalls(0)
+		{
+		}
+
 		int GetReserveAmmo(const char *) const { return 0; }
 		bool ConsumeReserveAmmo(const char *, int) { return false; }
-		bool FireHitscan(const WeaponHitscanRequest &) { return false; }
-		void PlayAnimation(const char *) {}
-		void PlaySound(const char *) {}
-		void EmitEffect(const char *) {}
-		void SetOwnerAttackAnimation() {}
+		bool FireHitscan(const WeaponHitscanRequest &request)
+		{
+			lastRequest = request;
+			++fireCalls;
+			return fireSucceeds;
+		}
+		void PlayAnimation(const char *) { ++animationCalls; }
+		void PlaySound(const char *) { ++soundCalls; }
+		void EmitEffect(const char *) { ++effectCalls; }
+		void SetOwnerAttackAnimation() { ++attackAnimationCalls; }
 		bool IsOwnerUnderwater() const { return false; }
-		void NotifyAmmoChanged() {}
+		void NotifyAmmoChanged() { ++ammoChangedCalls; }
+
+		bool fireSucceeds;
+		int fireCalls;
+		int animationCalls;
+		int soundCalls;
+		int effectCalls;
+		int attackAnimationCalls;
+		int ammoChangedCalls;
+		WeaponHitscanRequest lastRequest;
 	};
 
 	class TestHitscanBehavior : public WeaponBehavior
@@ -373,7 +393,7 @@ namespace
 		WeaponDefinition definition;
 		WeaponDefinition metadataOnly;
 		WeaponBehaviorRegistry registry;
-		TestHitscanBehavior hitscan;
+		const WeaponBehavior *hitscan = GetBehaviorRegistry().Find("firearm.hitscan");
 		TestHitscanBehavior duplicate;
 		TestActionHost host;
 		WeaponInstanceState instance;
@@ -386,9 +406,13 @@ namespace
 		CHECK(ParseWeaponDefinitionJson(kAlphaDefinition,
 			strlen(kAlphaDefinition), metadataOnly));
 
-		CHECK(registry.Register(&hitscan));
-		CHECK(registry.Find("firearm.hitscan") == &hitscan);
-		CHECK(registry.FindForDefinition(definition) == &hitscan);
+		CHECK(hitscan != NULL);
+		if (hitscan)
+		{
+			CHECK(registry.Register(hitscan));
+			CHECK(registry.Find("firearm.hitscan") == hitscan);
+			CHECK(registry.FindForDefinition(definition) == hitscan);
+		}
 		CHECK(registry.Find("missing.behavior") == NULL);
 		CHECK(!registry.Register(&duplicate));
 		CHECK(registry.ValidateDefinition(definition, error, sizeof(error)));
@@ -410,9 +434,42 @@ namespace
 		context.currentTime = 2.0f;
 		context.frameTime = 0.016f;
 		context.authoritative = true;
+		instance.lifecycle = WeaponLifecycleReady;
+		context.input.primaryDown = true;
+		context.input.primaryPressed = true;
 		CHECK(context.IsValid());
-		CHECK(hitscan.CanDeploy(context));
-		CHECK(!hitscan.PrimaryAttack(context));
+		CHECK(hitscan != NULL && hitscan->CanDeploy(context));
+		CHECK(hitscan != NULL && hitscan->PrimaryAttack(context));
+		CHECK(instance.loadedAmmo == 16);
+		CHECK(instance.nextPrimaryAttackTime > 2.24f && instance.nextPrimaryAttackTime < 2.26f);
+		CHECK(instance.actionSequence == 1);
+		CHECK(host.fireCalls == 1);
+		CHECK(host.lastRequest.bulletType == definition.GetBulletType());
+		CHECK(host.lastRequest.damage == (float)definition.GetDamage());
+		CHECK(host.animationCalls == 1);
+		CHECK(host.soundCalls == 1);
+		CHECK(host.effectCalls == 1);
+		CHECK(host.attackAnimationCalls == 1);
+		CHECK(host.ammoChangedCalls == 1);
+
+		// A held trigger must not repeat a semi-automatic shot without a
+		// fresh pressed edge after the cooldown has elapsed.
+		instance.lifecycle = WeaponLifecycleReady;
+		context.currentTime = 2.5f;
+		context.input.primaryPressed = false;
+		CHECK(hitscan != NULL && !hitscan->PrimaryAttack(context));
+		CHECK(instance.loadedAmmo == 16);
+		CHECK(host.fireCalls == 1);
+
+		// A rejected engine shot must not consume ammo or advance the timer.
+		instance.lifecycle = WeaponLifecycleReady;
+		context.input.primaryPressed = true;
+		host.fireSucceeds = false;
+		const float previousAttackTime = instance.nextPrimaryAttackTime;
+		CHECK(hitscan != NULL && !hitscan->PrimaryAttack(context));
+		CHECK(instance.loadedAmmo == 16);
+		CHECK(instance.nextPrimaryAttackTime == previousAttackTime);
+		CHECK(host.fireCalls == 2);
 
 		registry.Clear();
 		CHECK(registry.Find("firearm.hitscan") == NULL);
