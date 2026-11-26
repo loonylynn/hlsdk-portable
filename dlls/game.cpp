@@ -18,6 +18,7 @@
 #include "game.h"
 #include "weapons.h"
 #include "weapon_registry.h"
+#include "weapon_json.h"
 #include "vcs_info.h"
 
 static cvar_t build_commit = { "sv_game_build_commit", g_VCSInfo_Commit };
@@ -500,10 +501,32 @@ cvar_t tdmg_bleeding_damage3 = { "tdmg_bleeding_damage3", "1" };
 
 // Register your console variables here
 // This gets called one time when the game is initialied
+static bool LoadWeaponDefinitionsFromGameFiles()
+{
+	int fileLength = 0;
+	byte *fileData = LOAD_FILE_FOR_ME("scripts/weapons/weapon_glock.json", &fileLength);
+	bool loaded = false;
+
+	if (fileData && fileLength > 0)
+		loaded = WeaponFramework::RegisterWeaponDefinitionJson(
+			(const char *)fileData, (size_t)fileLength);
+
+	if (fileData)
+		FREE_FILE(fileData);
+
+	if (!loaded)
+	{
+		ALERT(at_console, "WeaponFramework: could not load scripts/weapons/weapon_glock.json; using built-in Glock metadata\n");
+		return WeaponFramework::RegisterBuiltinWeapons();
+	}
+
+	return true;
+}
+
+// Register the weapon catalogue before worldspawn precaches weapon entities.
 void GameDLLInit( void )
 {
-	// Register shared built-in metadata before worldspawn precaches weapons.
-	WeaponFramework::RegisterBuiltinWeapons();
+	LoadWeaponDefinitionsFromGameFiles();
 
 	g_psv_gravity = CVAR_GET_POINTER( "sv_gravity" );
 	g_psv_aim = CVAR_GET_POINTER( "sv_aim" );

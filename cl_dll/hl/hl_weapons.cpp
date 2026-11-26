@@ -20,6 +20,7 @@
 #include "weapons.h"
 #include "nodes.h"
 #include "weapon_registry.h"
+#include "weapon_json.h"
 #include "player.h"
 
 #include "usercmd.h"
@@ -573,6 +574,28 @@ HUD_InitClientWeapons
 Set up weapons, player and functions needed to run weapons code client-side.
 =====================
 */
+static bool LoadWeaponDefinitionsFromClientFiles()
+{
+	int fileLength = 0;
+	byte *fileData = gEngfuncs.COM_LoadFile("scripts/weapons/weapon_glock.json", 5, &fileLength);
+	bool loaded = false;
+
+	if (fileData && fileLength > 0)
+		loaded = WeaponFramework::RegisterWeaponDefinitionJson(
+			(const char *)fileData, (size_t)fileLength);
+
+	if (fileData)
+		gEngfuncs.COM_FreeFile(fileData);
+
+	if (!loaded)
+	{
+		gEngfuncs.Con_Printf("WeaponFramework: could not load scripts/weapons/weapon_glock.json; using built-in Glock metadata\n");
+		return WeaponFramework::RegisterBuiltinWeapons();
+	}
+
+	return true;
+}
+
 void HUD_InitClientWeapons( void )
 {
 	static int initialized = 0;
@@ -581,8 +604,8 @@ void HUD_InitClientWeapons( void )
 
 	initialized = 1;
 
-	// Keep prediction metadata aligned with the server registry.
-	WeaponFramework::RegisterBuiltinWeapons();
+	// Keep prediction metadata aligned with the server's definition file.
+	LoadWeaponDefinitionsFromClientFiles();
 
 	// Set up pointer ( dummy object )
 	gpGlobals = &Globals;

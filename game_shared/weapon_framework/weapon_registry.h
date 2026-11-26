@@ -42,7 +42,7 @@ namespace WeaponFramework
 	// in the same deterministic order so numeric IDs agree.
 	WeaponRegistry &GetRegistry();
 
-	// Register built-in reference definitions identically in both DLLs.
+	// Register built-in fallback metadata when a definition file is unavailable.
 	bool RegisterBuiltinWeapons();
 }
 

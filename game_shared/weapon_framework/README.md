@@ -57,11 +57,13 @@ The initial JSON contract is in `schema/weapon.schema.json`. The Glock file in
 `examples/weapon_glock.json` records the metadata currently returned by
 `CGlock::GetItemInfo()` and the existing deploy model paths.
 
-This is a **format specification and reference example**, not a live loader yet.
-The next implementation step is to parse and validate this format into the
-shared definition/registry, then make the existing Glock metadata read from that
-definition. Weapon firing, animation sequences, and prediction remain in the
-existing native code during that migration.
+The shared runtime loader now reads this format on both server and client.
+The in-game file path is `scripts/weapons/weapon_glock.json`; the checked-in
+example is mirrored there so the same definition is available through the
+GoldSrc/Xash virtual filesystem. The loader rejects unsupported versions,
+unknown/duplicate fields, invalid value types, invalid model paths, and values
+outside the schema's bounds. Weapon firing, animation sequences, and prediction
+remain in the existing native code.
 
 ## Metadata is now used by the reference weapon
 
@@ -75,3 +77,12 @@ for the next step: replacing the temporary built-in C++ registration data with
 a loader that reads the same fields from the JSON definition.
 
 The ammunition block also specifies `default_ammo`, the initial reserve given when the weapon is spawned. Clip size is used by the native reload path, not merely displayed to the HUD.
+
+
+## Runtime file loading
+
+The server reads the definition through the GoldSrc `LOAD_FILE_FOR_ME`
+callback. The client uses its `COM_LoadFile` callback. Both call the same
+allocation-free parser and release the engine-owned file buffer afterwards.
+If the JSON is missing or rejected, both sides register the same built-in Glock
+fallback so the original weapon remains usable.
