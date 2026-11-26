@@ -15,6 +15,26 @@ using namespace WeaponFramework;
 
 namespace
 {
+	class TestActionHost : public IWeaponActionHost
+	{
+	public:
+		int GetReserveAmmo(const char *) const { return 0; }
+		bool ConsumeReserveAmmo(const char *, int) { return false; }
+		bool FireHitscan(const WeaponHitscanRequest &) { return false; }
+		void PlayAnimation(const char *) {}
+		void PlaySound(const char *) {}
+		void EmitEffect(const char *) {}
+		void SetOwnerAttackAnimation() {}
+		bool IsOwnerUnderwater() const { return false; }
+		void NotifyAmmoChanged() {}
+	};
+
+	class TestHitscanBehavior : public WeaponBehavior
+	{
+	public:
+		const char *GetBehaviorId() const { return "firearm.hitscan"; }
+	};
+
 	int g_failures = 0;
 
 #define CHECK(condition) \
