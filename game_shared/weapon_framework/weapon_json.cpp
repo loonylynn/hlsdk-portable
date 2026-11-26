@@ -12,6 +12,8 @@
 
 namespace
 {
+	using namespace WeaponFramework;
+
 	enum JsonType
 	{
 		JSON_OBJECT,
@@ -754,7 +756,7 @@ namespace
 
 		if (!GetRequiredMember(parser, ammoToken, "type", typeToken) ||
 			!ReadString(parser, typeToken, ammoType, ammoTypeCapacity) ||
-			!IsValidAmmoType(ammoType)
+			!IsValidAmmoType(ammoType))
 			return false;
 
 		if (!GetRequiredMember(parser, ammoToken, "max_carry", maxToken) ||
