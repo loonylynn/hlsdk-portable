@@ -574,22 +574,26 @@ HUD_InitClientWeapons
 Set up weapons, player and functions needed to run weapons code client-side.
 =====================
 */
-static bool LoadWeaponDefinitionsFromClientFiles()
+static unsigned char *LoadWeaponFrameworkClientFile(const char *path, int *fileLength)
 {
-	int fileLength = 0;
-	byte *fileData = gEngfuncs.COM_LoadFile("scripts/weapons/weapon_glock.json", 5, &fileLength);
-	bool loaded = false;
+	return (unsigned char *)gEngfuncs.COM_LoadFile(path, 5, fileLength);
+}
 
-	if (fileData && fileLength > 0)
-		loaded = WeaponFramework::RegisterWeaponDefinitionJson(
-			(const char *)fileData, (size_t)fileLength);
-
+static void FreeWeaponFrameworkClientFile(unsigned char *fileData)
+{
 	if (fileData)
 		gEngfuncs.COM_FreeFile(fileData);
+}
+
+static bool LoadWeaponDefinitionsFromClientFiles()
+{
+	const bool loaded = WeaponFramework::LoadWeaponPackageCatalog(
+		"scripts/weapons/packages.json",
+		LoadWeaponFrameworkClientFile, FreeWeaponFrameworkClientFile);
 
 	if (!loaded)
 	{
-		gEngfuncs.Con_Printf("WeaponFramework: could not load scripts/weapons/weapon_glock.json; using built-in Glock metadata\n");
+		gEngfuncs.Con_Printf("WeaponFramework: package catalogue or one of its definitions failed to load; using built-in Glock metadata\n");
 		return WeaponFramework::RegisterBuiltinWeapons();
 	}
 
