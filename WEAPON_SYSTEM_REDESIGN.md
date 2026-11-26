@@ -156,3 +156,68 @@ A replacement is not complete just because it compiles or the weapon appears in 
 - Do not add an addon/mod API requirement to solve an internal architecture problem.
 - Preserve the original game feel unless a deliberate gameplay change is requested.
 - Make one weapon migration at a time, with build and in-game checks before removing old code.
+
+
+## Valve references and lessons (research, 2026-11-26)
+
+This section records patterns observed in Valve's public Source SDK code, Source 2 weapon data, and Half-Life: Alyx Workshop materials. These are references for design, not a requirement to reproduce Valve's engine architecture.
+
+### Source SDK 2013 (Source 1)
+
+Valve's Source SDK uses a cached FileWeaponInfo_t database loaded from a weapon manifest. Each weapon script is parsed once into a typed data object. The base data includes class/display names, view and world models, animation prefix, inventory bucket and position, clip/default-clip sizes, weight, auto-switch rules, flags, ammo types, sound categories, and HUD icons. The parser is virtual so a game can derive its own weapon-info type and parse additional game-specific values.
+
+References:
+- [Valve weapon_parse.cpp](https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/weapon_parse.cpp)
+- [Valve weapon_parse.h](https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/weapon_parse.h)
+
+The Source CBaseCombatWeapon base class also provides more lifecycle extension points than GoldSrc's minimal item loop: pre/post-frame, busy-frame, holster-frame, deploy/holster, empty-fire handling, reload checks/finish/abort, primary/secondary attacks, and attack-activity selection. Individual weapons still implement specialised behaviour in C++.
+
+References:
+- [Valve basecombatweapon_shared.h](https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/basecombatweapon_shared.h)
+- [Valve HL2 shotgun implementation](https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/server/hl2/weapon_shotgun.cpp)
+- [Valve HL2 RPG implementation](https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/server/hl2/weapon_rpg.h)
+
+**Lesson:** build a real shared lifecycle with well-defined extension hooks, not a single giant switch statement. Keep the weapon definition database separate from the runtime weapon instance and from the code that executes attacks. Preserve escape hatches for unusual mechanics.
+
+### Source 2 and Counter-Strike 2
+
+Source 2 uses schema-described C++ data classes and typed VData assets. A .vdata asset supplies values for a known schema class; it is not an unrestricted free-form script. The schema includes typed fields and authoring metadata, such as editor labels, descriptions, valid ranges, and resource pickers.
+
+CS2's CBasePlayerWeaponVData holds shared properties such as world model, muzzle attachment and effects, handedness/flipping, linked cooldown policy, item flags, auto-switch rules, ammo types, clip/default-clip sizes, reserve-ammo treatment, HUD slot/position, and sound events. CCSWeaponBaseVData extends it with CS-specific properties such as weapon category, bullet count, firing cadence, burst configuration, spread/inaccuracy curves, recoil values, zoom, damage, penetration, range, reserve ammo limits, and reload/deploy timing.
+
+References:
+- [CS2 CBasePlayerWeaponVData schema](https://s2v.app/SchemaExplorer/cs2/client/CBasePlayerWeaponVData)
+- [CS2 CCSWeaponBaseVData schema](https://s2v.app/SchemaExplorer/cs2/client/CCSWeaponBaseVData)
+- [CS2 weapon data file research and field mapping](https://cs2.gs/about/)
+- [Source 2 schema and VData overview](https://www.source2.wiki/Basics/schemas)
+
+**Lesson:** use a shared base definition plus specialised typed extension data. Put real weapon tuning into data: not only clip size and damage, but recoil, inaccuracy, firing modes, cooldown relationships, reload policy, animation/presentation hooks and sound/effect references. Validate values against a schema and provide editor-friendly descriptions/ranges. In our project, JSON can remain the authoring format initially; the important idea is the typed contract and separation of common versus game-specific properties.
+
+### Half-Life: Alyx — the closest Half-Life reference
+
+Valve added hl_vr_weapon_generic_pistol as a data-driven weapon entity for Workshop customization. Contemporary reporting on Valve's update describes it as reusing the unupgraded Alyx pistol's behaviour while exposing properties such as models, effects, sounds, damage and firing rates for override. Valve's update also included a Custom Pistols tutorial and example AnimGraph sources.
+
+References:
+- [Valve Half-Life: Alyx Update 1.4.1 notes](https://store.steampowered.com/news/posts/?appgroupname=Half-Life%3A+Alyx&appids=546560&enddate=1592349047&feed=steam_community_announcements)
+- [Report on the generic pistol and its exposed properties](https://roadtovr.com/half-life-alyx-update-1-4-1-example-pistol-modding/)
+
+**Lesson:** a small library of native weapon archetypes can carry reusable mechanics while a data definition changes their tunable properties and presentation. This is a better model for our near-term scope than either a unique C++ class for every weapon or trying to express all gameplay as JSON. For example, an ordinary semi-automatic pistol should use the generic pistol/magazine archetype; only a pistol with genuinely different mechanics should require a specialised behaviour component.
+
+### What not to copy
+
+- Do not recreate Source 2's full reflection/schema runtime. We need a small, explicit schema for our own weapon data, not an engine-wide type system.
+- Do not make every weapon fully data-only. Valve's Source 1 and Source 2 patterns retain native classes for actual execution and specialised rules.
+- Do not mistake CS2 map scripting (cs_script) for its weapon implementation. Its weapon definitions are VData, while weapon gameplay remains implemented by game-side weapon classes.
+- Do not import CS2 competitive mechanics (recoil curves, armour penetration, economy, etc.) unless the Half-Life design actually needs them.
+- Do not make a public modding API or scripting VM a prerequisite for cleaning up our internal weapon architecture.
+
+### Resulting design decisions
+
+1. Keep immutable, typed weapon definitions distinct from runtime state.
+2. Support inheritance/composition of definition profiles (common base, archetype profile, per-weapon overrides) with deterministic defaults and validation.
+3. Introduce a small set of native archetypes/behaviour modules for the common cases: pistol, automatic firearm, shotgun/per-shell reload, projectile launcher, melee, continuous beam, charge weapon, and deployable/remote device.
+4. Keep all unique mechanics in focused native components attached to an archetype or controller state machine; avoid a per-weapon class just for data changes.
+5. Make the controller own common lifecycle, input routing, switching and cooldown rules, while behaviour modules handle the mechanics of a particular action.
+6. Store animation and presentation as authored data references, but let a behaviour explicitly request the appropriate action/activity so data does not become a giant brittle animation-number table.
+7. Add debug inspection for the effective resolved definition and current instance state.
+8. Migrate the built-in weapons one at a time and retain the original C++ implementation as a fallback until gameplay parity is verified.
