@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "packages": [
+    {
+      "name": "goldsrc:base",
+      "manifest": "scripts/weapons/package_goldsrc.json"
+    }
+  ]
+}
