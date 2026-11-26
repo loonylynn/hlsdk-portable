@@ -1,12 +1,22 @@
 # Weapon framework foundation
 
-This folder contains the shared identity, metadata, and package-catalogue layer
-for the modular weapon system. It is compiled into both the server and client
-game DLLs.
+This folder contains the shared identity, metadata, package-catalogue, runtime
+state, and native-behaviour contracts for the modular weapon system. It is
+compiled into both the server and client game DLLs. The runtime and behaviour
+interfaces are the new architecture boundary; the current GoldSrc entity
+adapter remains in place while that boundary is implemented incrementally.
 
 ## What it does now
 
-- Stores a weapon's stable textual name and GoldSrc entity classname.
+- Stores a weapon's stable textual name, optional legacy entity classname, and
+  optional stable native behaviour key.
+- Defines per-instance lifecycle, reload, clip and timing state without storing
+  engine pointers or mutating the shared definition.
+- Defines a native behaviour callback contract for deploy/holster, frame
+  processing, primary/secondary actions, reload stages, idle and custom
+  save/restore data.
+- Registers native behaviours by stable string key rather than by weapon
+  classname or numeric ID.
 - Registers existing weapons against their reserved numeric IDs.
 - Assigns add-on weapons an available numeric ID.
 - Looks weapons up by ID, textual name, or entity classname.
@@ -28,12 +38,12 @@ same definition and numeric ID on both sides without changing the original
 pistol implementation.
 
 The shared layer stores identity and gameplay metadata and reads version-1
-JSON definitions. A single native server entity, `weapon_framework`, can
-represent a package weapon using its stable `weapon_name` key or assigned
-numeric ID. The client builds a matching prediction object for each supported
-add-on ID. The first executable behavior is data-driven hitscan, implemented
-with the existing `CBasePlayerWeapon` lifecycle and GoldSrc prediction
-contract. Built-in weapons retain their original classes and behavior.
+JSON definitions. Hitscan definitions resolve to the stable native key
+`firearm.hitscan`. The new `WeaponBehavior` interface and registry are now
+compiled into both DLLs, but no behaviour has been registered with or executed
+through the new lifecycle yet. The existing generic hitscan entity still runs
+through `CBasePlayerWeapon` and GoldSrc prediction. Built-in weapons retain
+their original classes and behaviour until each is migrated and validated.
 
 This is an initial native adapter, not a replacement for every specialized
 Half-Life weapon or a script runtime. Projectile, melee, charge, custom-input,
@@ -200,3 +210,22 @@ behavior. The framework also carries an add-on's numeric ID when GoldSrc
 recreates a picked-up weapon for its respawn timer. This keeps the replacement
 entity attached to the same package definition. Projectile, melee, charge,
 custom-input, and script-driven behaviors are future work.
+
+
+## New runtime and behaviour contracts
+
+The first Source 1-style runtime contracts are now present:
+
+- `weapon_runtime.h`: frame input snapshots and per-owned-weapon lifecycle,
+  reload, loaded-ammo, timer and action-sequence state.
+- `weapon_behavior.h/.cpp`: the native behaviour callback interface, narrow
+  engine-action host, keyed save/restore archive interfaces, and a bounded
+  registry that resolves stable behaviour IDs.
+- `WeaponDefinition::GetBehaviorName()`: returns the parsed behaviour key.
+  The current JSON `hitscan` entry maps to `firearm.hitscan`.
+
+These are foundations, not a complete replacement. The GoldSrc adapter does
+not yet create runtime instances or dispatch attacks through
+`WeaponBehaviorRegistry`. The first implementation milestone is to register
+and exercise one shared semi-automatic behaviour through the new lifecycle
+without changing the visible weapon behaviour.
