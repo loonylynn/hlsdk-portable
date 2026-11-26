@@ -165,7 +165,9 @@ void CFrameworkWeapon::PrimaryAttack(void)
 		return;
 	}
 	--m_iClip;
+#ifndef CLIENT_DLL
 	m_pPlayer->TabulateAmmo();
+#endif
 	m_pPlayer->m_iWeaponVolume = LOUD_GUN_VOLUME;
 	m_pPlayer->m_iWeaponFlash = NORMAL_GUN_FLASH;
 	const Vector source = m_pPlayer->GetGunPosition();
