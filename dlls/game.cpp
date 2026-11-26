@@ -523,6 +523,7 @@ static bool LoadWeaponDefinitionsFromGameFiles()
 		return WeaponFramework::RegisterBuiltinWeapons();
 	}
 
+	ALERT(at_console, "WeaponFramework: server package catalogue loaded successfully\n");
 	return true;
 }
 
