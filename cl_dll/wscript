@@ -33,6 +33,7 @@ def build(bld):
 		'../engine',
 		'../pm_shared',
 		'../game_shared',
+		'../game_shared/weapon_framework',
 		'../public',
 		'../utils/vgui/include']
 	excluded_files = ['GameStudioModelRenderer_Sample.cpp',
