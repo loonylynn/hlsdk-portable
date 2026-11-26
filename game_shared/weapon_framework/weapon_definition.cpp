@@ -140,6 +140,7 @@ namespace WeaponFramework
 	int WeaponDefinition::GetId() const { return m_id; }
 	const char *WeaponDefinition::GetName() const { return m_name; }
 	const char *WeaponDefinition::GetEntityClassname() const { return m_entityClassname; }
+	const char *WeaponDefinition::GetBehaviorName() const { return m_behaviorName[0] ? m_behaviorName : NULL; }
 	bool WeaponDefinition::IsValid() const { return m_valid; }
 	int WeaponDefinition::GetSlot() const { return m_slot; }
 	int WeaponDefinition::GetPosition() const { return m_position; }
