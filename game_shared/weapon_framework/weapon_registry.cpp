@@ -153,6 +153,7 @@ namespace WeaponFramework
 		glock.weight = GLOCK_WEIGHT;
 		glock.flags = 0;
 		glock.clipSize = GLOCK_MAX_CLIP;
+		glock.defaultAmmo = GLOCK_DEFAULT_GIVE;
 		glock.primaryAmmoType = "9mm";
 		glock.primaryAmmoMax = _9MM_MAX_CARRY;
 		glock.secondaryAmmoType = NULL;

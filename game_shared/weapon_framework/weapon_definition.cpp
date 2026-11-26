@@ -37,7 +37,7 @@ namespace WeaponFramework
 {
 	WeaponDefinition::WeaponDefinition()
 		: m_id(0), m_slot(0), m_position(0), m_weight(0), m_flags(0),
-		  m_clipSize(-1), m_primaryAmmoMax(-1), m_secondaryAmmoMax(-1), m_valid(false)
+		  m_clipSize(-1), m_defaultAmmo(0), m_primaryAmmoMax(-1), m_secondaryAmmoMax(-1), m_valid(false)
 	{
 		m_name[0] = '\0';
 		m_entityClassname[0] = '\0';
@@ -65,6 +65,7 @@ namespace WeaponFramework
 		m_weight = data.weight;
 		m_flags = data.flags;
 		m_clipSize = data.clipSize;
+		m_defaultAmmo = data.defaultAmmo;
 		m_primaryAmmoMax = data.primaryAmmoMax;
 		m_secondaryAmmoMax = data.secondaryAmmoMax;
 
@@ -79,6 +80,7 @@ namespace WeaponFramework
 			m_slot >= 0 && m_slot < MAX_ITEM_TYPES &&
 			m_position >= 0 && m_position <= 255 &&
 			m_clipSize >= -1 &&
+			m_defaultAmmo >= 0 && m_defaultAmmo <= 32767 &&
 			((m_primaryAmmoType[0] == '\0' && m_primaryAmmoMax == -1) ||
 			 (m_primaryAmmoType[0] != '\0' && m_primaryAmmoMax >= 0)) &&
 			((m_secondaryAmmoType[0] == '\0' && m_secondaryAmmoMax == -1) ||
@@ -94,6 +96,7 @@ namespace WeaponFramework
 	int WeaponDefinition::GetWeight() const { return m_weight; }
 	int WeaponDefinition::GetFlags() const { return m_flags; }
 	int WeaponDefinition::GetClipSize() const { return m_clipSize; }
+	int WeaponDefinition::GetDefaultAmmo() const { return m_defaultAmmo; }
 	const char *WeaponDefinition::GetPrimaryAmmoType() const { return m_primaryAmmoType[0] ? m_primaryAmmoType : NULL; }
 	int WeaponDefinition::GetPrimaryAmmoMax() const { return m_primaryAmmoMax; }
 	const char *WeaponDefinition::GetSecondaryAmmoType() const { return m_secondaryAmmoType[0] ? m_secondaryAmmoType : NULL; }

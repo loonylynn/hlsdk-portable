@@ -58,7 +58,7 @@ void CGlock::Spawn()
 	SET_MODEL( ENT( pev ), pDefinition && pDefinition->GetWorldModel() ?
 		pDefinition->GetWorldModel() : "models/w_9mmhandgun.mdl" );
 
-	m_iDefaultAmmo = GLOCK_DEFAULT_GIVE;
+	m_iDefaultAmmo = pDefinition ? pDefinition->GetDefaultAmmo() : GLOCK_DEFAULT_GIVE;
 
 	pev->fuser1 = UTIL_WeaponTimeBase();
 	pev->fuser4 = 0.0f;
@@ -293,15 +293,17 @@ void CGlock::ItemPostFrame( void )
 
 void CGlock::Reload( void )
 {
-	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 || m_iClip == GLOCK_MAX_CLIP )
+	const int maxClip = iMaxClip();
+
+	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 || m_iClip == maxClip )
 		return;
 
 	int iResult;
 
 	if( m_iClip == 0 )
-		iResult = DefaultReload( GLOCK_MAX_CLIP, GLOCK_RELOAD, 1.5f );
+		iResult = DefaultReload( maxClip, GLOCK_RELOAD, 1.5f );
 	else
-		iResult = DefaultReload( GLOCK_MAX_CLIP, GLOCK_RELOAD_NOT_EMPTY, 1.5f );
+		iResult = DefaultReload( maxClip, GLOCK_RELOAD_NOT_EMPTY, 1.5f );
 
 	if( iResult )
 	{

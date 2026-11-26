@@ -93,6 +93,7 @@
       "additionalProperties": false,
       "required": [
         "clip_size",
+        "default_ammo",
         "primary",
         "secondary"
       ],
@@ -160,6 +161,12 @@
               }
             }
           ]
+        },
+        "default_ammo": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32767,
+          "description": "Initial ammunition given when this weapon is spawned."
         }
       }
     },

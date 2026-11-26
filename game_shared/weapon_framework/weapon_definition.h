@@ -33,6 +33,7 @@ namespace WeaponFramework
 		int weight;
 		int flags;
 		int clipSize;
+		int defaultAmmo;
 		const char *primaryAmmoType;
 		int primaryAmmoMax;
 		const char *secondaryAmmoType;
@@ -57,6 +58,7 @@ namespace WeaponFramework
 		int GetWeight() const;
 		int GetFlags() const;
 		int GetClipSize() const;
+		int GetDefaultAmmo() const;
 		const char *GetPrimaryAmmoType() const;
 		int GetPrimaryAmmoMax() const;
 		const char *GetSecondaryAmmoType() const;
@@ -75,6 +77,7 @@ namespace WeaponFramework
 		int m_weight;
 		int m_flags;
 		int m_clipSize;
+		int m_defaultAmmo;
 		char m_primaryAmmoType[AmmoNameCapacity];
 		int m_primaryAmmoMax;
 		char m_secondaryAmmoType[AmmoNameCapacity];

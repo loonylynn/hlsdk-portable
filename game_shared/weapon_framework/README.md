@@ -73,3 +73,5 @@ definition is registered once in each DLL from the same shared function.
 The JSON file is not loaded at runtime yet. It is the configuration contract
 for the next step: replacing the temporary built-in C++ registration data with
 a loader that reads the same fields from the JSON definition.
+
+The ammunition block also specifies `default_ammo`, the initial reserve given when the weapon is spawned. Clip size is used by the native reload path, not merely displayed to the HUD.

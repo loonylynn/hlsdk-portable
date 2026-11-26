@@ -17,7 +17,8 @@
       "type": "9mm",
       "max_carry": 250
     },
-    "secondary": null
+    "secondary": null,
+    "default_ammo": 17
   },
   "models": {
     "view": "models/v_9mmhandgun.mdl",
