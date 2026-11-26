@@ -36,6 +36,7 @@ namespace WeaponFramework
 		int defaultAmmo;
 		const char *primaryAmmoType;
 		int primaryAmmoMax;
+		int primaryAmmoPickupAmount;
 		const char *secondaryAmmoType;
 		int secondaryAmmoMax;
 		const char *viewModel;
@@ -61,6 +62,7 @@ namespace WeaponFramework
 		int GetDefaultAmmo() const;
 		const char *GetPrimaryAmmoType() const;
 		int GetPrimaryAmmoMax() const;
+		int GetPrimaryAmmoPickupAmount() const;
 		const char *GetSecondaryAmmoType() const;
 		int GetSecondaryAmmoMax() const;
 		const char *GetViewModel() const;
@@ -80,6 +82,7 @@ namespace WeaponFramework
 		int m_defaultAmmo;
 		char m_primaryAmmoType[AmmoNameCapacity];
 		int m_primaryAmmoMax;
+		int m_primaryAmmoPickupAmount;
 		char m_secondaryAmmoType[AmmoNameCapacity];
 		int m_secondaryAmmoMax;
 		char m_viewModel[ModelPathCapacity];
