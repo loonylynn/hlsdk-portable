@@ -735,14 +735,18 @@ namespace
 	}
 
 	bool ParseAmmo(const JsonParser &parser, int ammoToken,
-		char *ammoType, size_t ammoTypeCapacity, int &maxCarry)
+		char *ammoType, size_t ammoTypeCapacity, int &maxCarry, int *pickupAmount)
 	{
-		static const char *const keys[] = { "type", "max_carry" };
+		static const char *const primaryKeys[] = { "type", "max_carry", "pickup_amount" };
+		static const char *const secondaryKeys[] = { "type", "max_carry" };
 		int typeToken;
 		int maxToken;
+		int pickupToken;
 
 		ammoType[0] = '\0';
 		maxCarry = -1;
+		if (pickupAmount)
+			*pickupAmount = 0;
 
 		if (ammoToken < 0)
 			return false;
@@ -750,9 +754,17 @@ namespace
 		if (parser.tokens[ammoToken].type == JSON_NULL)
 			return true;
 
-		if (!ValidateKeys(parser, ammoToken, keys, 2) ||
+		if (pickupAmount)
+		{
+			if (!ValidateKeys(parser, ammoToken, primaryKeys, 3) ||
+				parser.tokens[ammoToken].children != 3)
+				return false;
+		}
+		else if (!ValidateKeys(parser, ammoToken, secondaryKeys, 2) ||
 			parser.tokens[ammoToken].children != 2)
+		{
 			return false;
+		}
 
 		if (!GetRequiredMember(parser, ammoToken, "type", typeToken) ||
 			!ReadString(parser, typeToken, ammoType, ammoTypeCapacity) ||
@@ -762,6 +774,13 @@ namespace
 		if (!GetRequiredMember(parser, ammoToken, "max_carry", maxToken) ||
 			!ReadInteger(parser, maxToken, 0, 32767, maxCarry))
 			return false;
+
+		if (pickupAmount)
+		{
+			if (!GetRequiredMember(parser, ammoToken, "pickup_amount", pickupToken) ||
+				!ReadInteger(parser, pickupToken, 0, 32767, *pickupAmount))
+				return false;
+		}
 
 		return true;
 	}
@@ -892,10 +911,11 @@ namespace
 			!ReadInteger(parser, token, 0, 32767, data.defaultAmmo))
 			return false;
 		if (!GetRequiredMember(parser, ammo, "primary", token) ||
-			!ParseAmmo(parser, token, primaryAmmo, sizeof(primaryAmmo), data.primaryAmmoMax))
+			!ParseAmmo(parser, token, primaryAmmo, sizeof(primaryAmmo), data.primaryAmmoMax,
+				&data.primaryAmmoPickupAmount))
 			return false;
 		if (!GetRequiredMember(parser, ammo, "secondary", token) ||
-			!ParseAmmo(parser, token, secondaryAmmo, sizeof(secondaryAmmo), data.secondaryAmmoMax))
+			!ParseAmmo(parser, token, secondaryAmmo, sizeof(secondaryAmmo), data.secondaryAmmoMax, NULL))
 			return false;
 
 		if (!GetRequiredMember(parser, root, "models", models) ||
