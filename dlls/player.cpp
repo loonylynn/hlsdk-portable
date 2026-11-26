@@ -4744,9 +4744,15 @@ void CBasePlayer::GiveNamedItem( const char *pszName )
 {
 	edict_t *pent;
 	const WeaponFramework::WeaponDefinition *pDefinition = WeaponFramework::GetRegistry().FindByEntityClassname(pszName);
-	const BOOL bFrameworkAddon = pDefinition &&
+	const BOOL bKnownAddon = pDefinition &&
 		pDefinition->GetId() >= WeaponFramework::FirstAddonWeaponId &&
 		pDefinition->GetId() <= WeaponFramework::LastAddonWeaponId;
+	if (bKnownAddon && pDefinition->GetActionType() != WeaponFramework::WeaponActionHitscan)
+	{
+		ALERT(at_console, "WeaponFramework: add-on %s has no supported behavior\\n", pszName);
+		return;
+	}
+	const BOOL bFrameworkAddon = bKnownAddon;
 	const char *pszEngineClassname = bFrameworkAddon ? "weapon_framework" : pszName;
 	int istr = MAKE_STRING( pszEngineClassname );
 
