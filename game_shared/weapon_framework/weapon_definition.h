@@ -22,7 +22,7 @@ namespace WeaponFramework
 		LastAddonWeaponId = WEAPON_SUIT - 1
 	};
 
-	// Input data used by built-in adapters now and by the JSON loader later.
+	// Input data used by built-in adapters and the JSON loader.
 	struct WeaponDefinitionData
 	{
 		int id;
