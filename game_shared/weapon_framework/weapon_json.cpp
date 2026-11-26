@@ -951,6 +951,7 @@ namespace
 		if (!GetRequiredMember(parser, animations, "reload", token) || !ReadInteger(parser, token, 0, 255, data.reloadAnimation)) return false;
 		if (!GetRequiredMember(parser, animations, "idle", token) || !ReadInteger(parser, token, 0, 255, data.idleAnimation)) return false;
 		data.actionType = WeaponActionHitscan;
+		data.behaviorName = "firearm.hitscan";
 		data.fireSound = fireSound;
 		return true;
 	}
