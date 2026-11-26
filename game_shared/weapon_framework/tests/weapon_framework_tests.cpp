@@ -4,6 +4,7 @@
  * These tests exercise metadata loading without starting the GoldSrc engine.
  */
 #include "weapon_json.h"
+#include "weapon_behavior.h"
 #include "weapon_registry.h"
 
 #include <new>
@@ -329,6 +330,9 @@ namespace
 		CHECK(definition.IsValid());
 		CHECK(definition.GetId() == 0);
 		CHECK(definition.GetActionType() == WeaponActionHitscan);
+		CHECK(definition.GetBehaviorName() != NULL);
+		if (definition.GetBehaviorName())
+			CHECK(strcmp(definition.GetBehaviorName(), "firearm.hitscan") == 0);
 		CHECK(definition.GetBulletType() == 1);
 		CHECK(definition.GetDamage() == 20);
 		CHECK(definition.GetPellets() == 1);
@@ -342,6 +346,56 @@ namespace
 		CHECK(definition.GetFireAnimation() == 1);
 		CHECK(definition.GetReloadAnimation() == 2);
 		CHECK(definition.GetIdleAnimation() == 0);
+	}
+
+	void TestNativeBehaviorContracts()
+	{
+		WeaponDefinition definition;
+		WeaponDefinition metadataOnly;
+		WeaponBehaviorRegistry registry;
+		TestHitscanBehavior hitscan;
+		TestHitscanBehavior duplicate;
+		TestActionHost host;
+		WeaponInstanceState instance;
+		WeaponBehaviorContext context;
+		WeaponInputState input;
+		char error[128] = { 0 };
+
+		CHECK(ParseWeaponDefinitionJson(kHitscanDefinition,
+			strlen(kHitscanDefinition), definition));
+		CHECK(ParseWeaponDefinitionJson(kAlphaDefinition,
+			strlen(kAlphaDefinition), metadataOnly));
+
+		CHECK(registry.Register(&hitscan));
+		CHECK(registry.Find("firearm.hitscan") == &hitscan);
+		CHECK(registry.FindForDefinition(definition) == &hitscan);
+		CHECK(registry.Find("missing.behavior") == NULL);
+		CHECK(!registry.Register(&duplicate));
+		CHECK(registry.ValidateDefinition(definition, error, sizeof(error)));
+		CHECK(error[0] == '\0');
+		CHECK(!registry.ValidateDefinition(metadataOnly, error, sizeof(error)));
+		CHECK(error[0] != '\0');
+
+		instance.Reset(17);
+		CHECK(instance.version == WeaponInstanceState::CurrentVersion);
+		CHECK(instance.lifecycle == WeaponLifecycleHolstered);
+		CHECK(instance.reload == WeaponReloadNone);
+		CHECK(instance.loadedAmmo == 17);
+		CHECK(instance.nextPrimaryAttackTime == 0.0f);
+
+		context.definition = &definition;
+		context.instance = &instance;
+		context.host = &host;
+		context.input = input;
+		context.currentTime = 2.0f;
+		context.frameTime = 0.016f;
+		context.authoritative = true;
+		CHECK(context.IsValid());
+		CHECK(hitscan.CanDeploy(context));
+		CHECK(!hitscan.PrimaryAttack(context));
+
+		registry.Clear();
+		CHECK(registry.Find("firearm.hitscan") == NULL);
 	}
 
 	void TestRegistryRejectsDuplicates()
@@ -419,6 +473,7 @@ int main()
 	TestDefinitionParsing();
 	TestLegacyMetadataWithSpacedAmmoNames();
 	TestHitscanBehaviorParsing();
+	TestNativeBehaviorContracts();
 	TestRegistryRejectsDuplicates();
 	TestDeterministicPackageLoading();
 	TestFailedLoadDoesNotPublishPartialRegistry();
