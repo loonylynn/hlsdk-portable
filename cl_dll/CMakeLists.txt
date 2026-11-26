@@ -150,6 +150,7 @@ list(APPEND CLDLL_SOURCES
 	../game_shared/vgui_slider2.cpp
 	../game_shared/voice_banmgr.cpp
 	../game_shared/weapon_framework/weapon_definition.cpp
+	../game_shared/weapon_framework/weapon_behavior.cpp
 	../game_shared/weapon_framework/weapon_registry.cpp
 	../game_shared/weapon_framework/weapon_json.cpp
 )
