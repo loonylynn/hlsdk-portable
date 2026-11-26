@@ -3,8 +3,60 @@
   "name": "goldsrc:base",
   "weapons": [
     {
+      "name": "goldsrc:weapon/crossbow",
+      "file": "scripts/weapons/weapon_crossbow.json"
+    },
+    {
+      "name": "goldsrc:weapon/crowbar",
+      "file": "scripts/weapons/weapon_crowbar.json"
+    },
+    {
+      "name": "goldsrc:weapon/egon",
+      "file": "scripts/weapons/weapon_egon.json"
+    },
+    {
+      "name": "goldsrc:weapon/gauss",
+      "file": "scripts/weapons/weapon_gauss.json"
+    },
+    {
       "name": "goldsrc:weapon/glock",
       "file": "scripts/weapons/weapon_glock.json"
+    },
+    {
+      "name": "goldsrc:weapon/handgrenade",
+      "file": "scripts/weapons/weapon_handgrenade.json"
+    },
+    {
+      "name": "goldsrc:weapon/hornetgun",
+      "file": "scripts/weapons/weapon_hornetgun.json"
+    },
+    {
+      "name": "goldsrc:weapon/mp5",
+      "file": "scripts/weapons/weapon_mp5.json"
+    },
+    {
+      "name": "goldsrc:weapon/python",
+      "file": "scripts/weapons/weapon_python.json"
+    },
+    {
+      "name": "goldsrc:weapon/rpg",
+      "file": "scripts/weapons/weapon_rpg.json"
+    },
+    {
+      "name": "goldsrc:weapon/satchel",
+      "file": "scripts/weapons/weapon_satchel.json"
+    },
+    {
+      "name": "goldsrc:weapon/shotgun",
+      "file": "scripts/weapons/weapon_shotgun.json"
+    },
+    {
+      "name": "goldsrc:weapon/snark",
+      "file": "scripts/weapons/weapon_snark.json"
+    },
+    {
+      "name": "goldsrc:weapon/tripmine",
+      "file": "scripts/weapons/weapon_tripmine.json"
     }
   ]
 }

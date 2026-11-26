@@ -1,0 +1,29 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/shotgun",
+    "entity_classname": "weapon_shotgun",
+    "legacy_id": 7
+  },
+  "inventory": {
+    "slot": 2,
+    "position": 1,
+    "weight": 15,
+    "flags": []
+  },
+  "ammo": {
+    "clip_size": 8,
+    "default_ammo": 12,
+    "primary": {
+      "type": "buckshot",
+      "max_carry": 125,
+      "pickup_amount": 12
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_shotgun.mdl",
+    "world": "models/w_shotgun.mdl",
+    "player": "models/p_shotgun.mdl"
+  }
+}

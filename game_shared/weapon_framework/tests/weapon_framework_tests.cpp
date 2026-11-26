@@ -36,6 +36,18 @@ namespace
 		"}";
 
 
+
+	const char kTripMineLegacyDefinition[] =
+		"{"
+		"\"format_version\":1,"
+		"\"identity\":{\"name\":\"goldsrc:weapon/tripmine\",\"entity_classname\":\"weapon_tripmine\",\"legacy_id\":13},"
+		"\"inventory\":{\"slot\":4,\"position\":2,\"weight\":-10,\"flags\":[\"limit_in_world\",\"exhaustible\"]},"
+		"\"ammo\":{\"clip_size\":-1,\"default_ammo\":1,"
+			"\"primary\":{\"type\":\"Trip Mine\",\"max_carry\":5,\"pickup_amount\":1},"
+			"\"secondary\":null},"
+		"\"models\":{\"view\":\"models/v_tripmine.mdl\",\"world\":\"models/v_tripmine.mdl\",\"player\":\"models/p_tripmine.mdl\"}"
+		"}";
+
 	const char kHitscanDefinition[] =
 		"{"
 		"\"format_version\":1,"
@@ -295,6 +307,21 @@ namespace
 	}
 
 
+
+	void TestLegacyMetadataWithSpacedAmmoNames()
+	{
+		WeaponDefinition definition;
+		CHECK(ParseWeaponDefinitionJson(kTripMineLegacyDefinition,
+			strlen(kTripMineLegacyDefinition), definition));
+		CHECK(definition.IsValid());
+		CHECK(definition.GetId() == 13);
+		CHECK(definition.GetPrimaryAmmoType() != NULL);
+		if (definition.GetPrimaryAmmoType())
+			CHECK(strcmp(definition.GetPrimaryAmmoType(), "Trip Mine") == 0);
+		CHECK(definition.GetFlags() == (8 | 16));
+		CHECK(definition.GetActionType() == WeaponActionNone);
+	}
+
 	void TestHitscanBehaviorParsing()
 	{
 		WeaponDefinition definition;
@@ -390,6 +417,7 @@ namespace
 int main()
 {
 	TestDefinitionParsing();
+	TestLegacyMetadataWithSpacedAmmoNames();
 	TestHitscanBehaviorParsing();
 	TestRegistryRejectsDuplicates();
 	TestDeterministicPackageLoading();

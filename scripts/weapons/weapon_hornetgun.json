@@ -1,0 +1,32 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/hornetgun",
+    "entity_classname": "weapon_hornetgun",
+    "legacy_id": 11
+  },
+  "inventory": {
+    "slot": 3,
+    "position": 3,
+    "weight": 15,
+    "flags": [
+      "no_auto_switch_empty",
+      "no_auto_reload"
+    ]
+  },
+  "ammo": {
+    "clip_size": -1,
+    "default_ammo": 8,
+    "primary": {
+      "type": "Hornets",
+      "max_carry": 8,
+      "pickup_amount": 8
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_hgun.mdl",
+    "world": "models/w_hgun.mdl",
+    "player": "models/p_hgun.mdl"
+  }
+}

@@ -772,16 +772,29 @@ namespace
 	bool IsValidAmmoType(const char *type)
 	{
 		const char *p;
+		bool previousWasSpace = true;
 		if (!type || type[0] == '\0' || strlen(type) > 31)
 			return false;
 		for (p = type; *p; ++p)
 		{
 			const char c = *p;
-			if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-				(c >= '0' && c <= '9') || c == '_'))
+			if (c == ' ')
+			{
+				if (previousWasSpace)
+					return false;
+				previousWasSpace = true;
+			}
+			else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') || c == '_')
+			{
+				previousWasSpace = false;
+			}
+			else
+			{
 				return false;
+			}
 		}
-		return true;
+		return !previousWasSpace;
 	}
 
 	bool IsValidModelPath(const char *path)

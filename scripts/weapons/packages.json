@@ -4,6 +4,10 @@
     {
       "name": "goldsrc:base",
       "manifest": "scripts/weapons/package_goldsrc.json"
+    },
+    {
+      "name": "xash:extensions",
+      "manifest": "scripts/weapons/package_xash.json"
     }
   ]
 }
