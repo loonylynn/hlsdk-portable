@@ -1,0 +1,366 @@
+/*
+ * Focused tests for the shared weapon JSON and package registry.
+ *
+ * These tests exercise metadata loading without starting the GoldSrc engine.
+ */
+#include "weapon_json.h"
+#include "weapon_registry.h"
+
+#include <new>
+#include <stdio.h>
+#include <string.h>
+
+using namespace WeaponFramework;
+
+namespace
+{
+	int g_failures = 0;
+
+#define CHECK(condition) \
+	do { \
+		if (!(condition)) { \
+			fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #condition); \
+			++g_failures; \
+		} \
+	} while (0)
+
+	const char kAlphaDefinition[] =
+		"{"
+		"\"format_version\":1,"
+		"\"identity\":{\"name\":\"sample:weapon/alpha\",\"entity_classname\":\"weapon_test_alpha\"},"
+		"\"inventory\":{\"slot\":1,\"position\":0,\"weight\":10,\"flags\":[\"select_on_empty\"]},"
+		"\"ammo\":{\"clip_size\":12,\"default_ammo\":12,"
+			"\"primary\":{\"type\":\"alpha_rounds\",\"max_carry\":120,\"pickup_amount\":12},"
+			"\"secondary\":null},"
+		"\"models\":{\"view\":\"models/v_alpha.mdl\",\"world\":\"models/w_alpha.mdl\",\"player\":null}"
+		"}";
+
+	const char kUnknownFieldDefinition[] =
+		"{"
+		"\"format_version\":1,"
+		"\"identity\":{\"name\":\"sample:weapon/alpha\",\"entity_classname\":\"weapon_test_alpha\"},"
+		"\"inventory\":{\"slot\":1,\"position\":0,\"weight\":10,\"flags\":[]},"
+		"\"ammo\":{\"clip_size\":12,\"default_ammo\":12,\"primary\":null,\"secondary\":null},"
+		"\"models\":{\"view\":\"models/v_alpha.mdl\",\"world\":\"models/w_alpha.mdl\",\"player\":null},"
+		"\"debug\":true"
+		"}";
+
+	const char kWrongTypeDefinition[] =
+		"{"
+		"\"format_version\":1,"
+		"\"identity\":{\"name\":\"sample:weapon/alpha\",\"entity_classname\":\"weapon_test_alpha\"},"
+		"\"inventory\":{\"slot\":\"1\",\"position\":0,\"weight\":10,\"flags\":[]},"
+		"\"ammo\":{\"clip_size\":12,\"default_ammo\":12,\"primary\":null,\"secondary\":null},"
+		"\"models\":{\"view\":\"models/v_alpha.mdl\",\"world\":\"models/w_alpha.mdl\",\"player\":null}"
+		"}";
+
+	const char kTraversalModelDefinition[] =
+		"{"
+		"\"format_version\":1,"
+		"\"identity\":{\"name\":\"sample:weapon/alpha\",\"entity_classname\":\"weapon_test_alpha\"},"
+		"\"inventory\":{\"slot\":1,\"position\":0,\"weight\":10,\"flags\":[]},"
+		"\"ammo\":{\"clip_size\":12,\"default_ammo\":12,\"primary\":null,\"secondary\":null},"
+		"\"models\":{\"view\":\"models/../v_alpha.mdl\",\"world\":\"models/w_alpha.mdl\",\"player\":null}"
+		"}";
+
+	const char kEchoDefinition[] =
+		"{"
+		"\"format_version\":1,"
+		"\"identity\":{\"name\":\"sample:weapon/echo\",\"entity_classname\":\"weapon_test_echo\"},"
+		"\"inventory\":{\"slot\":1,\"position\":1,\"weight\":8,\"flags\":[]},"
+		"\"ammo\":{\"clip_size\":8,\"default_ammo\":8,"
+			"\"primary\":{\"type\":\"echo_rounds\",\"max_carry\":80,\"pickup_amount\":8},"
+			"\"secondary\":null},"
+		"\"models\":{\"view\":\"models/v_echo.mdl\",\"world\":\"models/w_echo.mdl\",\"player\":null}"
+		"}";
+
+	const char kZuluDefinition[] =
+		"{"
+		"\"format_version\":1,"
+		"\"identity\":{\"name\":\"sample:weapon/zulu\",\"entity_classname\":\"weapon_test_zulu\"},"
+		"\"inventory\":{\"slot\":1,\"position\":2,\"weight\":6,\"flags\":[]},"
+		"\"ammo\":{\"clip_size\":6,\"default_ammo\":6,"
+			"\"primary\":{\"type\":\"zulu_rounds\",\"max_carry\":60,\"pickup_amount\":6},"
+			"\"secondary\":null},"
+		"\"models\":{\"view\":\"models/v_zulu.mdl\",\"world\":\"models/w_zulu.mdl\",\"player\":null}"
+		"}";
+
+	const char kAlphaManifest[] =
+		"{"
+		"\"format_version\":1,"
+		"\"name\":\"sample:pack/alpha\","
+		"\"weapons\":["
+			"{\"name\":\"sample:weapon/alpha\",\"file\":\"addons/alpha/weapons/alpha.json\"}"
+		"]"
+		"}";
+
+	const char kZetaManifestForward[] =
+		"{"
+		"\"format_version\":1,"
+		"\"name\":\"sample:pack/zeta\","
+		"\"weapons\":["
+			"{\"name\":\"sample:weapon/zulu\",\"file\":\"addons/zeta/weapons/zulu.json\"},"
+			"{\"name\":\"sample:weapon/echo\",\"file\":\"addons/zeta/weapons/echo.json\"}"
+		"]"
+		"}";
+
+	const char kZetaManifestReverse[] =
+		"{"
+		"\"format_version\":1,"
+		"\"name\":\"sample:pack/zeta\","
+		"\"weapons\":["
+			"{\"name\":\"sample:weapon/echo\",\"file\":\"addons/zeta/weapons/echo.json\"},"
+			"{\"name\":\"sample:weapon/zulu\",\"file\":\"addons/zeta/weapons/zulu.json\"}"
+		"]"
+		"}";
+
+	const char kCatalogZetaFirst[] =
+		"{"
+		"\"format_version\":1,"
+		"\"packages\":["
+			"{\"name\":\"sample:pack/zeta\",\"manifest\":\"addons/zeta/package.json\"},"
+			"{\"name\":\"sample:pack/alpha\",\"manifest\":\"addons/alpha/package.json\"}"
+		"]"
+		"}";
+
+	const char kCatalogAlphaFirst[] =
+		"{"
+		"\"format_version\":1,"
+		"\"packages\":["
+			"{\"name\":\"sample:pack/alpha\",\"manifest\":\"addons/alpha/package.json\"},"
+			"{\"name\":\"sample:pack/zeta\",\"manifest\":\"addons/zeta/package.json\"}"
+		"]"
+		"}";
+
+	const char kCatalogMissingWeapon[] =
+		"{"
+		"\"format_version\":1,"
+		"\"packages\":["
+			"{\"name\":\"sample:pack/alpha\",\"manifest\":\"addons/alpha/missing_test.json\"}"
+		"]"
+		"}";
+
+	const char kManifestWithMissingWeapon[] =
+		"{"
+		"\"format_version\":1,"
+		"\"name\":\"sample:pack/alpha\","
+		"\"weapons\":["
+			"{\"name\":\"sample:weapon/alpha\",\"file\":\"addons/alpha/weapons/alpha.json\"},"
+			"{\"name\":\"sample:weapon/missing\",\"file\":\"addons/alpha/weapons/missing.json\"}"
+		"]"
+		"}";
+
+	struct MemoryFile
+	{
+		const char *path;
+		const char *contents;
+	};
+
+	const MemoryFile kFilesZetaFirst[] =
+	{
+		{ "scripts/weapons/packages.json", kCatalogZetaFirst },
+		{ "addons/zeta/package.json", kZetaManifestForward },
+		{ "addons/alpha/package.json", kAlphaManifest },
+		{ "addons/zeta/weapons/zulu.json", kZuluDefinition },
+		{ "addons/zeta/weapons/echo.json", kEchoDefinition },
+		{ "addons/alpha/weapons/alpha.json", kAlphaDefinition }
+	};
+
+	const MemoryFile kFilesAlphaFirst[] =
+	{
+		{ "scripts/weapons/packages.json", kCatalogAlphaFirst },
+		{ "addons/alpha/package.json", kAlphaManifest },
+		{ "addons/zeta/package.json", kZetaManifestReverse },
+		{ "addons/alpha/weapons/alpha.json", kAlphaDefinition },
+		{ "addons/zeta/weapons/echo.json", kEchoDefinition },
+		{ "addons/zeta/weapons/zulu.json", kZuluDefinition }
+	};
+
+	const MemoryFile kFilesMissingWeapon[] =
+	{
+		{ "scripts/weapons/packages.json", kCatalogMissingWeapon },
+		{ "addons/alpha/missing_test.json", kManifestWithMissingWeapon },
+		{ "addons/alpha/weapons/alpha.json", kAlphaDefinition }
+	};
+
+	const MemoryFile *g_files = NULL;
+	int g_fileCount = 0;
+	int g_loadCount = 0;
+	int g_freeCount = 0;
+
+	void SetMemoryFiles(const MemoryFile *files, int fileCount)
+	{
+		g_files = files;
+		g_fileCount = fileCount;
+		g_loadCount = 0;
+		g_freeCount = 0;
+	}
+
+	unsigned char *LoadMemoryFile(const char *path, int *length)
+	{
+		int i;
+		if (!path || !length)
+			return NULL;
+
+		for (i = 0; i < g_fileCount; ++i)
+		{
+			if (strcmp(path, g_files[i].path) == 0)
+			{
+				const size_t size = strlen(g_files[i].contents);
+				unsigned char *copy = new (std::nothrow) unsigned char[size];
+				if (!copy)
+					return NULL;
+				memcpy(copy, g_files[i].contents, size);
+				*length = (int)size;
+				++g_loadCount;
+				return copy;
+			}
+		}
+
+		*length = 0;
+		return NULL;
+	}
+
+	void FreeMemoryFile(unsigned char *fileData)
+	{
+		if (fileData)
+		{
+			++g_freeCount;
+			delete[] fileData;
+		}
+	}
+
+	void CheckExpectedAddonIds()
+	{
+		const WeaponDefinition *alpha = GetRegistry().FindByName("sample:weapon/alpha");
+		const WeaponDefinition *echo = GetRegistry().FindByName("sample:weapon/echo");
+		const WeaponDefinition *zulu = GetRegistry().FindByName("sample:weapon/zulu");
+
+		CHECK(alpha != NULL);
+		CHECK(echo != NULL);
+		CHECK(zulu != NULL);
+		if (alpha && echo && zulu)
+		{
+			CHECK(alpha->GetId() == FirstAddonWeaponId);
+			CHECK(echo->GetId() == FirstAddonWeaponId + 1);
+			CHECK(zulu->GetId() == FirstAddonWeaponId + 2);
+		}
+	}
+
+	void TestDefinitionParsing()
+	{
+		WeaponDefinition definition;
+
+		CHECK(ParseWeaponDefinitionJson(kAlphaDefinition, strlen(kAlphaDefinition), definition));
+		CHECK(definition.IsValid());
+		CHECK(definition.GetId() == 0);
+		CHECK(strcmp(definition.GetName(), "sample:weapon/alpha") == 0);
+		CHECK(strcmp(definition.GetEntityClassname(), "weapon_test_alpha") == 0);
+		CHECK(definition.GetSlot() == 1);
+		CHECK(definition.GetPosition() == 0);
+		CHECK(definition.GetClipSize() == 12);
+		CHECK(definition.GetDefaultAmmo() == 12);
+		CHECK(definition.GetPrimaryAmmoType() != NULL);
+		if (definition.GetPrimaryAmmoType())
+			CHECK(strcmp(definition.GetPrimaryAmmoType(), "alpha_rounds") == 0);
+		CHECK(definition.GetPrimaryAmmoMax() == 120);
+		CHECK(definition.GetPrimaryAmmoPickupAmount() == 12);
+		CHECK(definition.GetViewModel() != NULL);
+		CHECK(definition.GetWorldModel() != NULL);
+		CHECK(definition.GetPlayerModel() == NULL);
+
+		CHECK(!ParseWeaponDefinitionJson(kUnknownFieldDefinition,
+			strlen(kUnknownFieldDefinition), definition));
+		CHECK(!ParseWeaponDefinitionJson(kWrongTypeDefinition,
+			strlen(kWrongTypeDefinition), definition));
+		CHECK(!ParseWeaponDefinitionJson(kTraversalModelDefinition,
+			strlen(kTraversalModelDefinition), definition));
+		CHECK(!ParseWeaponDefinitionJson("{", 1, definition));
+	}
+
+	void TestRegistryRejectsDuplicates()
+	{
+		WeaponRegistry registry;
+		WeaponDefinition alpha;
+		WeaponDefinitionData duplicate = {};
+
+		CHECK(ParseWeaponDefinitionJson(kAlphaDefinition, strlen(kAlphaDefinition), alpha));
+		CHECK(registry.RegisterAddon(alpha) == FirstAddonWeaponId);
+
+		duplicate.id = 0;
+		duplicate.name = "sample:weapon/alpha";
+		duplicate.entityClassname = "weapon_test_duplicate";
+		duplicate.slot = 1;
+		duplicate.position = 0;
+		duplicate.weight = 1;
+		duplicate.flags = 0;
+		duplicate.clipSize = -1;
+		duplicate.defaultAmmo = 0;
+		duplicate.primaryAmmoType = NULL;
+		duplicate.primaryAmmoMax = -1;
+		duplicate.primaryAmmoPickupAmount = 0;
+		duplicate.secondaryAmmoType = NULL;
+		duplicate.secondaryAmmoMax = -1;
+		duplicate.viewModel = "models/v_duplicate.mdl";
+		duplicate.worldModel = "models/w_duplicate.mdl";
+		duplicate.playerModel = NULL;
+
+		CHECK(WeaponDefinition(duplicate).IsValid());
+		CHECK(registry.RegisterAddon(WeaponDefinition(duplicate)) == 0);
+
+		duplicate.name = "sample:weapon/other";
+		duplicate.entityClassname = "weapon_test_alpha";
+		CHECK(registry.RegisterAddon(WeaponDefinition(duplicate)) == 0);
+	}
+
+	void TestDeterministicPackageLoading()
+	{
+		SetMemoryFiles(kFilesZetaFirst, (int)(sizeof(kFilesZetaFirst) / sizeof(kFilesZetaFirst[0])));
+		CHECK(LoadWeaponPackageCatalog("scripts/weapons/packages.json",
+			LoadMemoryFile, FreeMemoryFile));
+		CHECK(g_loadCount == g_freeCount);
+		CheckExpectedAddonIds();
+
+		// Reversing both package and weapon arrays must not change assigned IDs.
+		SetMemoryFiles(kFilesAlphaFirst, (int)(sizeof(kFilesAlphaFirst) / sizeof(kFilesAlphaFirst[0])));
+		CHECK(LoadWeaponPackageCatalog("scripts/weapons/packages.json",
+			LoadMemoryFile, FreeMemoryFile));
+		CHECK(g_loadCount == g_freeCount);
+		CheckExpectedAddonIds();
+	}
+
+	void TestFailedLoadDoesNotPublishPartialRegistry()
+	{
+		SetMemoryFiles(kFilesMissingWeapon,
+			(int)(sizeof(kFilesMissingWeapon) / sizeof(kFilesMissingWeapon[0])));
+		CHECK(!LoadWeaponPackageCatalog("scripts/weapons/packages.json",
+			LoadMemoryFile, FreeMemoryFile));
+		CHECK(g_loadCount == g_freeCount);
+
+		// The last valid catalogue remains active; the staged alpha entry is not
+		// published when the following weapon file cannot be found.
+		CheckExpectedAddonIds();
+		CHECK(GetRegistry().FindByName("sample:weapon/missing") == NULL);
+
+		CHECK(!LoadWeaponPackageCatalog("../scripts/weapons/packages.json",
+			LoadMemoryFile, FreeMemoryFile));
+		CheckExpectedAddonIds();
+	}
+}
+
+int main()
+{
+	TestDefinitionParsing();
+	TestRegistryRejectsDuplicates();
+	TestDeterministicPackageLoading();
+	TestFailedLoadDoesNotPublishPartialRegistry();
+
+	if (g_failures != 0)
+	{
+		fprintf(stderr, "%d weapon framework test(s) failed.\n", g_failures);
+		return 1;
+	}
+
+	printf("Weapon framework tests passed.\n");
+	return 0;
+}

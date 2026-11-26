@@ -130,3 +130,22 @@ replaces the live registry when every package has loaded successfully.
 The root build scripts install the JSON files in `scripts/weapons/` into the
 selected game directory. Third-party packages can distribute their own JSON
 files in PK3s, provided their manifest paths are listed in the root catalogue.
+
+
+## Focused tests
+
+The shared parser and package registry have a standalone test target that does
+not require the engine or a 32-bit SDK build. With CMake and a C++ compiler
+installed, run:
+
+\`\`\`sh
+cmake -S game_shared/weapon_framework/tests -B build-weapon-framework-tests
+cmake --build build-weapon-framework-tests
+ctest --test-dir build-weapon-framework-tests --output-on-failure
+\`\`\`
+
+The tests cover valid and invalid weapon definitions, duplicate identity
+rejection, deterministic add-on IDs when package and weapon arrays are
+reordered, and preservation of the last valid registry when a catalogue load
+fails. They validate the metadata layer only; they do not exercise GoldSrc
+entity spawning, firing, or client prediction.

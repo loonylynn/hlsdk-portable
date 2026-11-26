@@ -1,0 +1,31 @@
+name: Weapon framework tests
+
+on:
+  push:
+    branches:
+      - master
+      - 'weapon-framework/**'
+    paths:
+      - 'game_shared/weapon_framework/**'
+      - '.github/workflows/weapon-framework-tests.yml'
+  pull_request:
+    paths:
+      - 'game_shared/weapon_framework/**'
+      - '.github/workflows/weapon-framework-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  weapon-framework:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure focused tests
+        run: cmake -S game_shared/weapon_framework/tests -B build-weapon-framework-tests -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build focused tests
+        run: cmake --build build-weapon-framework-tests --parallel 2
+
+      - name: Run focused tests
+        run: ctest --test-dir build-weapon-framework-tests --output-on-failure
