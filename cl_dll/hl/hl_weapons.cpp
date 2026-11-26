@@ -608,7 +608,7 @@ void HUD_InitClientWeapons( void )
 
 	initialized = 1;
 
-	// Keep prediction metadata aligned with the server's definition file.
+	// Keep prediction metadata aligned with the server's package catalogue.
 	LoadWeaponDefinitionsFromClientFiles();
 
 	// Set up pointer ( dummy object )
