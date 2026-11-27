@@ -18,6 +18,10 @@ namespace
 // the font selected by the game's VGUI scheme.
 static int g_iNextHudFontId = 0x50000000;
 
+// Compact, square-corner translucent backing used by the three VGUI HUD groups.
+static const int HUD_VGUI_PANEL_PADDING_X = 8;
+static const int HUD_VGUI_PANEL_PADDING_Y = 5;
+
 class CHudScaledFont : public vgui::Font
 {
 public:
@@ -131,6 +135,7 @@ public:
 		m_iRed( 255 ),
 		m_iGreen( 255 ),
 		m_iBlue( 255 ),
+		m_iBackgroundOpacity( -1 ),
 		m_iNumberX( 0 ),
 		m_iCaptionX( 0 ),
 		m_iNumberY( 0 ),
@@ -139,7 +144,8 @@ public:
 		strncpy( m_szHealth, "100", sizeof( m_szHealth ) );
 		m_szHealth[sizeof( m_szHealth ) - 1] = '\0';
 		setPaintBorderEnabled( false );
-		setPaintBackgroundEnabled( false );
+		setPaintBackgroundEnabled( true );
+		setBgColor( 0, 0, 0, 255 );
 		setPaintEnabled( true );
 	}
 
@@ -170,6 +176,20 @@ public:
 		m_iRed = red;
 		m_iGreen = green;
 		m_iBlue = blue;
+	}
+
+	bool SetBackgroundOpacity( int opacity )
+	{
+		if( opacity < 0 ) opacity = 0;
+		if( opacity > 255 ) opacity = 255;
+		if( m_iBackgroundOpacity == opacity )
+			return false;
+
+		m_iBackgroundOpacity = opacity;
+		// VGUI's background Color alpha is transparency, so invert the
+		// user-facing opacity before passing it to the native panel renderer.
+		setBgColor( 0, 0, 0, 255 - opacity );
+		return true;
 	}
 
 	bool SetTextLayout( int numberX, int numberY, int captionX, int captionY )
@@ -212,6 +232,7 @@ private:
 	int m_iRed;
 	int m_iGreen;
 	int m_iBlue;
+	int m_iBackgroundOpacity;
 	int m_iNumberX;
 	int m_iCaptionX;
 	int m_iNumberY;
@@ -233,6 +254,7 @@ public:
 		m_iRed( 255 ),
 		m_iGreen( 255 ),
 		m_iBlue( 255 ),
+		m_iBackgroundOpacity( -1 ),
 		m_iValueX( 0 ),
 		m_iCaptionX( 0 ),
 		m_iValueY( 0 ),
@@ -241,7 +263,8 @@ public:
 		m_szCaption[0] = '\0';
 		m_szValue[0] = '\0';
 		setPaintBorderEnabled( false );
-		setPaintBackgroundEnabled( false );
+		setPaintBackgroundEnabled( true );
+		setBgColor( 0, 0, 0, 255 );
 		setPaintEnabled( true );
 	}
 
@@ -322,6 +345,20 @@ public:
 		return true;
 	}
 
+	bool SetBackgroundOpacity( int opacity )
+	{
+		if( opacity < 0 ) opacity = 0;
+		if( opacity > 255 ) opacity = 255;
+		if( m_iBackgroundOpacity == opacity )
+			return false;
+
+		m_iBackgroundOpacity = opacity;
+		// VGUI's background Color alpha is transparency, so invert the
+		// user-facing opacity before passing it to the native panel renderer.
+		setBgColor( 0, 0, 0, 255 - opacity );
+		return true;
+	}
+
 	bool SetTextLayout( int valueX, int valueY, int captionX, int captionY )
 	{
 		if( m_iValueX == valueX && m_iValueY == valueY &&
@@ -389,6 +426,7 @@ private:
 	int m_iRed;
 	int m_iGreen;
 	int m_iBlue;
+	int m_iBackgroundOpacity;
 	int m_iValueX;
 	int m_iCaptionX;
 	int m_iValueY;
@@ -413,6 +451,14 @@ int g_iLastBlue = -1;
 static int HUD_VGuiReadOffset( const char *name )
 {
 	return (int)CVAR_GET_FLOAT( name );
+}
+
+static int HUD_VGuiReadPanelOpacity( void )
+{
+	int opacity = HUD_VGuiReadOffset( "hud_vgui_panel_opacity" );
+	if( opacity < 0 ) opacity = 0;
+	if( opacity > 255 ) opacity = 255;
+	return opacity;
 }
 
 void HUD_VGuiHealthResetCache( void )
@@ -621,6 +667,8 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 		changed = true;
 	}
 
+	changed |= g_pHudHealthPanel->SetBackgroundOpacity( HUD_VGuiReadPanelOpacity() );
+
 	if( red != g_iLastRed || green != g_iLastGreen || blue != g_iLastBlue )
 	{
 		g_pHudHealthPanel->SetHealthColor( red, green, blue );
@@ -643,12 +691,14 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 	captionAbsX = x + ( numberWide - captionWide ) / 2 + textOffsetX;
 	captionAbsY = y - captionTall - 2 + textOffsetY;
 
-	left = numberAbsX < captionAbsX ? numberAbsX : captionAbsX;
-	top = numberAbsY < captionAbsY ? numberAbsY : captionAbsY;
+	left = ( numberAbsX < captionAbsX ? numberAbsX : captionAbsX ) - HUD_VGUI_PANEL_PADDING_X;
+	top = ( numberAbsY < captionAbsY ? numberAbsY : captionAbsY ) - HUD_VGUI_PANEL_PADDING_Y;
 	right = ( numberAbsX + numberWide ) > ( captionAbsX + captionWide ) ?
 		( numberAbsX + numberWide ) : ( captionAbsX + captionWide );
+	right += HUD_VGUI_PANEL_PADDING_X;
 	bottom = ( numberAbsY + numberTall ) > ( captionAbsY + captionTall ) ?
 		( numberAbsY + numberTall ) : ( captionAbsY + captionTall );
+	bottom += HUD_VGUI_PANEL_PADDING_Y;
 
 	panelWide = right - left;
 	panelTall = bottom - top;
@@ -718,6 +768,7 @@ static int HUD_VGuiUpdateLabeledPanel( CHudLabeledTextPanel *panel,
 
 	changed |= panel->SetText( caption, value );
 	changed |= panel->SetTextColor( red, green, blue );
+	changed |= panel->SetBackgroundOpacity( HUD_VGuiReadPanelOpacity() );
 
 	panel->GetValueTextSize( value, valueWide, valueTall );
 	g_pHudHealthCaptionFont->getTextSize( caption, captionWide, captionTall );
@@ -750,12 +801,14 @@ static int HUD_VGuiUpdateLabeledPanel( CHudLabeledTextPanel *panel,
 	captionAbsX += textOffsetX;
 	captionAbsY += textOffsetY;
 
-	left = valueAbsX < captionAbsX ? valueAbsX : captionAbsX;
-	top = valueAbsY < captionAbsY ? valueAbsY : captionAbsY;
+	left = ( valueAbsX < captionAbsX ? valueAbsX : captionAbsX ) - HUD_VGUI_PANEL_PADDING_X;
+	top = ( valueAbsY < captionAbsY ? valueAbsY : captionAbsY ) - HUD_VGUI_PANEL_PADDING_Y;
 	right = ( valueAbsX + valueWide ) > ( captionAbsX + captionWide ) ?
 		( valueAbsX + valueWide ) : ( captionAbsX + captionWide );
+	right += HUD_VGUI_PANEL_PADDING_X;
 	bottom = ( valueAbsY + valueTall ) > ( captionAbsY + captionTall ) ?
 		( valueAbsY + valueTall ) : ( captionAbsY + captionTall );
+	bottom += HUD_VGUI_PANEL_PADDING_Y;
 
 	panelWidePixels = right - left;
 	panelTallPixels = bottom - top;
