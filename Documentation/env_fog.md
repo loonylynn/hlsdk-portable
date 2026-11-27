@@ -27,3 +27,22 @@ Let d be camera distance, s start, e end, rho density and m maximum density. The
 When density is zero, the transition is linear. This preserves the familiar density control while reaching the configured maximum at the end distance.
 
 The client renderer must have `gl_fog 1`. On the desktop OpenGL renderer, launch Xash3D with `-gl2shim` to enable the shader compatibility layer used for radial distance and the hybrid start/end/density curve. Without that option, classic fixed-function OpenGL falls back to its linear/exp fog behavior; the software renderer does not implement TriAPI fog.
+
+
+## Console renderer test
+
+The client DLL registers a local test override so the fog renderer can be evaluated without placing an `env_fog` entity in a map. This only changes the local client's render state; it does not change the server controller or test entity inputs.
+
+```text
+env_fog_test on
+env_fog_test off
+env_fog_test set <r> <g> <b> <start> <end> <density> [maxdensity] [radial] [skybox]
+```
+
+The default `on` profile uses a muted blue-gray radial fog. The `set` form accepts RGB values from 0–255, distances in world units, density from 0–0.1, maximum opacity from 0–1, and 0/1 switches for radial distance and skybox fog. For example:
+
+```text
+env_fog_test set 150 165 180 128 2200 0.0008 0.9 1 0
+```
+
+Use `env_fog_test off` to return to the fog state last received from the server. Testing still requires `gl_fog 1` and the desktop OpenGL `-gl2shim` launch option described above.
