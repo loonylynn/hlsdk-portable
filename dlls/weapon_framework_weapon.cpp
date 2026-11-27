@@ -11,6 +11,10 @@
 #include "weapon_behavior.h"
 #include <string.h>
 
+#ifndef CLIENT_DLL
+// Save-game field descriptors belong to the authoritative server DLL. The
+// client-side prediction copy of this class must not reference CSave/CRestore
+// implementation functions, which are not part of the client DLL.
 TYPEDESCRIPTION CFrameworkWeapon::m_SaveData[] =
 {
 	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.version, FIELD_INTEGER),
@@ -32,6 +36,7 @@ TYPEDESCRIPTION CFrameworkWeapon::m_SaveData[] =
 #endif
 	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.actionSequence, FIELD_INTEGER),
 };
+#endif
 
 namespace
 {
@@ -443,6 +448,7 @@ void CFrameworkWeapon::SyncLegacyStateFromRuntime(void)
 	m_flTimeWeaponIdle = m_runtimeState.nextIdleTime;
 }
 
+#ifndef CLIENT_DLL
 int CFrameworkWeapon::Save(CSave &save)
 {
 	SyncRuntimeStateFromLegacy();
@@ -481,6 +487,19 @@ int CFrameworkWeapon::Restore(CRestore &restore)
 	}
 	return 1;
 }
+#else
+// The client keeps the same virtual interface for its prediction copy, but
+// engine save/restore is authoritative and implemented only by the server.
+int CFrameworkWeapon::Save(CSave &)
+{
+	return 1;
+}
+
+int CFrameworkWeapon::Restore(CRestore &)
+{
+	return 1;
+}
+#endif
 
 void CFrameworkWeapon::WeaponIdle(void)
 {
