@@ -93,7 +93,14 @@ int CHudBattery::Draw( float flTime )
 	int r, g, b, x, y, a;
 	wrect_t rc;
 
-	HUD_DigitalSetWhite( r, g, b );
+	int batteryValue = m_iBat;
+	if( batteryValue < 0 ) batteryValue = 0;
+	if( batteryValue > 100 ) batteryValue = 100;
+
+	if( batteryValue <= HUD_DIGITAL_SUIT_WARNING_THRESHOLD )
+		HUD_DigitalSetRed( r, g, b );
+	else
+		HUD_DigitalSetWhite( r, g, b );
 
 	if( !( gHUD.m_iWeaponBits & ( 1 << ( WEAPON_SUIT ) ) ) )
 	{
@@ -119,6 +126,9 @@ int CHudBattery::Draw( float flTime )
 	else
 		a = MIN_ALPHA;
 
+	if( batteryValue <= HUD_DIGITAL_SUIT_WARNING_THRESHOLD )
+		a = 255;
+
 	ScaleColors( r, g, b, a );
 
 	y = ScreenHeight - gHUD.m_iFontHeight - gHUD.m_iFontHeight / 2;
@@ -131,8 +141,10 @@ int CHudBattery::Draw( float flTime )
 	else
 		vguiX = ScreenWidth / 5;
 
-	const int digitalAlpha = HUD_DigitalGetFlashAlpha(
+	int digitalAlpha = HUD_DigitalGetFlashAlpha(
 		m_flDigitalFlashRemaining, (float)gHUD.m_flTimeDelta );
+	if( batteryValue <= HUD_DIGITAL_SUIT_WARNING_THRESHOLD )
+		digitalAlpha = HUD_DIGITAL_FLASH_ALPHA;
 
 	if( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f &&
 		HUD_VGuiSuitUpdate( m_iBat, r, g, b,
@@ -148,10 +160,6 @@ int CHudBattery::Draw( float flTime )
 	if( !m_hSprite2 )
 		m_hSprite2 = gHUD.GetSprite( gHUD.GetSpriteIndex( "suit_full" ) );
 
-	int batteryValue = m_iBat;
-	if( batteryValue < 0 ) batteryValue = 0;
-	if( batteryValue > 100 ) batteryValue = 100;
-
 	// The full suit sprite is cropped from the top so only the filled
 	// fraction matching the current battery value is drawn over the outline.
 	rc = *m_prc2;
@@ -165,7 +173,10 @@ int CHudBattery::Draw( float flTime )
 	const int iOffset = ( m_prc1->bottom - m_prc1->top ) / 6;
 
 	int displayR, displayG, displayB;
-	HUD_DigitalSetWhite( displayR, displayG, displayB );
+	if( batteryValue <= HUD_DIGITAL_SUIT_WARNING_THRESHOLD )
+		HUD_DigitalSetRed( displayR, displayG, displayB );
+	else
+		HUD_DigitalSetWhite( displayR, displayG, displayB );
 
 	int iconR = displayR;
 	int iconG = displayG;
