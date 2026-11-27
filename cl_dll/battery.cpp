@@ -93,7 +93,7 @@ int CHudBattery::Draw( float flTime )
 	int r, g, b, x, y, a;
 	wrect_t rc;
 
-	UnpackRGB( r, g, b, RGB_YELLOWISH );
+	HUD_DigitalSetWhite( r, g, b );
 
 	if( !( gHUD.m_iWeaponBits & ( 1 << ( WEAPON_SUIT ) ) ) )
 	{
@@ -165,7 +165,7 @@ int CHudBattery::Draw( float flTime )
 	const int iOffset = ( m_prc1->bottom - m_prc1->top ) / 6;
 
 	int displayR, displayG, displayB;
-	UnpackRGB( displayR, displayG, displayB, RGB_YELLOWISH );
+	HUD_DigitalSetWhite( displayR, displayG, displayB );
 
 	int iconR = displayR;
 	int iconG = displayG;
