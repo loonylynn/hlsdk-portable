@@ -71,6 +71,7 @@ static void AuxPower_ReportCommand( void );
 static void VGuiHud_TextOffsetCommand( void );
 static void VGuiHud_NumbersOffsetCommand( void );
 static void VGuiHud_SetOffset( const char *group, const char *xCvar, const char *yCvar );
+static void VGuiHud_MigrateOffsets( void );
 
 int giDmgHeight, giDmgWidth;
 
@@ -118,7 +119,7 @@ static void VGuiHud_SetOffset( const char *group, const char *xCvar, const char 
 	gEngfuncs.Con_Printf( "[VGUI HUD] %s offset: X %d, Y %d\n",
 		group, (int)CVAR_GET_FLOAT( xCvar ), (int)CVAR_GET_FLOAT( yCvar ) );
 	if( argc < 3 )
-		gEngfuncs.Con_Printf( "Usage: %s <x> <y>  (screen pixels; 0 0 resets)\n",
+		gEngfuncs.Con_Printf( "Usage: %s <x> <y>  (screen pixels; 0 0 removes the offset)\n",
 			!strcmp( group, "Text" ) ? "hud_vgui_text_offset" : "hud_vgui_numbers_offset" );
 }
 
@@ -130,6 +131,29 @@ static void VGuiHud_TextOffsetCommand( void )
 static void VGuiHud_NumbersOffsetCommand( void )
 {
 	VGuiHud_SetOffset( "Numbers", "hud_vgui_numbers_x", "hud_vgui_numbers_y" );
+}
+
+// Move untouched zero-offset defaults to the agreed HUD positions once.
+// Non-zero user adjustments are preserved, and the archived version prevents
+// the defaults from being reapplied after the player deliberately resets them.
+static void VGuiHud_MigrateOffsets( void )
+{
+	int version = (int)CVAR_GET_FLOAT( "hud_vgui_layout_version" );
+	int textX = (int)CVAR_GET_FLOAT( "hud_vgui_text_x" );
+	int textY = (int)CVAR_GET_FLOAT( "hud_vgui_text_y" );
+	int numbersX = (int)CVAR_GET_FLOAT( "hud_vgui_numbers_x" );
+	int numbersY = (int)CVAR_GET_FLOAT( "hud_vgui_numbers_y" );
+
+	if( version >= 1 || !gEngfuncs.Cvar_SetValue )
+		return;
+
+	if( textX == 0 && textY == 0 )
+		gEngfuncs.Cvar_SetValue( "hud_vgui_text_y", -10.0f );
+
+	if( numbersX == 0 && numbersY == 0 )
+		gEngfuncs.Cvar_SetValue( "hud_vgui_numbers_y", -28.0f );
+
+	gEngfuncs.Cvar_SetValue( "hud_vgui_layout_version", 1.0f );
 }
 
 int CHudHealth::Init( void )
@@ -146,9 +170,10 @@ int CHudHealth::Init( void )
 	// Shared screen-pixel offsets: all three captions move together, as do all values.
 	CVAR_CREATE( "hud_vgui", "0", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_vgui_text_x", "0", FCVAR_ARCHIVE );
-	CVAR_CREATE( "hud_vgui_text_y", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_text_y", "-10", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_vgui_numbers_x", "0", FCVAR_ARCHIVE );
-	CVAR_CREATE( "hud_vgui_numbers_y", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_numbers_y", "-28", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_layout_version", "0", FCVAR_ARCHIVE );
 
 	gEngfuncs.pfnAddCommand( "hud_vgui_text_offset", VGuiHud_TextOffsetCommand );
 	gEngfuncs.pfnAddCommand( "hud_vgui_numbers_offset", VGuiHud_NumbersOffsetCommand );
@@ -908,6 +933,8 @@ extern "C" void DLLEXPORT HUD_AuxPowerEditorKeyEvent( int down, int keynum )
 // Returns back a color from the Green <-> Yellow <-> Red ramp.
 int CHudHealth::Draw( float flTime )
 {
+	VGuiHud_MigrateOffsets();
+
 	int r, g, b;
 	int a = 0, x, y;
 	int HealthWidth;
