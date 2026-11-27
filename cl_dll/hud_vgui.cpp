@@ -327,7 +327,7 @@ CHudLabeledTextPanel *g_pHudSuitPanel = NULL;
 CHudLabeledTextPanel *g_pHudAmmoPanel = NULL;
 vgui::Font *g_pHudHealthNumberFont = NULL;
 CHudScaledFont *g_pHudHealthScaledFallback = NULL;
-vgui::Font *g_pHudHealthBitmapFont = NULL;
+vgui::Font *g_pHudOCRBFont = NULL;
 vgui::Font *g_pHudHealthCaptionFont = NULL;
 int g_iLastHealth = -1;
 int g_iLastRed = -1;
@@ -344,9 +344,8 @@ void HUD_VGuiHealthResetCache( void )
 
 }
 
-static vgui::Font *HUD_VGuiHealthLoadOCRBFont( void )
+static vgui::Font *HUD_VGuiHealthTryLoadOCRBFont( const char *fontPath, int fontTall )
 {
-	static const char fontPath[] = "resource/ocr-b-vgui.tga";
 	int fontFileLength = 0;
 	byte *pFontData;
 	vgui::Font *font = NULL;
@@ -354,42 +353,49 @@ static vgui::Font *HUD_VGuiHealthLoadOCRBFont( void )
 	pFontData = gEngfuncs.COM_LoadFile( fontPath, 5, &fontFileLength );
 	if( !pFontData )
 	{
-		gEngfuncs.Con_DPrintf( "VGUI health: %s not found; using the VGUI scheme font\n", fontPath );
+		gEngfuncs.Con_DPrintf( "VGUI health: %s not found
+", fontPath );
 		return NULL;
 	}
 
-	// FreeVGUI's bitmap font format is a 32-bit RLE TGA sheet with 256
-	// equal-width glyph cells. Reject unrelated files before constructing it.
-	if( fontFileLength >= 18 &&
-		pFontData[2] == 10 &&
-		pFontData[16] == 32 &&
-		( ( pFontData[12] | ( pFontData[13] << 8 ) ) % 256 ) == 0 &&
-		( pFontData[12] | ( pFontData[13] << 8 ) ) > 0 &&
-		( pFontData[14] | ( pFontData[15] << 8 ) ) > 0 )
-	{
-		font = new vgui::Font( "OCR-B", pFontData, fontFileLength,
-			0, 0, 0.0f, 400, false, false, false, false );
+	// FreeVGUI first recognises its legacy TGA bitmap format. If the data is
+	// not a bitmap sheet, its POSIX backend attempts a FreeType memory face.
+	// The FreeType implementation copies the bytes before this buffer is freed.
+	font = new vgui::Font( "OCR-B", pFontData, fontFileLength,
+		fontTall, 0, 0.0f, 400, false, false, false, false );
 
-		// Font::getPlat() is null if FreeVGUI could not decode the TGA.
-		if( font && !font->getPlat() )
-		{
-			delete font;
-			font = NULL;
-		}
-	}
-	else
+	if( font && !font->getPlat() )
 	{
-		gEngfuncs.Con_DPrintf( "VGUI health: %s has an unsupported bitmap-font header\n", fontPath );
+		delete font;
+		font = NULL;
 	}
 
 	gEngfuncs.COM_FreeFile( pFontData );
 
 	if( font )
-		gEngfuncs.Con_DPrintf( "VGUI health: loaded OCR-B bitmap font\n" );
-	else
-		gEngfuncs.Con_DPrintf( "VGUI health: failed to decode OCR-B bitmap font; using the VGUI scheme font\n" );
+		gEngfuncs.Con_DPrintf( "VGUI health: loaded OCR-B font from %s
+", fontPath );
 
 	return font;
+}
+
+static vgui::Font *HUD_VGuiHealthLoadOCRBFont( void )
+{
+	vgui::Font *font;
+
+	// Prefer the real TrueType file. The TGA atlas remains as a compatibility
+	// fallback for builds/platforms which do not have the FreeType backend.
+	font = HUD_VGuiHealthTryLoadOCRBFont( "resource/ocr-b.ttf", 30 );
+	if( font )
+		return font;
+
+	font = HUD_VGuiHealthTryLoadOCRBFont( "resource/ocr-b-vgui.tga", 0 );
+	if( font )
+		return font;
+
+	gEngfuncs.Con_DPrintf( "VGUI health: OCR-B files unavailable; using the VGUI scheme font
+" );
+	return NULL;
 }
 
 void HUD_VGuiHealthStartup( vgui::Panel *parent )
@@ -412,12 +418,12 @@ void HUD_VGuiHealthStartup( vgui::Panel *parent )
 	if( !baseNumberFont || !g_pHudHealthCaptionFont )
 		return;
 
-	// Keep the decoded OCR-B font alive for the lifetime of the client.
-	// FreeVGUI retains its bitmap-font backing store in a static registry.
-	if( !g_pHudHealthBitmapFont )
-		g_pHudHealthBitmapFont = HUD_VGuiHealthLoadOCRBFont();
+	// Keep the OCR-B font alive for the lifetime of the client. FreeVGUI
+	// retains the TrueType/bitmap platform font in its static font registry.
+	if( !g_pHudOCRBFont )
+		g_pHudOCRBFont = HUD_VGuiHealthLoadOCRBFont();
 
-	if( g_pHudHealthBitmapFont )
+	if( g_pHudOCRBFont )
 	{
 		if( g_pHudHealthScaledFallback )
 		{
@@ -425,7 +431,7 @@ void HUD_VGuiHealthStartup( vgui::Panel *parent )
 			g_pHudHealthScaledFallback = NULL;
 		}
 
-		g_pHudHealthNumberFont = g_pHudHealthBitmapFont;
+		g_pHudHealthNumberFont = g_pHudOCRBFont;
 	}
 	else
 	{
