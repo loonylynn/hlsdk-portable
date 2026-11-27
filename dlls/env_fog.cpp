@@ -71,6 +71,8 @@ public:
 	void Use( CBaseEntity *pActivator, CBaseEntity *pCaller, USE_TYPE useType, float value );
 	void Activate( void );
 	int ObjectCaps( void ) { return CBaseEntity::ObjectCaps() & ~FCAP_ACROSS_TRANSITION; }
+	virtual int Save( CSave &save );
+	virtual int Restore( CRestore &restore );
 	static TYPEDESCRIPTION m_SaveData[];
 private:
 	void SetActive( void );
