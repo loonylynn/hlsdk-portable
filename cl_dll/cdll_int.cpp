@@ -356,7 +356,6 @@ redraw the HUD.
 int DLLEXPORT HUD_Redraw( float time, int intermission )
 {
 	HUD_UpdateOverscan();
-	EnvFog_Apply();
 	gHUD.Redraw( time, intermission );
 
 	return 1;
