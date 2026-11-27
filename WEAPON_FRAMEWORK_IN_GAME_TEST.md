@@ -41,7 +41,7 @@ This is a temporary integration fixture for the native `firearm.hitscan` behavio
 
 ### Holstered weapon save/restore
 
-1. Give or select another weapon (for example, `give weapon_crowbar`) so the test pistol is holstered.
+1. Make sure you own another weapon, then select it with the normal weapon-selection controls so the test pistol is definitely holstered.
 2. Run `save wf_test_holstered`, then `load wf_test_holstered`.
 3. Select the test pistol again.
 4. Confirm its clip and reserve counts are unchanged and it can fire normally.
