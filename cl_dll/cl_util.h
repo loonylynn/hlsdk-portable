@@ -116,12 +116,13 @@ inline void HUD_FillRGBABlend( int x, int y, int width, int height, int r, int g
 extern cvar_t *hud_textmode;
 extern float g_hud_text_color[3];
 
-// Apply the EC094D accent to the original amber and previous wine-red HUD text.
+// Keep ordinary HUD text neutral white. Critical readouts set pure red directly.
 inline void HUD_ApplyTextColor( int &r, int &g, int &b )
 {
 	if( ( r == 255 && g == 160 && b == 0 ) ||
-		( r == 79 && g == 26 && b == 35 ) )
-		r = 236, g = 9, b = 77;
+		( r == 79 && g == 26 && b == 35 ) ||
+		( r == 236 && g == 9 && b == 77 ) )
+		r = 255, g = 255, b = 255;
 }
 
 inline void HUD_ApplyTextColor( float &r, float &g, float &b )
@@ -131,8 +132,9 @@ inline void HUD_ApplyTextColor( float &r, float &g, float &b )
 	const int ib = (int)( b * 255.0f + 0.5f );
 
 	if( ( ir == 255 && ig == 160 && ib == 0 ) ||
-		( ir == 79 && ig == 26 && ib == 35 ) )
-		r = 236.0f / 255.0f, g = 9.0f / 255.0f, b = 77.0f / 255.0f;
+		( ir == 79 && ig == 26 && ib == 35 ) ||
+		( ir == 236 && ig == 9 && ib == 77 ) )
+		r = 1.0f, g = 1.0f, b = 1.0f;
 }
 
 inline void DrawSetTextColor( float r, float g, float b )

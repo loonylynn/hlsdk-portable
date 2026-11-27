@@ -669,13 +669,13 @@ static void AuxPower_DrawGrid( void )
 		FillRGBA( 0, y, ScreenWidth, 1, 220, 220, 220, 28 );
 
 	// Stronger center guides make screen alignment easier to judge.
-	FillRGBA( ScreenWidth / 2, 0, 1, ScreenHeight, 236, 9, 77, 110 );
-	FillRGBA( 0, ScreenHeight / 2, ScreenWidth, 1, 236, 9, 77, 110 );
+	FillRGBA( ScreenWidth / 2, 0, 1, ScreenHeight, 255, 255, 255, 110 );
+	FillRGBA( 0, ScreenHeight / 2, ScreenWidth, 1, 255, 255, 255, 110 );
 }
 
 static void AuxPower_DrawEditorOverlay( int x, int y, int width, int height )
 {
-	int r = 236, g = 9, b = 77;
+	int r = 255, g = 255, b = 255;
 	int grid = AuxPower_GetGrid();
 	int cursorX = g_iAuxPowerCursorX;
 	int cursorY = g_iAuxPowerCursorY;
@@ -751,9 +751,12 @@ static void DrawAuxPowerMeter( float flPower )
 	if( g_flAuxHudVisibility <= 0.0f && !g_bAuxPowerEditorActive )
 		return;
 
-	// Keep the AUX POWER meter neutral white at every charge level.
-	// Remaining fill and the existing fade still communicate depletion.
-	HUD_DigitalSetWhite( r, g, b );
+	// AUX POWER shares the HEV meter's 25% low-charge warning threshold.
+	// Both the remaining fill and the frame turn pure red at critical charge.
+	if( flPower <= HUD_DIGITAL_SUIT_WARNING_THRESHOLD )
+		HUD_DigitalSetRed( r, g, b );
+	else
+		HUD_DigitalSetWhite( r, g, b );
 
 	// Fade both sprite pieces with the same overall visibility envelope.
 	// Only the fill gets the flashlight-like brightness boost while sprinting.
