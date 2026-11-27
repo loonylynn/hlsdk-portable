@@ -298,33 +298,10 @@ int CHudHealth::MsgFunc_Damage( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// Returns back a color from the
-// Green <-> Yellow <-> Red ramp
+// The classic sprite HUD uses a neutral white health palette.
 void CHudHealth::GetPainColor( int &r, int &g, int &b )
 {
-#if 0
-	int iHealth = m_iHealth;
-
-	if( iHealth > 25 )
-		iHealth -= 25;
-	else if( iHealth < 0 )
-		iHealth = 0;
-
-	g = iHealth * 255 / 100;
-	r = 255 - g;
-	b = 0;
-#else
-	if( m_iHealth > 25 )
-	{
-		UnpackRGB( r, g, b, RGB_YELLOWISH );
-	}
-	else
-	{
-		r = 250;
-		g = 0;
-		b = 0;
-	}
-#endif
+	HUD_DigitalSetWhite( r, g, b );
 }
 
 // AUX. POWER HUD layout/editor state. Coordinates are offsets from the health
@@ -771,11 +748,9 @@ static void DrawAuxPowerMeter( float flPower )
 	if( g_flAuxHudVisibility <= 0.0f && !g_bAuxPowerEditorActive )
 		return;
 
-	// Use the HUD accent normally and the stock HUD red as a low-power warning.
-	if( flPower <= 20.0f )
-		UnpackRGB( r, g, b, RGB_REDISH );
-	else
-		UnpackRGB( r, g, b, RGB_YELLOWISH );
+	// Keep the AUX POWER meter neutral white at every charge level.
+	// Remaining fill and the existing fade still communicate depletion.
+	HUD_DigitalSetWhite( r, g, b );
 
 	// Fade both sprite pieces with the same overall visibility envelope.
 	// Only the fill gets the flashlight-like brightness boost while sprinting.
@@ -1021,9 +996,7 @@ int CHudHealth::Draw( float flTime )
 			if( m_iHealth <= HUD_DIGITAL_LOW_HEALTH_THRESHOLD )
 			{
 				m_flDigitalFlashRemaining = 0.0f;
-				displayR = 255;
-				displayG = 0;
-				displayB = 0;
+				HUD_DigitalSetWhite( displayR, displayG, displayB );
 				displayAlpha = HUD_DIGITAL_FLASH_ALPHA;
 			}
 
@@ -1201,7 +1174,7 @@ int CHudHealth::DrawDamage( float flTime )
 	if( !m_bitsDamage )
 		return 1;
 
-	UnpackRGB( r, g, b, RGB_YELLOWISH );
+	HUD_DigitalSetWhite( r, g, b );
 
 	a = (int)( fabs( sin( flTime * 2.0f ) ) * 256.0f );
 
