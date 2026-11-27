@@ -210,7 +210,121 @@ private:
 	char m_szHealth[16];
 };
 
+ 
+// Shared VGUI text panel for the suit and weapon-ammo readouts. It uses the
+// same OCR-B number font and additive text path as the health panel.
+class CHudLabeledTextPanel : public vgui::Panel
+{
+public:
+	CHudLabeledTextPanel() :
+		vgui::Panel( 0, 0, 1, 1 ),
+		m_pValueFont( NULL ),
+		m_pCaptionFont( NULL ),
+		m_iRed( 255 ),
+		m_iGreen( 255 ),
+		m_iBlue( 255 ),
+		m_iValueX( 0 ),
+		m_iCaptionX( 0 ),
+		m_iValueY( 0 )
+	{
+		m_szCaption[0] = '\0';
+		m_szValue[0] = '\0';
+		setPaintBorderEnabled( false );
+		setPaintBackgroundEnabled( false );
+		setPaintEnabled( true );
+	}
+
+	virtual bool isWithin( int x, int y )
+	{
+		(void)x;
+		(void)y;
+		return false;
+	}
+
+	void SetFonts( vgui::Font *valueFont, vgui::Font *captionFont )
+	{
+		m_pValueFont = valueFont;
+		m_pCaptionFont = captionFont;
+	}
+
+	bool SetText( const char *caption, const char *value )
+	{
+		bool changed = false;
+
+		if( caption && strcmp( m_szCaption, caption ) )
+		{
+			strncpy( m_szCaption, caption, sizeof( m_szCaption ) );
+			m_szCaption[sizeof( m_szCaption ) - 1] = '\0';
+			changed = true;
+		}
+
+		if( value && strcmp( m_szValue, value ) )
+		{
+			strncpy( m_szValue, value, sizeof( m_szValue ) );
+			m_szValue[sizeof( m_szValue ) - 1] = '\0';
+			changed = true;
+		}
+
+		return changed;
+	}
+
+	bool SetTextColor( int red, int green, int blue )
+	{
+		if( m_iRed == red && m_iGreen == green && m_iBlue == blue )
+			return false;
+
+		m_iRed = red;
+		m_iGreen = green;
+		m_iBlue = blue;
+		return true;
+	}
+
+	bool SetTextLayout( int valueX, int captionX, int valueY )
+	{
+		if( m_iValueX == valueX && m_iCaptionX == captionX && m_iValueY == valueY )
+			return false;
+
+		m_iValueX = valueX;
+		m_iCaptionX = captionX;
+		m_iValueY = valueY;
+		return true;
+	}
+
+protected:
+	virtual void paint( void )
+	{
+		if( !m_pValueFont || !m_pCaptionFont || !m_szCaption[0] || !m_szValue[0] )
+			return;
+
+		// Negative alpha is the private marker for Xash3D's scoped additive
+		// VGUI text pass. It is not stored in a VGUI Color object.
+		drawSetTextColor( m_iRed, m_iGreen, m_iBlue, -1 );
+
+		drawSetTextFont( m_pCaptionFont );
+		drawSetTextPos( m_iCaptionX, 0 );
+		drawPrintText( m_szCaption, (int)strlen( m_szCaption ) );
+
+		drawSetTextFont( m_pValueFont );
+		drawSetTextPos( m_iValueX, m_iValueY );
+		drawPrintText( m_szValue, (int)strlen( m_szValue ) );
+	}
+
+private:
+	vgui::Font *m_pValueFont;
+	vgui::Font *m_pCaptionFont;
+	int m_iRed;
+	int m_iGreen;
+	int m_iBlue;
+	int m_iValueX;
+	int m_iCaptionX;
+	int m_iValueY;
+	char m_szCaption[24];
+	char m_szValue[64];
+};
+
 CHudHealthPanel *g_pHudHealthPanel = NULL;
+CHudLabeledTextPanel *g_pHudSuitPanel = NULL;
+CHudLabeledTextPanel *g_pHudAmmoPanel = NULL;
 vgui::Font *g_pHudHealthNumberFont = NULL;
 CHudScaledFont *g_pHudHealthScaledFallback = NULL;
 vgui::Font *g_pHudHealthBitmapFont = NULL;
@@ -462,4 +576,188 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 		g_pHudHealthPanel->repaint();
 
 	return 1;
+}
+
+
+static int HUD_VGuiUpdateLabeledPanel( CHudLabeledTextPanel *panel,
+	const char *caption, const char *value, int red, int green, int blue,
+	int anchorX, int anchorY, bool rightAlignValue )
+{
+	int valueWide, valueTall;
+	int captionWide, captionTall;
+	int panelWide, panelTall;
+	int valueX, captionX, valueY;
+	int panelX, panelY;
+	int oldWide, oldTall;
+	int oldX, oldY;
+	bool changed = false;
+
+	if( !panel || !g_pHudHealthNumberFont || !g_pHudHealthCaptionFont )
+		return 0;
+
+	changed |= panel->SetText( caption, value );
+	changed |= panel->SetTextColor( red, green, blue );
+
+	g_pHudHealthNumberFont->getTextSize( value, valueWide, valueTall );
+	g_pHudHealthCaptionFont->getTextSize( caption, captionWide, captionTall );
+
+	if( valueWide < 1 ) valueWide = 1;
+	if( valueTall < 1 ) valueTall = 1;
+	if( captionWide < 1 ) captionWide = 1;
+	if( captionTall < 1 ) captionTall = 1;
+
+	panelWide = valueWide > captionWide ? valueWide : captionWide;
+	valueX = rightAlignValue ? panelWide - valueWide : ( panelWide - valueWide ) / 2;
+	captionX = ( panelWide - captionWide ) / 2;
+	valueY = captionTall + 2;
+	panelTall = valueY + valueTall;
+
+	panel->getSize( oldWide, oldTall );
+	if( panelWide != oldWide || panelTall != oldTall )
+	{
+		panel->setSize( panelWide, panelTall );
+		changed = true;
+	}
+
+	changed |= panel->SetTextLayout( valueX, captionX, valueY );
+
+	// The value keeps its original HUD anchor. Ammo is right-aligned so the
+	// final digit stays beside the weapon-specific ammo icon.
+	panelX = rightAlignValue ? anchorX - panelWide : anchorX - valueX;
+	panelY = anchorY - valueY;
+	panel->getPos( oldX, oldY );
+	if( panelX != oldX || panelY != oldY )
+	{
+		panel->setPos( panelX, panelY );
+		changed = true;
+	}
+
+	if( !panel->isVisible() )
+	{
+		panel->setVisible( true );
+		changed = true;
+	}
+
+	if( changed )
+		panel->repaint();
+
+	return 1;
+}
+
+static void HUD_VGuiDetachLabeledPanel( CHudLabeledTextPanel *panel )
+{
+	if( !panel )
+		return;
+
+	if( panel->getParent() )
+	{
+		vgui::Panel *parent = panel->getParent();
+		parent->removeChild( panel );
+		parent->repaint();
+	}
+
+	panel->setVisible( false );
+	panel->SetFonts( NULL, NULL );
+}
+
+void HUD_VGuiSuitStartup( vgui::Panel *parent )
+{
+	if( !parent || !g_pHudHealthNumberFont || !g_pHudHealthCaptionFont )
+		return;
+
+	if( !g_pHudSuitPanel )
+		g_pHudSuitPanel = new CHudLabeledTextPanel();
+
+	g_pHudSuitPanel->SetFonts( g_pHudHealthNumberFont, g_pHudHealthCaptionFont );
+	g_pHudSuitPanel->SetText( "SUIT", "000" );
+
+	if( g_pHudSuitPanel->getParent() != parent )
+	{
+		if( g_pHudSuitPanel->getParent() )
+			g_pHudSuitPanel->getParent()->removeChild( g_pHudSuitPanel );
+		parent->insertChildAt( g_pHudSuitPanel, 0 );
+	}
+
+	g_pHudSuitPanel->setVisible( false );
+	g_pHudSuitPanel->repaint();
+}
+
+void HUD_VGuiSuitShutdown( void )
+{
+	HUD_VGuiDetachLabeledPanel( g_pHudSuitPanel );
+}
+
+void HUD_VGuiSuitSetVisible( int visible )
+{
+	if( !g_pHudSuitPanel )
+		return;
+
+	bool shouldBeVisible = ( visible != 0 );
+	if( g_pHudSuitPanel->isVisible() != shouldBeVisible )
+	{
+		g_pHudSuitPanel->setVisible( shouldBeVisible );
+		g_pHudSuitPanel->repaint();
+	}
+}
+
+int HUD_VGuiSuitUpdate( int battery, int red, int green, int blue, int x, int y )
+{
+	char value[16];
+	snprintf( value, sizeof( value ), "%03d", battery );
+	return HUD_VGuiUpdateLabeledPanel( g_pHudSuitPanel, "SUIT", value,
+		red, green, blue, x, y, false );
+}
+
+void HUD_VGuiAmmoStartup( vgui::Panel *parent )
+{
+	if( !parent || !g_pHudHealthNumberFont || !g_pHudHealthCaptionFont )
+		return;
+
+	if( !g_pHudAmmoPanel )
+		g_pHudAmmoPanel = new CHudLabeledTextPanel();
+
+	g_pHudAmmoPanel->SetFonts( g_pHudHealthNumberFont, g_pHudHealthCaptionFont );
+	g_pHudAmmoPanel->SetText( "AMMO", "000" );
+
+	if( g_pHudAmmoPanel->getParent() != parent )
+	{
+		if( g_pHudAmmoPanel->getParent() )
+			g_pHudAmmoPanel->getParent()->removeChild( g_pHudAmmoPanel );
+		parent->insertChildAt( g_pHudAmmoPanel, 0 );
+	}
+
+	g_pHudAmmoPanel->setVisible( false );
+	g_pHudAmmoPanel->repaint();
+}
+
+void HUD_VGuiAmmoShutdown( void )
+{
+	HUD_VGuiDetachLabeledPanel( g_pHudAmmoPanel );
+}
+
+void HUD_VGuiAmmoSetVisible( int visible )
+{
+	if( !g_pHudAmmoPanel )
+		return;
+
+	bool shouldBeVisible = ( visible != 0 );
+	if( g_pHudAmmoPanel->isVisible() != shouldBeVisible )
+	{
+		g_pHudAmmoPanel->setVisible( shouldBeVisible );
+		g_pHudAmmoPanel->repaint();
+	}
+}
+
+int HUD_VGuiAmmoUpdate( int clip, int reserve, int hasClip,
+	int red, int green, int blue, int rightX, int y )
+{
+	char value[64];
+
+	if( hasClip )
+		snprintf( value, sizeof( value ), "%03d|%03d", clip, reserve );
+	else
+		snprintf( value, sizeof( value ), "%03d", reserve );
+
+	return HUD_VGuiUpdateLabeledPanel( g_pHudAmmoPanel, "AMMO", value,
+		red, green, blue, rightX, y, true );
 }
