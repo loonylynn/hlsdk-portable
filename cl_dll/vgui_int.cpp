@@ -110,6 +110,8 @@ void VGui_Startup()
 
 	// Add the non-interactive HUD label behind viewport menus and dialogs.
 	HUD_VGuiHealthStartup( gViewPort );
+	HUD_VGuiSuitStartup( gViewPort );
+	HUD_VGuiAmmoStartup( gViewPort );
 
 	/*
 	TexturePanel *texturePanel = new TexturePanel();
@@ -120,6 +122,9 @@ void VGui_Startup()
 void VGui_Shutdown()
 {
 	// Detach the HUD label before its viewport parent is destroyed.
+	// Detach the additional HUD text panels before their shared fonts are released.
+	HUD_VGuiAmmoShutdown();
+	HUD_VGuiSuitShutdown();
 	HUD_VGuiHealthShutdown();
 	delete gViewPort;
 	gViewPort = NULL;
