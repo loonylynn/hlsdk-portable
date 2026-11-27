@@ -51,6 +51,7 @@ void EnvFog_Apply( void )
 
 void EnvFog_Clear( void )
 {
+	g_ClientEnvFogTestActive = 0;
 	g_ClientEnvFog.enabled = 0;
 	g_ClientEnvFog.color[0] = 128.0f;
 	g_ClientEnvFog.color[1] = 128.0f;
