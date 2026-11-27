@@ -23,6 +23,7 @@
 #include <math.h>
 
 #include "hud.h"
+#include "hud_vgui.h"
 #include "const.h"
 #include "cl_util.h"
 #include "cl_entity.h"
@@ -96,6 +97,7 @@ int CHudHealth::Init( void )
 	CVAR_CREATE( "hud_auxpower_grid", "8", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_auxpower_snap", "1", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_auxpower_layout_version", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_health", "0", FCVAR_ARCHIVE );
 
 	gEngfuncs.pfnAddCommand( "hud_auxpower_edit", AuxPower_EditCommand );
 	gEngfuncs.pfnAddCommand( "hud_auxpower_commit", AuxPower_CommitCommand );
@@ -857,7 +859,10 @@ int CHudHealth::Draw( float flTime )
 	int HealthWidth;
 
 	if( ( gHUD.m_iHideHUDDisplay & HIDEHUD_HEALTH ) || gEngfuncs.IsSpectateOnly() )
+	{
+		HUD_VGuiHealthSetVisible( 0 );
 		return 1;
+	}
 
 	if( !m_hSprite )
 		m_hSprite = LoadSprite( PAIN_NAME );
@@ -892,27 +897,41 @@ int CHudHealth::Draw( float flTime )
 		int CrossWidth = gHUD.GetSpriteRect( m_HUD_cross ).right - gHUD.GetSpriteRect( m_HUD_cross ).left;
 
 		y = ScreenHeight - gHUD.m_iFontHeight - gHUD.m_iFontHeight / 2;
-		x = CrossWidth / 2;
-
-		SPR_Set( gHUD.GetSprite( m_HUD_cross ), r, g, b );
-		SPR_DrawAdditive( 0, x, y, &gHUD.GetSpriteRect( m_HUD_cross ) );
-
 		x = CrossWidth + HealthWidth / 2;
 
-		x = gHUD.DrawHudNumber( x, y + gHUD.m_iHudNumbersYOffset, DHN_3DIGITS | DHN_DRAWZERO, m_iHealth, r, g, b );
+		// Keep the legacy sprite renderer as a fallback. The VGUI label receives
+		// the same health value, RGB fade and number anchor as the original HUD.
+		if( CVAR_GET_FLOAT( "hud_vgui_health" ) != 0.0f &&
+			HUD_VGuiHealthUpdate( m_iHealth, r, g, b, x, y + gHUD.m_iHudNumbersYOffset ) )
+		{
+			// VGUI owns the health number while the option is enabled.
+		}
+		else
+		{
+			HUD_VGuiHealthSetVisible( 0 );
+			x = CrossWidth / 2;
+			SPR_Set( gHUD.GetSprite( m_HUD_cross ), r, g, b );
+			SPR_DrawAdditive( 0, x, y, &gHUD.GetSpriteRect( m_HUD_cross ) );
 
-		x += HealthWidth / 2;
+			x = CrossWidth + HealthWidth / 2;
+			x = gHUD.DrawHudNumber( x, y + gHUD.m_iHudNumbersYOffset, DHN_3DIGITS | DHN_DRAWZERO, m_iHealth, r, g, b );
+			x += HealthWidth / 2;
 
-		int iHeight = gHUD.m_iFontHeight;
-		int iWidth = HealthWidth / 10;
-		UnpackRGB( r, g, b, RGB_YELLOWISH );
-		FillRGBA( x, y + gHUD.m_iHudNumbersYOffset, iWidth, iHeight, r, g, b, a );
+			int iHeight = gHUD.m_iFontHeight;
+			int iWidth = HealthWidth / 10;
+			UnpackRGB( r, g, b, RGB_YELLOWISH );
+			FillRGBA( x, y + gHUD.m_iHudNumbersYOffset, iWidth, iHeight, r, g, b, a );
+		}
 
 		// Use the post-prediction local state, which contains the
 		// movement DLL's final fuser4 value for this user command.
 		float flAuxPower = ( g_flHL2AuxPowerPostRun >= 0.0f ) ?
 			g_flHL2AuxPowerPostRun : g_flHL2AuxPower;
 		DrawAuxPowerMeter( flAuxPower );
+	}
+	else
+	{
+		HUD_VGuiHealthSetVisible( 0 );
 	}
 
 	DrawDamage( flTime );
