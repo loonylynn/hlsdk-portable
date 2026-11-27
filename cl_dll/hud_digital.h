@@ -1,8 +1,9 @@
 /*
  * Shared sprite-HUD digital readout helpers.
  *
- * The existing number_8 sprite is drawn at low intensity as a permanent
- * ghost guide behind the live value, like inactive segments on a digital display.
+ * Use the native number_dull1/number_dull2 atlas entries as the three
+ * unlit digit slots. The 320-resolution HUD has no dull entries, so it
+ * falls back to dimmed number_8 sprites.
  */
 #ifndef HUD_DIGITAL_H
 #define HUD_DIGITAL_H
