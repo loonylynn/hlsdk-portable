@@ -98,7 +98,7 @@ static void VGuiHud_SetOffset( const char *group, const char *xCvar, const char 
 	{
 		if( !gEngfuncs.Cmd_Argv )
 		{
-			gEngfuncs.Con_Printf( "[VGUI HUD] Command arguments are unavailable.\\n" );
+			gEngfuncs.Con_Printf( "[VGUI HUD] Command arguments are unavailable.\n" );
 			return;
 		}
 
@@ -107,7 +107,7 @@ static void VGuiHud_SetOffset( const char *group, const char *xCvar, const char 
 
 		if( !gEngfuncs.Cvar_SetValue )
 		{
-			gEngfuncs.Con_Printf( "[VGUI HUD] Cannot set %s offsets through this engine API.\\n", group );
+			gEngfuncs.Con_Printf( "[VGUI HUD] Cannot set %s offsets through this engine API.\n", group );
 			return;
 		}
 
@@ -115,10 +115,10 @@ static void VGuiHud_SetOffset( const char *group, const char *xCvar, const char 
 		gEngfuncs.Cvar_SetValue( yCvar, (float)y );
 	}
 
-	gEngfuncs.Con_Printf( "[VGUI HUD] %s offset: X %d, Y %d\\n",
+	gEngfuncs.Con_Printf( "[VGUI HUD] %s offset: X %d, Y %d\n",
 		group, (int)CVAR_GET_FLOAT( xCvar ), (int)CVAR_GET_FLOAT( yCvar ) );
 	if( argc < 3 )
-		gEngfuncs.Con_Printf( "Usage: %s <x> <y>  (screen pixels; 0 0 resets)\\n",
+		gEngfuncs.Con_Printf( "Usage: %s <x> <y>  (screen pixels; 0 0 resets)\n",
 			!strcmp( group, "Text" ) ? "hud_vgui_text_offset" : "hud_vgui_numbers_offset" );
 }
 
