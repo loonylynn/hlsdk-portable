@@ -97,7 +97,8 @@ int CHudHealth::Init( void )
 	CVAR_CREATE( "hud_auxpower_grid", "8", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_auxpower_snap", "1", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_auxpower_layout_version", "0", FCVAR_ARCHIVE );
-	CVAR_CREATE( "hud_vgui_health", "0", FCVAR_ARCHIVE );
+	// One master switch for all VGUI HUD readouts.
+	CVAR_CREATE( "hud_vgui", "0", FCVAR_ARCHIVE );
 
 	gEngfuncs.pfnAddCommand( "hud_auxpower_edit", AuxPower_EditCommand );
 	gEngfuncs.pfnAddCommand( "hud_auxpower_commit", AuxPower_CommitCommand );
@@ -901,7 +902,7 @@ int CHudHealth::Draw( float flTime )
 
 		// Keep the legacy sprite renderer as a fallback. The VGUI label receives
 		// the same health value, RGB fade and number anchor as the original HUD.
-		if( CVAR_GET_FLOAT( "hud_vgui_health" ) != 0.0f &&
+		if( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f &&
 			HUD_VGuiHealthUpdate( m_iHealth, r, g, b, x, y + gHUD.m_iHudNumbersYOffset ) )
 		{
 			// VGUI owns the health number while the option is enabled.
