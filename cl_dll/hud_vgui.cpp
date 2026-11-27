@@ -18,9 +18,11 @@ namespace
 // the font selected by the game's VGUI scheme.
 static int g_iNextHudFontId = 0x50000000;
 
-// Compact, square-corner translucent backing used by the three VGUI HUD groups.
+// Rounded translucent backing used by the three VGUI HUD groups.
 static const int HUD_VGUI_PANEL_PADDING_X = 8;
 static const int HUD_VGUI_PANEL_PADDING_Y = 5;
+static const int HUD_VGUI_PANEL_CORNER_RADIUS = 10;
+static const int HUD_VGUI_PANEL_CORNER_INSET[10] = { 7, 5, 3, 2, 2, 1, 1, 0, 0, 0 };
 
 class CHudScaledFont : public vgui::Font
 {
@@ -205,8 +207,7 @@ protected:
 	void PaintRoundedBackground( void )
 	{
 		int wide, tall;
-		int radius = 6;
-		static const int cornerInset[6] = { 5, 4, 3, 2, 1, 0 };
+		int radius = HUD_VGUI_PANEL_CORNER_RADIUS;
 
 		if( m_iBackgroundOpacity <= 0 )
 			return;
@@ -229,7 +230,11 @@ protected:
 
 		for( int row = 0; row < radius; row++ )
 		{
-			int inset = ( radius == 6 ) ? cornerInset[row] : radius - 1 - row;
+			int profileRow = ( row * HUD_VGUI_PANEL_CORNER_RADIUS ) / radius;
+			if( profileRow >= HUD_VGUI_PANEL_CORNER_RADIUS )
+				profileRow = HUD_VGUI_PANEL_CORNER_RADIUS - 1;
+			int inset = ( HUD_VGUI_PANEL_CORNER_INSET[profileRow] * radius +
+				HUD_VGUI_PANEL_CORNER_RADIUS / 2 ) / HUD_VGUI_PANEL_CORNER_RADIUS;
 			drawFilledRect( inset, row, wide - inset, row + 1 );
 			drawFilledRect( inset, tall - row - 1, wide - inset, tall - row );
 		}
@@ -403,8 +408,7 @@ protected:
 	void PaintRoundedBackground( void )
 	{
 		int wide, tall;
-		int radius = 6;
-		static const int cornerInset[6] = { 5, 4, 3, 2, 1, 0 };
+		int radius = HUD_VGUI_PANEL_CORNER_RADIUS;
 
 		if( m_iBackgroundOpacity <= 0 )
 			return;
@@ -427,7 +431,11 @@ protected:
 
 		for( int row = 0; row < radius; row++ )
 		{
-			int inset = ( radius == 6 ) ? cornerInset[row] : radius - 1 - row;
+			int profileRow = ( row * HUD_VGUI_PANEL_CORNER_RADIUS ) / radius;
+			if( profileRow >= HUD_VGUI_PANEL_CORNER_RADIUS )
+				profileRow = HUD_VGUI_PANEL_CORNER_RADIUS - 1;
+			int inset = ( HUD_VGUI_PANEL_CORNER_INSET[profileRow] * radius +
+				HUD_VGUI_PANEL_CORNER_RADIUS / 2 ) / HUD_VGUI_PANEL_CORNER_RADIUS;
 			drawFilledRect( inset, row, wide - inset, row + 1 );
 			drawFilledRect( inset, tall - row - 1, wide - inset, tall - row );
 		}
@@ -750,7 +758,7 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 
 	numberAbsX = x + numberOffsetX;
 	numberAbsY = y + numberOffsetY;
-	captionAbsX = x + ( numberWide - captionWide ) / 2 + textOffsetX;
+	captionAbsX = numberAbsX + textOffsetX;
 	captionAbsY = y - captionTall - 2 + textOffsetY;
 
 	left = ( numberAbsX < captionAbsX ? numberAbsX : captionAbsX ) - HUD_VGUI_PANEL_PADDING_X;
@@ -807,7 +815,6 @@ static int HUD_VGuiUpdateLabeledPanel( CHudLabeledTextPanel *panel,
 {
 	int valueWide, valueTall;
 	int captionWide, captionTall;
-	int panelWide, valueBaseX, captionBaseX;
 	int valueAbsX, valueAbsY, captionAbsX, captionAbsY;
 	int left, top, right, bottom;
 	int panelWidePixels, panelTallPixels;
@@ -840,21 +847,13 @@ static int HUD_VGuiUpdateLabeledPanel( CHudLabeledTextPanel *panel,
 	if( captionWide < 1 ) captionWide = 1;
 	if( captionTall < 1 ) captionTall = 1;
 
-	panelWide = valueWide > captionWide ? valueWide : captionWide;
-	valueBaseX = rightAlignValue ? panelWide - valueWide : ( panelWide - valueWide ) / 2;
-	captionBaseX = ( panelWide - captionWide ) / 2;
-
-	// Calculate the same absolute anchors used by the previous compact panels.
+	// Keep the numeric readout's anchor, but left-align its caption to the
+	// first digit instead of centering the caption over the number block.
 	if( rightAlignValue )
-	{
 		valueAbsX = anchorX - valueWide;
-		captionAbsX = anchorX - panelWide + captionBaseX;
-	}
 	else
-	{
 		valueAbsX = anchorX;
-		captionAbsX = anchorX - valueBaseX + captionBaseX;
-	}
+	captionAbsX = valueAbsX;
 	valueAbsY = anchorY;
 	captionAbsY = anchorY - captionTall - 2;
 
