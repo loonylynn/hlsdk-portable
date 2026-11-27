@@ -59,7 +59,7 @@ void EnvFog_Clear( void )
 int EnvFog_MsgFunc( const char *pszName, int iSize, void *pbuf )
 {
 	(void)pszName;
-	if( !pbuf || iSize < 14 )
+	if( !pbuf || iSize < 18 )
 		return 0;
 
 	BEGIN_READ( pbuf, iSize );
@@ -67,8 +67,8 @@ int EnvFog_MsgFunc( const char *pszName, int iSize, void *pbuf )
 	g_ClientEnvFog.color[0] = (float)READ_BYTE();
 	g_ClientEnvFog.color[1] = (float)READ_BYTE();
 	g_ClientEnvFog.color[2] = (float)READ_BYTE();
-	g_ClientEnvFog.startDistance = READ_COORD();
-	g_ClientEnvFog.endDistance = READ_COORD();
+	g_ClientEnvFog.startDistance = (float)READ_LONG() / 8.0f;
+	g_ClientEnvFog.endDistance = (float)READ_LONG() / 8.0f;
 	g_ClientEnvFog.density = EnvFog_ClientClamp( (float)READ_LONG() / 1000000.0f, 0.0f, 0.1f );
 	g_ClientEnvFog.maxDensity = (float)READ_BYTE() / 255.0f;
 	int flags = READ_BYTE();
