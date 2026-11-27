@@ -348,4 +348,12 @@ The HUD modernization is a sibling client-presentation subsystem on the same dev
 
 The first opt-in implementation adds a non-interactive VGUI label to the existing viewport. It reads `CHudHealth::m_iHealth`, reuses the existing health colour/fade calculation and original numeric anchor, and leaves damage/pain overlays on their existing path. With `hud_vgui_health 0` (default), the original cross/number/separator remains in use. With `hud_vgui_health 1`, VGUI draws the number in place of that sprite group. The AUX POWER meter call remains in its original position and is not reimplemented by VGUI. The health number prefers the OCR-B bitmap atlas at `resource/ocr-b-vgui.tga`; if it is absent or cannot be decoded, the panel falls back to the enlarged active VGUI scheme font. The atlas must be present in the active game's `resource` directory.
 
-**Validation state:** source integration is present on this branch, but a full 32-bit client build, staged install and in-game comparison are still required before treating the panel as verified.
+**Validation state:** the health panel has been built, installed and confirmed in-game. The OCR-B atlas loaded and the health colour/fade behaved as expected; the AUX POWER meter remained unchanged.
+
+### Second HUD slice: suit and primary ammunition
+
+The next opt-in panels reuse the same OCR-B bitmap font, caption font and scoped additive VGUI text path. `hud_vgui_suit 1` replaces only the suit battery number with a `SUIT` caption and OCR-B value; the existing suit charge graphic and battery fade remain on their original renderer path. `hud_vgui_ammo 1` replaces the primary weapon's clip/reserve digits with an `AMMO` caption and OCR-B row while retaining the weapon-specific ammo icon and existing fade. Weapons without a clip display reserve ammunition only. The special secondary-ammo row remains on its legacy path for this slice.
+
+Both cvars default to `0`, and both panels fall back to the original HUD rendering when disabled or unavailable. The AUX POWER meter remains independent and untouched.
+
+**Validation state:** source integration is committed; rebuild, install and in-game layout/fade testing are still required.
