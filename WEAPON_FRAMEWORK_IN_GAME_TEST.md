@@ -15,7 +15,7 @@ This is a temporary integration fixture for the native `firearm.hitscan` behavio
 
 ## Before testing
 
-1. Build and install both the server and client DLLs from the same feature-branch revision.
+1. Build and install both the server and client DLLs from the same feature-branch revision. The custom save descriptor and real Save/Restore implementation are server-only; the client copy keeps no-op virtual stubs for its prediction class.
 2. Install the updated `scripts/weapons/package_xash.json` and `scripts/weapons/weapon_framework_test_pistol.json` under the active game's `valve/scripts/weapons/` directory.
 3. Start a disposable test map/session. Do not overwrite an important campaign save.
 4. Set `developer 2` and `sv_cheats 1`.
