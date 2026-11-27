@@ -24,9 +24,12 @@ public:
 	void Reload(void);
 	void WeaponIdle(void);
 
+	// Save-game field descriptors are only compiled into the server DLL.
 	virtual int Save(CSave &save);
 	virtual int Restore(CRestore &restore);
+#ifndef CLIENT_DLL
 	static TYPEDESCRIPTION m_SaveData[];
+#endif
 	virtual BOOL UseDecrement(void)
 	{
 #if CLIENT_WEAPONS
