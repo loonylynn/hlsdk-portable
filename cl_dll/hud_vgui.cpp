@@ -1,5 +1,6 @@
 #include "hud_vgui.h"
 #include "hud.h"
+#include "cl_util.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -517,6 +518,11 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 	if( !g_pHudHealthPanel || !g_pHudHealthNumberFont || !g_pHudHealthCaptionFont )
 		return 0;
 
+	// Match the legacy sprite-number safe-area transform. Keep glyph dimensions
+	// native; only move the VGUI anchor, just as SPR_DrawAdditive does.
+	x = HUD_AdjustX( x );
+	y = HUD_AdjustY( y );
+
 	snprintf( healthText, sizeof( healthText ), "%03d", health );
 
 	if( health != g_iLastHealth )
@@ -597,6 +603,11 @@ static int HUD_VGuiUpdateLabeledPanel( CHudLabeledTextPanel *panel,
 
 	if( !panel || !g_pHudHealthNumberFont || !g_pHudHealthCaptionFont )
 		return 0;
+
+	// Suit and ammo use the same safe-area anchor transform as their sprite
+	// counterparts. The text retains its native size and spacing.
+	anchorX = HUD_AdjustX( anchorX );
+	anchorY = HUD_AdjustY( anchorY );
 
 	changed |= panel->SetText( caption, value );
 	changed |= panel->SetTextColor( red, green, blue );
