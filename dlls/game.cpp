@@ -16,7 +16,6 @@
 #include "eiface.h"
 #include "util.h"
 #include "game.h"
-#include "env_fog.h"
 #include "weapon_registry.h"
 #include "weapon_json.h"
 #include "vcs_info.h"
@@ -531,7 +530,6 @@ static bool LoadWeaponDefinitionsFromGameFiles()
 // Register the weapon catalogue before worldspawn precaches weapon entities.
 void GameDLLInit( void )
 {
-	EnvFog_Init();
 	LoadWeaponDefinitionsFromGameFiles();
 
 	g_psv_gravity = CVAR_GET_POINTER( "sv_gravity" );
