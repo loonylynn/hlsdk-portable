@@ -1,4 +1,5 @@
 #include "hud_vgui.h"
+#include "hud.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -210,7 +211,9 @@ private:
 };
 
 CHudHealthPanel *g_pHudHealthPanel = NULL;
-CHudScaledFont *g_pHudHealthNumberFont = NULL;
+vgui::Font *g_pHudHealthNumberFont = NULL;
+CHudScaledFont *g_pHudHealthScaledFallback = NULL;
+vgui::Font *g_pHudHealthBitmapFont = NULL;
 vgui::Font *g_pHudHealthCaptionFont = NULL;
 int g_iLastHealth = -1;
 int g_iLastRed = -1;
@@ -225,6 +228,54 @@ void HUD_VGuiHealthResetCache( void )
 	g_iLastBlue = -1;
 }
 
+}
+
+static vgui::Font *HUD_VGuiHealthLoadOCRBFont( void )
+{
+	static const char fontPath[] = "resource/ocr-b-vgui.tga";
+	int fontFileLength = 0;
+	byte *pFontData;
+	vgui::Font *font = NULL;
+
+	pFontData = gEngfuncs.COM_LoadFile( fontPath, 5, &fontFileLength );
+	if( !pFontData )
+	{
+		gEngfuncs.Con_DPrintf( "VGUI health: %s not found; using the VGUI scheme font\n", fontPath );
+		return NULL;
+	}
+
+	// FreeVGUI's bitmap font format is a 32-bit RLE TGA sheet with 256
+	// equal-width glyph cells. Reject unrelated files before constructing it.
+	if( fontFileLength >= 18 &&
+		pFontData[2] == 10 &&
+		pFontData[16] == 32 &&
+		( ( pFontData[12] | ( pFontData[13] << 8 ) ) % 256 ) == 0 &&
+		( pFontData[12] | ( pFontData[13] << 8 ) ) > 0 &&
+		( pFontData[14] | ( pFontData[15] << 8 ) ) > 0 )
+	{
+		font = new vgui::Font( "OCR-B", pFontData, fontFileLength,
+			0, 0, 0.0f, 400, false, false, false, false );
+
+		// Font::getPlat() is null if FreeVGUI could not decode the TGA.
+		if( font && !font->getPlat() )
+		{
+			delete font;
+			font = NULL;
+		}
+	}
+	else
+	{
+		gEngfuncs.Con_DPrintf( "VGUI health: %s has an unsupported bitmap-font header\n", fontPath );
+	}
+
+	gEngfuncs.COM_FreeFile( pFontData );
+
+	if( font )
+		gEngfuncs.Con_DPrintf( "VGUI health: loaded OCR-B bitmap font\n" );
+	else
+		gEngfuncs.Con_DPrintf( "VGUI health: failed to decode OCR-B bitmap font; using the VGUI scheme font\n" );
+
+	return font;
 }
 
 void HUD_VGuiHealthStartup( vgui::Panel *parent )
@@ -247,14 +298,30 @@ void HUD_VGuiHealthStartup( vgui::Panel *parent )
 	if( !baseNumberFont || !g_pHudHealthCaptionFont )
 		return;
 
-	if( g_pHudHealthNumberFont )
-	{
-		delete g_pHudHealthNumberFont;
-		g_pHudHealthNumberFont = NULL;
-	}
+	// Keep the decoded OCR-B font alive for the lifetime of the client.
+	// FreeVGUI retains its bitmap-font backing store in a static registry.
+	if( !g_pHudHealthBitmapFont )
+		g_pHudHealthBitmapFont = HUD_VGuiHealthLoadOCRBFont();
 
-	// 150% of the active VGUI primary font; menus keep their original sizing.
-	g_pHudHealthNumberFont = new CHudScaledFont( baseNumberFont );
+	if( g_pHudHealthBitmapFont )
+	{
+		if( g_pHudHealthScaledFallback )
+		{
+			delete g_pHudHealthScaledFallback;
+			g_pHudHealthScaledFallback = NULL;
+		}
+
+		g_pHudHealthNumberFont = g_pHudHealthBitmapFont;
+	}
+	else
+	{
+		if( g_pHudHealthScaledFallback )
+			delete g_pHudHealthScaledFallback;
+
+		// Preserve the larger scheme-font display when the custom atlas is absent.
+		g_pHudHealthScaledFallback = new CHudScaledFont( baseNumberFont );
+		g_pHudHealthNumberFont = g_pHudHealthScaledFallback;
+	}
 
 	if( !g_pHudHealthPanel )
 		g_pHudHealthPanel = new CHudHealthPanel();
@@ -291,13 +358,15 @@ void HUD_VGuiHealthShutdown( void )
 		g_pHudHealthPanel->SetFonts( NULL, NULL );
 	}
 
-	// The viewport owns the scheme fonts; discard our wrapper before it is destroyed.
-	if( g_pHudHealthNumberFont )
+	// The viewport owns the caption font. The OCR-B bitmap font persists
+	// with FreeVGUI's font registry; only dispose the per-viewport fallback.
+	if( g_pHudHealthScaledFallback )
 	{
-		delete g_pHudHealthNumberFont;
-		g_pHudHealthNumberFont = NULL;
+		delete g_pHudHealthScaledFallback;
+		g_pHudHealthScaledFallback = NULL;
 	}
 
+	g_pHudHealthNumberFont = NULL;
 	g_pHudHealthCaptionFont = NULL;
 	HUD_VGuiHealthResetCache();
 }
