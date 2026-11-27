@@ -403,6 +403,7 @@ int __MsgFunc_AllowSpec( const char *pszName, int iSize, void *pbuf )
 void CHud::Init( void )
 {
 	gEngfuncs.pfnHookUserMsg( "EnvFog", EnvFog_MsgFunc );
+	EnvFog_RegisterCommands();
 	HOOK_MESSAGE( Logo );
 	HOOK_MESSAGE( ResetHUD );
 	HOOK_MESSAGE( InstructorHint );
