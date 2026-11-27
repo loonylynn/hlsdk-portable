@@ -209,9 +209,16 @@ void CEnvFog::Activate( void )
 
 void EnvFog_Init( void )
 {
-	gmsgEnvFog = REG_USER_MSG( "EnvFog", -1 );
 	if( gmsgEnvFog <= 0 )
-		ALERT( at_console, "env_fog: failed to register EnvFog user message\\n" );
+	{
+		gmsgEnvFog = REG_USER_MSG( "EnvFog", -1 );
+		if( gmsgEnvFog <= 0 )
+			ALERT( at_console, "env_fog: failed to register EnvFog user message\\n" );
+	}
+
+	// Publish the final map-activated state once all entities and standard
+	// user messages are ready. ClientPutInServer also sends it to late joiners.
+	EnvFog_WriteState( MSG_ALL, (edict_t *)NULL );
 }
 
 void EnvFog_ResetState( void )
