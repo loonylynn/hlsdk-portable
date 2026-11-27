@@ -760,6 +760,7 @@ void ServerActivate( edict_t *pEdictList, int edictCount, int clientMax )
 
 	// Link user messages here to make sure first client can get them...
 	LinkUserMessages();
+	EnvFog_Init();
 }
 
 /*
