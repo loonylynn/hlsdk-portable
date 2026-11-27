@@ -12,7 +12,14 @@
 #include "cl_util.h"
 
 // Exposed tuning constants for the classic sprite HUD digital readouts.
-static const int HUD_DIGITAL_DIM_ALPHA = 48;
+static const int HUD_DIGITAL_DIM_ALPHA = 80;
+
+static inline void HUD_DigitalSetWhite( int &red, int &green, int &blue )
+{
+	red = 255;
+	green = 255;
+	blue = 255;
+}
 static const int HUD_DIGITAL_FLASH_ALPHA = 255;
 static const float HUD_DIGITAL_FADE_DURATION = 0.45f;
 static const int HUD_DIGITAL_LOW_HEALTH_THRESHOLD = 15;
