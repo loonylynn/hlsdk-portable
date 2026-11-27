@@ -41,7 +41,7 @@ static int EnvFog_ClampByte( float value )
 
 static void EnvFog_WriteState( int destination, edict_t *pClient )
 {
-	if( !gmsgEnvFog )
+	if( gmsgEnvFog <= 0 )
 		return;
 
 	MESSAGE_BEGIN( destination, gmsgEnvFog, NULL, pClient );
@@ -211,6 +211,8 @@ void CEnvFog::Activate( void )
 void EnvFog_Init( void )
 {
 	gmsgEnvFog = REG_USER_MSG( "EnvFog", -1 );
+	if( gmsgEnvFog <= 0 )
+		ALERT( at_console, "env_fog: failed to register EnvFog user message\\n" );
 }
 
 void EnvFog_ResetState( void )
