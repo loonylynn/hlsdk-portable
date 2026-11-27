@@ -353,8 +353,7 @@ static vgui::Font *HUD_VGuiHealthTryLoadOCRBFont( const char *fontPath, int font
 	pFontData = gEngfuncs.COM_LoadFile( fontPath, 5, &fontFileLength );
 	if( !pFontData )
 	{
-		gEngfuncs.Con_DPrintf( "VGUI health: %s not found
-", fontPath );
+		gEngfuncs.Con_DPrintf( "VGUI health: %s not found\\n", fontPath );
 		return NULL;
 	}
 
@@ -373,8 +372,7 @@ static vgui::Font *HUD_VGuiHealthTryLoadOCRBFont( const char *fontPath, int font
 	gEngfuncs.COM_FreeFile( pFontData );
 
 	if( font )
-		gEngfuncs.Con_DPrintf( "VGUI health: loaded OCR-B font from %s
-", fontPath );
+		gEngfuncs.Con_DPrintf( "VGUI health: loaded OCR-B font from %s\\n", fontPath );
 
 	return font;
 }
@@ -393,8 +391,7 @@ static vgui::Font *HUD_VGuiHealthLoadOCRBFont( void )
 	if( font )
 		return font;
 
-	gEngfuncs.Con_DPrintf( "VGUI health: OCR-B files unavailable; using the VGUI scheme font
-" );
+	gEngfuncs.Con_DPrintf( "VGUI health: OCR-B files unavailable; using the VGUI scheme font\\n" );
 	return NULL;
 }
 
