@@ -12,6 +12,7 @@
 #include <VGUI_ActionSignal.h>
 #include <string.h>
 #include "hud.h"
+#include "hud_vgui.h"
 #include "cl_util.h"
 #include "camera.h"
 #include "kbutton.h"
@@ -107,6 +108,9 @@ void VGui_Startup()
 		gViewPort->setParent( root );
 	}
 
+	// Add the non-interactive HUD label behind viewport menus and dialogs.
+	HUD_VGuiHealthStartup( gViewPort );
+
 	/*
 	TexturePanel *texturePanel = new TexturePanel();
 	texturePanel->setParent( gViewPort );
@@ -115,6 +119,8 @@ void VGui_Startup()
 
 void VGui_Shutdown()
 {
+	// Detach the HUD label before its viewport parent is destroyed.
+	HUD_VGuiHealthShutdown();
 	delete gViewPort;
 	gViewPort = NULL;
 }
