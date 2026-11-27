@@ -104,7 +104,6 @@ void CEnvFog::Spawn( void )
 {
 	pev->solid = SOLID_NOT;
 	pev->movetype = MOVETYPE_NONE;
-	SetUse( &CEnvFog::Use );
 	if( pev->spawnflags & SF_ENV_FOG_START_ACTIVE )
 	{
 		m_iActive = TRUE;
