@@ -67,10 +67,9 @@ static inline void HUD_DigitalDrawDigit( int digit, int x, int y,
 }
 
 static inline void HUD_DigitalDrawGhostSlots( int x, int y,
-	int red, int green, int blue, int slotStep )
+	int red, int green, int blue, int slotStep,
+	int dull1Index, int dull2Index )
 {
-	int dull1Index = gHUD.GetSpriteIndex( "number_dull1" );
-	int dull2Index = gHUD.GetSpriteIndex( "number_dull2" );
 
 	int ghostRed = red;
 	int ghostGreen = green;
@@ -108,7 +107,8 @@ static inline void HUD_DigitalDrawGhostSlots( int x, int y,
 }
 
 static inline void HUD_DigitalDrawNumber( int x, int y, int value,
-	int red, int green, int blue, int alpha )
+	int red, int green, int blue, int alpha,
+	int dull1Index, int dull2Index )
 {
 	const int numberBase = gHUD.m_HUD_number_0;
 	const int digitWidth = gHUD.GetSpriteRect( numberBase ).right -
@@ -118,7 +118,7 @@ static inline void HUD_DigitalDrawNumber( int x, int y, int value,
 	if( digitWidth <= 0 )
 		return;
 
-	HUD_DigitalDrawGhostSlots( x, y, red, green, blue, slotStep );
+	HUD_DigitalDrawGhostSlots( x, y, red, green, blue, slotStep, dull1Index, dull2Index );
 
 	// Overlay only the significant digits, aligned to the right. Unused
 	// leading slots remain visible as dim ghosts instead of leading zeroes.
