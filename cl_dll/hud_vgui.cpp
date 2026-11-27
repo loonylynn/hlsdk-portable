@@ -133,7 +133,8 @@ public:
 		m_iBlue( 255 ),
 		m_iNumberX( 0 ),
 		m_iCaptionX( 0 ),
-		m_iNumberY( 0 )
+		m_iNumberY( 0 ),
+		m_iCaptionY( 0 )
 	{
 		strncpy( m_szHealth, "100", sizeof( m_szHealth ) );
 		m_szHealth[sizeof( m_szHealth ) - 1] = '\0';
@@ -171,11 +172,17 @@ public:
 		m_iBlue = blue;
 	}
 
-	void SetTextLayout( int numberX, int captionX, int numberY )
+	bool SetTextLayout( int numberX, int numberY, int captionX, int captionY )
 	{
+		if( m_iNumberX == numberX && m_iNumberY == numberY &&
+			m_iCaptionX == captionX && m_iCaptionY == captionY )
+			return false;
+
 		m_iNumberX = numberX;
-		m_iCaptionX = captionX;
 		m_iNumberY = numberY;
+		m_iCaptionX = captionX;
+		m_iCaptionY = captionY;
+		return true;
 	}
 
 protected:
@@ -191,7 +198,7 @@ protected:
 		drawSetTextColor( m_iRed, m_iGreen, m_iBlue, -1 );
 
 		drawSetTextFont( m_pCaptionFont );
-		drawSetTextPos( m_iCaptionX, 0 );
+		drawSetTextPos( m_iCaptionX, m_iCaptionY );
 		drawPrintText( caption, sizeof( caption ) - 1 );
 
 		drawSetTextFont( m_pNumberFont );
@@ -208,6 +215,7 @@ private:
 	int m_iNumberX;
 	int m_iCaptionX;
 	int m_iNumberY;
+	int m_iCaptionY;
 	char m_szHealth[16];
 };
 
@@ -227,7 +235,8 @@ public:
 		m_iBlue( 255 ),
 		m_iValueX( 0 ),
 		m_iCaptionX( 0 ),
-		m_iValueY( 0 )
+		m_iValueY( 0 ),
+		m_iCaptionY( 0 )
 	{
 		m_szCaption[0] = '\0';
 		m_szValue[0] = '\0';
@@ -313,14 +322,16 @@ public:
 		return true;
 	}
 
-	bool SetTextLayout( int valueX, int captionX, int valueY )
+	bool SetTextLayout( int valueX, int valueY, int captionX, int captionY )
 	{
-		if( m_iValueX == valueX && m_iCaptionX == captionX && m_iValueY == valueY )
+		if( m_iValueX == valueX && m_iValueY == valueY &&
+			m_iCaptionX == captionX && m_iCaptionY == captionY )
 			return false;
 
 		m_iValueX = valueX;
-		m_iCaptionX = captionX;
 		m_iValueY = valueY;
+		m_iCaptionX = captionX;
+		m_iCaptionY = captionY;
 		return true;
 	}
 
@@ -335,7 +346,7 @@ protected:
 		drawSetTextColor( m_iRed, m_iGreen, m_iBlue, -1 );
 
 		drawSetTextFont( m_pCaptionFont );
-		drawSetTextPos( m_iCaptionX, 0 );
+		drawSetTextPos( m_iCaptionX, m_iCaptionY );
 		drawPrintText( m_szCaption, (int)strlen( m_szCaption ) );
 
 		const char *separator = m_pSmallValueFont ? strchr( m_szValue, '|' ) : NULL;
@@ -381,6 +392,7 @@ private:
 	int m_iValueX;
 	int m_iCaptionX;
 	int m_iValueY;
+	int m_iCaptionY;
 	char m_szCaption[24];
 	char m_szValue[64];
 };
@@ -397,6 +409,11 @@ int g_iLastHealth = -1;
 int g_iLastRed = -1;
 int g_iLastGreen = -1;
 int g_iLastBlue = -1;
+
+static int HUD_VGuiReadOffset( const char *name )
+{
+	return (int)CVAR_GET_FLOAT( name );
+}
 
 void HUD_VGuiHealthResetCache( void )
 {
@@ -575,20 +592,25 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 	char healthText[16];
 	int numberWide, numberTall;
 	int captionWide, captionTall;
+	int numberAbsX, numberAbsY, captionAbsX, captionAbsY;
+	int left, top, right, bottom;
 	int panelWide, panelTall;
-	int numberX, captionX, numberY;
-	int panelX, panelY;
-	int oldWide, oldTall;
-	int oldX, oldY;
+	int numberX, numberY, captionX, captionY;
+	int oldWide, oldTall, oldX, oldY;
+	int textOffsetX, textOffsetY, numberOffsetX, numberOffsetY;
 	bool changed = false;
 
 	if( !g_pHudHealthPanel || !g_pHudHealthNumberFont || !g_pHudHealthCaptionFont )
 		return 0;
 
-	// Match the legacy sprite-number safe-area transform. Keep glyph dimensions
-	// native; only move the VGUI anchor, just as SPR_DrawAdditive does.
+	// Preserve the legacy sprite HUD anchor and overscan transform. Apply the
+	// editable offsets afterwards so values are measured in screen pixels.
 	x = HUD_AdjustX( x );
 	y = HUD_AdjustY( y );
+	textOffsetX = HUD_VGuiReadOffset( "hud_vgui_text_x" );
+	textOffsetY = HUD_VGuiReadOffset( "hud_vgui_text_y" );
+	numberOffsetX = HUD_VGuiReadOffset( "hud_vgui_numbers_x" );
+	numberOffsetY = HUD_VGuiReadOffset( "hud_vgui_numbers_y" );
 
 	snprintf( healthText, sizeof( healthText ), "%03d", health );
 
@@ -616,11 +638,27 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 	if( captionWide < 1 ) captionWide = 1;
 	if( captionTall < 1 ) captionTall = 1;
 
-	panelWide = numberWide > captionWide ? numberWide : captionWide;
-	numberX = ( panelWide - numberWide ) / 2;
-	captionX = ( panelWide - captionWide ) / 2;
-	numberY = captionTall + 2;
-	panelTall = numberY + numberTall;
+	numberAbsX = x + numberOffsetX;
+	numberAbsY = y + numberOffsetY;
+	captionAbsX = x + ( numberWide - captionWide ) / 2 + textOffsetX;
+	captionAbsY = y - captionTall - 2 + textOffsetY;
+
+	left = numberAbsX < captionAbsX ? numberAbsX : captionAbsX;
+	top = numberAbsY < captionAbsY ? numberAbsY : captionAbsY;
+	right = ( numberAbsX + numberWide ) > ( captionAbsX + captionWide ) ?
+		( numberAbsX + numberWide ) : ( captionAbsX + captionWide );
+	bottom = ( numberAbsY + numberTall ) > ( captionAbsY + captionTall ) ?
+		( numberAbsY + numberTall ) : ( captionAbsY + captionTall );
+
+	panelWide = right - left;
+	panelTall = bottom - top;
+	if( panelWide < 1 ) panelWide = 1;
+	if( panelTall < 1 ) panelTall = 1;
+
+	numberX = numberAbsX - left;
+	numberY = numberAbsY - top;
+	captionX = captionAbsX - left;
+	captionY = captionAbsY - top;
 
 	g_pHudHealthPanel->getSize( oldWide, oldTall );
 	if( panelWide != oldWide || panelTall != oldTall )
@@ -629,16 +667,12 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 		changed = true;
 	}
 
-	g_pHudHealthPanel->SetTextLayout( numberX, captionX, numberY );
+	changed |= g_pHudHealthPanel->SetTextLayout( numberX, numberY, captionX, captionY );
 
-	// Keep the number at the original HUD anchor; only the caption extends above it.
-	// Re-evaluate the panel origin if a variable-width health value changes.
-	panelX = x - numberX;
-	panelY = y - numberY;
 	g_pHudHealthPanel->getPos( oldX, oldY );
-	if( panelX != oldX || panelY != oldY )
+	if( left != oldX || top != oldY )
 	{
-		g_pHudHealthPanel->setPos( panelX, panelY );
+		g_pHudHealthPanel->setPos( left, top );
 		changed = true;
 	}
 
@@ -661,20 +695,26 @@ static int HUD_VGuiUpdateLabeledPanel( CHudLabeledTextPanel *panel,
 {
 	int valueWide, valueTall;
 	int captionWide, captionTall;
-	int panelWide, panelTall;
-	int valueX, captionX, valueY;
-	int panelX, panelY;
-	int oldWide, oldTall;
-	int oldX, oldY;
+	int panelWide, valueBaseX, captionBaseX;
+	int valueAbsX, valueAbsY, captionAbsX, captionAbsY;
+	int left, top, right, bottom;
+	int panelWidePixels, panelTallPixels;
+	int valueX, valueY, captionX, captionY;
+	int oldWide, oldTall, oldX, oldY;
+	int textOffsetX, textOffsetY, numberOffsetX, numberOffsetY;
 	bool changed = false;
 
 	if( !panel || !g_pHudHealthNumberFont || !g_pHudHealthCaptionFont )
 		return 0;
 
-	// Suit and ammo use the same safe-area anchor transform as their sprite
-	// counterparts. The text retains its native size and spacing.
+	// Preserve the original per-HUD anchors and safe-area handling; these
+	// shared offsets are then added to every caption or every numeric readout.
 	anchorX = HUD_AdjustX( anchorX );
 	anchorY = HUD_AdjustY( anchorY );
+	textOffsetX = HUD_VGuiReadOffset( "hud_vgui_text_x" );
+	textOffsetY = HUD_VGuiReadOffset( "hud_vgui_text_y" );
+	numberOffsetX = HUD_VGuiReadOffset( "hud_vgui_numbers_x" );
+	numberOffsetY = HUD_VGuiReadOffset( "hud_vgui_numbers_y" );
 
 	changed |= panel->SetText( caption, value );
 	changed |= panel->SetTextColor( red, green, blue );
@@ -688,28 +728,58 @@ static int HUD_VGuiUpdateLabeledPanel( CHudLabeledTextPanel *panel,
 	if( captionTall < 1 ) captionTall = 1;
 
 	panelWide = valueWide > captionWide ? valueWide : captionWide;
-	valueX = rightAlignValue ? panelWide - valueWide : ( panelWide - valueWide ) / 2;
-	captionX = ( panelWide - captionWide ) / 2;
-	valueY = captionTall + 2;
-	panelTall = valueY + valueTall;
+	valueBaseX = rightAlignValue ? panelWide - valueWide : ( panelWide - valueWide ) / 2;
+	captionBaseX = ( panelWide - captionWide ) / 2;
+
+	// Calculate the same absolute anchors used by the previous compact panels.
+	if( rightAlignValue )
+	{
+		valueAbsX = anchorX - valueWide;
+		captionAbsX = anchorX - panelWide + captionBaseX;
+	}
+	else
+	{
+		valueAbsX = anchorX;
+		captionAbsX = anchorX - valueBaseX + captionBaseX;
+	}
+	valueAbsY = anchorY;
+	captionAbsY = anchorY - captionTall - 2;
+
+	valueAbsX += numberOffsetX;
+	valueAbsY += numberOffsetY;
+	captionAbsX += textOffsetX;
+	captionAbsY += textOffsetY;
+
+	left = valueAbsX < captionAbsX ? valueAbsX : captionAbsX;
+	top = valueAbsY < captionAbsY ? valueAbsY : captionAbsY;
+	right = ( valueAbsX + valueWide ) > ( captionAbsX + captionWide ) ?
+		( valueAbsX + valueWide ) : ( captionAbsX + captionWide );
+	bottom = ( valueAbsY + valueTall ) > ( captionAbsY + captionTall ) ?
+		( valueAbsY + valueTall ) : ( captionAbsY + captionTall );
+
+	panelWidePixels = right - left;
+	panelTallPixels = bottom - top;
+	if( panelWidePixels < 1 ) panelWidePixels = 1;
+	if( panelTallPixels < 1 ) panelTallPixels = 1;
+
+	valueX = valueAbsX - left;
+	valueY = valueAbsY - top;
+	captionX = captionAbsX - left;
+	captionY = captionAbsY - top;
 
 	panel->getSize( oldWide, oldTall );
-	if( panelWide != oldWide || panelTall != oldTall )
+	if( panelWidePixels != oldWide || panelTallPixels != oldTall )
 	{
-		panel->setSize( panelWide, panelTall );
+		panel->setSize( panelWidePixels, panelTallPixels );
 		changed = true;
 	}
 
-	changed |= panel->SetTextLayout( valueX, captionX, valueY );
+	changed |= panel->SetTextLayout( valueX, valueY, captionX, captionY );
 
-	// The value keeps its original HUD anchor. Ammo is right-aligned so the
-	// final digit stays beside the weapon-specific ammo icon.
-	panelX = rightAlignValue ? anchorX - panelWide : anchorX - valueX;
-	panelY = anchorY - valueY;
 	panel->getPos( oldX, oldY );
-	if( panelX != oldX || panelY != oldY )
+	if( left != oldX || top != oldY )
 	{
-		panel->setPos( panelX, panelY );
+		panel->setPos( left, top );
 		changed = true;
 	}
 
