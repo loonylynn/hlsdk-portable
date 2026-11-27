@@ -149,15 +149,10 @@ int CHudBattery::Draw( float flTime )
 	rc = *m_prc2;
 	rc.top += (int)( (float)m_iHeight * ( (float)( 100 - batteryValue ) * 0.01f ) );
 
-	// Position the suit readout immediately to the right of the health slots.
-	const int digitWidth = gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).right -
-		gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left;
-	const int crossWidth = gHUD.GetSpriteRect( gHUD.m_Health.m_HUD_cross ).right -
-		gHUD.GetSpriteRect( gHUD.m_Health.m_HUD_cross ).left;
-	const int healthNumbersX = crossWidth + digitWidth / 2;
-	const int healthSlotsWidth = 3 * digitWidth +
-		2 * HUD_DIGITAL_GHOST_DIGIT_SPACING;
-	x = healthNumbersX + healthSlotsWidth + digitWidth / 2;
+	// Match the reference suit cluster: icon above its own three digit slots.
+	// The 320 layout uses half the 640 horizontal offset.
+	const int suitXOffset = ( gHUD.m_iRes == 320 ) ? 64 : 128;
+	x = gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left + suitXOffset;
 
 	const int iOffset = ( m_prc1->bottom - m_prc1->top ) / 6;
 
@@ -169,18 +164,18 @@ int CHudBattery::Draw( float flTime )
 	int iconB = displayB;
 	HUD_DigitalScaleColor( iconR, iconG, iconB, digitalAlpha );
 
+	// Keep the outline and cropped fill aligned above the number readout.
 	SPR_Set( m_hSprite1, iconR, iconG, iconB );
-	SPR_DrawAdditive( 0, x, y - iOffset, m_prc1 );
+	SPR_DrawAdditive( 0, x, y - iOffset - 10, m_prc1 );
 
 	if( rc.bottom > rc.top )
 	{
 		SPR_Set( m_hSprite2, iconR, iconG, iconB );
-		SPR_DrawAdditive( 0, x, y - iOffset + ( rc.top - m_prc2->top ), &rc );
+		SPR_DrawAdditive( 0, x, y - iOffset - 10 +
+			( rc.top - m_prc2->top ), &rc );
 	}
 
-	const int iconWidth = m_prc1->right - m_prc1->left;
-	const int numberX = x + iconWidth + digitWidth / 2;
-	HUD_DigitalDrawNumber( numberX, y + gHUD.m_iHudNumbersYOffset,
+	HUD_DigitalDrawNumber( x, y + gHUD.m_iHudNumbersYOffset,
 		batteryValue, displayR, displayG, displayB, digitalAlpha );
 
 	return 1;
