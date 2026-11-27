@@ -672,6 +672,7 @@ int CHudAmmo::MsgFunc_WeaponList( const char *pszName, int iSize, void *pbuf )
 	BEGIN_READ( pbuf, iSize );
 	
 	WEAPON Weapon;
+	memset( &Weapon, 0, sizeof( Weapon ) );
 
 	strlcpy( Weapon.szName, READ_STRING(), sizeof( Weapon.szName ));
 
@@ -970,12 +971,14 @@ int CHudAmmo::Draw( float flTime )
 			const int numberStartX = ScreenWidth - ( 8 * ammoWidth ) - iconWidth;
 			const int dividerWidth = ( m_prcDivider ) ?
 				( m_prcDivider->right - m_prcDivider->left ) : Q_max( 1, ammoWidth / 10 );
+			const int vguiNumberEndX = numberStartX + ( 3 * ammoWidth ) +
+				ammoWidth / 2 + ( ammoWidth / 10 ) + ammoWidth / 2 + ( 3 * ammoWidth );
 			x = numberStartX + ( 3 * ammoWidth ) + ammoWidth / 2 +
 				dividerWidth + ammoWidth / 2 + ( 3 * smallWidth );
 
 			if( useVGuiAmmo &&
 				!HUD_VGuiAmmoUpdate( pw->iClip, reserveAmmo, 1, r, g, b,
-					x + ( hasIcon ? iconWidth : 0 ), y ) )
+					vguiNumberEndX + ( hasIcon ? iconWidth : 0 ), y ) )
 				useVGuiAmmo = false;
 
 			if( !useVGuiAmmo )
