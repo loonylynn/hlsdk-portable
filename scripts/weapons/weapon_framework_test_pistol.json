@@ -1,0 +1,46 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "xash:weapon/test_pistol",
+    "entity_classname": "weapon_framework_test_pistol"
+  },
+  "inventory": {
+    "slot": 1,
+    "position": 8,
+    "weight": 10,
+    "flags": []
+  },
+  "ammo": {
+    "clip_size": 8,
+    "default_ammo": 24,
+    "primary": {
+      "type": "9mm",
+      "max_carry": 250,
+      "pickup_amount": 8
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_9mmhandgun.mdl",
+    "world": "models/w_9mmhandgun.mdl",
+    "player": "models/p_9mmhandgun.mdl"
+  },
+  "behavior": {
+    "type": "hitscan",
+    "bullet_type": "9mm",
+    "damage": 8,
+    "pellets": 1,
+    "range": 8192,
+    "spread": 0.02,
+    "fire_rate": 0.25,
+    "reload_time": 1.5,
+    "automatic": false,
+    "fire_sound": "weapons/pl_gun3.wav",
+    "animations": {
+      "draw": 3,
+      "fire": 4,
+      "reload": 2,
+      "idle": 0
+    }
+  }
+}
