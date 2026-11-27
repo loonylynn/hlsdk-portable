@@ -144,8 +144,7 @@ public:
 		strncpy( m_szHealth, "100", sizeof( m_szHealth ) );
 		m_szHealth[sizeof( m_szHealth ) - 1] = '\0';
 		setPaintBorderEnabled( false );
-		setPaintBackgroundEnabled( true );
-		setBgColor( 0, 0, 0, 255 );
+		setPaintBackgroundEnabled( false );
 		setPaintEnabled( true );
 	}
 
@@ -186,9 +185,6 @@ public:
 			return false;
 
 		m_iBackgroundOpacity = opacity;
-		// VGUI's background Color alpha is transparency, so invert the
-		// user-facing opacity before passing it to the native panel renderer.
-		setBgColor( 0, 0, 0, 255 - opacity );
 		return true;
 	}
 
@@ -206,12 +202,47 @@ public:
 	}
 
 protected:
+	void PaintRoundedBackground( void )
+	{
+		int wide, tall;
+		int radius = 6;
+		static const int cornerInset[6] = { 5, 4, 3, 2, 1, 0 };
+
+		if( m_iBackgroundOpacity <= 0 )
+			return;
+
+		getSize( wide, tall );
+		if( wide <= 0 || tall <= 0 )
+			return;
+
+		if( radius * 2 > wide )
+			radius = wide / 2;
+		if( radius * 2 > tall )
+			radius = tall / 2;
+
+		// Match the standard VGUI panel alpha path. The engine bridge accepts
+		// transparency here, so invert the user-facing opacity value.
+		drawSetColor( 0, 0, 0, 255 - m_iBackgroundOpacity );
+
+		if( tall > radius * 2 )
+			drawFilledRect( 0, radius, wide, tall - radius );
+
+		for( int row = 0; row < radius; row++ )
+		{
+			int inset = ( radius == 6 ) ? cornerInset[row] : radius - 1 - row;
+			drawFilledRect( inset, row, wide - inset, row + 1 );
+			drawFilledRect( inset, tall - row - 1, wide - inset, tall - row );
+		}
+	}
+
 	virtual void paint( void )
 	{
 		static const char caption[] = "HEALTH";
 
 		if( !m_pNumberFont || !m_pCaptionFont )
 			return;
+
+		PaintRoundedBackground();
 
 		// A negative VGUI alpha is an internal marker consumed by the
 		// Xash3D VGUI bridge. It is never stored in a VGUI Color object.
@@ -263,8 +294,7 @@ public:
 		m_szCaption[0] = '\0';
 		m_szValue[0] = '\0';
 		setPaintBorderEnabled( false );
-		setPaintBackgroundEnabled( true );
-		setBgColor( 0, 0, 0, 255 );
+		setPaintBackgroundEnabled( false );
 		setPaintEnabled( true );
 	}
 
@@ -353,9 +383,6 @@ public:
 			return false;
 
 		m_iBackgroundOpacity = opacity;
-		// VGUI's background Color alpha is transparency, so invert the
-		// user-facing opacity before passing it to the native panel renderer.
-		setBgColor( 0, 0, 0, 255 - opacity );
 		return true;
 	}
 
@@ -373,10 +400,45 @@ public:
 	}
 
 protected:
+	void PaintRoundedBackground( void )
+	{
+		int wide, tall;
+		int radius = 6;
+		static const int cornerInset[6] = { 5, 4, 3, 2, 1, 0 };
+
+		if( m_iBackgroundOpacity <= 0 )
+			return;
+
+		getSize( wide, tall );
+		if( wide <= 0 || tall <= 0 )
+			return;
+
+		if( radius * 2 > wide )
+			radius = wide / 2;
+		if( radius * 2 > tall )
+			radius = tall / 2;
+
+		// Match the standard VGUI panel alpha path. The engine bridge accepts
+		// transparency here, so invert the user-facing opacity value.
+		drawSetColor( 0, 0, 0, 255 - m_iBackgroundOpacity );
+
+		if( tall > radius * 2 )
+			drawFilledRect( 0, radius, wide, tall - radius );
+
+		for( int row = 0; row < radius; row++ )
+		{
+			int inset = ( radius == 6 ) ? cornerInset[row] : radius - 1 - row;
+			drawFilledRect( inset, row, wide - inset, row + 1 );
+			drawFilledRect( inset, tall - row - 1, wide - inset, tall - row );
+		}
+	}
+
 	virtual void paint( void )
 	{
 		if( !m_pValueFont || !m_pCaptionFont || !m_szCaption[0] || !m_szValue[0] )
 			return;
+
+		PaintRoundedBackground();
 
 		// Negative alpha is the private marker for Xash3D's scoped additive
 		// VGUI text pass. It is not stored in a VGUI Color object.
