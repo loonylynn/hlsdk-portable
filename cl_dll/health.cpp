@@ -223,6 +223,20 @@ int CHudHealth::VidInit( void )
 	m_HUD_dmg_bio = gHUD.GetSpriteIndex( "dmg_bio" ) + 1;
 	m_HUD_cross = gHUD.GetSpriteIndex( "cross" );
 
+	// Cache the reference HUD's three-slot inactive digit resources.
+	m_HUD_DigitsBG1 = gHUD.GetSpriteIndex( "number_dull1" );
+	m_HUD_DigitsBG2 = gHUD.GetSpriteIndex( "number_dull2" );
+	m_hDigitsBG1 = ( m_HUD_DigitsBG1 >= 0 ) ? gHUD.GetSprite( m_HUD_DigitsBG1 ) : 0;
+	m_hDigitsBG2 = ( m_HUD_DigitsBG2 >= 0 ) ? gHUD.GetSprite( m_HUD_DigitsBG2 ) : 0;
+	m_prcDigitsBG1 = ( m_HUD_DigitsBG1 >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_DigitsBG1 ) : NULL;
+	m_prcDigitsBG2 = ( m_HUD_DigitsBG2 >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_DigitsBG2 ) : NULL;
+	m_HUD_DigitsSmBG1 = gHUD.GetSpriteIndex( "number_sm_dull1" );
+	m_HUD_DigitsSmBG2 = gHUD.GetSpriteIndex( "number_sm_dull2" );
+	m_hDigitsSmBG1 = ( m_HUD_DigitsSmBG1 >= 0 ) ? gHUD.GetSprite( m_HUD_DigitsSmBG1 ) : 0;
+	m_hDigitsSmBG2 = ( m_HUD_DigitsSmBG2 >= 0 ) ? gHUD.GetSprite( m_HUD_DigitsSmBG2 ) : 0;
+	m_prcDigitsSmBG1 = ( m_HUD_DigitsSmBG1 >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_DigitsSmBG1 ) : NULL;
+	m_prcDigitsSmBG2 = ( m_HUD_DigitsSmBG2 >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_DigitsSmBG2 ) : NULL;
+
 	// This is a standalone sprite sheet, not an entry in hud.txt.
 	g_hAuxHudSprite = SPR_Load( "sprites/auxhud.spr" );
 
@@ -1026,7 +1040,8 @@ int CHudHealth::Draw( float flTime )
 			SPR_DrawAdditive( 0, x, y - 10, &gHUD.GetSpriteRect( m_HUD_cross ) );
 
 			HUD_DigitalDrawNumber( x, y + gHUD.m_iHudNumbersYOffset,
-				m_iHealth, displayR, displayG, displayB, displayAlpha );
+				m_iHealth, displayR, displayG, displayB, displayAlpha,
+				m_HUD_DigitsBG1, m_HUD_DigitsBG2 );
 		}
 
 		// Use the post-prediction local state, which contains the
