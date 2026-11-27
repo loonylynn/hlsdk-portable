@@ -68,6 +68,9 @@ static void AuxPower_EditCommand( void );
 static void AuxPower_CommitCommand( void );
 static void AuxPower_CancelCommand( void );
 static void AuxPower_ReportCommand( void );
+static void VGuiHud_TextOffsetCommand( void );
+static void VGuiHud_NumbersOffsetCommand( void );
+static void VGuiHud_SetOffset( const char *group, const char *xCvar, const char *yCvar );
 
 int giDmgHeight, giDmgWidth;
 
@@ -87,6 +90,48 @@ int giDmgFlags[NUM_DMG_TYPES] =
 	DMG_HALLUC
 };
 
+static void VGuiHud_SetOffset( const char *group, const char *xCvar, const char *yCvar )
+{
+	int argc = gEngfuncs.Cmd_Argc ? gEngfuncs.Cmd_Argc() : 0;
+
+	if( argc >= 3 )
+	{
+		if( !gEngfuncs.Cmd_Argv )
+		{
+			gEngfuncs.Con_Printf( "[VGUI HUD] Command arguments are unavailable.\\n" );
+			return;
+		}
+
+		int x = atoi( gEngfuncs.Cmd_Argv( 1 ) );
+		int y = atoi( gEngfuncs.Cmd_Argv( 2 ) );
+
+		if( !gEngfuncs.Cvar_SetValue )
+		{
+			gEngfuncs.Con_Printf( "[VGUI HUD] Cannot set %s offsets through this engine API.\\n", group );
+			return;
+		}
+
+		gEngfuncs.Cvar_SetValue( xCvar, (float)x );
+		gEngfuncs.Cvar_SetValue( yCvar, (float)y );
+	}
+
+	gEngfuncs.Con_Printf( "[VGUI HUD] %s offset: X %d, Y %d\\n",
+		group, (int)CVAR_GET_FLOAT( xCvar ), (int)CVAR_GET_FLOAT( yCvar ) );
+	if( argc < 3 )
+		gEngfuncs.Con_Printf( "Usage: %s <x> <y>  (screen pixels; 0 0 resets)\\n",
+			!strcmp( group, "Text" ) ? "hud_vgui_text_offset" : "hud_vgui_numbers_offset" );
+}
+
+static void VGuiHud_TextOffsetCommand( void )
+{
+	VGuiHud_SetOffset( "Text", "hud_vgui_text_x", "hud_vgui_text_y" );
+}
+
+static void VGuiHud_NumbersOffsetCommand( void )
+{
+	VGuiHud_SetOffset( "Numbers", "hud_vgui_numbers_x", "hud_vgui_numbers_y" );
+}
+
 int CHudHealth::Init( void )
 {
 	HOOK_MESSAGE( Health );
@@ -98,7 +143,15 @@ int CHudHealth::Init( void )
 	CVAR_CREATE( "hud_auxpower_snap", "1", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_auxpower_layout_version", "0", FCVAR_ARCHIVE );
 	// One master switch for all VGUI HUD readouts.
+	// Shared screen-pixel offsets: all three captions move together, as do all values.
 	CVAR_CREATE( "hud_vgui", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_text_x", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_text_y", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_numbers_x", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_numbers_y", "0", FCVAR_ARCHIVE );
+
+	gEngfuncs.pfnAddCommand( "hud_vgui_text_offset", VGuiHud_TextOffsetCommand );
+	gEngfuncs.pfnAddCommand( "hud_vgui_numbers_offset", VGuiHud_NumbersOffsetCommand );
 
 	gEngfuncs.pfnAddCommand( "hud_auxpower_edit", AuxPower_EditCommand );
 	gEngfuncs.pfnAddCommand( "hud_auxpower_commit", AuxPower_CommitCommand );
