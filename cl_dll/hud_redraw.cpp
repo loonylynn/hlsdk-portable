@@ -2763,17 +2763,70 @@ int CHud::DrawHudNumber( int x, int y, int iFlags, int iNumber, int r, int g, in
 	return x;
 }
 
+int CHud::DrawHudNumberSm( int x, int y, int iFlags, int iNumber, int r, int g, int b )
+{
+	const int numberBase = ( m_HUD_number_sm_0 >= 0 ) ? m_HUD_number_sm_0 : m_HUD_number_0;
+	const int digitWidth = GetSpriteRect( numberBase ).right - GetSpriteRect( numberBase ).left;
+	int digit;
+
+	if( digitWidth <= 0 )
+		return x;
+
+	if( iNumber < 0 )
+		iNumber = 0;
+
+	if( iNumber > 0 )
+	{
+		if( iNumber >= 100 )
+		{
+			digit = iNumber / 100;
+			SPR_Set( GetSprite( numberBase + digit ), r, g, b );
+			SPR_DrawAdditive( 0, x, y, &GetSpriteRect( numberBase + digit ) );
+			x += digitWidth;
+		}
+		else if( iFlags & DHN_3DIGITS_SM )
+			x += digitWidth;
+
+		if( iNumber >= 10 )
+		{
+			digit = ( iNumber % 100 ) / 10;
+			SPR_Set( GetSprite( numberBase + digit ), r, g, b );
+			SPR_DrawAdditive( 0, x, y, &GetSpriteRect( numberBase + digit ) );
+			x += digitWidth;
+		}
+		else if( iFlags & ( DHN_3DIGITS_SM | DHN_2DIGITS_SM ) )
+			x += digitWidth;
+
+		digit = iNumber % 10;
+		SPR_Set( GetSprite( numberBase + digit ), r, g, b );
+		SPR_DrawAdditive( 0, x, y, &GetSpriteRect( numberBase + digit ) );
+		x += digitWidth;
+	}
+	else if( iFlags & DHN_DRAWZERO_SM )
+	{
+		SPR_Set( GetSprite( numberBase ), r, g, b );
+		if( iFlags & DHN_3DIGITS_SM )
+			x += digitWidth;
+		if( iFlags & ( DHN_3DIGITS_SM | DHN_2DIGITS_SM ) )
+			x += digitWidth;
+		SPR_DrawAdditive( 0, x, y, &GetSpriteRect( numberBase ) );
+		x += digitWidth;
+	}
+
+	return x;
+}
+
 int CHud::GetNumWidth( int iNumber, int iFlags )
 {
-	if( iFlags & ( DHN_3DIGITS ) )
+	if( iFlags & ( DHN_3DIGITS | DHN_3DIGITS_SM ) )
 		return 3;
 
-	if( iFlags & ( DHN_2DIGITS ) )
+	if( iFlags & ( DHN_2DIGITS | DHN_2DIGITS_SM ) )
 		return 2;
 
 	if( iNumber <= 0 )
 	{
-		if( iFlags & ( DHN_DRAWZERO ) )
+		if( iFlags & ( DHN_DRAWZERO | DHN_DRAWZERO_SM ) )
 			return 1;
 		else
 			return 0;
