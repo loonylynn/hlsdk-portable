@@ -37,9 +37,9 @@
     "automatic": false,
     "fire_sound": "weapons/pl_gun3.wav",
     "animations": {
-      "draw": 3,
-      "fire": 4,
-      "reload": 2,
+      "draw": 7,
+      "fire": 3,
+      "reload": 5,
       "idle": 0
     }
   }
