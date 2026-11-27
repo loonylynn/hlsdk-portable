@@ -327,6 +327,7 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 	int numberX, captionX, numberY;
 	int panelX, panelY;
 	int oldWide, oldTall;
+	int oldX, oldY;
 	bool changed = false;
 
 	if( !g_pHudHealthPanel || !g_pHudHealthNumberFont || !g_pHudHealthCaptionFont )
@@ -374,15 +375,17 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 	g_pHudHealthPanel->SetTextLayout( numberX, captionX, numberY );
 
 	// Keep the number at the original HUD anchor; only the caption extends above it.
+	// Re-evaluate the panel origin if a variable-width health value changes.
 	panelX = x - numberX;
 	panelY = y - numberY;
-	if( x != g_iLastX || y != g_iLastY )
+	g_pHudHealthPanel->getPos( oldX, oldY );
+	if( panelX != oldX || panelY != oldY )
 	{
 		g_pHudHealthPanel->setPos( panelX, panelY );
-		g_iLastX = x;
-		g_iLastY = y;
 		changed = true;
 	}
+	g_iLastX = x;
+	g_iLastY = y;
 
 	if( !g_pHudHealthPanel->isVisible() )
 	{
