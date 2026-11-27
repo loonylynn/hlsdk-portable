@@ -412,8 +412,15 @@ void CFrameworkWeapon::SyncRuntimeStateFromLegacy(void)
 	}
 
 	m_runtimeState.reload = WeaponFramework::WeaponReloadNone;
+
+	// Primary-action end time is the GoldSrc attack timer. It is already
+	// replicated by weapon_data_t, so re-read it after client prediction
+	// reconciliation instead of trusting a stale copy in the runtime block.
+	if (m_runtimeState.lifecycle == WeaponFramework::WeaponLifecyclePrimaryAction)
+		m_runtimeState.actionEndTime = m_flNextPrimaryAttack;
+
+	const bool activeWeapon = m_pPlayer && m_pPlayer->m_pActiveItem == this;
 	if (m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleUnowned ||
-		m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleHolstered ||
 		m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleDeploying ||
 		m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleReloading ||
 		((m_runtimeState.lifecycle == WeaponFramework::WeaponLifecyclePrimaryAction ||
@@ -421,7 +428,7 @@ void CFrameworkWeapon::SyncRuntimeStateFromLegacy(void)
 		  m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleBusy) &&
 		 currentTime >= m_runtimeState.actionEndTime))
 	{
-		m_runtimeState.lifecycle = m_pPlayer ?
+		m_runtimeState.lifecycle = activeWeapon ?
 			WeaponFramework::WeaponLifecycleReady :
 			WeaponFramework::WeaponLifecycleHolstered;
 	}
@@ -448,7 +455,14 @@ int CFrameworkWeapon::Restore(CRestore &restore)
 	if (!CBasePlayerWeapon::Restore(restore))
 		return 0;
 	if (!restore.ReadFields("CFrameworkWeapon", this, m_SaveData, ARRAYSIZE(m_SaveData)))
-		return 0;
+	{
+		// Older save files have no CFrameworkWeapon field block. ReadFields
+		// rewinds when the class marker is absent, so rebuild from the legacy
+		// fields restored by CBasePlayerWeapon.
+		ResetRuntimeState();
+		SyncRuntimeStateFromLegacy();
+		return 1;
+	}
 
 	if (!m_runtimeState.IsValid())
 	{
