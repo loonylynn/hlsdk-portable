@@ -174,6 +174,7 @@ int CHudHealth::Init( void )
 	CVAR_CREATE( "hud_vgui_numbers_x", "0", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_vgui_numbers_y", "-28", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_vgui_layout_version", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_panel_opacity", "56", FCVAR_ARCHIVE );
 
 	gEngfuncs.pfnAddCommand( "hud_vgui_text_offset", VGuiHud_TextOffsetCommand );
 	gEngfuncs.pfnAddCommand( "hud_vgui_numbers_offset", VGuiHud_NumbersOffsetCommand );
