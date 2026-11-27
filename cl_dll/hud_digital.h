@@ -20,9 +20,18 @@ static inline void HUD_DigitalSetWhite( int &red, int &green, int &blue )
 	green = 255;
 	blue = 255;
 }
+
+static inline void HUD_DigitalSetRed( int &red, int &green, int &blue )
+{
+	red = 255;
+	green = 0;
+	blue = 0;
+}
 static const int HUD_DIGITAL_FLASH_ALPHA = 255;
 static const float HUD_DIGITAL_FADE_DURATION = 0.45f;
 static const int HUD_DIGITAL_LOW_HEALTH_THRESHOLD = 15;
+static const int HUD_DIGITAL_HEALTH_WARNING_THRESHOLD = 25;
+static const int HUD_DIGITAL_SUIT_WARNING_THRESHOLD = 25;
 static const int HUD_DIGITAL_GHOST_DIGIT_SPACING = 0;
 
 static inline int HUD_DigitalGetFlashAlpha( float &timeRemaining, float frameTime )
