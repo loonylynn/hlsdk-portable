@@ -85,10 +85,14 @@ void WeaponsResource::LoadWeaponSprites( WEAPON *pWeapon )
 	memset( &pWeapon->rcInactive, 0, sizeof(wrect_t) );
 	memset( &pWeapon->rcAmmo, 0, sizeof(wrect_t) );
 	memset( &pWeapon->rcAmmo2, 0, sizeof(wrect_t) );
+	memset( &pWeapon->rcDivider, 0, sizeof(wrect_t) );
+	memset( &pWeapon->rcAmmoText, 0, sizeof(wrect_t) );
 	pWeapon->hInactive = 0;
 	pWeapon->hActive = 0;
 	pWeapon->hAmmo = 0;
 	pWeapon->hAmmo2 = 0;
+	pWeapon->hDivider = 0;
+	pWeapon->hAmmoText = 0;
 
 	sprintf( sz, "sprites/%s.txt", pWeapon->szName );
 	client_sprite_t *pList = SPR_GetList( sz, &i );
@@ -311,9 +315,31 @@ void CHudAmmo::Reset( void )
 
 int CHudAmmo::VidInit( void )
 {
-	// Load sprites for buckets (top row of weapon menu)
+	// Load the reference sprite-HUD pieces and the weapon buckets.
 	m_HUD_bucket0 = gHUD.GetSpriteIndex( "bucket1" );
 	m_HUD_selection = gHUD.GetSpriteIndex( "selection" );
+
+	m_HUD_divider = gHUD.GetSpriteIndex( "divider" );
+	m_HUD_AmmoText = gHUD.GetSpriteIndex( "ammotext" );
+	m_hDivider = ( m_HUD_divider >= 0 ) ? gHUD.GetSprite( m_HUD_divider ) : 0;
+	m_hAmmoText = ( m_HUD_AmmoText >= 0 ) ? gHUD.GetSprite( m_HUD_AmmoText ) : 0;
+	m_prcDivider = ( m_HUD_divider >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_divider ) : NULL;
+	m_prcAmmoText = ( m_HUD_AmmoText >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_AmmoText ) : NULL;
+
+	// Large and small unlit digit slots, shared through CHudBase.
+	m_HUD_DigitsBG1 = gHUD.GetSpriteIndex( "number_dull1" );
+	m_HUD_DigitsBG2 = gHUD.GetSpriteIndex( "number_dull2" );
+	m_hDigitsBG1 = ( m_HUD_DigitsBG1 >= 0 ) ? gHUD.GetSprite( m_HUD_DigitsBG1 ) : 0;
+	m_hDigitsBG2 = ( m_HUD_DigitsBG2 >= 0 ) ? gHUD.GetSprite( m_HUD_DigitsBG2 ) : 0;
+	m_prcDigitsBG1 = ( m_HUD_DigitsBG1 >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_DigitsBG1 ) : NULL;
+	m_prcDigitsBG2 = ( m_HUD_DigitsBG2 >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_DigitsBG2 ) : NULL;
+
+	m_HUD_DigitsSmBG1 = gHUD.GetSpriteIndex( "number_sm_dull1" );
+	m_HUD_DigitsSmBG2 = gHUD.GetSpriteIndex( "number_sm_dull2" );
+	m_hDigitsSmBG1 = ( m_HUD_DigitsSmBG1 >= 0 ) ? gHUD.GetSprite( m_HUD_DigitsSmBG1 ) : 0;
+	m_hDigitsSmBG2 = ( m_HUD_DigitsSmBG2 >= 0 ) ? gHUD.GetSprite( m_HUD_DigitsSmBG2 ) : 0;
+	m_prcDigitsSmBG1 = ( m_HUD_DigitsSmBG1 >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_DigitsSmBG1 ) : NULL;
+	m_prcDigitsSmBG2 = ( m_HUD_DigitsSmBG2 >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_DigitsSmBG2 ) : NULL;
 
 	ghsprBuckets = gHUD.GetSprite( m_HUD_bucket0 );
 	giBucketWidth = gHUD.GetSpriteRect( m_HUD_bucket0 ).right - gHUD.GetSpriteRect( m_HUD_bucket0 ).left;
@@ -845,160 +871,217 @@ void CHudAmmo::UserCmd_PrevWeapon( void )
 //-------------------------------------------------------------------------
 // Drawing code
 //-------------------------------------------------------------------------
+// Draw three inactive digit slots before the live ammo value.
+static void HUD_DrawAmmoDigitGhosts( int x, int y, int digitWidth,
+	int red, int green, int blue, HSPRITE dull1, HSPRITE dull2,
+	wrect_t *rect1, wrect_t *rect2, int fallbackDigitIndex )
+{
+	int dimRed = red;
+	int dimGreen = green;
+	int dimBlue = blue;
+	ScaleColors( dimRed, dimGreen, dimBlue, HUD_DIGITAL_DIM_ALPHA );
+
+	if( dull1 && dull2 && rect1 && rect2 )
+	{
+		SPR_Set( dull1, dimRed, dimGreen, dimBlue );
+		SPR_DrawAdditive( 0, x, y, rect1 );
+		SPR_Set( dull2, dimRed, dimGreen, dimBlue );
+		SPR_DrawAdditive( 0, x + digitWidth, y, rect2 );
+		SPR_Set( dull1, dimRed, dimGreen, dimBlue );
+		SPR_DrawAdditive( 0, x + 2 * digitWidth, y, rect1 );
+		return;
+	}
+
+	// Some low-resolution HUD atlases omit the dull sprites.
+	HSPRITE fallback = gHUD.GetSprite( fallbackDigitIndex );
+	if( fallback && fallbackDigitIndex >= 0 )
+	{
+		const wrect_t *rect = &gHUD.GetSpriteRect( fallbackDigitIndex );
+		for( int slot = 0; slot < 3; ++slot )
+		{
+			SPR_Set( fallback, dimRed, dimGreen, dimBlue );
+			SPR_DrawAdditive( 0, x + slot * digitWidth, y, rect );
+		}
+	}
+}
+
 int CHudAmmo::Draw( float flTime )
 {
 	int a, x, y, r, g, b;
-	int AmmoWidth;
+	int ammoWidth, smallWidth;
+	const int hasSuit = ( ( gHUD.m_iWeaponBits & ( 1 << WEAPON_SUIT ) ) != 0 );
 
-	if( !( gHUD.m_iWeaponBits & ( 1 << ( WEAPON_SUIT ) ) ) )
+	if( !hasSuit || ( gHUD.m_iHideHUDDisplay & ( HIDEHUD_WEAPONS | HIDEHUD_ALL ) ) )
 	{
 		HUD_VGuiAmmoSetVisible( 0 );
 		return 1;
 	}
 
-	if( ( gHUD.m_iHideHUDDisplay & ( HIDEHUD_WEAPONS | HIDEHUD_ALL ) ) )
-	{
-		HUD_VGuiAmmoSetVisible( 0 );
-		return 1;
-	}
-
-	// Draw Weapon Menu
 	DrawWList( flTime );
-
-	// Draw ammo pickup history
 	gHR.DrawAmmoHistory( flTime );
 
-	if( !( m_iFlags & HUD_ACTIVE ) )
+	if( !( m_iFlags & HUD_ACTIVE ) || !m_pWeapon )
 	{
 		HUD_VGuiAmmoSetVisible( 0 );
 		return 0;
 	}
 
-	if( !m_pWeapon )
+	WEAPON *pw = m_pWeapon;
+	if( pw->iAmmoType < 0 && pw->iAmmo2Type < 0 )
 	{
 		HUD_VGuiAmmoSetVisible( 0 );
 		return 0;
 	}
 
-	WEAPON *pw = m_pWeapon; // shorthand
-
-	// SPR_Draw Ammo
-	if( ( pw->iAmmoType < 0 ) && ( pw->iAmmo2Type < 0 ) )
-	{
-		HUD_VGuiAmmoSetVisible( 0 );
+	ammoWidth = gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).right -
+		gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left;
+	const int smallBase = ( gHUD.m_HUD_number_sm_0 >= 0 ) ?
+		gHUD.m_HUD_number_sm_0 : gHUD.m_HUD_number_0;
+	smallWidth = gHUD.GetSpriteRect( smallBase ).right -
+		gHUD.GetSpriteRect( smallBase ).left;
+	if( ammoWidth <= 0 )
 		return 0;
-	}
-
-	int iFlags = DHN_DRAWZERO; // draw 0 values
-
-	AmmoWidth = gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).right - gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left;
+	if( smallWidth <= 0 )
+		smallWidth = ammoWidth;
 
 	a = (int)Q_max( MIN_ALPHA, m_fFade );
-
 	if( m_fFade > 0 )
 		m_fFade -= ( (float)gHUD.m_flTimeDelta * 20.0f );
 
 	UnpackRGB( r, g, b, RGB_YELLOWISH );
-
 	ScaleColors( r, g, b, a );
 
-	// Does this weapon have a clip?
 	y = ScreenHeight - gHUD.m_iFontHeight - gHUD.m_iFontHeight / 2;
-	y += gHUD.m_iHudNumbersYOffset; // a1ba: fix HL25 HUD vertical inconsistensy
+	y += gHUD.m_iHudNumbersYOffset;
 
-	// Does weapon have any ammo at all?
-	if( m_pWeapon->iAmmoType > 0 )
+	if( pw->iAmmoType > 0 )
 	{
-		int iIconWidth = m_pWeapon->rcAmmo.right - m_pWeapon->rcAmmo.left;
-		bool useVGuiAmmo = ( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f );
+		const int reserveAmmo = gWR.CountAmmo( pw->iAmmoType );
+		const int iconWidth = pw->rcAmmo.right - pw->rcAmmo.left;
+		const bool hasIcon = ( pw->hAmmo && iconWidth > 0 );
+		const bool useVGuiRequested = ( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f );
+		bool useVGuiAmmo = useVGuiRequested;
 
 		if( pw->iClip >= 0 )
 		{
-			int numberStartX = ScreenWidth - ( 8 * AmmoWidth ) - iIconWidth;
-			int iBarWidth = AmmoWidth / 10;
+			// Preserve the established VGUI anchor. Sprite mode uses the same
+			// three large slots, followed by the divider and three small slots.
+			const int numberStartX = ScreenWidth - ( 8 * ammoWidth ) - iconWidth;
+			const int dividerWidth = ( m_prcDivider ) ?
+				( m_prcDivider->right - m_prcDivider->left ) : Q_max( 1, ammoWidth / 10 );
+			x = numberStartX + ( 3 * ammoWidth ) + ammoWidth / 2 +
+				dividerWidth + ammoWidth / 2 + ( 3 * smallWidth );
 
-			if( useVGuiAmmo )
-			{
-				// Calculate the original icon anchor without drawing the bitmap numbers.
-				x = numberStartX + ( 3 * AmmoWidth ) + AmmoWidth / 2 +
-					iBarWidth + AmmoWidth / 2 + ( 3 * AmmoWidth );
-
-				if( !HUD_VGuiAmmoUpdate( pw->iClip, gWR.CountAmmo( pw->iAmmoType ),
-					1, r, g, b, x + iIconWidth, y ) )
-					useVGuiAmmo = false;
-			}
+			if( useVGuiAmmo &&
+				!HUD_VGuiAmmoUpdate( pw->iClip, reserveAmmo, 1, r, g, b,
+					x + ( hasIcon ? iconWidth : 0 ), y ) )
+				useVGuiAmmo = false;
 
 			if( !useVGuiAmmo )
 			{
 				HUD_VGuiAmmoSetVisible( 0 );
-				x = gHUD.DrawHudNumber( numberStartX, y, iFlags | DHN_3DIGITS, pw->iClip, r, g, b );
 
-				x += AmmoWidth / 2;
+				HUD_DrawAmmoDigitGhosts( numberStartX, y, ammoWidth, r, g, b,
+					m_hDigitsBG1, m_hDigitsBG2, m_prcDigitsBG1, m_prcDigitsBG2,
+					gHUD.m_HUD_number_0 + 8 );
 
-				UnpackRGB( r, g, b, RGB_YELLOWISH );
+				if( m_hAmmoText && m_prcAmmoText )
+				{
+					SPR_Set( m_hAmmoText, r, g, b );
+					SPR_DrawAdditive( 0, numberStartX, y - 10, m_prcAmmoText );
+				}
 
-				// draw the | bar
-				FillRGBA( x, y, iBarWidth, gHUD.m_iFontHeight, r, g, b, a );
+				x = gHUD.DrawHudNumber( numberStartX, y,
+					DHN_DRAWZERO | DHN_3DIGITS, pw->iClip, r, g, b );
 
-				x += iBarWidth + AmmoWidth / 2;
+				const int dividerX = x + ammoWidth / 2;
+				if( m_hDivider && m_prcDivider )
+				{
+					SPR_Set( m_hDivider, r, g, b );
+					SPR_DrawAdditive( 0, dividerX, y, m_prcDivider );
+				}
+				else
+					FillRGBA( dividerX, y, dividerWidth, gHUD.m_iFontHeight, r, g, b, a );
 
-				// GL Seems to need this
-				ScaleColors( r, g, b, a );
-				x = gHUD.DrawHudNumber( x, y, iFlags | DHN_3DIGITS, gWR.CountAmmo( pw->iAmmoType ), r, g, b );
+				const int reserveX = dividerX + dividerWidth + ammoWidth / 2;
+				HUD_DrawAmmoDigitGhosts( reserveX, y + 7, smallWidth, r, g, b,
+					m_hDigitsSmBG1, m_hDigitsSmBG2,
+					m_prcDigitsSmBG1, m_prcDigitsSmBG2, smallBase + 8 );
+
+				x = gHUD.DrawHudNumberSm( reserveX, y + 7,
+					DHN_DRAWZERO_SM | DHN_3DIGITS_SM, reserveAmmo, r, g, b );
+
+				if( hasIcon )
+				{
+					const int iconY = y - ( ( pw->rcAmmo.bottom - pw->rcAmmo.top ) / 8 );
+					SPR_Set( pw->hAmmo, r, g, b );
+					SPR_DrawAdditive( 0, x + 5, iconY, &pw->rcAmmo );
+				}
 			}
 		}
 		else
 		{
-			int numberStartX = ScreenWidth - ( 4 * AmmoWidth ) - iIconWidth;
-
+			const int numberStartX = ScreenWidth - ( 4 * ammoWidth ) - iconWidth;
 			if( useVGuiAmmo )
 			{
-				x = numberStartX + ( 3 * AmmoWidth );
-				if( !HUD_VGuiAmmoUpdate( 0, gWR.CountAmmo( pw->iAmmoType ),
-					0, r, g, b, x + iIconWidth, y ) )
+				x = numberStartX + ( 3 * ammoWidth );
+				if( !HUD_VGuiAmmoUpdate( 0, reserveAmmo, 0, r, g, b,
+					x + ( hasIcon ? iconWidth : 0 ), y ) )
 					useVGuiAmmo = false;
 			}
 
 			if( !useVGuiAmmo )
 			{
 				HUD_VGuiAmmoSetVisible( 0 );
-				x = gHUD.DrawHudNumber( numberStartX, y,
-					iFlags | DHN_3DIGITS, gWR.CountAmmo( pw->iAmmoType ), r, g, b );
-			}
-		}
+				HUD_DrawAmmoDigitGhosts( numberStartX, y, ammoWidth, r, g, b,
+					m_hDigitsBG1, m_hDigitsBG2, m_prcDigitsBG1, m_prcDigitsBG2,
+					gHUD.m_HUD_number_0 + 8 );
 
-		// The VGUI readout replaces the primary ammo icon as well as its numbers.
-		// In sprite mode, retain the original weapon-specific icon.
-		if( !useVGuiAmmo )
-		{
-			int iOffset = ( m_pWeapon->rcAmmo.bottom - m_pWeapon->rcAmmo.top ) / 8;
-			SPR_Set( m_pWeapon->hAmmo, r, g, b );
-			SPR_DrawAdditive( 0, x, y - iOffset, &m_pWeapon->rcAmmo );
+				if( m_hAmmoText && m_prcAmmoText )
+				{
+					SPR_Set( m_hAmmoText, r, g, b );
+					SPR_DrawAdditive( 0, numberStartX, y - 10, m_prcAmmoText );
+				}
+
+				x = gHUD.DrawHudNumber( numberStartX, y,
+					DHN_DRAWZERO | DHN_3DIGITS, reserveAmmo, r, g, b );
+				if( hasIcon )
+				{
+					const int iconY = y - ( ( pw->rcAmmo.bottom - pw->rcAmmo.top ) / 8 );
+					SPR_Set( pw->hAmmo, r, g, b );
+					SPR_DrawAdditive( 0, x + 5, iconY, &pw->rcAmmo );
+				}
+			}
 		}
 	}
 	else
-	{
 		HUD_VGuiAmmoSetVisible( 0 );
-	}
 
-	// Does weapon have seconday ammo?
+	// The reference HUD uses the small digit atlas for the secondary ammo row.
 	if( pw->iAmmo2Type > 0 )
 	{
-		int iIconWidth = m_pWeapon->rcAmmo2.right - m_pWeapon->rcAmmo2.left;
-
-		// Do we have secondary ammo?
-		if( ( pw->iAmmo2Type != 0 ) && ( gWR.CountAmmo( pw->iAmmo2Type ) > 0 ) )
+		const int secondaryAmmo = gWR.CountAmmo( pw->iAmmo2Type );
+		const int iconWidth = pw->rcAmmo2.right - pw->rcAmmo2.left;
+		if( secondaryAmmo > 0 )
 		{
-			y -= gHUD.m_iFontHeight + gHUD.m_iFontHeight / 4;
-			x = ScreenWidth - 4 * AmmoWidth - iIconWidth;
-			x = gHUD.DrawHudNumber( x, y, iFlags | DHN_3DIGITS, gWR.CountAmmo( pw->iAmmo2Type ), r, g, b );
+			const int secondaryY = y - gHUD.m_iFontHeight - gHUD.m_iFontHeight / 4;
+			const int numberX = ScreenWidth - ( 3 * smallWidth ) - ( pw->hAmmo2 ? iconWidth + 5 : 0 );
+			HUD_DrawAmmoDigitGhosts( numberX, secondaryY, smallWidth, r, g, b,
+				m_hDigitsSmBG1, m_hDigitsSmBG2,
+				m_prcDigitsSmBG1, m_prcDigitsSmBG2, smallBase + 8 );
+			x = gHUD.DrawHudNumberSm( numberX, secondaryY,
+				DHN_DRAWZERO_SM | DHN_3DIGITS_SM, secondaryAmmo, r, g, b );
 
-			// Draw the ammo Icon
-			SPR_Set( m_pWeapon->hAmmo2, r, g, b );
-			int iOffset = ( m_pWeapon->rcAmmo2.bottom - m_pWeapon->rcAmmo2.top) / 8;
-			SPR_DrawAdditive(0, x, y - iOffset, &m_pWeapon->rcAmmo2 );
+			if( pw->hAmmo2 && iconWidth > 0 )
+			{
+				const int iconY = secondaryY -
+					( ( pw->rcAmmo2.bottom - pw->rcAmmo2.top ) / 8 );
+				SPR_Set( pw->hAmmo2, r, g, b );
+				SPR_DrawAdditive( 0, x + 5, iconY, &pw->rcAmmo2 );
+			}
 		}
 	}
+
 	return 1;
 }
 //
