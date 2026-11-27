@@ -26,7 +26,8 @@ def build(bld):
 	source += bld.path.parent.ant_glob([
 					'pm_shared/*.c',
 					'public/safe_snprintf.c',
-					'game_shared/voice_gamemgr.cpp'
+					'game_shared/voice_gamemgr.cpp',
+					'game_shared/weapon_framework/*.cpp'
 					])
 
 	defines = bld.env.EXPORT_DEFINES_LIST
@@ -42,6 +43,7 @@ def build(bld):
 		'../engine',
 		'../pm_shared',
 		'../game_shared',
+		'../game_shared/weapon_framework',
 		'../public'
 	]
 

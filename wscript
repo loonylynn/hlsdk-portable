@@ -319,3 +319,8 @@ def build(bld):
 		bld.add_subproject('external/ps4compat')
 
 	bld.add_subproject('game_shared dlls freevgui cl_dll')
+
+	# Runtime JSON definitions must be installed beside the game DLLs, not left
+	# inside the SDK source checkout.
+	bld.install_files(os.path.join(bld.env.GAMEDIR, 'scripts', 'weapons'),
+		bld.path.ant_glob('scripts/weapons/*.json'))

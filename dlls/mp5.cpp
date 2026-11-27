@@ -18,6 +18,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "nodes.h"
 #include "player.h"
 #include "soundent.h"
@@ -47,27 +48,27 @@ void CMP5::Spawn()
 {
 	pev->classname = MAKE_STRING( "weapon_9mmAR" ); // hack to allow for old names
 	Precache();
-	SET_MODEL( ENT( pev ), "models/w_9mmAR.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_MP5, "models/w_9mmAR.mdl" ) );
 	m_iId = WEAPON_MP5;
 	m_flNextSecondaryAttack = 0.0f;
 
-	m_iDefaultAmmo = MP5_DEFAULT_GIVE;
+	m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_MP5, MP5_DEFAULT_GIVE );
 
 #if CLIENT_DLL
 	if( bIsMultiplayer() )
 #else
 	if( g_pGameRules->IsMultiplayer() )
 #endif
-		m_iDefaultAmmo = MP5_DEFAULT_GIVE_MP;
+		m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_MP5, MP5_DEFAULT_GIVE ) * 2;
 
 	FallInit();// get ready to fall down.
 }
 
 void CMP5::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_9mmAR.mdl" );
-	PRECACHE_MODEL( "models/w_9mmAR.mdl" );
-	PRECACHE_MODEL( "models/p_9mmAR.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_MP5, "models/v_9mmAR.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_MP5, "models/w_9mmAR.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_MP5, "models/p_9mmAR.mdl" ) );
 
 	m_iShell = PRECACHE_MODEL( "models/shell.mdl" );// brass shellTE_MODEL
 
@@ -102,6 +103,8 @@ int CMP5::GetItemInfo( ItemInfo *p )
 	p->iId = m_iId = WEAPON_MP5;
 	p->iWeight = MP5_WEIGHT;
 
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_MP5 ) )
+		m_iId = p->iId;
 	return 1;
 }
 
@@ -119,7 +122,7 @@ int CMP5::AddToPlayer( CBasePlayer *pPlayer )
 
 BOOL CMP5::Deploy()
 {
-	return DefaultDeploy( "models/v_9mmAR.mdl", "models/p_9mmAR.mdl", MP5_DEPLOY, "mp5" );
+	return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_MP5, "models/v_9mmAR.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_MP5, "models/p_9mmAR.mdl" ), MP5_DEPLOY, "mp5" );
 }
 
 void CMP5::SecondaryAttack( void )
@@ -262,7 +265,11 @@ class CMP5AmmoClip : public CBasePlayerAmmo
 	}
 	BOOL AddAmmo( CBaseEntity *pOther ) 
 	{ 
-		int bResult = ( pOther->GiveAmmo( AMMO_MP5CLIP_GIVE, "9mm", _9MM_MAX_CARRY ) != -1 );
+		const char *ammoType = WeaponFramework_GetPrimaryAmmoType( WEAPON_MP5, "9mm" );
+		const int pickupAmount = WeaponFramework_GetPrimaryAmmoPickupAmount( WEAPON_MP5, AMMO_MP5CLIP_GIVE );
+		const int maxCarry = WeaponFramework_GetPrimaryAmmoMax( WEAPON_MP5, _9MM_MAX_CARRY );
+		int bResult = ( ammoType && pickupAmount > 0 &&
+			pOther->GiveAmmo( pickupAmount, ammoType, maxCarry ) != -1 );
 		if( bResult )
 		{
 			EMIT_SOUND( ENT( pev ), CHAN_ITEM, "items/9mmclip1.wav", 1, ATTN_NORM );

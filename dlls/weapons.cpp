@@ -30,6 +30,7 @@
 #include "soundent.h"
 #include "decals.h"
 #include "gamerules.h"
+#include "weapon_framework_weapon.h"
 
 extern CGraph WorldGraph;
 extern int gEvilImpulse101;
@@ -228,26 +229,92 @@ void ExplodeModel( const Vector &vecOrigin, float speed, int model, int count )
 
 int giAmmoIndex = 0;
 
-// Precaches the ammo and queues the ammo info for sending to clients
-void AddAmmoNameToAmmoRegistry( const char *szAmmoname )
+// Precaches an ammo name and queues its stable ID for clients.
+// Index zero is reserved by GetAmmoIndex(); never wrap and overwrite a live
+// ammo definition when the fixed GoldSrc table runs out.
+bool AddAmmoNameToAmmoRegistry( const char *szAmmoname )
 {
-	// make sure it's not already in the registry
-	for( int i = 0; i < MAX_AMMO_SLOTS; i++ )
-	{
-		if( !CBasePlayerItem::AmmoInfoArray[i].pszName)
-			continue;
+	if( !szAmmoname || !szAmmoname[0] )
+		return false;
 
-		if( stricmp( CBasePlayerItem::AmmoInfoArray[i].pszName, szAmmoname ) == 0 )
-			return; // ammo already in registry, just quite
+	// Reuse an existing ID for ammo types shared by multiple weapons.
+	for( int i = 1; i < MAX_AMMO_SLOTS; i++ )
+	{
+		if( CBasePlayerItem::AmmoInfoArray[i].pszName &&
+			stricmp( CBasePlayerItem::AmmoInfoArray[i].pszName, szAmmoname ) == 0 )
+			return true;
 	}
 
-	giAmmoIndex++;
-	ASSERT( giAmmoIndex < MAX_AMMO_SLOTS );
-	if( giAmmoIndex >= MAX_AMMO_SLOTS )
-		giAmmoIndex = 0;
+	if( giAmmoIndex + 1 >= MAX_AMMO_SLOTS )
+	{
+		ALERT( at_console, "Ammo registry full; cannot register '%s' (maximum %d ammo types)\n",
+			szAmmoname, MAX_AMMO_SLOTS - 1 );
+		return false;
+	}
 
+	++giAmmoIndex;
 	CBasePlayerItem::AmmoInfoArray[giAmmoIndex].pszName = szAmmoname;
-	CBasePlayerItem::AmmoInfoArray[giAmmoIndex].iId = giAmmoIndex;   // yes, this info is redundant
+	CBasePlayerItem::AmmoInfoArray[giAmmoIndex].iId = giAmmoIndex;
+	return true;
+}
+
+/*
+ * Register both ammo names as one operation. A weapon using two distinct ammo
+ * types must not consume the last free slot for its first type and then fail
+ * on its second type, leaving an orphaned entry in GoldSrc's fixed table.
+ */
+bool AddAmmoNamesToAmmoRegistry( const char *szAmmoName1, const char *szAmmoName2 )
+{
+	const char *requested[2] = { szAmmoName1, szAmmoName2 };
+	int requiredSlots = 0;
+
+	for( int i = 0; i < 2; ++i )
+	{
+		if( !requested[i] || !requested[i][0] )
+			continue;
+
+		bool alreadyRegistered = false;
+		for( int j = 1; j < MAX_AMMO_SLOTS; ++j )
+		{
+			const char *registeredName = CBasePlayerItem::AmmoInfoArray[j].pszName;
+			if( registeredName && stricmp( registeredName, requested[i] ) == 0 )
+			{
+				alreadyRegistered = true;
+				break;
+			}
+		}
+
+		for( int previous = 0; !alreadyRegistered && previous < i; ++previous )
+		{
+			if( requested[previous] && requested[previous][0] &&
+				stricmp( requested[previous], requested[i] ) == 0 )
+				alreadyRegistered = true;
+		}
+
+		if( !alreadyRegistered )
+			++requiredSlots;
+	}
+
+	const int availableSlots = MAX_AMMO_SLOTS - 1 - giAmmoIndex;
+	if( requiredSlots > availableSlots )
+	{
+		ALERT( at_console,
+			"Ammo registry full; cannot register weapon ammo '%s'/'%s' (need %d slots, %d available)\n",
+			szAmmoName1 ? szAmmoName1 : "",
+			szAmmoName2 ? szAmmoName2 : "",
+			requiredSlots, availableSlots );
+		return false;
+	}
+
+	// Capacity has been preflighted, so these writes cannot leave a partial pair.
+	if( szAmmoName1 && szAmmoName1[0] &&
+		!AddAmmoNameToAmmoRegistry( szAmmoName1 ) )
+		return false;
+	if( szAmmoName2 && szAmmoName2[0] &&
+		!AddAmmoNameToAmmoRegistry( szAmmoName2 ) )
+		return false;
+
+	return true;
 }
 
 // Precaches the weapon and queues the weapon info for sending to clients
@@ -270,17 +337,13 @@ void UTIL_PrecacheOtherWeapon( const char *szClassname )
 		pEntity->Precache();
 		if( ( (CBasePlayerItem*)pEntity )->GetItemInfo( &II ) )
 		{
-			CBasePlayerItem::ItemInfoArray[II.iId] = II;
+			const bool ammoReady = AddAmmoNamesToAmmoRegistry( II.pszAmmo1, II.pszAmmo2 );
 
-			if( II.pszAmmo1 && *II.pszAmmo1 )
-			{
-				AddAmmoNameToAmmoRegistry( II.pszAmmo1 );
-			}
-
-			if( II.pszAmmo2 && *II.pszAmmo2 )
-			{
-				AddAmmoNameToAmmoRegistry( II.pszAmmo2 );
-			}
+			if( ammoReady )
+				CBasePlayerItem::ItemInfoArray[II.iId] = II;
+			else
+				ALERT( at_console, "Weapon %s was not registered because the ammo table is full\n",
+					szClassname );
 		}
 	}
 
@@ -364,6 +427,9 @@ void W_Precache( void )
 		UTIL_PrecacheOther( "weaponbox" );// container for dropped deathmatch weapons
 	}
 #endif
+	#ifndef CLIENT_DLL
+	WeaponFramework_PrecacheAddonWeapons();
+	#endif
 	g_sModelIndexFireball = PRECACHE_MODEL( "sprites/zerogxplode.spr" );// fireball
 	g_sModelIndexWExplosion = PRECACHE_MODEL( "sprites/WXplo1.spr" );// underwater fireball
 	g_sModelIndexSmoke = PRECACHE_MODEL( "sprites/steam1.spr" );// smoke
@@ -552,7 +618,29 @@ CBaseEntity* CBasePlayerItem::Respawn( void )
 {
 	// make a copy of this weapon that is invisible and inaccessible to players (no touch function). The weapon spawn/respawn code
 	// will decide when to make the weapon visible and touchable.
-	CBaseEntity *pNewWeapon = CBaseEntity::Create( STRING( pev->classname ), g_pGameRules->VecWeaponRespawnSpot( this ), pev->angles, pev->owner );
+	CBaseEntity *pNewWeapon = NULL;
+	const Vector respawnOrigin = g_pGameRules->VecWeaponRespawnSpot( this );
+
+	if( FClassnameIs( pev, "weapon_framework" ) )
+	{
+		// The generic classname is shared by every add-on. Carry its assigned
+		// ID into the new edict before DispatchSpawn so Spawn can resolve the
+		// correct package definition instead of creating an anonymous weapon.
+		edict_t *pent = CREATE_NAMED_ENTITY( MAKE_STRING( "weapon_framework" ) );
+		if( !FNullEnt( pent ) )
+		{
+			pNewWeapon = CBaseEntity::Instance( pent );
+			pNewWeapon->pev->owner = pev->owner;
+			pNewWeapon->pev->origin = respawnOrigin;
+			pNewWeapon->pev->angles = pev->angles;
+			pNewWeapon->pev->iuser4 = m_iId;
+			DispatchSpawn( pent );
+		}
+	}
+	else
+	{
+		pNewWeapon = CBaseEntity::Create( STRING( pev->classname ), respawnOrigin, pev->angles, pev->owner );
+	}
 
 	if( pNewWeapon )
 	{
@@ -1540,7 +1628,7 @@ BOOL CWeaponBox::HasWeapon( CBasePlayerItem *pCheckItem )
 
 	while( pItem )
 	{
-		if( FClassnameIs( pItem->pev, STRING( pCheckItem->pev->classname ) ) )
+		if( pItem->m_iId == pCheckItem->m_iId )
 		{
 			return TRUE;
 		}

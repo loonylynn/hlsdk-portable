@@ -1,0 +1,31 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/rpg",
+    "entity_classname": "weapon_rpg",
+    "legacy_id": 8
+  },
+  "inventory": {
+    "slot": 3,
+    "position": 0,
+    "weight": 20,
+    "flags": [
+      "no_auto_switch_to"
+    ]
+  },
+  "ammo": {
+    "clip_size": 1,
+    "default_ammo": 1,
+    "primary": {
+      "type": "rockets",
+      "max_carry": 5,
+      "pickup_amount": 1
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_rpg.mdl",
+    "world": "models/w_rpg.mdl",
+    "player": "models/p_rpg.mdl"
+  }
+}

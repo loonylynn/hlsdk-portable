@@ -18,6 +18,7 @@
 #include "util.h"
 #include "cbase.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "monsters.h"
 #include "player.h"
 #include "gamerules.h"
@@ -51,6 +52,8 @@ int CPython::GetItemInfo( ItemInfo *p )
 	p->iId = m_iId = WEAPON_PYTHON;
 	p->iWeight = PYTHON_WEIGHT;
 
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_PYTHON ) )
+		m_iId = p->iId;
 	return 1;
 }
 
@@ -71,18 +74,18 @@ void CPython::Spawn()
 	pev->classname = MAKE_STRING( "weapon_357" ); // hack to allow for old names
 	Precache();
 	m_iId = WEAPON_PYTHON;
-	SET_MODEL( ENT( pev ), "models/w_357.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_PYTHON, "models/w_357.mdl" ) );
 
-	m_iDefaultAmmo = PYTHON_DEFAULT_GIVE;
+	m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_PYTHON, PYTHON_DEFAULT_GIVE );
 
 	FallInit();// get ready to fall down.
 }
 
 void CPython::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_357.mdl" );
-	PRECACHE_MODEL( "models/w_357.mdl" );
-	PRECACHE_MODEL( "models/p_357.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_PYTHON, "models/v_357.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_PYTHON, "models/w_357.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_PYTHON, "models/p_357.mdl" ) );
 
 	PRECACHE_MODEL( "models/w_357ammobox.mdl" );
 	PRECACHE_SOUND( "items/9mmclip1.wav" );
@@ -111,7 +114,7 @@ BOOL CPython::Deploy()
 		pev->body = 0;
 	}
 
-	return DefaultDeploy( "models/v_357.mdl", "models/p_357.mdl", PYTHON_DRAW, "python", UseDecrement(), pev->body );
+	return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_PYTHON, "models/v_357.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_PYTHON, "models/p_357.mdl" ), PYTHON_DRAW, "python", UseDecrement(), pev->body );
 }
 
 void CPython::Holster( int skiplocal /* = 0 */ )
@@ -296,7 +299,10 @@ class CPythonAmmo : public CBasePlayerAmmo
 	}
 	BOOL AddAmmo( CBaseEntity *pOther )
 	{ 
-		if( pOther->GiveAmmo( AMMO_357BOX_GIVE, "357", _357_MAX_CARRY ) != -1 )
+		const char *ammoType = WeaponFramework_GetPrimaryAmmoType( WEAPON_PYTHON, "357" );
+		const int pickupAmount = WeaponFramework_GetPrimaryAmmoPickupAmount( WEAPON_PYTHON, AMMO_357BOX_GIVE );
+		const int maxCarry = WeaponFramework_GetPrimaryAmmoMax( WEAPON_PYTHON, _357_MAX_CARRY );
+		if( ammoType && pickupAmount > 0 && pOther->GiveAmmo( pickupAmount, ammoType, maxCarry ) != -1 )
 		{
 			EMIT_SOUND( ENT( pev ), CHAN_ITEM, "items/9mmclip1.wav", 1, ATTN_NORM );
 			return TRUE;

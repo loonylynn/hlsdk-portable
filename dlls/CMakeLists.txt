@@ -144,11 +144,16 @@ set (SVDLL_SOURCES
 	util.cpp
 	vehicle.cpp
 	weapons.cpp
+	weapon_framework_weapon.cpp
 	world.cpp
 	xen.cpp
 	zombie.cpp
 	npc_physics.cpp
 	../game_shared/voice_gamemgr.cpp
+	../game_shared/weapon_framework/weapon_definition.cpp
+	../game_shared/weapon_framework/weapon_behavior.cpp
+	../game_shared/weapon_framework/weapon_registry.cpp
+	../game_shared/weapon_framework/weapon_json.cpp
 	../pm_shared/pm_debug.c
 	../pm_shared/pm_math.c
 	../pm_shared/pm_shared.c
@@ -169,7 +174,7 @@ else()
 		../external/openbsd/strlcat.c)
 endif()
 
-include_directories (. wpn_shared ../common ../engine ../pm_shared ../game_shared ../public)
+include_directories (. wpn_shared ../common ../engine ../pm_shared ../game_shared ../game_shared/weapon_framework ../public)
 
 # Jolt is the rigid-body solver for the Xash NPC shadow-physics bridge.
 # Build it as PIC static code because the SDK server is a shared game DLL.

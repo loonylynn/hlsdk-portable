@@ -1,0 +1,29 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/glock",
+    "entity_classname": "weapon_9mmhandgun",
+    "legacy_id": 2
+  },
+  "inventory": {
+    "slot": 1,
+    "position": 0,
+    "weight": 10,
+    "flags": []
+  },
+  "ammo": {
+    "clip_size": 17,
+    "primary": {
+      "type": "9mm",
+      "max_carry": 250,
+      "pickup_amount": 17
+    },
+    "secondary": null,
+    "default_ammo": 17
+  },
+  "models": {
+    "view": "models/v_9mmhandgun.mdl",
+    "world": "models/w_9mmhandgun.mdl",
+    "player": "models/p_9mmhandgun.mdl"
+  }
+}

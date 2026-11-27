@@ -1,0 +1,29 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/python",
+    "entity_classname": "weapon_357",
+    "legacy_id": 3
+  },
+  "inventory": {
+    "slot": 1,
+    "position": 1,
+    "weight": 15,
+    "flags": []
+  },
+  "ammo": {
+    "clip_size": 6,
+    "default_ammo": 6,
+    "primary": {
+      "type": "357",
+      "max_carry": 36,
+      "pickup_amount": 6
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_357.mdl",
+    "world": "models/w_357.mdl",
+    "player": "models/p_357.mdl"
+  }
+}

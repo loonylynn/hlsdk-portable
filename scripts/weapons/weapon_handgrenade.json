@@ -1,0 +1,32 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/handgrenade",
+    "entity_classname": "weapon_handgrenade",
+    "legacy_id": 12
+  },
+  "inventory": {
+    "slot": 4,
+    "position": 0,
+    "weight": 5,
+    "flags": [
+      "limit_in_world",
+      "exhaustible"
+    ]
+  },
+  "ammo": {
+    "clip_size": -1,
+    "default_ammo": 5,
+    "primary": {
+      "type": "Hand Grenade",
+      "max_carry": 10,
+      "pickup_amount": 5
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_grenade.mdl",
+    "world": "models/w_grenade.mdl",
+    "player": "models/p_grenade.mdl"
+  }
+}

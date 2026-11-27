@@ -19,6 +19,9 @@
 #include "monsters.h"
 #include "weapons.h"
 #include "nodes.h"
+#include "weapon_registry.h"
+#include "weapon_json.h"
+#include "weapon_framework_weapon.h"
 #include "player.h"
 
 #include "usercmd.h"
@@ -46,6 +49,7 @@ static CBasePlayer player;
 static globalvars_t Globals; 
 
 static CBasePlayerWeapon *g_pWpns[MAX_WEAPONS];
+static CFrameworkWeapon g_AddonWeapons[WeaponFramework::LastAddonWeaponId - WeaponFramework::FirstAddonWeaponId + 1];
 
 float g_flApplyVel = 0.0;
 int g_irunninggausspred = 0;
@@ -124,9 +128,14 @@ void HUD_PrepEntity( CBaseEntity *pEntity, CBasePlayer *pWeaponOwner )
 
 		( (CBasePlayerWeapon *)pEntity )->m_pPlayer = pWeaponOwner;
 
-		( (CBasePlayerWeapon *)pEntity )->GetItemInfo( &info );
-
-		g_pWpns[info.iId] = (CBasePlayerWeapon *)pEntity;
+		if( ( (CBasePlayerWeapon *)pEntity )->GetItemInfo( &info ) &&
+			info.iId > 0 && info.iId < MAX_WEAPONS )
+		{
+			// The client weapon frame reads ammo names, clip limits and item
+			// flags through this shared GoldSrc table as well as g_pWpns.
+			CBasePlayerItem::ItemInfoArray[info.iId] = info;
+			g_pWpns[info.iId] = (CBasePlayerWeapon *)pEntity;
+		}
 	}
 }
 
@@ -572,6 +581,32 @@ HUD_InitClientWeapons
 Set up weapons, player and functions needed to run weapons code client-side.
 =====================
 */
+static unsigned char *LoadWeaponFrameworkClientFile(const char *path, int *fileLength)
+{
+	return (unsigned char *)gEngfuncs.COM_LoadFile(path, 5, fileLength);
+}
+
+static void FreeWeaponFrameworkClientFile(unsigned char *fileData)
+{
+	if (fileData)
+		gEngfuncs.COM_FreeFile(fileData);
+}
+
+static bool LoadWeaponDefinitionsFromClientFiles()
+{
+	const bool loaded = WeaponFramework::LoadWeaponPackageCatalog(
+		"scripts/weapons/packages.json",
+		LoadWeaponFrameworkClientFile, FreeWeaponFrameworkClientFile);
+
+	if (!loaded)
+	{
+		gEngfuncs.Con_Printf("WeaponFramework: package catalogue or one of its definitions failed to load; using built-in Glock metadata\n");
+		return WeaponFramework::RegisterBuiltinWeapons();
+	}
+
+	return true;
+}
+
 void HUD_InitClientWeapons( void )
 {
 	static int initialized = 0;
@@ -579,6 +614,9 @@ void HUD_InitClientWeapons( void )
 		return;
 
 	initialized = 1;
+
+	// Keep prediction metadata aligned with the server's package catalogue.
+	LoadWeaponDefinitionsFromClientFiles();
 
 	// Set up pointer ( dummy object )
 	gpGlobals = &Globals;
@@ -622,6 +660,14 @@ void HUD_InitClientWeapons( void )
 	HUD_PrepEntity( &g_Satchel, &player );
 	HUD_PrepEntity( &g_Tripmine, &player );
 	HUD_PrepEntity( &g_Snark, &player );
+	for( int id = WeaponFramework::FirstAddonWeaponId; id <= WeaponFramework::LastAddonWeaponId; ++id )
+	{
+		const WeaponFramework::WeaponDefinition *definition = WeaponFramework::GetRegistry().FindById(id);
+		if (!definition || definition->GetActionType() != WeaponFramework::WeaponActionHitscan) continue;
+		CFrameworkWeapon &weapon = g_AddonWeapons[id - WeaponFramework::FirstAddonWeaponId];
+		weapon.SetDefinitionId(id);
+		HUD_PrepEntity(&weapon, &player);
+	}
 }
 
 /*
@@ -729,6 +775,11 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 			break;
 		case WEAPON_SNARK:
 			pWeapon = &g_Snark;
+			break;
+		default:
+			if (from->client.m_iId >= WeaponFramework::FirstAddonWeaponId &&
+				from->client.m_iId <= WeaponFramework::LastAddonWeaponId)
+				pWeapon = g_pWpns[from->client.m_iId];
 			break;
 	}
 

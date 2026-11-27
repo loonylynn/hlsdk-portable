@@ -33,6 +33,7 @@ def build(bld):
 		'../engine',
 		'../pm_shared',
 		'../game_shared',
+		'../game_shared/weapon_framework',
 		'../public',
 		'../utils/vgui/include']
 	excluded_files = ['GameStudioModelRenderer_Sample.cpp',
@@ -52,6 +53,7 @@ def build(bld):
 		'dlls/egon.cpp',
 		'dlls/gauss.cpp',
 		'dlls/glock.cpp',
+		'dlls/weapon_framework_weapon.cpp',
 		'dlls/handgrenade.cpp',
 		'dlls/hornetgun.cpp',
 		'dlls/mp5.cpp',
@@ -60,7 +62,8 @@ def build(bld):
 		'dlls/satchel.cpp',
 		'dlls/shotgun.cpp',
 		'dlls/squeakgrenade.cpp',
-		'dlls/tripmine.cpp'
+		'dlls/tripmine.cpp',
+		'game_shared/weapon_framework/*.cpp'
 	])
 
 

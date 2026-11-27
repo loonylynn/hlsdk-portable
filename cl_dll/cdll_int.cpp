@@ -35,6 +35,8 @@ extern "C"
 #include <string.h>
 #include "vcs_info.h"
 #include "xash_render_api.h"
+#include "weapon_json.h"
+#include "weapon_registry.h"
 
 cl_enginefunc_t gEngfuncs;
 CHud gHUD;
@@ -51,6 +53,54 @@ void *g_pKeepVGUISupport = (void *)InitVGUISupportAPI;
 void InitInput( void );
 void EV_HookEvents( void );
 void IN_Commands( void );
+
+// The client DLL has its own registry instance. Load the same deterministic
+// package catalogue as the server so add-on IDs and prediction metadata agree.
+static unsigned char *LoadWeaponFrameworkClientFile(const char *path, int *fileLength)
+{
+	int length = 0;
+	unsigned char *fileData = NULL;
+
+	if (gEngfuncs.COM_LoadFile)
+		fileData = (unsigned char *)gEngfuncs.COM_LoadFile(path, 0, &length);
+
+	if (fileLength)
+		*fileLength = length;
+
+	return fileData;
+}
+
+static void FreeWeaponFrameworkClientFile(unsigned char *fileData)
+{
+	if (fileData && gEngfuncs.COM_FreeFile)
+		gEngfuncs.COM_FreeFile(fileData);
+}
+
+static void LoadWeaponDefinitionsFromClientFiles(void)
+{
+	if (!gEngfuncs.COM_LoadFile || !gEngfuncs.COM_FreeFile)
+	{
+		if (gEngfuncs.Con_Printf)
+			gEngfuncs.Con_Printf("WeaponFramework: client filesystem callbacks unavailable; using built-in Glock metadata\n");
+		WeaponFramework::RegisterBuiltinWeapons();
+		return;
+	}
+
+	const bool loaded = WeaponFramework::LoadWeaponPackageCatalog(
+		"scripts/weapons/packages.json",
+		LoadWeaponFrameworkClientFile, FreeWeaponFrameworkClientFile);
+
+	if (!loaded)
+	{
+		if (gEngfuncs.Con_Printf)
+			gEngfuncs.Con_Printf("WeaponFramework: client package catalogue failed to load; using built-in Glock metadata\n");
+		WeaponFramework::RegisterBuiltinWeapons();
+		return;
+	}
+
+	if (gEngfuncs.Con_Printf)
+		gEngfuncs.Con_Printf("WeaponFramework: client package catalogue loaded successfully\n");
+}
 
 /*
 ========================== 
@@ -216,6 +266,8 @@ int DLLEXPORT Initialize( cl_enginefunc_t *pEnginefuncs, int iVersion )
 
 	// for now filterstuffcmd is last in the engine interface
 	memcpy( &gEngfuncs, pEnginefuncs, sizeof(cl_enginefunc_t) - sizeof( void * ) );
+
+	LoadWeaponDefinitionsFromClientFiles();
 
 	if( gEngfuncs.pfnGetCvarPointer( "cl_filterstuffcmd" ) == 0 )
 	{

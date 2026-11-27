@@ -1,0 +1,29 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/gauss",
+    "entity_classname": "weapon_gauss",
+    "legacy_id": 9
+  },
+  "inventory": {
+    "slot": 3,
+    "position": 1,
+    "weight": 20,
+    "flags": []
+  },
+  "ammo": {
+    "clip_size": -1,
+    "default_ammo": 20,
+    "primary": {
+      "type": "uranium",
+      "max_carry": 100,
+      "pickup_amount": 20
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_gauss.mdl",
+    "world": "models/w_gauss.mdl",
+    "player": "models/p_gauss.mdl"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:xash-sdk:weapon-package-catalog:v1",
+  "title": "Weapon Package Catalogue",
+  "description": "Ordered references to independent weapon package manifests. The runtime sorts packages by stable name before assigning add-on IDs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "packages"],
+  "properties": {
+    "format_version": {
+      "const": 1
+    },
+    "packages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "manifest"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 63,
+            "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$",
+            "description": "Unique, namespaced package identity."
+          },
+          "manifest": {
+            "type": "string",
+            "minLength": 6,
+            "maxLength": 127,
+            "pattern": "^(?!/)(?!.*\\.\\.)(?!.*//)(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9_./-]+\\.json$",
+            "description": "Path to this package manifest, resolved through the game virtual filesystem. The file may be supplied by a PK3."
+          }
+        }
+      }
+    }
+  }
+}

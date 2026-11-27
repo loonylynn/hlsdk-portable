@@ -19,6 +19,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "nodes.h"
 #include "player.h"
 #include "soundent.h"
@@ -66,18 +67,18 @@ void CGauss::Spawn()
 {
 	Precache();
 	m_iId = WEAPON_GAUSS;
-	SET_MODEL( ENT( pev ), "models/w_gauss.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_GAUSS, "models/w_gauss.mdl" ) );
 
-	m_iDefaultAmmo = GAUSS_DEFAULT_GIVE;
+	m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_GAUSS, GAUSS_DEFAULT_GIVE );
 
 	FallInit();// get ready to fall down.
 }
 
 void CGauss::Precache( void )
 {
-	PRECACHE_MODEL( "models/w_gauss.mdl" );
-	PRECACHE_MODEL( "models/v_gauss.mdl" );
-	PRECACHE_MODEL( "models/p_gauss.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_GAUSS, "models/w_gauss.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_GAUSS, "models/v_gauss.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_GAUSS, "models/p_gauss.mdl" ) );
 
 	PRECACHE_SOUND( "items/9mmclip1.wav" );
 
@@ -121,13 +122,15 @@ int CGauss::GetItemInfo( ItemInfo *p )
 	p->iFlags = 0;
 	p->iWeight = GAUSS_WEIGHT;
 
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_GAUSS ) )
+		m_iId = p->iId;
 	return 1;
 }
 
 BOOL CGauss::Deploy()
 {
 	m_pPlayer->m_flPlayAftershock = 0.0;
-	return DefaultDeploy( "models/v_gauss.mdl", "models/p_gauss.mdl", GAUSS_DRAW, "gauss" );
+	return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_GAUSS, "models/v_gauss.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_GAUSS, "models/p_gauss.mdl" ), GAUSS_DRAW, "gauss" );
 }
 
 void CGauss::Holster( int skiplocal /* = 0 */ )
@@ -618,7 +621,10 @@ class CGaussAmmo : public CBasePlayerAmmo
 	}
 	BOOL AddAmmo( CBaseEntity *pOther ) 
 	{ 
-		if( pOther->GiveAmmo( AMMO_URANIUMBOX_GIVE, "uranium", URANIUM_MAX_CARRY ) != -1 )
+		const char *ammoType = WeaponFramework_GetPrimaryAmmoType( WEAPON_GAUSS, "uranium" );
+		const int pickupAmount = WeaponFramework_GetPrimaryAmmoPickupAmount( WEAPON_GAUSS, AMMO_URANIUMBOX_GIVE );
+		const int maxCarry = WeaponFramework_GetPrimaryAmmoMax( WEAPON_GAUSS, URANIUM_MAX_CARRY );
+		if( ammoType && pickupAmount > 0 && pOther->GiveAmmo( pickupAmount, ammoType, maxCarry ) != -1 )
 		{
 			EMIT_SOUND( ENT( pev ), CHAN_ITEM, "items/9mmclip1.wav", 1, ATTN_NORM );
 			return TRUE;

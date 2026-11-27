@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Weapon definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "identity",
+    "inventory",
+    "ammo",
+    "models"
+  ],
+  "properties": {
+    "format_version": {
+      "const": 1
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "entity_classname"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$"
+        },
+        "entity_classname": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 63,
+          "pattern": "^weapon_[A-Za-z0-9_]+$"
+        },
+        "legacy_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot",
+        "position",
+        "weight",
+        "flags"
+      ],
+      "properties": {
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": -32768,
+          "maximum": 32767
+        },
+        "flags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "select_on_empty",
+              "no_auto_reload",
+              "no_auto_switch_empty",
+              "limit_in_world",
+              "exhaustible",
+              "no_auto_switch_to"
+            ]
+          }
+        }
+      }
+    },
+    "ammo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clip_size",
+        "default_ammo",
+        "primary",
+        "secondary"
+      ],
+      "properties": {
+        "clip_size": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 32767
+        },
+        "default_ammo": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32767
+        },
+        "primary": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "max_carry",
+                "pickup_amount"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 31,
+                  "pattern": "^[A-Za-z0-9_]+$"
+                },
+                "max_carry": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 32767
+                },
+                "pickup_amount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 32767
+                }
+              }
+            }
+          ]
+        },
+        "secondary": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "max_carry"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 31,
+                  "pattern": "^[A-Za-z0-9_]+$"
+                },
+                "max_carry": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 32767
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "view",
+        "world",
+        "player"
+      ],
+      "properties": {
+        "view": {
+          "type": "string",
+          "pattern": "^models/.+\\.mdl$"
+        },
+        "world": {
+          "type": "string",
+          "pattern": "^models/.+\\.mdl$"
+        },
+        "player": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^models/.+\\.mdl$"
+            }
+          ]
+        }
+      }
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "bullet_type",
+        "damage",
+        "pellets",
+        "range",
+        "spread",
+        "fire_rate",
+        "reload_time",
+        "automatic",
+        "fire_sound",
+        "animations"
+      ],
+      "properties": {
+        "type": {
+          "const": "hitscan"
+        },
+        "bullet_type": {
+          "enum": [
+            "9mm",
+            "mp5",
+            "357",
+            "buckshot"
+          ]
+        },
+        "damage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32767
+        },
+        "pellets": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "range": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8192
+        },
+        "spread": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "fire_rate": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 10
+        },
+        "reload_time": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 30
+        },
+        "automatic": {
+          "type": "boolean"
+        },
+        "fire_sound": {
+          "type": "string",
+          "pattern": "^weapons/[a-z0-9_./-]+\\.wav$"
+        },
+        "animations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "draw",
+            "fire",
+            "reload",
+            "idle"
+          ],
+          "properties": {
+            "draw": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "fire": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "reload": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "idle": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          }
+        }
+      }
+    }
+  }
+}

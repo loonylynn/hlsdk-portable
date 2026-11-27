@@ -28,6 +28,8 @@
 #include "trains.h"
 #include "nodes.h"
 #include "weapons.h"
+#include "weapon_registry.h"
+#include "weapon_framework_weapon.h"
 #include "soundent.h"
 #include "monsters.h"
 #include "shake.h"
@@ -4544,7 +4546,8 @@ void CBasePlayer::SelectItem( const char *pstr )
 
 			while( pItem )
 			{
-				if( FClassnameIs( pItem->pev, pstr ) )
+				const char *pszPublicName = pItem->pszName();
+				if( FClassnameIs( pItem->pev, pstr ) || (pszPublicName && !strcmp(pszPublicName, pstr)) )
 					break;
 				pItem = pItem->m_pNext;
 			}
@@ -4739,9 +4742,25 @@ void CBloodSplat::Spray( void )
 //==============================================
 void CBasePlayer::GiveNamedItem( const char *pszName )
 {
-	edict_t	*pent;
-
-	int istr = MAKE_STRING( pszName );
+	edict_t *pent;
+	const WeaponFramework::WeaponDefinition *pDefinition = WeaponFramework::GetRegistry().FindByEntityClassname(pszName);
+	const BOOL bKnownAddon = pDefinition &&
+		pDefinition->GetId() >= WeaponFramework::FirstAddonWeaponId &&
+		pDefinition->GetId() <= WeaponFramework::LastAddonWeaponId;
+	if (bKnownAddon && pDefinition->GetActionType() != WeaponFramework::WeaponActionHitscan)
+	{
+		ALERT(at_console, "WeaponFramework: add-on %s has no supported behavior\n", pszName);
+		return;
+	}
+	if (bKnownAddon && !CBasePlayerItem::ItemInfoArray[pDefinition->GetId()].pszName)
+	{
+		ALERT(at_console, "WeaponFramework: add-on %s is unavailable because its ammo types could not be registered\n",
+			pszName);
+		return;
+	}
+	const BOOL bFrameworkAddon = bKnownAddon;
+	const char *pszEngineClassname = bFrameworkAddon ? "weapon_framework" : pszName;
+	int istr = MAKE_STRING( pszEngineClassname );
 
 	pent = CREATE_NAMED_ENTITY( istr );
 	if( FNullEnt( pent ) )
@@ -4751,7 +4770,8 @@ void CBasePlayer::GiveNamedItem( const char *pszName )
 	}
 	VARS( pent )->origin = pev->origin;
 	pent->v.spawnflags |= SF_NORESPAWN;
-
+	if (bFrameworkAddon)
+		VARS(pent)->iuser4 = pDefinition->GetId();
 	DispatchSpawn( pent );
 	DispatchTouch( pent, ENT( pev ) );
 }
@@ -5099,7 +5119,7 @@ int CBasePlayer::AddPlayerItem( CBasePlayerItem *pItem )
 
 	while( pInsert )
 	{
-		if( FClassnameIs( pInsert->pev, STRING( pItem->pev->classname ) ) )
+		if( pInsert->m_iId == pItem->m_iId )
 		{
 			if( pItem->AddDuplicate( pInsert ) )
 			{
@@ -5946,7 +5966,9 @@ void CBasePlayer::DropPlayerItem( char *pszItemName )
 			if( pszItemName )
 			{
 				// try to match by name. 
-				if( !strcmp( pszItemName, STRING( pWeapon->pev->classname ) ) )
+				const char *pszPublicName = pWeapon->pszName();
+				if( !strcmp( pszItemName, STRING( pWeapon->pev->classname ) ) ||
+					(pszPublicName && !strcmp(pszItemName, pszPublicName)) )
 				{
 					// match! 
 					break;
@@ -6018,7 +6040,7 @@ BOOL CBasePlayer::HasPlayerItem( CBasePlayerItem *pCheckItem )
 
 	while( pItem )
 	{
-		if( FClassnameIs( pItem->pev, STRING( pCheckItem->pev->classname ) ) )
+		if( pItem->m_iId == pCheckItem->m_iId )
 		{
 			return TRUE;
 		}
@@ -6042,7 +6064,9 @@ BOOL CBasePlayer::HasNamedPlayerItem( const char *pszItemName )
 
 		while( pItem )
 		{
-			if( !strcmp( pszItemName, STRING( pItem->pev->classname ) ) )
+			const char *pszPublicName = pItem->pszName();
+			if( !strcmp( pszItemName, STRING( pItem->pev->classname ) ) ||
+				(pszPublicName && !strcmp(pszItemName, pszPublicName)) )
 			{
 				return TRUE;
 			}

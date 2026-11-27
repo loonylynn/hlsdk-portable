@@ -19,6 +19,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "nodes.h"
 #include "player.h"
 #include "soundent.h"
@@ -414,11 +415,11 @@ void CSqueak::Spawn()
 {
 	Precache();
 	m_iId = WEAPON_SNARK;
-	SET_MODEL( ENT( pev ), "models/w_sqknest.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_SNARK, "models/w_sqknest.mdl" ) );
 
 	FallInit();//get ready to fall down.
 
-	m_iDefaultAmmo = SNARK_DEFAULT_GIVE;
+	m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_SNARK, SNARK_DEFAULT_GIVE );
 
 	pev->sequence = 1;
 	pev->animtime = gpGlobals->time;
@@ -427,9 +428,9 @@ void CSqueak::Spawn()
 
 void CSqueak::Precache( void )
 {
-	PRECACHE_MODEL( "models/w_sqknest.mdl" );
-	PRECACHE_MODEL( "models/v_squeak.mdl" );
-	PRECACHE_MODEL( "models/p_squeak.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_SNARK, "models/w_sqknest.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_SNARK, "models/v_squeak.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_SNARK, "models/p_squeak.mdl" ) );
 	PRECACHE_SOUND( "squeek/sqk_hunt2.wav" );
 	PRECACHE_SOUND( "squeek/sqk_hunt3.wav" );
 	UTIL_PrecacheOther( "monster_snark" );
@@ -451,6 +452,8 @@ int CSqueak::GetItemInfo( ItemInfo *p )
 	p->iWeight = SNARK_WEIGHT;
 	p->iFlags = ITEM_FLAG_LIMITINWORLD | ITEM_FLAG_EXHAUSTIBLE;
 
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_SNARK ) )
+		m_iId = p->iId;
 	return 1;
 }
 
@@ -466,7 +469,7 @@ BOOL CSqueak::Deploy()
 
 	m_pPlayer->m_iWeaponVolume = QUIET_GUN_VOLUME;
 
-	const BOOL result = DefaultDeploy( "models/v_squeak.mdl", "models/p_squeak.mdl", SQUEAK_UP, "squeak" );
+	const BOOL result = DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_SNARK, "models/v_squeak.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_SNARK, "models/p_squeak.mdl" ), SQUEAK_UP, "squeak" );
 #if WEAPONS_ANIMATION_TIMES_FIX
 	if ( result )
 	{

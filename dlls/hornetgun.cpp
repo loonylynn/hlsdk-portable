@@ -19,6 +19,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "nodes.h"
 #include "player.h"
 #include "hornet.h"
@@ -51,9 +52,9 @@ void CHgun::Spawn()
 {
 	Precache();
 	m_iId = WEAPON_HORNETGUN;
-	SET_MODEL( ENT( pev ), "models/w_hgun.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_HORNETGUN, "models/w_hgun.mdl" ) );
 
-	m_iDefaultAmmo = HIVEHAND_DEFAULT_GIVE;
+	m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_HORNETGUN, HIVEHAND_DEFAULT_GIVE );
 	m_iFirePhase = 0;
 
 	FallInit();// get ready to fall down.
@@ -61,9 +62,9 @@ void CHgun::Spawn()
 
 void CHgun::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_hgun.mdl" );
-	PRECACHE_MODEL( "models/w_hgun.mdl" );
-	PRECACHE_MODEL( "models/p_hgun.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_HORNETGUN, "models/v_hgun.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_HORNETGUN, "models/w_hgun.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_HORNETGUN, "models/p_hgun.mdl" ) );
 
 	m_usHornetFire = PRECACHE_EVENT( 1, "events/firehornet.sc" );
 
@@ -103,12 +104,14 @@ int CHgun::GetItemInfo( ItemInfo *p )
 	p->iFlags = ITEM_FLAG_NOAUTOSWITCHEMPTY | ITEM_FLAG_NOAUTORELOAD;
 	p->iWeight = HORNETGUN_WEIGHT;
 
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_HORNETGUN ) )
+		m_iId = p->iId;
 	return 1;
 }
 
 BOOL CHgun::Deploy()
 {
-	return DefaultDeploy( "models/v_hgun.mdl", "models/p_hgun.mdl", HGUN_UP, "hive" );
+	return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_HORNETGUN, "models/v_hgun.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_HORNETGUN, "models/p_hgun.mdl" ), HGUN_UP, "hive" );
 }
 
 void CHgun::Holster( int skiplocal /* = 0 */ )

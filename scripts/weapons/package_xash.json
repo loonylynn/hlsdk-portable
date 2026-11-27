@@ -1,0 +1,14 @@
+{
+  "format_version": 1,
+  "name": "xash:extensions",
+  "weapons": [
+    {
+      "name": "xash:weapon/teleport",
+      "file": "scripts/weapons/weapon_teleport.json"
+    },
+    {
+      "name": "xash:weapon/test_pistol",
+      "file": "scripts/weapons/weapon_framework_test_pistol.json"
+    }
+  ]
+}

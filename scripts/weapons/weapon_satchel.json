@@ -1,0 +1,33 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/satchel",
+    "entity_classname": "weapon_satchel",
+    "legacy_id": 14
+  },
+  "inventory": {
+    "slot": 4,
+    "position": 1,
+    "weight": -10,
+    "flags": [
+      "select_on_empty",
+      "limit_in_world",
+      "exhaustible"
+    ]
+  },
+  "ammo": {
+    "clip_size": -1,
+    "default_ammo": 1,
+    "primary": {
+      "type": "Satchel Charge",
+      "max_carry": 5,
+      "pickup_amount": 1
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_satchel.mdl",
+    "world": "models/w_satchel.mdl",
+    "player": "models/p_satchel.mdl"
+  }
+}

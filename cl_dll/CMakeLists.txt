@@ -72,6 +72,7 @@ set (CLDLL_SOURCES
 	../dlls/squeakgrenade.cpp
 	../dlls/tripmine.cpp
 	../dlls/glock.cpp
+	../dlls/weapon_framework_weapon.cpp
 	ev_hldm.cpp
 	hl/hl_baseentity.cpp
 	hl/hl_events.cpp
@@ -92,6 +93,7 @@ set (CLDLL_SOURCES
 	GameStudioModelRenderer.cpp
 	geiger.cpp
 	health.cpp
+	hud_vgui.cpp
 	hud.cpp
 	hud_msg.cpp
 	hud_redraw.cpp
@@ -148,6 +150,10 @@ list(APPEND CLDLL_SOURCES
 	../game_shared/vgui_scrollbar2.cpp
 	../game_shared/vgui_slider2.cpp
 	../game_shared/voice_banmgr.cpp
+	../game_shared/weapon_framework/weapon_definition.cpp
+	../game_shared/weapon_framework/weapon_behavior.cpp
+	../game_shared/weapon_framework/weapon_registry.cpp
+	../game_shared/weapon_framework/weapon_json.cpp
 )
 
 if (HAVE_STRLCPY)
@@ -164,7 +170,7 @@ else()
 		../external/openbsd/strlcat.c)
 endif()
 
-include_directories (. hl/ ../dlls ../dlls/wpn_shared ../common ../engine ../pm_shared ../game_shared ../public)
+include_directories (. hl/ ../dlls ../dlls/wpn_shared ../common ../engine ../pm_shared ../game_shared ../game_shared/weapon_framework ../public)
 
 if (GOLDSOURCE_SUPPORT)
 	include_directories (../external/)

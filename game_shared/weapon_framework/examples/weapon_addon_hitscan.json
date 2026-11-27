@@ -1,0 +1,46 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "sample:weapon/pistol",
+    "entity_classname": "weapon_sample_pistol"
+  },
+  "inventory": {
+    "slot": 1,
+    "position": 0,
+    "weight": 10,
+    "flags": []
+  },
+  "ammo": {
+    "clip_size": 12,
+    "default_ammo": 36,
+    "primary": {
+      "type": "9mm",
+      "max_carry": 250,
+      "pickup_amount": 12
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_samplepistol.mdl",
+    "world": "models/w_samplepistol.mdl",
+    "player": "models/p_samplepistol.mdl"
+  },
+  "behavior": {
+    "type": "hitscan",
+    "bullet_type": "9mm",
+    "damage": 20,
+    "pellets": 1,
+    "range": 4096,
+    "spread": 0.02,
+    "fire_rate": 0.25,
+    "reload_time": 1.2,
+    "automatic": false,
+    "fire_sound": "weapons/sample_fire.wav",
+    "animations": {
+      "draw": 0,
+      "fire": 1,
+      "reload": 2,
+      "idle": 0
+    }
+  }
+}

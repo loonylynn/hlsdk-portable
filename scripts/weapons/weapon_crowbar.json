@@ -1,0 +1,25 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/crowbar",
+    "entity_classname": "weapon_crowbar",
+    "legacy_id": 1
+  },
+  "inventory": {
+    "slot": 0,
+    "position": 0,
+    "weight": 0,
+    "flags": []
+  },
+  "ammo": {
+    "clip_size": -1,
+    "default_ammo": 0,
+    "primary": null,
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_crowbar.mdl",
+    "world": "models/w_crowbar.mdl",
+    "player": "models/p_crowbar.mdl"
+  }
+}

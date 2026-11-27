@@ -1,0 +1,32 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/snark",
+    "entity_classname": "weapon_snark",
+    "legacy_id": 15
+  },
+  "inventory": {
+    "slot": 4,
+    "position": 3,
+    "weight": 5,
+    "flags": [
+      "limit_in_world",
+      "exhaustible"
+    ]
+  },
+  "ammo": {
+    "clip_size": -1,
+    "default_ammo": 5,
+    "primary": {
+      "type": "Snarks",
+      "max_carry": 15,
+      "pickup_amount": 5
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_squeak.mdl",
+    "world": "models/w_sqknest.mdl",
+    "player": "models/p_squeak.mdl"
+  }
+}

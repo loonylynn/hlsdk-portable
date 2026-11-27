@@ -228,6 +228,11 @@ if(NOT BUILD_SERVER AND NOT BUILD_CLIENT)
 	message(FATAL_ERROR "Nothing to build")
 endif()
 
+# Runtime weapon definitions are read through the game virtual filesystem.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/scripts/weapons/"
+	DESTINATION "${GAMEDIR}/scripts/weapons"
+	FILES_MATCHING PATTERN "*.json")
+
 if(POLLY)
 	if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 		add_compile_options(-mllvm -polly)

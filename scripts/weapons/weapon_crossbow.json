@@ -1,0 +1,29 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/crossbow",
+    "entity_classname": "weapon_crossbow",
+    "legacy_id": 6
+  },
+  "inventory": {
+    "slot": 2,
+    "position": 2,
+    "weight": 10,
+    "flags": []
+  },
+  "ammo": {
+    "clip_size": 5,
+    "default_ammo": 5,
+    "primary": {
+      "type": "bolts",
+      "max_carry": 50,
+      "pickup_amount": 5
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_crossbow.mdl",
+    "world": "models/w_crossbow.mdl",
+    "player": "models/p_crossbow.mdl"
+  }
+}

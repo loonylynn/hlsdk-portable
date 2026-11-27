@@ -18,6 +18,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "nodes.h"
 #include "player.h"
 #include "effects.h"
@@ -100,7 +101,7 @@ void CTripmineGrenade::Spawn( void )
 	pev->movetype = MOVETYPE_FLY;
 	pev->solid = SOLID_NOT;
 
-	SET_MODEL( ENT( pev ), "models/v_tripmine.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_TRIPMINE, "models/v_tripmine.mdl" ) );
 	pev->frame = 0;
 	pev->body = 3;
 	pev->sequence = TRIPMINE_WORLD;
@@ -145,7 +146,7 @@ void CTripmineGrenade::Spawn( void )
 
 void CTripmineGrenade::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_tripmine.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_TRIPMINE, "models/v_tripmine.mdl" ) );
 	PRECACHE_SOUND( "weapons/mine_deploy.wav" );
 	PRECACHE_SOUND( "weapons/mine_activate.wav" );
 	PRECACHE_SOUND( "weapons/mine_charge.wav" );
@@ -376,7 +377,7 @@ void CTripmine::Spawn()
 {
 	Precache();
 	m_iId = WEAPON_TRIPMINE;
-	SET_MODEL( ENT( pev ), "models/v_tripmine.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_TRIPMINE, "models/v_tripmine.mdl" ) );
 	pev->frame = 0;
 
 #ifdef CLIENT_DLL
@@ -390,7 +391,7 @@ void CTripmine::Spawn()
 
 	FallInit();// get ready to fall down
 
-	m_iDefaultAmmo = TRIPMINE_DEFAULT_GIVE;
+	m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_TRIPMINE, TRIPMINE_DEFAULT_GIVE );
 
 #if CLIENT_DLL
 	if( !bIsMultiplayer() )
@@ -404,8 +405,8 @@ void CTripmine::Spawn()
 
 void CTripmine::Precache( void )
 {
-	PRECACHE_MODEL( "models/v_tripmine.mdl" );
-	PRECACHE_MODEL( "models/p_tripmine.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_TRIPMINE, "models/v_tripmine.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_TRIPMINE, "models/p_tripmine.mdl" ) );
 	UTIL_PrecacheOther( "monster_tripmine" );
 
 	m_usTripFire = PRECACHE_EVENT( 1, "events/tripfire.sc" );
@@ -425,13 +426,15 @@ int CTripmine::GetItemInfo( ItemInfo *p )
 	p->iWeight = TRIPMINE_WEIGHT;
 	p->iFlags = ITEM_FLAG_LIMITINWORLD | ITEM_FLAG_EXHAUSTIBLE;
 
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_TRIPMINE ) )
+		m_iId = p->iId;
 	return 1;
 }
 
 BOOL CTripmine::Deploy()
 {
 	pev->body = 0;
-	return DefaultDeploy( "models/v_tripmine.mdl", "models/p_tripmine.mdl", TRIPMINE_DRAW, "trip" );
+	return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_TRIPMINE, "models/v_tripmine.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_TRIPMINE, "models/p_tripmine.mdl" ), TRIPMINE_DRAW, "trip" );
 }
 
 void CTripmine::Holster( int skiplocal /* = 0 */ )

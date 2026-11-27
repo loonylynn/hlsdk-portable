@@ -18,6 +18,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "nodes.h"
 #include "player.h"
 
@@ -41,21 +42,21 @@ void CHandGrenade::Spawn()
 {
 	Precache();
 	m_iId = WEAPON_HANDGRENADE;
-	SET_MODEL( ENT( pev ), "models/w_grenade.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_HANDGRENADE, "models/w_grenade.mdl" ) );
 
 #if !CLIENT_DLL
 	pev->dmg = gSkillData.plrDmgHandGrenade;
 #endif
-	m_iDefaultAmmo = HANDGRENADE_DEFAULT_GIVE;
+	m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_HANDGRENADE, HANDGRENADE_DEFAULT_GIVE );
 
 	FallInit();// get ready to fall down.
 }
 
 void CHandGrenade::Precache( void )
 {
-	PRECACHE_MODEL( "models/w_grenade.mdl" );
-	PRECACHE_MODEL( "models/v_grenade.mdl" );
-	PRECACHE_MODEL( "models/p_grenade.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_HANDGRENADE, "models/w_grenade.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_HANDGRENADE, "models/v_grenade.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_HANDGRENADE, "models/p_grenade.mdl" ) );
 }
 
 int CHandGrenade::GetItemInfo( ItemInfo *p )
@@ -72,13 +73,15 @@ int CHandGrenade::GetItemInfo( ItemInfo *p )
 	p->iWeight = HANDGRENADE_WEIGHT;
 	p->iFlags = ITEM_FLAG_LIMITINWORLD | ITEM_FLAG_EXHAUSTIBLE;
 
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_HANDGRENADE ) )
+		m_iId = p->iId;
 	return 1;
 }
 
 BOOL CHandGrenade::Deploy()
 {
 	m_flReleaseThrow = -1;
-	return DefaultDeploy( "models/v_grenade.mdl", "models/p_grenade.mdl", HANDGRENADE_DRAW, "crowbar" );
+	return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_HANDGRENADE, "models/v_grenade.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_HANDGRENADE, "models/p_grenade.mdl" ), HANDGRENADE_DRAW, "crowbar" );
 }
 
 BOOL CHandGrenade::CanHolster( void )

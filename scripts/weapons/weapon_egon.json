@@ -1,0 +1,29 @@
+{
+  "format_version": 1,
+  "identity": {
+    "name": "goldsrc:weapon/egon",
+    "entity_classname": "weapon_egon",
+    "legacy_id": 10
+  },
+  "inventory": {
+    "slot": 3,
+    "position": 2,
+    "weight": 20,
+    "flags": []
+  },
+  "ammo": {
+    "clip_size": -1,
+    "default_ammo": 20,
+    "primary": {
+      "type": "uranium",
+      "max_carry": 100,
+      "pickup_amount": 20
+    },
+    "secondary": null
+  },
+  "models": {
+    "view": "models/v_egon.mdl",
+    "world": "models/w_egon.mdl",
+    "player": "models/p_egon.mdl"
+  }
+}

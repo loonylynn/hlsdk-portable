@@ -19,6 +19,7 @@
 #include "cbase.h"
 #include "monsters.h"
 #include "weapons.h"
+#include "weapon_framework_iteminfo.h"
 #include "nodes.h"
 #include "player.h"
 #include "gamerules.h"
@@ -429,9 +430,9 @@ void CCrossbow::Spawn()
 {
 	Precache();
 	m_iId = WEAPON_CROSSBOW;
-	SET_MODEL( ENT( pev ), "models/w_crossbow.mdl" );
+	SET_MODEL( ENT( pev ), WeaponFramework_GetWorldModel( WEAPON_CROSSBOW, "models/w_crossbow.mdl" ) );
 
-	m_iDefaultAmmo = CROSSBOW_DEFAULT_GIVE;
+	m_iDefaultAmmo = WeaponFramework_GetDefaultAmmo( WEAPON_CROSSBOW, CROSSBOW_DEFAULT_GIVE );
 
 	FallInit();// get ready to fall down.
 }
@@ -450,9 +451,9 @@ int CCrossbow::AddToPlayer( CBasePlayer *pPlayer )
 
 void CCrossbow::Precache( void )
 {
-	PRECACHE_MODEL( "models/w_crossbow.mdl" );
-	PRECACHE_MODEL( "models/v_crossbow.mdl" );
-	PRECACHE_MODEL( "models/p_crossbow.mdl" );
+	PRECACHE_MODEL( WeaponFramework_GetWorldModel( WEAPON_CROSSBOW, "models/w_crossbow.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetViewModel( WEAPON_CROSSBOW, "models/v_crossbow.mdl" ) );
+	PRECACHE_MODEL( WeaponFramework_GetPlayerModel( WEAPON_CROSSBOW, "models/p_crossbow.mdl" ) );
 
 	PRECACHE_SOUND( "weapons/xbow_fire1.wav" );
 	PRECACHE_SOUND( "weapons/xbow_reload1.wav" );
@@ -476,14 +477,16 @@ int CCrossbow::GetItemInfo( ItemInfo *p )
 	p->iId = WEAPON_CROSSBOW;
 	p->iFlags = 0;
 	p->iWeight = CROSSBOW_WEIGHT;
+	if( WeaponFramework_ApplyItemInfo( p, WEAPON_CROSSBOW ) )
+		m_iId = p->iId;
 	return 1;
 }
 
 BOOL CCrossbow::Deploy()
 {
 	if( m_iClip )
-		return DefaultDeploy( "models/v_crossbow.mdl", "models/p_crossbow.mdl", CROSSBOW_DRAW1, "bow" );
-	return DefaultDeploy( "models/v_crossbow.mdl", "models/p_crossbow.mdl", CROSSBOW_DRAW2, "bow" );
+		return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_CROSSBOW, "models/v_crossbow.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_CROSSBOW, "models/p_crossbow.mdl" ), CROSSBOW_DRAW1, "bow" );
+	return DefaultDeploy( WeaponFramework_GetViewModel( WEAPON_CROSSBOW, "models/v_crossbow.mdl" ), WeaponFramework_GetPlayerModel( WEAPON_CROSSBOW, "models/p_crossbow.mdl" ), CROSSBOW_DRAW2, "bow" );
 }
 
 void CCrossbow::Holster( int skiplocal /* = 0 */ )
@@ -724,7 +727,10 @@ class CCrossbowAmmo : public CBasePlayerAmmo
 	}
 	BOOL AddAmmo( CBaseEntity *pOther )
 	{ 
-		if( pOther->GiveAmmo( AMMO_CROSSBOWCLIP_GIVE, "bolts", BOLT_MAX_CARRY ) != -1 )
+		const char *ammoType = WeaponFramework_GetPrimaryAmmoType( WEAPON_CROSSBOW, "bolts" );
+		const int pickupAmount = WeaponFramework_GetPrimaryAmmoPickupAmount( WEAPON_CROSSBOW, AMMO_CROSSBOWCLIP_GIVE );
+		const int maxCarry = WeaponFramework_GetPrimaryAmmoMax( WEAPON_CROSSBOW, BOLT_MAX_CARRY );
+		if( ammoType && pickupAmount > 0 && pOther->GiveAmmo( pickupAmount, ammoType, maxCarry ) != -1 )
 		{
 			EMIT_SOUND( ENT( pev ), CHAN_ITEM, "items/9mmclip1.wav", 1, ATTN_NORM );
 			return TRUE;

@@ -16,6 +16,8 @@
 #include "eiface.h"
 #include "util.h"
 #include "game.h"
+#include "weapon_registry.h"
+#include "weapon_json.h"
 #include "vcs_info.h"
 
 static cvar_t build_commit = { "sv_game_build_commit", g_VCSInfo_Commit };
@@ -498,8 +500,38 @@ cvar_t tdmg_bleeding_damage3 = { "tdmg_bleeding_damage3", "1" };
 
 // Register your console variables here
 // This gets called one time when the game is initialied
+static unsigned char *LoadWeaponFrameworkServerFile(const char *path, int *fileLength)
+{
+	return (unsigned char *)LOAD_FILE_FOR_ME(path, fileLength);
+}
+
+static void FreeWeaponFrameworkServerFile(unsigned char *fileData)
+{
+	if (fileData)
+		FREE_FILE(fileData);
+}
+
+static bool LoadWeaponDefinitionsFromGameFiles()
+{
+	const bool loaded = WeaponFramework::LoadWeaponPackageCatalog(
+		"scripts/weapons/packages.json",
+		LoadWeaponFrameworkServerFile, FreeWeaponFrameworkServerFile);
+
+	if (!loaded)
+	{
+		ALERT(at_console, "WeaponFramework: package catalogue or one of its definitions failed to load; using built-in Glock metadata\n");
+		return WeaponFramework::RegisterBuiltinWeapons();
+	}
+
+	ALERT(at_console, "WeaponFramework: server package catalogue loaded successfully\n");
+	return true;
+}
+
+// Register the weapon catalogue before worldspawn precaches weapon entities.
 void GameDLLInit( void )
 {
+	LoadWeaponDefinitionsFromGameFiles();
+
 	g_psv_gravity = CVAR_GET_POINTER( "sv_gravity" );
 	g_psv_aim = CVAR_GET_POINTER( "sv_aim" );
 	g_psv_allow_autoaim = CVAR_GET_POINTER( "sv_allow_autoaim" );
