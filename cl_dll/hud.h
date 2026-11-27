@@ -38,6 +38,9 @@
 #define DHN_DRAWZERO 1
 #define DHN_2DIGITS  2
 #define DHN_3DIGITS  4
+#define DHN_DRAWZERO_SM 1
+#define DHN_2DIGITS_SM  2
+#define DHN_3DIGITS_SM  4
 #define MIN_ALPHA	 100	
 
 #define		HUDELEM_ACTIVE	1
@@ -87,6 +90,20 @@ public:
 	virtual void Think( void ) { return; }
 	virtual void Reset( void ) { return; }
 	virtual void InitHUDData( void ) {}		// called every time a server is connected to
+
+	// Shared large and small inactive digit sprites used by sprite HUD readouts.
+	int m_HUD_DigitsBG1;
+	int m_HUD_DigitsBG2;
+	int m_HUD_DigitsSmBG1;
+	int m_HUD_DigitsSmBG2;
+	HSPRITE m_hDigitsBG1;
+	wrect_t *m_prcDigitsBG1;
+	HSPRITE m_hDigitsBG2;
+	wrect_t *m_prcDigitsBG2;
+	HSPRITE m_hDigitsSmBG1;
+	wrect_t *m_prcDigitsSmBG1;
+	HSPRITE m_hDigitsSmBG2;
+	wrect_t *m_prcDigitsSmBG2;
 };
 
 struct HUDLIST
@@ -141,6 +158,12 @@ private:
 	WEAPON *m_pWeapon;
 	int m_HUD_bucket0;
 	int m_HUD_selection;
+	HSPRITE m_hDivider;
+	wrect_t *m_prcDivider;
+	HSPRITE m_hAmmoText;
+	wrect_t *m_prcAmmoText;
+	int m_HUD_divider;
+	int m_HUD_AmmoText;
 };
 
 //
@@ -568,6 +591,7 @@ public:
 
 	int m_iFontHeight;
 	int DrawHudNumber( int x, int y, int iFlags, int iNumber, int r, int g, int b );
+	int DrawHudNumberSm( int x, int y, int iFlags, int iNumber, int r, int g, int b );
 	int DrawHudString( int x, int y, int iMaxX, const char *szString, int r, int g, int b );
 	int DrawHudStringReverse( int xpos, int ypos, int iMinX, const char *szString, int r, int g, int b );
 	int DrawHudNumberString( int xpos, int ypos, int iMinX, int iNumber, int r, int g, int b );
@@ -745,6 +769,7 @@ public:
 
 	// sprite indexes
 	int m_HUD_number_0;
+	int m_HUD_number_sm_0;
 
 	int m_iNoConsolePrint;
 
