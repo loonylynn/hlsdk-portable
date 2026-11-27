@@ -11,6 +11,28 @@
 #include "weapon_behavior.h"
 #include <string.h>
 
+TYPEDESCRIPTION CFrameworkWeapon::m_SaveData[] =
+{
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.version, FIELD_INTEGER),
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.lifecycle, FIELD_INTEGER),
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.reload, FIELD_INTEGER),
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.loadedAmmo, FIELD_INTEGER),
+#if CLIENT_WEAPONS
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.nextPrimaryAttackTime, FIELD_FLOAT),
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.nextSecondaryAttackTime, FIELD_FLOAT),
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.nextIdleTime, FIELD_FLOAT),
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.actionStartTime, FIELD_FLOAT),
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.actionEndTime, FIELD_FLOAT),
+#else
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.nextPrimaryAttackTime, FIELD_TIME),
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.nextSecondaryAttackTime, FIELD_TIME),
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.nextIdleTime, FIELD_TIME),
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.actionStartTime, FIELD_TIME),
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.actionEndTime, FIELD_TIME),
+#endif
+	DEFINE_FIELD(CFrameworkWeapon, m_runtimeState.actionSequence, FIELD_INTEGER),
+};
+
 namespace
 {
 	class CFrameworkWeaponActionHost : public WeaponFramework::IWeaponActionHost
@@ -145,11 +167,13 @@ CFrameworkWeapon::CFrameworkWeapon()
 	m_flLastFireTime = 0.0f;
 
 	m_definitionName[0] = '\0';
+	m_runtimeState.Reset(0);
 }
 void CFrameworkWeapon::SetDefinitionId(int id)
 {
 	m_iId = id;
 	m_definitionName[0] = '\0';
+	ResetRuntimeState();
 }
 const WeaponFramework::WeaponDefinition *CFrameworkWeapon::GetDefinition() const
 {
@@ -202,6 +226,7 @@ void CFrameworkWeapon::Spawn(void)
 	m_iDefaultAmmo = definition->GetDefaultAmmo();
 	m_iClip = 0;
 	m_fInReload = FALSE;
+	ResetRuntimeState();
 #ifdef CLIENT_DLL
 	pev->classname = MAKE_STRING(definition->GetEntityClassname());
 #else
@@ -256,12 +281,40 @@ BOOL CFrameworkWeapon::Deploy(void)
 	const WeaponFramework::WeaponDefinition *definition = GetDefinition();
 	if (!definition || !definition->GetViewModel()) return FALSE;
 	const char *playerModel = definition->GetPlayerModel() ? definition->GetPlayerModel() : "";
-	return DefaultDeploy(definition->GetViewModel(), playerModel, definition->GetDrawAnimation(), "onehanded", UseDecrement() ? 1 : 0);
+	const BOOL deployed = DefaultDeploy(definition->GetViewModel(), playerModel,
+		definition->GetDrawAnimation(), "onehanded", UseDecrement() ? 1 : 0);
+	if (deployed)
+	{
+		m_runtimeState.reload = WeaponFramework::WeaponReloadNone;
+		m_runtimeState.lifecycle = WeaponFramework::WeaponLifecycleReady;
+		m_runtimeState.loadedAmmo = m_iClip;
+		m_runtimeState.nextPrimaryAttackTime = m_flNextPrimaryAttack;
+		m_runtimeState.nextSecondaryAttackTime = m_flNextSecondaryAttack;
+		m_runtimeState.nextIdleTime = m_flTimeWeaponIdle;
+	}
+	return deployed;
 }
+
+void CFrameworkWeapon::Holster(int skiplocal)
+{
+	m_runtimeState.lifecycle = WeaponFramework::WeaponLifecycleHolstered;
+	CBasePlayerWeapon::Holster(skiplocal);
+}
+
+void CFrameworkWeapon::ItemPostFrame(void)
+{
+	// The base GoldSrc frame loop still owns input ordering and reload
+	// completion. Keep the persistent instance state synchronized around it.
+	SyncRuntimeStateFromLegacy();
+	CBasePlayerWeapon::ItemPostFrame();
+	SyncRuntimeStateFromLegacy();
+}
+
 void CFrameworkWeapon::PrimaryAttack(void)
 {
 	const WeaponFramework::WeaponDefinition *definition = GetDefinition();
 	if (!definition || !m_pPlayer) return;
+	SyncRuntimeStateFromLegacy();
 	if (m_iClip <= 0)
 	{
 		if (m_iPrimaryAmmoType >= 0 && m_iPrimaryAmmoType < MAX_AMMO_SLOTS && m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] > 0) Reload();
@@ -273,17 +326,11 @@ void CFrameworkWeapon::PrimaryAttack(void)
 		WeaponFramework::GetBehaviorRegistry().FindForDefinition(*definition);
 	if (behavior)
 	{
-		WeaponFramework::WeaponInstanceState instance;
 		WeaponFramework::WeaponBehaviorContext context;
 		CFrameworkWeaponActionHost actionHost(*this);
 
-		instance.Reset(m_iClip);
-		instance.lifecycle = WeaponFramework::WeaponLifecycleReady;
-		instance.nextPrimaryAttackTime = m_flNextPrimaryAttack;
-		instance.nextIdleTime = m_flTimeWeaponIdle;
-
 		context.definition = definition;
-		context.instance = &instance;
+		context.instance = &m_runtimeState;
 		context.host = &actionHost;
 		context.input.primaryDown = (m_pPlayer->pev->button & IN_ATTACK) != 0;
 		context.input.primaryPressed = (m_pPlayer->m_afButtonPressed & IN_ATTACK) != 0;
@@ -297,12 +344,8 @@ void CFrameworkWeapon::PrimaryAttack(void)
 #endif
 		context.predicting = UseDecrement() ? true : false;
 
-		if (behavior->PrimaryAttack(context))
-		{
-			m_iClip = instance.loadedAmmo;
-			m_flNextPrimaryAttack = instance.nextPrimaryAttackTime;
-			m_flTimeWeaponIdle = instance.nextIdleTime;
-		}
+		behavior->PrimaryAttack(context);
+		SyncLegacyStateFromRuntime();
 		return;
 	}
 
@@ -331,8 +374,99 @@ void CFrameworkWeapon::Reload(void)
 {
 	const WeaponFramework::WeaponDefinition *definition = GetDefinition();
 	if (!definition || !m_pPlayer || m_iClip >= iMaxClip()) return;
-	DefaultReload(iMaxClip(), definition->GetReloadAnimation(), definition->GetReloadTime());
+	if (DefaultReload(iMaxClip(), definition->GetReloadAnimation(), definition->GetReloadTime()))
+	{
+		m_runtimeState.reload = WeaponFramework::WeaponReloadStarting;
+		m_runtimeState.lifecycle = WeaponFramework::WeaponLifecycleReloading;
+		m_runtimeState.actionStartTime = UTIL_WeaponTimeBase();
+		m_runtimeState.actionEndTime = m_pPlayer->m_flNextAttack;
+		SyncRuntimeStateFromLegacy();
+	}
 }
+
+void CFrameworkWeapon::ResetRuntimeState(void)
+{
+	m_runtimeState.Reset(m_iClip);
+	m_runtimeState.nextPrimaryAttackTime = m_flNextPrimaryAttack;
+	m_runtimeState.nextSecondaryAttackTime = m_flNextSecondaryAttack;
+	m_runtimeState.nextIdleTime = m_flTimeWeaponIdle;
+}
+
+void CFrameworkWeapon::SyncRuntimeStateFromLegacy(void)
+{
+	const float currentTime = UTIL_WeaponTimeBase();
+
+	if (!m_runtimeState.IsValid())
+		m_runtimeState.Reset(m_iClip);
+
+	m_runtimeState.loadedAmmo = m_iClip;
+	m_runtimeState.nextPrimaryAttackTime = m_flNextPrimaryAttack;
+	m_runtimeState.nextSecondaryAttackTime = m_flNextSecondaryAttack;
+	m_runtimeState.nextIdleTime = m_flTimeWeaponIdle;
+
+	if (m_fInReload)
+	{
+		m_runtimeState.reload = WeaponFramework::WeaponReloadInProgress;
+		m_runtimeState.lifecycle = WeaponFramework::WeaponLifecycleReloading;
+		return;
+	}
+
+	m_runtimeState.reload = WeaponFramework::WeaponReloadNone;
+	if (m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleUnowned ||
+		m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleHolstered ||
+		m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleDeploying ||
+		m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleReloading ||
+		((m_runtimeState.lifecycle == WeaponFramework::WeaponLifecyclePrimaryAction ||
+		  m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleSecondaryAction ||
+		  m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleBusy) &&
+		 currentTime >= m_runtimeState.actionEndTime))
+	{
+		m_runtimeState.lifecycle = m_pPlayer ?
+			WeaponFramework::WeaponLifecycleReady :
+			WeaponFramework::WeaponLifecycleHolstered;
+	}
+}
+
+void CFrameworkWeapon::SyncLegacyStateFromRuntime(void)
+{
+	m_iClip = m_runtimeState.loadedAmmo;
+	m_flNextPrimaryAttack = m_runtimeState.nextPrimaryAttackTime;
+	m_flNextSecondaryAttack = m_runtimeState.nextSecondaryAttackTime;
+	m_flTimeWeaponIdle = m_runtimeState.nextIdleTime;
+}
+
+int CFrameworkWeapon::Save(CSave &save)
+{
+	SyncRuntimeStateFromLegacy();
+	if (!CBasePlayerWeapon::Save(save))
+		return 0;
+	return save.WriteFields("CFrameworkWeapon", this, m_SaveData, ARRAYSIZE(m_SaveData));
+}
+
+int CFrameworkWeapon::Restore(CRestore &restore)
+{
+	if (!CBasePlayerWeapon::Restore(restore))
+		return 0;
+	if (!restore.ReadFields("CFrameworkWeapon", this, m_SaveData, ARRAYSIZE(m_SaveData)))
+		return 0;
+
+	if (!m_runtimeState.IsValid())
+	{
+		// Saves made before the runtime-state block existed can still be
+		// upgraded from the legacy clip/timer/reload fields.
+		ResetRuntimeState();
+		SyncRuntimeStateFromLegacy();
+	}
+	else
+	{
+		SyncLegacyStateFromRuntime();
+		m_fInReload = m_runtimeState.reload == WeaponFramework::WeaponReloadStarting ||
+			m_runtimeState.reload == WeaponFramework::WeaponReloadInProgress ||
+			m_runtimeState.reload == WeaponFramework::WeaponReloadFinishing;
+	}
+	return 1;
+}
+
 void CFrameworkWeapon::WeaponIdle(void)
 {
 	const WeaponFramework::WeaponDefinition *definition = GetDefinition();
