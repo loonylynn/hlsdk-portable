@@ -332,3 +332,20 @@ The current JSON parser also contains GoldSrc-specific item-flag and bullet-type
 Use a conventional semi-automatic pistol as the first vertical slice. The existing Glock is a convenient parity test because its current ammo, clip, animation and firing behaviour are known; using it as the test does not commit the project to keeping the Glock as a final game weapon. The pilot must prove that one native pistol behaviour can serve multiple definitions by changing only data, while unique mechanics remain implementable as separate native behaviours.
 
 The first native behaviour slice covers definition lookup, native behaviour validation, primary-fire dispatch, semi-automatic press-edge handling, cooldowns, engine hitscan execution and fire presentation callbacks through the generic adapter. The generic entity now retains common runtime state across frames and saves/restores it, while preserving the existing GoldSrc clip and attack-timer transport. This is not yet the full pilot: controller-owned switching, general behaviour-specific state serialization, explicit prediction mapping for future custom state and in-game save/load verification still need implementation. The stock Glock must remain unchanged until its special timing, accuracy recovery and event presentation can be represented by the new architecture.
+
+
+## Adjacent client HUD / VGUI direction
+
+The HUD modernization is a sibling client-presentation subsystem on the same development branch. It is not part of the weapon-definition or weapon-behaviour runtime. Keep these responsibilities separate while allowing them to exchange read-only presentation data through narrow interfaces.
+
+- Use the existing FreeVGUI/VGUI1 compatibility layer as the panel substrate; do not port VGUI2 wholesale or introduce a second GUI framework.
+- Build a small client HUD layer with independent panels and lifecycle: health, suit battery, and current-weapon ammunition. Shared layout, typography, visibility and animation support belong in the HUD layer rather than in individual weapons.
+- Health and suit power remain player-state presentation. The ammunition panel reads the active weapon's clip and reserve values through a narrow client-side compatibility/data interface; it must not depend on server weapon classes.
+- The current AUX POWER meter is a separate, established HUD element. Its sprite sheet, draw code, layout cvars, editor, prediction source and fade behaviour must remain intact while adjacent HUD elements are modernized.
+- Migrate incrementally with a default-off cvar and a legacy renderer fallback until each panel passes an in-game check.
+
+### First HUD slice: health number
+
+The first opt-in implementation adds a non-interactive VGUI label to the existing viewport. It reads `CHudHealth::m_iHealth`, reuses the existing health colour/fade calculation and original numeric anchor, and leaves damage/pain overlays on their existing path. With `hud_vgui_health 0` (default), the original cross/number/separator remains in use. With `hud_vgui_health 1`, VGUI draws the number in place of that sprite group. The AUX POWER meter call remains in its original position and is not reimplemented by VGUI.
+
+**Validation state:** source integration is present on this branch, but a full 32-bit client build, staged install and in-game comparison are still required before treating the panel as verified.
