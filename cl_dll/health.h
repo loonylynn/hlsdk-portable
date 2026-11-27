@@ -113,6 +113,7 @@ public:
 	float m_fAttackFront, m_fAttackRear, m_fAttackLeft, m_fAttackRight;
 	void GetPainColor( int &r, int &g, int &b );
 	float m_fFade;
+	// Inactive large/small digit sprite resources are inherited from CHudBase.
 	float m_flDigitalFlashRemaining;
 
 private:
