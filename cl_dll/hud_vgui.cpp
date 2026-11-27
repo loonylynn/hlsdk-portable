@@ -24,6 +24,11 @@ static const int HUD_VGUI_PANEL_PADDING_Y = 5;
 static const int HUD_VGUI_PANEL_CORNER_RADIUS = 10;
 static const int HUD_VGUI_PANEL_CORNER_INSET[10] = { 7, 5, 3, 2, 2, 1, 1, 0, 0, 0 };
 
+// Keep the VGUI HUD safe area independent of the legacy sprite HUD cvar.
+// This matches the project's established 2.5% default without inheriting
+// user changes to hud_overscan.
+static const float HUD_VGUI_FIXED_OVERSCAN = 0.025f;
+
 class CHudScaledFont : public vgui::Font
 {
 public:
@@ -518,6 +523,28 @@ int g_iLastRed = -1;
 int g_iLastGreen = -1;
 int g_iLastBlue = -1;
 
+static int HUD_VGuiAdjustX( int x )
+{
+	const int width = gHUD.m_scrinfo.iWidth;
+	if( width <= 0 || x < 0 || x > width )
+		return x;
+
+	const float scale = 1.0f - 2.0f * HUD_VGUI_FIXED_OVERSCAN;
+	return (int)( (float)width * 0.5f +
+		( (float)x - (float)width * 0.5f ) * scale + 0.5f );
+}
+
+static int HUD_VGuiAdjustY( int y )
+{
+	const int height = gHUD.m_scrinfo.iHeight;
+	if( height <= 0 || y < 0 || y > height )
+		return y;
+
+	const float scale = 1.0f - 2.0f * HUD_VGUI_FIXED_OVERSCAN;
+	return (int)( (float)height * 0.5f +
+		( (float)y - (float)height * 0.5f ) * scale + 0.5f );
+}
+
 static int HUD_VGuiReadOffset( const char *name )
 {
 	return (int)CVAR_GET_FLOAT( name );
@@ -719,10 +746,10 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 	if( !g_pHudHealthPanel || !g_pHudHealthNumberFont || !g_pHudHealthCaptionFont )
 		return 0;
 
-	// Preserve the legacy sprite HUD anchor and overscan transform. Apply the
-	// editable offsets afterwards so values are measured in screen pixels.
-	x = HUD_AdjustX( x );
-	y = HUD_AdjustY( y );
+	// Preserve the legacy anchor, but apply the VGUI HUD's fixed safe area.
+	// This is deliberately independent of the user-adjustable hud_overscan.
+	x = HUD_VGuiAdjustX( x );
+	y = HUD_VGuiAdjustY( y );
 	textOffsetX = HUD_VGuiReadOffset( "hud_vgui_text_x" );
 	textOffsetY = HUD_VGuiReadOffset( "hud_vgui_text_y" );
 	numberOffsetX = HUD_VGuiReadOffset( "hud_vgui_numbers_x" );
@@ -826,10 +853,10 @@ static int HUD_VGuiUpdateLabeledPanel( CHudLabeledTextPanel *panel,
 	if( !panel || !g_pHudHealthNumberFont || !g_pHudHealthCaptionFont )
 		return 0;
 
-	// Preserve the original per-HUD anchors and safe-area handling; these
-	// shared offsets are then added to every caption or every numeric readout.
-	anchorX = HUD_AdjustX( anchorX );
-	anchorY = HUD_AdjustY( anchorY );
+	// Apply the same fixed VGUI safe area to every readout, independent of
+	// hud_overscan; the shared offsets are then added to text and numbers.
+	anchorX = HUD_VGuiAdjustX( anchorX );
+	anchorY = HUD_VGuiAdjustY( anchorY );
 	textOffsetX = HUD_VGuiReadOffset( "hud_vgui_text_x" );
 	textOffsetY = HUD_VGuiReadOffset( "hud_vgui_text_y" );
 	numberOffsetX = HUD_VGuiReadOffset( "hud_vgui_numbers_x" );
