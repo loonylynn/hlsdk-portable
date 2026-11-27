@@ -26,4 +26,4 @@ Let d be camera distance, s start, e end, rho density and m maximum density. The
 
 When density is zero, the transition is linear. This preserves the familiar density control while reaching the configured maximum at the end distance.
 
-The client renderer must have `gl_fog 1`. The radial hybrid path requires the Xash3D FWGS OpenGL shader compatibility renderer; classic fixed-function OpenGL falls back to its available linear/exp fog behavior, and the software renderer does not implement TriAPI fog.
+The client renderer must have `gl_fog 1`. On the desktop OpenGL renderer, launch Xash3D with `-gl2shim` to enable the shader compatibility layer used for radial distance and the hybrid start/end/density curve. Without that option, classic fixed-function OpenGL falls back to its linear/exp fog behavior; the software renderer does not implement TriAPI fog.
