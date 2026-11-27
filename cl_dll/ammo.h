@@ -53,6 +53,10 @@ struct WEAPON
 	wrect_t rcZoomedCrosshair;
 	HSPRITE hZoomedAutoaim;
 	wrect_t rcZoomedAutoaim;
+	HSPRITE hDivider;
+	wrect_t rcDivider;
+	HSPRITE hAmmoText;
+	wrect_t rcAmmoText;
 };
 
 typedef int AMMO;
