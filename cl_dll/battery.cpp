@@ -20,6 +20,7 @@
 
 #include "hud.h"
 #include "cl_util.h"
+#include "hud_vgui.h"
 #include "parsemsg.h"
 
 #include <string.h>
@@ -72,7 +73,10 @@ int CHudBattery::MsgFunc_Battery( const char *pszName,  int iSize, void *pbuf )
 int CHudBattery::Draw( float flTime )
 {
 	if( gHUD.m_iHideHUDDisplay & HIDEHUD_HEALTH )
+	{
+		HUD_VGuiSuitSetVisible( 0 );
 		return 1;
+	}
 
 	int r, g, b, x, y, a;
 	wrect_t rc;
@@ -83,7 +87,10 @@ int CHudBattery::Draw( float flTime )
 	UnpackRGB( r, g, b, RGB_YELLOWISH );
 
 	if( !( gHUD.m_iWeaponBits & ( 1 << ( WEAPON_SUIT ) ) ) )
+	{
+		HUD_VGuiSuitSetVisible( 0 );
 		return 1;
+	}
 
 	// Has health changed? Flash the health #
 	if( m_fFade )
@@ -114,6 +121,19 @@ int CHudBattery::Draw( float flTime )
 		x = ( m_prc1->right - m_prc1->left ) * 3;
 	else
 		x = ScreenWidth / 5;
+
+	// In VGUI mode the text panel replaces the complete suit HUD element,
+	// including the legacy empty/full charge sprites. Keep the value at its
+	// former position to avoid shifting the readout when the icon disappears.
+	if( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f &&
+		HUD_VGuiSuitUpdate( m_iBat, r, g, b,
+			x + ( m_prc1->right - m_prc1->left ),
+			y + gHUD.m_iHudNumbersYOffset ) )
+		return 1;
+
+	// If VGUI is disabled or its panel is unavailable, restore the complete
+	// original sprite-based suit HUD as a fallback.
+	HUD_VGuiSuitSetVisible( 0 );
 
 	// make sure we have the right sprite handles
 	if( !m_hSprite1 )

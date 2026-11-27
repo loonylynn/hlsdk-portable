@@ -23,6 +23,7 @@
 #include <math.h>
 
 #include "hud.h"
+#include "hud_vgui.h"
 #include "const.h"
 #include "cl_util.h"
 #include "cl_entity.h"
@@ -67,6 +68,10 @@ static void AuxPower_EditCommand( void );
 static void AuxPower_CommitCommand( void );
 static void AuxPower_CancelCommand( void );
 static void AuxPower_ReportCommand( void );
+static void VGuiHud_TextOffsetCommand( void );
+static void VGuiHud_NumbersOffsetCommand( void );
+static void VGuiHud_SetOffset( const char *group, const char *xCvar, const char *yCvar );
+static void VGuiHud_MigrateOffsets( void );
 
 int giDmgHeight, giDmgWidth;
 
@@ -86,6 +91,71 @@ int giDmgFlags[NUM_DMG_TYPES] =
 	DMG_HALLUC
 };
 
+static void VGuiHud_SetOffset( const char *group, const char *xCvar, const char *yCvar )
+{
+	int argc = gEngfuncs.Cmd_Argc ? gEngfuncs.Cmd_Argc() : 0;
+
+	if( argc >= 3 )
+	{
+		if( !gEngfuncs.Cmd_Argv )
+		{
+			gEngfuncs.Con_Printf( "[VGUI HUD] Command arguments are unavailable.\n" );
+			return;
+		}
+
+		int x = atoi( gEngfuncs.Cmd_Argv( 1 ) );
+		int y = atoi( gEngfuncs.Cmd_Argv( 2 ) );
+
+		if( !gEngfuncs.Cvar_SetValue )
+		{
+			gEngfuncs.Con_Printf( "[VGUI HUD] Cannot set %s offsets through this engine API.\n", group );
+			return;
+		}
+
+		gEngfuncs.Cvar_SetValue( xCvar, (float)x );
+		gEngfuncs.Cvar_SetValue( yCvar, (float)y );
+	}
+
+	gEngfuncs.Con_Printf( "[VGUI HUD] %s offset: X %d, Y %d\n",
+		group, (int)CVAR_GET_FLOAT( xCvar ), (int)CVAR_GET_FLOAT( yCvar ) );
+	if( argc < 3 )
+		gEngfuncs.Con_Printf( "Usage: %s <x> <y>  (screen pixels; 0 0 removes the offset)\n",
+			!strcmp( group, "Text" ) ? "hud_vgui_text_offset" : "hud_vgui_numbers_offset" );
+}
+
+static void VGuiHud_TextOffsetCommand( void )
+{
+	VGuiHud_SetOffset( "Text", "hud_vgui_text_x", "hud_vgui_text_y" );
+}
+
+static void VGuiHud_NumbersOffsetCommand( void )
+{
+	VGuiHud_SetOffset( "Numbers", "hud_vgui_numbers_x", "hud_vgui_numbers_y" );
+}
+
+// Move untouched zero-offset defaults to the agreed HUD positions once.
+// Non-zero user adjustments are preserved, and the archived version prevents
+// the defaults from being reapplied after the player deliberately resets them.
+static void VGuiHud_MigrateOffsets( void )
+{
+	int version = (int)CVAR_GET_FLOAT( "hud_vgui_layout_version" );
+	int textX = (int)CVAR_GET_FLOAT( "hud_vgui_text_x" );
+	int textY = (int)CVAR_GET_FLOAT( "hud_vgui_text_y" );
+	int numbersX = (int)CVAR_GET_FLOAT( "hud_vgui_numbers_x" );
+	int numbersY = (int)CVAR_GET_FLOAT( "hud_vgui_numbers_y" );
+
+	if( version >= 1 || !gEngfuncs.Cvar_SetValue )
+		return;
+
+	if( textX == 0 && textY == 0 )
+		gEngfuncs.Cvar_SetValue( "hud_vgui_text_y", -10.0f );
+
+	if( numbersX == 0 && numbersY == 0 )
+		gEngfuncs.Cvar_SetValue( "hud_vgui_numbers_y", -28.0f );
+
+	gEngfuncs.Cvar_SetValue( "hud_vgui_layout_version", 1.0f );
+}
+
 int CHudHealth::Init( void )
 {
 	HOOK_MESSAGE( Health );
@@ -96,6 +166,18 @@ int CHudHealth::Init( void )
 	CVAR_CREATE( "hud_auxpower_grid", "8", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_auxpower_snap", "1", FCVAR_ARCHIVE );
 	CVAR_CREATE( "hud_auxpower_layout_version", "0", FCVAR_ARCHIVE );
+	// One master switch for all VGUI HUD readouts.
+	// Shared screen-pixel offsets: all three captions move together, as do all values.
+	CVAR_CREATE( "hud_vgui", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_text_x", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_text_y", "-10", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_numbers_x", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_numbers_y", "-28", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_layout_version", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_panel_opacity", "56", FCVAR_ARCHIVE );
+
+	gEngfuncs.pfnAddCommand( "hud_vgui_text_offset", VGuiHud_TextOffsetCommand );
+	gEngfuncs.pfnAddCommand( "hud_vgui_numbers_offset", VGuiHud_NumbersOffsetCommand );
 
 	gEngfuncs.pfnAddCommand( "hud_auxpower_edit", AuxPower_EditCommand );
 	gEngfuncs.pfnAddCommand( "hud_auxpower_commit", AuxPower_CommitCommand );
@@ -852,12 +934,17 @@ extern "C" void DLLEXPORT HUD_AuxPowerEditorKeyEvent( int down, int keynum )
 // Returns back a color from the Green <-> Yellow <-> Red ramp.
 int CHudHealth::Draw( float flTime )
 {
+	VGuiHud_MigrateOffsets();
+
 	int r, g, b;
 	int a = 0, x, y;
 	int HealthWidth;
 
 	if( ( gHUD.m_iHideHUDDisplay & HIDEHUD_HEALTH ) || gEngfuncs.IsSpectateOnly() )
+	{
+		HUD_VGuiHealthSetVisible( 0 );
 		return 1;
+	}
 
 	if( !m_hSprite )
 		m_hSprite = LoadSprite( PAIN_NAME );
@@ -892,27 +979,41 @@ int CHudHealth::Draw( float flTime )
 		int CrossWidth = gHUD.GetSpriteRect( m_HUD_cross ).right - gHUD.GetSpriteRect( m_HUD_cross ).left;
 
 		y = ScreenHeight - gHUD.m_iFontHeight - gHUD.m_iFontHeight / 2;
-		x = CrossWidth / 2;
-
-		SPR_Set( gHUD.GetSprite( m_HUD_cross ), r, g, b );
-		SPR_DrawAdditive( 0, x, y, &gHUD.GetSpriteRect( m_HUD_cross ) );
-
 		x = CrossWidth + HealthWidth / 2;
 
-		x = gHUD.DrawHudNumber( x, y + gHUD.m_iHudNumbersYOffset, DHN_3DIGITS | DHN_DRAWZERO, m_iHealth, r, g, b );
+		// Keep the legacy sprite renderer as a fallback. The VGUI label receives
+		// the same health value, RGB fade and number anchor as the original HUD.
+		if( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f &&
+			HUD_VGuiHealthUpdate( m_iHealth, r, g, b, x, y + gHUD.m_iHudNumbersYOffset ) )
+		{
+			// VGUI owns the health number while the option is enabled.
+		}
+		else
+		{
+			HUD_VGuiHealthSetVisible( 0 );
+			x = CrossWidth / 2;
+			SPR_Set( gHUD.GetSprite( m_HUD_cross ), r, g, b );
+			SPR_DrawAdditive( 0, x, y, &gHUD.GetSpriteRect( m_HUD_cross ) );
 
-		x += HealthWidth / 2;
+			x = CrossWidth + HealthWidth / 2;
+			x = gHUD.DrawHudNumber( x, y + gHUD.m_iHudNumbersYOffset, DHN_3DIGITS | DHN_DRAWZERO, m_iHealth, r, g, b );
+			x += HealthWidth / 2;
 
-		int iHeight = gHUD.m_iFontHeight;
-		int iWidth = HealthWidth / 10;
-		UnpackRGB( r, g, b, RGB_YELLOWISH );
-		FillRGBA( x, y + gHUD.m_iHudNumbersYOffset, iWidth, iHeight, r, g, b, a );
+			int iHeight = gHUD.m_iFontHeight;
+			int iWidth = HealthWidth / 10;
+			UnpackRGB( r, g, b, RGB_YELLOWISH );
+			FillRGBA( x, y + gHUD.m_iHudNumbersYOffset, iWidth, iHeight, r, g, b, a );
+		}
 
 		// Use the post-prediction local state, which contains the
 		// movement DLL's final fuser4 value for this user command.
 		float flAuxPower = ( g_flHL2AuxPowerPostRun >= 0.0f ) ?
 			g_flHL2AuxPowerPostRun : g_flHL2AuxPower;
 		DrawAuxPowerMeter( flAuxPower );
+	}
+	else
+	{
+		HUD_VGuiHealthSetVisible( 0 );
 	}
 
 	DrawDamage( flTime );
