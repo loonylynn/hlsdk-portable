@@ -711,6 +711,11 @@ void CHud::VidInit( void )
 		return;
 	}
 
+	// Small digits are used by the classic reserve-ammo readout.
+	m_HUD_number_sm_0 = GetSpriteIndex( "number_sm_0" );
+	if( m_HUD_number_sm_0 < 0 )
+		m_HUD_number_sm_0 = m_HUD_number_0;
+
 	m_iFontHeight = m_rgrcRects[m_HUD_number_0].bottom - m_rgrcRects[m_HUD_number_0].top;
 
 	m_Ammo.VidInit();
