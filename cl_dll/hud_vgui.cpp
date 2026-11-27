@@ -221,6 +221,7 @@ public:
 		vgui::Panel( 0, 0, 1, 1 ),
 		m_pValueFont( NULL ),
 		m_pCaptionFont( NULL ),
+		m_pSmallValueFont( NULL ),
 		m_iRed( 255 ),
 		m_iGreen( 255 ),
 		m_iBlue( 255 ),
@@ -242,10 +243,42 @@ public:
 		return false;
 	}
 
-	void SetFonts( vgui::Font *valueFont, vgui::Font *captionFont )
+	void SetFonts( vgui::Font *valueFont, vgui::Font *captionFont,
+		vgui::Font *smallValueFont = NULL )
 	{
 		m_pValueFont = valueFont;
 		m_pCaptionFont = captionFont;
+		m_pSmallValueFont = smallValueFont;
+	}
+
+	void GetValueTextSize( const char *value, int &wide, int &tall )
+	{
+		const char *separator = ( m_pSmallValueFont && value ) ? strchr( value, '|' ) : NULL;
+
+		if( !separator )
+		{
+			m_pValueFont->getTextSize( value, wide, tall );
+			return;
+		}
+
+		char primary[64];
+		size_t primaryLength = (size_t)( separator - value );
+		if( primaryLength >= sizeof( primary ) )
+			primaryLength = sizeof( primary ) - 1;
+		memcpy( primary, value, primaryLength );
+		primary[primaryLength] = '\0';
+
+		int primaryWide, primaryTall;
+		int separatorWide, separatorTall;
+		int reserveWide, reserveTall;
+		m_pValueFont->getTextSize( primary, primaryWide, primaryTall );
+		m_pValueFont->getTextSize( "|", separatorWide, separatorTall );
+		m_pSmallValueFont->getTextSize( separator + 1, reserveWide, reserveTall );
+
+		wide = primaryWide + separatorWide + reserveWide;
+		tall = primaryTall > separatorTall ? primaryTall : separatorTall;
+		if( reserveTall > tall )
+			tall = reserveTall;
 	}
 
 	bool SetText( const char *caption, const char *value )
@@ -305,14 +338,43 @@ protected:
 		drawSetTextPos( m_iCaptionX, 0 );
 		drawPrintText( m_szCaption, (int)strlen( m_szCaption ) );
 
-		drawSetTextFont( m_pValueFont );
-		drawSetTextPos( m_iValueX, m_iValueY );
-		drawPrintText( m_szValue, (int)strlen( m_szValue ) );
+		const char *separator = m_pSmallValueFont ? strchr( m_szValue, '|' ) : NULL;
+		if( separator )
+		{
+			char primary[64];
+			size_t primaryLength = (size_t)( separator - m_szValue );
+			if( primaryLength >= sizeof( primary ) )
+				primaryLength = sizeof( primary ) - 1;
+			memcpy( primary, m_szValue, primaryLength );
+			primary[primaryLength] = '\0';
+
+			int primaryWide, primaryTall;
+			int separatorWide, separatorTall;
+			m_pValueFont->getTextSize( primary, primaryWide, primaryTall );
+			m_pValueFont->getTextSize( "|", separatorWide, separatorTall );
+
+			drawSetTextFont( m_pValueFont );
+			drawSetTextPos( m_iValueX, m_iValueY );
+			drawPrintText( primary, (int)strlen( primary ) );
+			drawSetTextPos( m_iValueX + primaryWide, m_iValueY );
+			drawPrintText( "|", 1 );
+
+			drawSetTextFont( m_pSmallValueFont );
+			drawSetTextPos( m_iValueX + primaryWide + separatorWide, m_iValueY );
+			drawPrintText( separator + 1, (int)strlen( separator + 1 ) );
+		}
+		else
+		{
+			drawSetTextFont( m_pValueFont );
+			drawSetTextPos( m_iValueX, m_iValueY );
+			drawPrintText( m_szValue, (int)strlen( m_szValue ) );
+		}
 	}
 
 private:
 	vgui::Font *m_pValueFont;
 	vgui::Font *m_pCaptionFont;
+	vgui::Font *m_pSmallValueFont;
 	int m_iRed;
 	int m_iGreen;
 	int m_iBlue;
@@ -329,6 +391,7 @@ CHudLabeledTextPanel *g_pHudAmmoPanel = NULL;
 vgui::Font *g_pHudHealthNumberFont = NULL;
 CHudScaledFont *g_pHudHealthScaledFallback = NULL;
 vgui::Font *g_pHudOCRBFont = NULL;
+vgui::Font *g_pHudOCRBAmmoReserveFont = NULL;
 vgui::Font *g_pHudHealthCaptionFont = NULL;
 int g_iLastHealth = -1;
 int g_iLastRed = -1;
@@ -384,7 +447,7 @@ static vgui::Font *HUD_VGuiHealthLoadOCRBFont( void )
 
 	// Prefer the real TrueType file. The TGA atlas remains as a compatibility
 	// fallback for builds/platforms which do not have the FreeType backend.
-	font = HUD_VGuiHealthTryLoadOCRBFont( "resource/ocr-b.ttf", 30 );
+	font = HUD_VGuiHealthTryLoadOCRBFont( "resource/ocr-b.ttf", 54 );
 	if( font )
 		return font;
 
@@ -420,6 +483,10 @@ void HUD_VGuiHealthStartup( vgui::Panel *parent )
 	// retains the TrueType/bitmap platform font in its static font registry.
 	if( !g_pHudOCRBFont )
 		g_pHudOCRBFont = HUD_VGuiHealthLoadOCRBFont();
+
+	if( g_pHudOCRBFont && !g_pHudOCRBAmmoReserveFont )
+		g_pHudOCRBAmmoReserveFont = HUD_VGuiHealthTryLoadOCRBFont(
+			"resource/ocr-b.ttf", 38 );
 
 	if( g_pHudOCRBFont )
 	{
@@ -612,7 +679,7 @@ static int HUD_VGuiUpdateLabeledPanel( CHudLabeledTextPanel *panel,
 	changed |= panel->SetText( caption, value );
 	changed |= panel->SetTextColor( red, green, blue );
 
-	g_pHudHealthNumberFont->getTextSize( value, valueWide, valueTall );
+	panel->GetValueTextSize( value, valueWide, valueTall );
 	g_pHudHealthCaptionFont->getTextSize( caption, captionWide, captionTall );
 
 	if( valueWide < 1 ) valueWide = 1;
@@ -730,7 +797,8 @@ void HUD_VGuiAmmoStartup( vgui::Panel *parent )
 	if( !g_pHudAmmoPanel )
 		g_pHudAmmoPanel = new CHudLabeledTextPanel();
 
-	g_pHudAmmoPanel->SetFonts( g_pHudHealthNumberFont, g_pHudHealthCaptionFont );
+	g_pHudAmmoPanel->SetFonts( g_pHudHealthNumberFont, g_pHudHealthCaptionFont,
+		g_pHudOCRBAmmoReserveFont );
 	g_pHudAmmoPanel->SetText( "AMMO", "000" );
 
 	if( g_pHudAmmoPanel->getParent() != parent )
