@@ -3,6 +3,7 @@
 #define WEAPON_FRAMEWORK_WEAPON_H
 #include "weapons.h"
 #include "weapon_registry.h"
+#include "weapon_runtime.h"
 
 class CFrameworkWeapon : public CBasePlayerWeapon
 {
@@ -17,9 +18,15 @@ public:
 	int AddToPlayer(CBasePlayer *pPlayer);
 	int iItemSlot(void);
 	BOOL Deploy(void);
+	void Holster(int skiplocal = 0);
+	void ItemPostFrame(void);
 	void PrimaryAttack(void);
 	void Reload(void);
 	void WeaponIdle(void);
+
+	virtual int Save(CSave &save);
+	virtual int Restore(CRestore &restore);
+	static TYPEDESCRIPTION m_SaveData[];
 	virtual BOOL UseDecrement(void)
 	{
 #if CLIENT_WEAPONS
@@ -29,7 +36,12 @@ public:
 #endif
 	}
 private:
+	void ResetRuntimeState(void);
+	void SyncRuntimeStateFromLegacy(void);
+	void SyncLegacyStateFromRuntime(void);
+
 	char m_definitionName[WeaponFramework::WeaponNameCapacity];
+	WeaponFramework::WeaponInstanceState m_runtimeState;
 };
 
 #ifndef CLIENT_DLL
