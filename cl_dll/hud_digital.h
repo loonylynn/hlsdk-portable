@@ -15,7 +15,7 @@ static const int HUD_DIGITAL_DIM_ALPHA = 48;
 static const int HUD_DIGITAL_FLASH_ALPHA = 255;
 static const float HUD_DIGITAL_FADE_DURATION = 0.45f;
 static const int HUD_DIGITAL_LOW_HEALTH_THRESHOLD = 15;
-static const int HUD_DIGITAL_GHOST_DIGIT_SPACING = 2;
+static const int HUD_DIGITAL_GHOST_DIGIT_SPACING = 0;
 
 static inline int HUD_DigitalGetFlashAlpha( float &timeRemaining, float frameTime )
 {
@@ -65,6 +65,47 @@ static inline void HUD_DigitalDrawDigit( int digit, int x, int y,
 	SPR_DrawAdditive( 0, x, y, &gHUD.GetSpriteRect( spriteIndex ) );
 }
 
+static inline void HUD_DigitalDrawGhostSlots( int x, int y,
+	int red, int green, int blue, int slotStep )
+{
+	int dull1Index = gHUD.GetSpriteIndex( "number_dull1" );
+	int dull2Index = gHUD.GetSpriteIndex( "number_dull2" );
+
+	int ghostRed = red;
+	int ghostGreen = green;
+	int ghostBlue = blue;
+	HUD_DigitalScaleColor( ghostRed, ghostGreen, ghostBlue, HUD_DIGITAL_DIM_ALPHA );
+
+	// The 640 HUD atlas provides two dedicated unlit digit sprites.
+	// Match the stock three-slot pattern: dull1, dull2, dull1.
+	if( dull1Index >= 0 && dull2Index >= 0 &&
+		gHUD.GetSprite( dull1Index ) && gHUD.GetSprite( dull2Index ) )
+	{
+		SPR_Set( gHUD.GetSprite( dull1Index ), ghostRed, ghostGreen, ghostBlue );
+		SPR_DrawAdditive( 0, x, y, &gHUD.GetSpriteRect( dull1Index ) );
+
+		SPR_Set( gHUD.GetSprite( dull2Index ), ghostRed, ghostGreen, ghostBlue );
+		SPR_DrawAdditive( 0, x + slotStep, y, &gHUD.GetSpriteRect( dull2Index ) );
+
+		SPR_Set( gHUD.GetSprite( dull1Index ), ghostRed, ghostGreen, ghostBlue );
+		SPR_DrawAdditive( 0, x + 2 * slotStep, y, &gHUD.GetSpriteRect( dull1Index ) );
+		return;
+	}
+
+	// The 320 HUD atlas does not define number_dull1/2. Retain a
+	// low-intensity number_8 fallback there so the three ghost positions
+	// remain present at both HUD resolutions.
+	const int fallbackIndex = gHUD.m_HUD_number_0 + 8;
+	HSPRITE fallbackSprite = gHUD.GetSprite( fallbackIndex );
+	if( fallbackSprite )
+	{
+		SPR_Set( fallbackSprite, ghostRed, ghostGreen, ghostBlue );
+		for( int slot = 0; slot < 3; ++slot )
+			SPR_DrawAdditive( 0, x + slot * slotStep, y,
+				&gHUD.GetSpriteRect( fallbackIndex ) );
+	}
+}
+
 static inline void HUD_DigitalDrawNumber( int x, int y, int value,
 	int red, int green, int blue, int alpha )
 {
@@ -72,22 +113,11 @@ static inline void HUD_DigitalDrawNumber( int x, int y, int value,
 	const int digitWidth = gHUD.GetSpriteRect( numberBase ).right -
 		gHUD.GetSpriteRect( numberBase ).left;
 	const int slotStep = digitWidth + HUD_DIGITAL_GHOST_DIGIT_SPACING;
-	const int ghostIndex = numberBase + 8;
-	HSPRITE ghostSprite = gHUD.GetSprite( ghostIndex );
 
-	if( digitWidth <= 0 || !ghostSprite )
+	if( digitWidth <= 0 )
 		return;
 
-	// Draw all three dim slots first. A normal numeric sprite is used for
-	// the "8" guide so every digit position has a consistent ghost shape.
-	int ghostRed = red;
-	int ghostGreen = green;
-	int ghostBlue = blue;
-	HUD_DigitalScaleColor( ghostRed, ghostGreen, ghostBlue, HUD_DIGITAL_DIM_ALPHA );
-
-	SPR_Set( ghostSprite, ghostRed, ghostGreen, ghostBlue );
-	for( int slot = 0; slot < 3; ++slot )
-		SPR_DrawAdditive( 0, x + slot * slotStep, y, &gHUD.GetSpriteRect( ghostIndex ) );
+	HUD_DigitalDrawGhostSlots( x, y, red, green, blue, slotStep );
 
 	// Overlay only the significant digits, aligned to the right. Unused
 	// leading slots remain visible as dim ghosts instead of leading zeroes.
