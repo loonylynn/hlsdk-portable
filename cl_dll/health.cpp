@@ -298,10 +298,13 @@ int CHudHealth::MsgFunc_Damage( const char *pszName, int iSize, void *pbuf )
 	return 1;
 }
 
-// The classic sprite HUD uses a neutral white health palette.
+// Health is white normally and turns red in the low-health warning range.
 void CHudHealth::GetPainColor( int &r, int &g, int &b )
 {
-	HUD_DigitalSetWhite( r, g, b );
+	if( m_iHealth <= HUD_DIGITAL_HEALTH_WARNING_THRESHOLD )
+		HUD_DigitalSetRed( r, g, b );
+	else
+		HUD_DigitalSetWhite( r, g, b );
 }
 
 // AUX. POWER HUD layout/editor state. Coordinates are offsets from the health
@@ -958,7 +961,7 @@ int CHudHealth::Draw( float flTime )
 	else
 		a = MIN_ALPHA;
 
-	if( m_iHealth <= HUD_DIGITAL_LOW_HEALTH_THRESHOLD )
+	if( m_iHealth <= HUD_DIGITAL_HEALTH_WARNING_THRESHOLD )
 		a = 255;
 
 	GetPainColor( r, g, b );
@@ -991,13 +994,15 @@ int CHudHealth::Draw( float flTime )
 			int displayR, displayG, displayB;
 			GetPainColor( displayR, displayG, displayB );
 
-			// Critical health bypasses the normal fade and remains solid red.
+			// Low health stays solid red instead of fading into the background.
 			int displayAlpha = digitalAlpha;
-			if( m_iHealth <= HUD_DIGITAL_LOW_HEALTH_THRESHOLD )
+			if( m_iHealth <= HUD_DIGITAL_HEALTH_WARNING_THRESHOLD )
 			{
-				m_flDigitalFlashRemaining = 0.0f;
-				HUD_DigitalSetWhite( displayR, displayG, displayB );
+				HUD_DigitalSetRed( displayR, displayG, displayB );
 				displayAlpha = HUD_DIGITAL_FLASH_ALPHA;
+
+				if( m_iHealth <= HUD_DIGITAL_LOW_HEALTH_THRESHOLD )
+					m_flDigitalFlashRemaining = 0.0f;
 			}
 
 			// Match the reference sprite layout: the cross sits directly above
