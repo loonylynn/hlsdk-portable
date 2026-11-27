@@ -122,6 +122,19 @@ int CHudBattery::Draw( float flTime )
 	else
 		x = ScreenWidth / 5;
 
+	// In VGUI mode the text panel replaces the complete suit HUD element,
+	// including the legacy empty/full charge sprites. Keep the value at its
+	// former position to avoid shifting the readout when the icon disappears.
+	if( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f &&
+		HUD_VGuiSuitUpdate( m_iBat, r, g, b,
+			x + ( m_prc1->right - m_prc1->left ),
+			y + gHUD.m_iHudNumbersYOffset ) )
+		return 1;
+
+	// If VGUI is disabled or its panel is unavailable, restore the complete
+	// original sprite-based suit HUD as a fallback.
+	HUD_VGuiSuitSetVisible( 0 );
+
 	// make sure we have the right sprite handles
 	if( !m_hSprite1 )
 		m_hSprite1 = gHUD.GetSprite( gHUD.GetSpriteIndex( "suit_empty" ) );
@@ -138,14 +151,6 @@ int CHudBattery::Draw( float flTime )
 	}
 
 	x += ( m_prc1->right - m_prc1->left );
-
-	// Keep the original suit charge graphic, but optionally replace its
-	// bitmap-font number with the shared OCR-B VGUI readout.
-	if( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f &&
-		HUD_VGuiSuitUpdate( m_iBat, r, g, b, x, y + gHUD.m_iHudNumbersYOffset ) )
-		return 1;
-
-	HUD_VGuiSuitSetVisible( 0 );
 	x = gHUD.DrawHudNumber( x, y + gHUD.m_iHudNumbersYOffset, DHN_3DIGITS | DHN_DRAWZERO, m_iBat, r, g, b );
 
 	return 1;
