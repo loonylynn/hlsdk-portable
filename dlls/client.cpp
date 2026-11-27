@@ -40,6 +40,7 @@
 #include "netadr.h"
 #include "pm_shared.h"
 #include "xash_physint.h"
+#include "env_fog.h"
 
 extern DLL_GLOBAL ULONG		g_ulModelIndexPlayer;
 extern DLL_GLOBAL BOOL		g_fGameOver;
@@ -199,6 +200,7 @@ void ClientPutInServer( edict_t *pEntity )
 
 	// Allocate a CBasePlayer for pev, and call spawn
 	pPlayer->Spawn();
+	EnvFog_SendToClient( pEntity );
 
 	// Reset interpolation during first frame
 	pPlayer->pev->effects |= EF_NOINTERP;
