@@ -37,6 +37,7 @@ extern "C"
 #include "xash_render_api.h"
 #include "weapon_json.h"
 #include "weapon_registry.h"
+#include "env_fog.h"
 
 cl_enginefunc_t gEngfuncs;
 CHud gHUD;
@@ -318,6 +319,7 @@ so the HUD can reinitialize itself.
 int DLLEXPORT HUD_VidInit( void )
 {
 	gHUD.VidInit();
+	EnvFog_Apply();
 
 	VGui_Startup();
 
@@ -338,6 +340,7 @@ void DLLEXPORT HUD_Init( void )
 {
 	InitInput();
 	gHUD.Init();
+	EnvFog_Clear();
 	Scheme_Init();
 }
 
