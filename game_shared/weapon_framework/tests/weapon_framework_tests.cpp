@@ -391,7 +391,7 @@ namespace
 		restored.loadedAmmo = -2;
 		CHECK(!restored.IsValid());
 		restored.Reset(5);
-		restored.nextPrimaryAttackTime = 100000001.0f;
+		restored.nextPrimaryAttackTime = 100000016.0f;
 		CHECK(!restored.IsValid());
 	}
 
