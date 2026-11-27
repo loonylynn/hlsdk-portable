@@ -283,7 +283,6 @@ int CHudAmmo::Init( void )
 
 	CVAR_CREATE( "hud_drawhistory_time", HISTORY_DRAW_TIME, 0 );
 	CVAR_CREATE( "hud_fastswitch", "0", FCVAR_ARCHIVE );
-	CVAR_CREATE( "hud_vgui_ammo", "0", FCVAR_ARCHIVE ); // opt-in VGUI primary ammo readout
 
 	m_iFlags |= HUD_ACTIVE; //!!!
 
@@ -911,7 +910,7 @@ int CHudAmmo::Draw( float flTime )
 	if( m_pWeapon->iAmmoType > 0 )
 	{
 		int iIconWidth = m_pWeapon->rcAmmo.right - m_pWeapon->rcAmmo.left;
-		bool useVGuiAmmo = ( CVAR_GET_FLOAT( "hud_vgui_ammo" ) != 0.0f );
+		bool useVGuiAmmo = ( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f );
 
 		if( pw->iClip >= 0 )
 		{
