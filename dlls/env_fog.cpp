@@ -49,8 +49,8 @@ static void EnvFog_WriteState( int destination, edict_t *pClient )
 		WRITE_BYTE( g_EnvFogState.color[0] );
 		WRITE_BYTE( g_EnvFogState.color[1] );
 		WRITE_BYTE( g_EnvFogState.color[2] );
-		WRITE_COORD( g_EnvFogState.startDistance );
-		WRITE_COORD( g_EnvFogState.endDistance );
+		WRITE_LONG( (int)( g_EnvFogState.startDistance * 8.0f + 0.5f ) );
+		WRITE_LONG( (int)( g_EnvFogState.endDistance * 8.0f + 0.5f ) );
 		WRITE_LONG( (int)( g_EnvFogState.density * 1000000.0f + 0.5f ) );
 		WRITE_BYTE( (int)( EnvFog_Clamp( g_EnvFogState.maxDensity, 0.0f, 1.0f ) * 255.0f + 0.5f ) );
 		WRITE_BYTE( ( g_EnvFogState.radial ? ENV_FOG_FLAG_RADIAL : 0 ) |
