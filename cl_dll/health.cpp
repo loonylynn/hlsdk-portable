@@ -26,6 +26,7 @@
 #include "hud_vgui.h"
 #include "const.h"
 #include "cl_util.h"
+#include "hud_digital.h"
 #include "cl_entity.h"
 #include "parsemsg.h"
 #include "../engine/keydefs.h"
@@ -185,6 +186,7 @@ int CHudHealth::Init( void )
 	gEngfuncs.pfnAddCommand( "hud_auxpower_report", AuxPower_ReportCommand );
 	m_iHealth = 100;
 	m_fFade = 0;
+	m_flDigitalFlashRemaining = 0.0f;
 	g_flAuxHudVisibility = 0.0f;
 	m_iFlags = 0;
 	m_bitsDamage = 0;
@@ -201,6 +203,7 @@ int CHudHealth::Init( void )
 void CHudHealth::Reset( void )
 {
 	g_flAuxHudVisibility = 0.0f;
+	m_flDigitalFlashRemaining = 0.0f;
 
 	// make sure the pain compass is cleared when the player respawns
 	m_fAttackFront = m_fAttackRear = m_fAttackRight = m_fAttackLeft = 0;
@@ -241,6 +244,7 @@ int CHudHealth::MsgFunc_Health( const char *pszName, int iSize, void *pbuf )
 	if( x != m_iHealth )
 	{
 		m_fFade = FADE_TIME;
+		m_flDigitalFlashRemaining = HUD_DIGITAL_FADE_DURATION;
 		m_iHealth = x;
 	}
 
@@ -940,7 +944,7 @@ int CHudHealth::Draw( float flTime )
 	int a = 0, x, y;
 	int HealthWidth;
 
-	if( ( gHUD.m_iHideHUDDisplay & HIDEHUD_HEALTH ) || gEngfuncs.IsSpectateOnly() )
+	if( ( gHUD.m_iHideHUDDisplay & ( HIDEHUD_HEALTH | HIDEHUD_ALL ) ) || gEngfuncs.IsSpectateOnly() )
 	{
 		HUD_VGuiHealthSetVisible( 0 );
 		return 1;
@@ -949,7 +953,8 @@ int CHudHealth::Draw( float flTime )
 	if( !m_hSprite )
 		m_hSprite = LoadSprite( PAIN_NAME );
 
-	// Has health changed? Flash the health #
+	// Keep the original fade path for the optional VGUI HUD. The sprite HUD
+	// has its own short, independently-tuned digital-display flash.
 	if( m_fFade )
 	{
 		m_fFade -= ( (float)gHUD.m_flTimeDelta * 20.0f );
@@ -959,30 +964,32 @@ int CHudHealth::Draw( float flTime )
 			m_fFade = 0;
 		}
 
-		// Fade the health number back to dim
 		a = MIN_ALPHA + ( m_fFade / FADE_TIME ) * 128;
 	}
 	else
 		a = MIN_ALPHA;
 
-	// If health is getting low, make it bright red
-	if( m_iHealth <= 15 )
+	if( m_iHealth <= HUD_DIGITAL_LOW_HEALTH_THRESHOLD )
 		a = 255;
 
 	GetPainColor( r, g, b );
 	ScaleColors( r, g, b, a );
 
+	const int digitalAlpha = HUD_DigitalGetFlashAlpha(
+		m_flDigitalFlashRemaining, (float)gHUD.m_flTimeDelta );
+
 	// Only draw health if we have the suit.
 	if( ( (unsigned int)gHUD.m_iWeaponBits & ( 1u << WEAPON_SUIT ) ) != 0 )
 	{
-		HealthWidth = gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).right - gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left;
-		int CrossWidth = gHUD.GetSpriteRect( m_HUD_cross ).right - gHUD.GetSpriteRect( m_HUD_cross ).left;
+		HealthWidth = gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).right -
+			gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left;
+		int CrossWidth = gHUD.GetSpriteRect( m_HUD_cross ).right -
+			gHUD.GetSpriteRect( m_HUD_cross ).left;
 
 		y = ScreenHeight - gHUD.m_iFontHeight - gHUD.m_iFontHeight / 2;
 		x = CrossWidth + HealthWidth / 2;
 
-		// Keep the legacy sprite renderer as a fallback. The VGUI label receives
-		// the same health value, RGB fade and number anchor as the original HUD.
+		// Keep the optional VGUI HUD on its original colour/fade path.
 		if( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f &&
 			HUD_VGuiHealthUpdate( m_iHealth, r, g, b, x, y + gHUD.m_iHudNumbersYOffset ) )
 		{
@@ -991,22 +998,38 @@ int CHudHealth::Draw( float flTime )
 		else
 		{
 			HUD_VGuiHealthSetVisible( 0 );
-			x = CrossWidth / 2;
-			SPR_Set( gHUD.GetSprite( m_HUD_cross ), r, g, b );
-			SPR_DrawAdditive( 0, x, y, &gHUD.GetSpriteRect( m_HUD_cross ) );
+
+			int displayR, displayG, displayB;
+			GetPainColor( displayR, displayG, displayB );
+
+			// Critical health bypasses the normal fade and remains solid red.
+			int displayAlpha = digitalAlpha;
+			if( m_iHealth <= HUD_DIGITAL_LOW_HEALTH_THRESHOLD )
+			{
+				m_flDigitalFlashRemaining = 0.0f;
+				displayR = 255;
+				displayG = 0;
+				displayB = 0;
+				displayAlpha = HUD_DIGITAL_FLASH_ALPHA;
+			}
+
+			int crossR = displayR;
+			int crossG = displayG;
+			int crossB = displayB;
+			HUD_DigitalScaleColor( crossR, crossG, crossB, displayAlpha );
+
+			// Cross icon, followed by three dim ghost slots and the live digits.
+			SPR_Set( gHUD.GetSprite( m_HUD_cross ), crossR, crossG, crossB );
+			SPR_DrawAdditive( 0, CrossWidth / 2, y, &gHUD.GetSpriteRect( m_HUD_cross ) );
 
 			x = CrossWidth + HealthWidth / 2;
-			x = gHUD.DrawHudNumber( x, y + gHUD.m_iHudNumbersYOffset, DHN_3DIGITS | DHN_DRAWZERO, m_iHealth, r, g, b );
-			x += HealthWidth / 2;
-
-			int iHeight = gHUD.m_iFontHeight;
-			int iWidth = HealthWidth / 10;
-			UnpackRGB( r, g, b, RGB_YELLOWISH );
-			FillRGBA( x, y + gHUD.m_iHudNumbersYOffset, iWidth, iHeight, r, g, b, a );
+			HUD_DigitalDrawNumber( x, y + gHUD.m_iHudNumbersYOffset,
+				m_iHealth, displayR, displayG, displayB, displayAlpha );
 		}
 
 		// Use the post-prediction local state, which contains the
 		// movement DLL's final fuser4 value for this user command.
+		// The established AUX POWER sprite meter is intentionally unchanged.
 		float flAuxPower = ( g_flHL2AuxPowerPostRun >= 0.0f ) ?
 			g_flHL2AuxPowerPostRun : g_flHL2AuxPower;
 		DrawAuxPowerMeter( flAuxPower );

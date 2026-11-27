@@ -392,6 +392,7 @@ private:
 	wrect_t *m_prc2;
 	int m_iBat;
 	float m_fFade;
+	float m_flDigitalFlashRemaining;
 	int m_iHeight;		// width of the battery innards
 };
 

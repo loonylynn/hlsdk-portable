@@ -113,6 +113,7 @@ public:
 	float m_fAttackFront, m_fAttackRear, m_fAttackLeft, m_fAttackRight;
 	void GetPainColor( int &r, int &g, int &b );
 	float m_fFade;
+	float m_flDigitalFlashRemaining;
 
 private:
 	HSPRITE m_hSprite;
