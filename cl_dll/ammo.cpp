@@ -924,7 +924,7 @@ int CHudAmmo::Draw( float flTime )
 					iBarWidth + AmmoWidth / 2 + ( 3 * AmmoWidth );
 
 				if( !HUD_VGuiAmmoUpdate( pw->iClip, gWR.CountAmmo( pw->iAmmoType ),
-					1, r, g, b, x, y ) )
+					1, r, g, b, x + iIconWidth, y ) )
 					useVGuiAmmo = false;
 			}
 
@@ -955,7 +955,7 @@ int CHudAmmo::Draw( float flTime )
 			{
 				x = numberStartX + ( 3 * AmmoWidth );
 				if( !HUD_VGuiAmmoUpdate( 0, gWR.CountAmmo( pw->iAmmoType ),
-					0, r, g, b, x, y ) )
+					0, r, g, b, x + iIconWidth, y ) )
 					useVGuiAmmo = false;
 			}
 
@@ -967,10 +967,14 @@ int CHudAmmo::Draw( float flTime )
 			}
 		}
 
-		// Keep the weapon-specific ammo icon in the original HUD renderer.
-		int iOffset = ( m_pWeapon->rcAmmo.bottom - m_pWeapon->rcAmmo.top ) / 8;
-		SPR_Set( m_pWeapon->hAmmo, r, g, b );
-		SPR_DrawAdditive( 0, x, y - iOffset, &m_pWeapon->rcAmmo );
+		// The VGUI readout replaces the primary ammo icon as well as its numbers.
+		// In sprite mode, retain the original weapon-specific icon.
+		if( !useVGuiAmmo )
+		{
+			int iOffset = ( m_pWeapon->rcAmmo.bottom - m_pWeapon->rcAmmo.top ) / 8;
+			SPR_Set( m_pWeapon->hAmmo, r, g, b );
+			SPR_DrawAdditive( 0, x, y - iOffset, &m_pWeapon->rcAmmo );
+		}
 	}
 	else
 	{
