@@ -51,6 +51,14 @@ int CHudBattery::VidInit( void )
 	m_hSprite1 = m_hSprite2 = 0;  // delaying get sprite handles until we know the sprites are loaded
 	m_prc1 = &gHUD.GetSpriteRect( HUD_suit_empty );
 	m_prc2 = &gHUD.GetSpriteRect( HUD_suit_full );
+
+	// Cache the same inactive digit resources used by the reference HUD.
+	m_HUD_DigitsBG1 = gHUD.GetSpriteIndex( "number_dull1" );
+	m_HUD_DigitsBG2 = gHUD.GetSpriteIndex( "number_dull2" );
+	m_hDigitsBG1 = ( m_HUD_DigitsBG1 >= 0 ) ? gHUD.GetSprite( m_HUD_DigitsBG1 ) : 0;
+	m_hDigitsBG2 = ( m_HUD_DigitsBG2 >= 0 ) ? gHUD.GetSprite( m_HUD_DigitsBG2 ) : 0;
+	m_prcDigitsBG1 = ( m_HUD_DigitsBG1 >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_DigitsBG1 ) : NULL;
+	m_prcDigitsBG2 = ( m_HUD_DigitsBG2 >= 0 ) ? &gHUD.GetSpriteRect( m_HUD_DigitsBG2 ) : NULL;
 	m_iHeight = m_prc2->bottom - m_prc1->top;
 	m_fFade = 0;
 	m_flDigitalFlashRemaining = 0.0f;
@@ -176,7 +184,8 @@ int CHudBattery::Draw( float flTime )
 	}
 
 	HUD_DigitalDrawNumber( x, y + gHUD.m_iHudNumbersYOffset,
-		batteryValue, displayR, displayG, displayB, digitalAlpha );
+		batteryValue, displayR, displayG, displayB, digitalAlpha,
+		m_HUD_DigitsBG1, m_HUD_DigitsBG2 );
 
 	return 1;
 }
