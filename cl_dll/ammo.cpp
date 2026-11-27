@@ -20,6 +20,7 @@
 
 #include "hud.h"
 #include "cl_util.h"
+#include "hud_vgui.h"
 #include "parsemsg.h"
 #include "pm_shared.h"
 
@@ -281,7 +282,8 @@ int CHudAmmo::Init( void )
 	Reset();
 
 	CVAR_CREATE( "hud_drawhistory_time", HISTORY_DRAW_TIME, 0 );
-	CVAR_CREATE( "hud_fastswitch", "0", FCVAR_ARCHIVE );		// controls whether or not weapons can be selected in one keypress
+	CVAR_CREATE( "hud_fastswitch", "0", FCVAR_ARCHIVE );
+	CVAR_CREATE( "hud_vgui_ammo", "0", FCVAR_ARCHIVE );		// controls whether or not weapons can be selected in one keypress
 
 	m_iFlags |= HUD_ACTIVE; //!!!
 
@@ -850,10 +852,16 @@ int CHudAmmo::Draw( float flTime )
 	int AmmoWidth;
 
 	if( !( gHUD.m_iWeaponBits & ( 1 << ( WEAPON_SUIT ) ) ) )
+	{
+		HUD_VGuiAmmoSetVisible( 0 );
 		return 1;
+	}
 
 	if( ( gHUD.m_iHideHUDDisplay & ( HIDEHUD_WEAPONS | HIDEHUD_ALL ) ) )
+	{
+		HUD_VGuiAmmoSetVisible( 0 );
 		return 1;
+	}
 
 	// Draw Weapon Menu
 	DrawWList( flTime );
@@ -862,16 +870,25 @@ int CHudAmmo::Draw( float flTime )
 	gHR.DrawAmmoHistory( flTime );
 
 	if( !( m_iFlags & HUD_ACTIVE ) )
+	{
+		HUD_VGuiAmmoSetVisible( 0 );
 		return 0;
+	}
 
 	if( !m_pWeapon )
+	{
+		HUD_VGuiAmmoSetVisible( 0 );
 		return 0;
+	}
 
 	WEAPON *pw = m_pWeapon; // shorthand
 
 	// SPR_Draw Ammo
 	if( ( pw->iAmmoType < 0 ) && ( pw->iAmmo2Type < 0 ) )
+	{
+		HUD_VGuiAmmoSetVisible( 0 );
 		return 0;
+	}
 
 	int iFlags = DHN_DRAWZERO; // draw 0 values
 
@@ -894,45 +911,71 @@ int CHudAmmo::Draw( float flTime )
 	if( m_pWeapon->iAmmoType > 0 )
 	{
 		int iIconWidth = m_pWeapon->rcAmmo.right - m_pWeapon->rcAmmo.left;
+		bool useVGuiAmmo = ( CVAR_GET_FLOAT( "hud_vgui_ammo" ) != 0.0f );
 
 		if( pw->iClip >= 0 )
 		{
-			// room for the number and the '|' and the current ammo
-			x = ScreenWidth - ( 8 * AmmoWidth ) - iIconWidth;
-			x = gHUD.DrawHudNumber( x, y, iFlags | DHN_3DIGITS, pw->iClip, r, g, b );
+			int numberStartX = ScreenWidth - ( 8 * AmmoWidth ) - iIconWidth;
+			int iBarWidth = AmmoWidth / 10;
 
-			/*wrect_t rc;
-			rc.top = 0;
-			rc.left = 0;
-			rc.right = AmmoWidth;
-			rc.bottom = 100;*/
+			if( useVGuiAmmo )
+			{
+				// Calculate the original icon anchor without drawing the bitmap numbers.
+				x = numberStartX + ( 3 * AmmoWidth ) + AmmoWidth / 2 +
+					iBarWidth + AmmoWidth / 2 + ( 3 * AmmoWidth );
 
-			int iBarWidth =  AmmoWidth / 10;
+				if( !HUD_VGuiAmmoUpdate( pw->iClip, gWR.CountAmmo( pw->iAmmoType ),
+					1, r, g, b, x, y ) )
+					useVGuiAmmo = false;
+			}
 
-			x += AmmoWidth / 2;
+			if( !useVGuiAmmo )
+			{
+				HUD_VGuiAmmoSetVisible( 0 );
+				x = gHUD.DrawHudNumber( numberStartX, y, iFlags | DHN_3DIGITS, pw->iClip, r, g, b );
 
-			UnpackRGB( r,g,b, RGB_YELLOWISH );
+				x += AmmoWidth / 2;
 
-			// draw the | bar
-			FillRGBA( x, y, iBarWidth, gHUD.m_iFontHeight, r, g, b, a );
+				UnpackRGB( r, g, b, RGB_YELLOWISH );
 
-			x += iBarWidth + AmmoWidth / 2;
+				// draw the | bar
+				FillRGBA( x, y, iBarWidth, gHUD.m_iFontHeight, r, g, b, a );
 
-			// GL Seems to need this
-			ScaleColors( r, g, b, a );
-			x = gHUD.DrawHudNumber( x, y, iFlags | DHN_3DIGITS, gWR.CountAmmo( pw->iAmmoType ), r, g, b );
+				x += iBarWidth + AmmoWidth / 2;
+
+				// GL Seems to need this
+				ScaleColors( r, g, b, a );
+				x = gHUD.DrawHudNumber( x, y, iFlags | DHN_3DIGITS, gWR.CountAmmo( pw->iAmmoType ), r, g, b );
+			}
 		}
 		else
 		{
-			// SPR_Draw a bullets only line
-			x = ScreenWidth - 4 * AmmoWidth - iIconWidth;
-			x = gHUD.DrawHudNumber( x, y, iFlags | DHN_3DIGITS, gWR.CountAmmo( pw->iAmmoType ), r, g, b );
+			int numberStartX = ScreenWidth - ( 4 * AmmoWidth ) - iIconWidth;
+
+			if( useVGuiAmmo )
+			{
+				x = numberStartX + ( 3 * AmmoWidth );
+				if( !HUD_VGuiAmmoUpdate( 0, gWR.CountAmmo( pw->iAmmoType ),
+					0, r, g, b, x, y ) )
+					useVGuiAmmo = false;
+			}
+
+			if( !useVGuiAmmo )
+			{
+				HUD_VGuiAmmoSetVisible( 0 );
+				x = gHUD.DrawHudNumber( numberStartX, y,
+					iFlags | DHN_3DIGITS, gWR.CountAmmo( pw->iAmmoType ), r, g, b );
+			}
 		}
 
-		// Draw the ammo Icon
+		// Keep the weapon-specific ammo icon in the original HUD renderer.
 		int iOffset = ( m_pWeapon->rcAmmo.bottom - m_pWeapon->rcAmmo.top ) / 8;
 		SPR_Set( m_pWeapon->hAmmo, r, g, b );
 		SPR_DrawAdditive( 0, x, y - iOffset, &m_pWeapon->rcAmmo );
+	}
+	else
+	{
+		HUD_VGuiAmmoSetVisible( 0 );
 	}
 
 	// Does weapon have seconday ammo?
@@ -955,7 +998,6 @@ int CHudAmmo::Draw( float flTime )
 	}
 	return 1;
 }
-
 //
 // Draws the ammo bar on the hud
 //
