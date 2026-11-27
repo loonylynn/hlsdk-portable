@@ -1,8 +1,8 @@
 @PointClass base(Targetname) color(128 160 192) = env_fog : "Map-wide atmospheric fog controller. Only one env_fog controller is active at a time. Inputs accept USE_ON, USE_OFF and USE_TOGGLE activations."
 [
 	fogcolor(color255) : "Fog color (RGB)" : "128 128 128"
-	startdist(integer) : "Fog start distance" : "0"
-	enddist(integer) : "Fog end distance" : "3500"
+	startdist(float) : "Fog start distance" : "0"
+	enddist(float) : "Fog end distance" : "3500"
 	density(float) : "Exponential density curve" : "0.0003"
 	maxdensity(float) : "Maximum fog opacity (0-1)" : "1.0"
 	radial(choices) : "Radial distance" : 1 =
