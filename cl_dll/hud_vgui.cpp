@@ -35,6 +35,8 @@ public:
 			return;
 
 		m_pBase->getCharABCwide( ch, a, b, c );
+		(void)a;
+		(void)c;
 		sourceTall = m_pBase->getTall();
 
 		if( b <= 0 || sourceTall <= 0 )
@@ -214,8 +216,6 @@ int g_iLastHealth = -1;
 int g_iLastRed = -1;
 int g_iLastGreen = -1;
 int g_iLastBlue = -1;
-int g_iLastX = -1;
-int g_iLastY = -1;
 
 void HUD_VGuiHealthResetCache( void )
 {
@@ -223,8 +223,6 @@ void HUD_VGuiHealthResetCache( void )
 	g_iLastRed = -1;
 	g_iLastGreen = -1;
 	g_iLastBlue = -1;
-	g_iLastX = -1;
-	g_iLastY = -1;
 }
 
 }
@@ -384,8 +382,6 @@ int HUD_VGuiHealthUpdate( int health, int red, int green, int blue, int x, int y
 		g_pHudHealthPanel->setPos( panelX, panelY );
 		changed = true;
 	}
-	g_iLastX = x;
-	g_iLastY = y;
 
 	if( !g_pHudHealthPanel->isVisible() )
 	{
