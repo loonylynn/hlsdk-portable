@@ -97,6 +97,29 @@ namespace WeaponFramework
 			actionEndTime = 0.0f;
 			actionSequence = 0;
 		}
+
+		// Save data is versioned and validated before an adapter trusts it.
+		// Bounded comparisons also reject NaN and infinite time values.
+		bool IsValid() const
+		{
+			const float timeLimit = 100000000.0f;
+			return version == CurrentVersion &&
+				lifecycle >= WeaponLifecycleUnowned &&
+				lifecycle <= WeaponLifecycleBusy &&
+				reload >= WeaponReloadNone &&
+				reload <= WeaponReloadInterrupted &&
+				loadedAmmo >= -1 &&
+				nextPrimaryAttackTime >= -timeLimit &&
+				nextPrimaryAttackTime <= timeLimit &&
+				nextSecondaryAttackTime >= -timeLimit &&
+				nextSecondaryAttackTime <= timeLimit &&
+				nextIdleTime >= -timeLimit &&
+				nextIdleTime <= timeLimit &&
+				actionStartTime >= -timeLimit &&
+				actionStartTime <= timeLimit &&
+				actionEndTime >= -timeLimit &&
+				actionEndTime <= timeLimit;
+		}
 	};
 }
 
