@@ -21,6 +21,7 @@
 #include "hud.h"
 #include "cl_util.h"
 #include "hud_vgui.h"
+#include "hud_digital.h"
 #include "parsemsg.h"
 #include "pm_shared.h"
 
