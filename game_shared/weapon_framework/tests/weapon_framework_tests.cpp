@@ -349,6 +349,52 @@ namespace
 
 
 
+	void TestWeaponInstanceStateValidation()
+	{
+		WeaponInstanceState state;
+		CHECK(state.IsValid());
+
+		state.Reset(17);
+		CHECK(state.IsValid());
+		CHECK(state.version == WeaponInstanceState::CurrentVersion);
+		CHECK(state.lifecycle == WeaponLifecycleHolstered);
+		CHECK(state.reload == WeaponReloadNone);
+		CHECK(state.loadedAmmo == 17);
+
+		state.lifecycle = WeaponLifecycleReady;
+		state.reload = WeaponReloadInProgress;
+		state.loadedAmmo = 9;
+		state.nextPrimaryAttackTime = 12.5f;
+		state.actionStartTime = 12.0f;
+		state.actionEndTime = 12.75f;
+		state.actionSequence = 42;
+
+		// The same state copy used by an entity save/restore adapter must
+		// preserve the values and remain valid.
+		WeaponInstanceState restored = state;
+		CHECK(restored.IsValid());
+		CHECK(restored.lifecycle == WeaponLifecycleReady);
+		CHECK(restored.reload == WeaponReloadInProgress);
+		CHECK(restored.loadedAmmo == 9);
+		CHECK(restored.nextPrimaryAttackTime == 12.5f);
+		CHECK(restored.actionSequence == 42);
+
+		restored.version = 0;
+		CHECK(!restored.IsValid());
+		restored.Reset(5);
+		restored.lifecycle = (WeaponLifecycleState)99;
+		CHECK(!restored.IsValid());
+		restored.Reset(5);
+		restored.reload = (WeaponReloadState)99;
+		CHECK(!restored.IsValid());
+		restored.Reset(5);
+		restored.loadedAmmo = -2;
+		CHECK(!restored.IsValid());
+		restored.Reset(5);
+		restored.nextPrimaryAttackTime = 100000001.0f;
+		CHECK(!restored.IsValid());
+	}
+
 	void TestLegacyMetadataWithSpacedAmmoNames()
 	{
 		WeaponDefinition definition;
@@ -550,6 +596,7 @@ namespace
 int main()
 {
 	TestDefinitionParsing();
+	TestWeaponInstanceStateValidation();
 	TestLegacyMetadataWithSpacedAmmoNames();
 	TestHitscanBehaviorParsing();
 	TestNativeBehaviorContracts();
