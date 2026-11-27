@@ -987,11 +987,11 @@ int CHudHealth::Draw( float flTime )
 			gHUD.GetSpriteRect( m_HUD_cross ).left;
 
 		y = ScreenHeight - gHUD.m_iFontHeight - gHUD.m_iFontHeight / 2;
-		x = CrossWidth + HealthWidth / 2;
+		const int vguiX = CrossWidth + HealthWidth / 2;
 
-		// Keep the optional VGUI HUD on its original colour/fade path.
+		// Keep the optional VGUI HUD on its original colour/fade path and anchor.
 		if( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f &&
-			HUD_VGuiHealthUpdate( m_iHealth, r, g, b, x, y + gHUD.m_iHudNumbersYOffset ) )
+			HUD_VGuiHealthUpdate( m_iHealth, r, g, b, vguiX, y + gHUD.m_iHudNumbersYOffset ) )
 		{
 			// VGUI owns the health number while the option is enabled.
 		}
@@ -1013,16 +1013,18 @@ int CHudHealth::Draw( float flTime )
 				displayAlpha = HUD_DIGITAL_FLASH_ALPHA;
 			}
 
+			// Match the reference sprite layout: the cross sits directly above
+			// the left edge of the three digit slots, not beside the number.
+			x = CrossWidth / 2;
+
 			int crossR = displayR;
 			int crossG = displayG;
 			int crossB = displayB;
 			HUD_DigitalScaleColor( crossR, crossG, crossB, displayAlpha );
 
-			// Cross icon, followed by three dim ghost slots and the live digits.
 			SPR_Set( gHUD.GetSprite( m_HUD_cross ), crossR, crossG, crossB );
-			SPR_DrawAdditive( 0, CrossWidth / 2, y, &gHUD.GetSpriteRect( m_HUD_cross ) );
+			SPR_DrawAdditive( 0, x, y - 10, &gHUD.GetSpriteRect( m_HUD_cross ) );
 
-			x = CrossWidth + HealthWidth / 2;
 			HUD_DigitalDrawNumber( x, y + gHUD.m_iHudNumbersYOffset,
 				m_iHealth, displayR, displayG, displayB, displayAlpha );
 		}
