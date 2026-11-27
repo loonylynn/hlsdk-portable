@@ -20,6 +20,7 @@
 
 #include "hud.h"
 #include "cl_util.h"
+#include "hud_vgui.h"
 #include "parsemsg.h"
 
 #include <string.h>
@@ -31,6 +32,7 @@ int CHudBattery::Init( void )
 {
 	m_iBat = 0;
 	m_fFade = 0;
+	CVAR_CREATE( "hud_vgui_suit", "0", FCVAR_ARCHIVE );
 	m_iFlags = 0;
 
 	HOOK_MESSAGE( Battery );
@@ -72,7 +74,10 @@ int CHudBattery::MsgFunc_Battery( const char *pszName,  int iSize, void *pbuf )
 int CHudBattery::Draw( float flTime )
 {
 	if( gHUD.m_iHideHUDDisplay & HIDEHUD_HEALTH )
+	{
+		HUD_VGuiSuitSetVisible( 0 );
 		return 1;
+	}
 
 	int r, g, b, x, y, a;
 	wrect_t rc;
@@ -83,7 +88,10 @@ int CHudBattery::Draw( float flTime )
 	UnpackRGB( r, g, b, RGB_YELLOWISH );
 
 	if( !( gHUD.m_iWeaponBits & ( 1 << ( WEAPON_SUIT ) ) ) )
+	{
+		HUD_VGuiSuitSetVisible( 0 );
 		return 1;
+	}
 
 	// Has health changed? Flash the health #
 	if( m_fFade )
@@ -131,6 +139,14 @@ int CHudBattery::Draw( float flTime )
 	}
 
 	x += ( m_prc1->right - m_prc1->left );
+
+	// Keep the original suit charge graphic, but optionally replace its
+	// bitmap-font number with the shared OCR-B VGUI readout.
+	if( CVAR_GET_FLOAT( "hud_vgui_suit" ) != 0.0f &&
+		HUD_VGuiSuitUpdate( m_iBat, r, g, b, x, y + gHUD.m_iHudNumbersYOffset ) )
+		return 1;
+
+	HUD_VGuiSuitSetVisible( 0 );
 	x = gHUD.DrawHudNumber( x, y + gHUD.m_iHudNumbersYOffset, DHN_3DIGITS | DHN_DRAWZERO, m_iBat, r, g, b );
 
 	return 1;
