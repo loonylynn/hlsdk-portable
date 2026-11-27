@@ -423,6 +423,7 @@ void CFrameworkWeapon::SyncRuntimeStateFromLegacy(void)
 	if (m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleUnowned ||
 		m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleDeploying ||
 		m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleReloading ||
+		(m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleHolstered && activeWeapon) ||
 		((m_runtimeState.lifecycle == WeaponFramework::WeaponLifecyclePrimaryAction ||
 		  m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleSecondaryAction ||
 		  m_runtimeState.lifecycle == WeaponFramework::WeaponLifecycleBusy) &&
