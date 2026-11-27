@@ -66,9 +66,11 @@ int CHudAmmoSecondary::Draw( float flTime )
 		m_fFade -= ( (float)gHUD.m_flTimeDelta * 20.0f );  // slowly lower alpha to fade out icons
 	ScaleColors( r, g, b, a );
 
-	AmmoWidth = gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).right - gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).left;
+	const int smallBase = ( gHUD.m_HUD_number_sm_0 >= 0 ) ?
+		gHUD.m_HUD_number_sm_0 : gHUD.m_HUD_number_0;
+	AmmoWidth = gHUD.GetSpriteRect( smallBase ).right - gHUD.GetSpriteRect( smallBase ).left;
 
-	y = ScreenHeight - ( gHUD.m_iFontHeight * 4 );  // this is one font height higher than the weapon ammo values
+	y = ScreenHeight - ( gHUD.m_iFontHeight * 4 ) + gHUD.m_iHudNumbersYOffset;
 	x = ScreenWidth - AmmoWidth;
 
 	if( m_HUD_ammoicon )
@@ -84,7 +86,7 @@ int CHudAmmoSecondary::Draw( float flTime )
 	{
 		// move the cursor by the '0' char instead, since we don't have an icon to work with
 		x -= AmmoWidth;
-		y -= ( gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).top - gHUD.GetSpriteRect( gHUD.m_HUD_number_0 ).bottom );
+		y -= ( gHUD.GetSpriteRect( smallBase ).top - gHUD.GetSpriteRect( smallBase ).bottom );
 	}
 
 	// draw the ammo counts, in reverse order, from right to left
@@ -97,8 +99,8 @@ int CHudAmmoSecondary::Draw( float flTime )
 		x -= ( AmmoWidth / 2 );
 
 		// draw the number, right-aligned
-		x -= ( gHUD.GetNumWidth( m_iAmmoAmounts[i], DHN_DRAWZERO ) * AmmoWidth );
-		gHUD.DrawHudNumber( x, y, DHN_DRAWZERO, m_iAmmoAmounts[i], r, g, b );
+		x -= ( gHUD.GetNumWidth( m_iAmmoAmounts[i], DHN_DRAWZERO_SM ) * AmmoWidth );
+		gHUD.DrawHudNumberSm( x, y, DHN_DRAWZERO_SM, m_iAmmoAmounts[i], r, g, b );
 
 		if( i != 0 )
 		{
