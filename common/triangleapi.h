@@ -33,6 +33,14 @@ typedef enum
 #define TRI_QUAD_STRIP	6
 #define TRI_POINTS		7	// Xash3D added
 
+// Extended Xash3D fog parameters. These flags are packed into the existing
+// FogParams second argument, preserving the Triangle API structure and ABI.
+#define TRI_FOG_PARAMS_SKYBOX                0x00000001
+#define TRI_FOG_PARAMS_RADIAL                0x00000002
+#define TRI_FOG_PARAMS_MAX_DENSITY_SHIFT     8
+#define TRI_FOG_PARAMS_MAX_DENSITY_MASK      0x0000FF00
+#define TRI_FOG_PARAMS_EXTENDED              0x40000000
+
 typedef struct triangleapi_s
 {
 	int	version;
