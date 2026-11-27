@@ -32,7 +32,6 @@ int CHudBattery::Init( void )
 {
 	m_iBat = 0;
 	m_fFade = 0;
-	CVAR_CREATE( "hud_vgui_suit", "0", FCVAR_ARCHIVE );
 	m_iFlags = 0;
 
 	HOOK_MESSAGE( Battery );
@@ -142,7 +141,7 @@ int CHudBattery::Draw( float flTime )
 
 	// Keep the original suit charge graphic, but optionally replace its
 	// bitmap-font number with the shared OCR-B VGUI readout.
-	if( CVAR_GET_FLOAT( "hud_vgui_suit" ) != 0.0f &&
+	if( CVAR_GET_FLOAT( "hud_vgui" ) != 0.0f &&
 		HUD_VGuiSuitUpdate( m_iBat, r, g, b, x, y + gHUD.m_iHudNumbersYOffset ) )
 		return 1;
 
