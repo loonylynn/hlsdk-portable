@@ -1594,7 +1594,7 @@ static float NPCPhysics_GetBulletImpactImpulse( int bulletType, BOOL playerBulle
 
 static void NPCPhysics_ApplyBulletImpact(
 	const Vector &start, const Vector &end, int bulletType,
-	BOOL playerBullet, TraceResult *trace )
+	BOOL playerBullet, edict_t *shooter, TraceResult *trace )
 {
 	if( !trace )
 		return;
@@ -1609,7 +1609,7 @@ static void NPCPhysics_ApplyBulletImpact(
 	edict_t *hitEntity = NULL;
 	if( NPCPhysics_TraceAndApplyImpact(
 		&start[0], &end[0], trace->flFraction, impulseMagnitude,
-		&hitFraction, hitPosition, &hitEntity ) )
+		&hitFraction, hitPosition, &hitEntity, shooter ) )
 	{
 		trace->flFraction = hitFraction;
 		trace->vecEndPos = Vector( hitPosition[0], hitPosition[1], hitPosition[2] );
@@ -1715,7 +1715,7 @@ void CBaseEntity::FireBullets( ULONG cShots, Vector vecSrc, Vector vecDirShootin
 		vecEnd = vecSrc + vecDir * flDistance;
 		UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, ENT( pev )/*pentIgnore*/, &tr );
 #ifndef CLIENT_DLL
-		NPCPhysics_ApplyBulletImpact( vecSrc, vecEnd, iBulletType, FALSE, &tr );
+		NPCPhysics_ApplyBulletImpact( vecSrc, vecEnd, iBulletType, FALSE, ENT(pev), &tr );
 #endif
 
 		tracer = 0;
@@ -1863,7 +1863,7 @@ Vector CBaseEntity::FireBulletsPlayer( ULONG cShots, Vector vecSrc, Vector vecDi
 		vecEnd = vecSrc + vecDir * flDistance;
 		UTIL_TraceLine( vecSrc, vecEnd, dont_ignore_monsters, ENT( pev )/*pentIgnore*/, &tr );
 #ifndef CLIENT_DLL
-		NPCPhysics_ApplyBulletImpact( vecSrc, vecEnd, iBulletType, TRUE, &tr );
+		NPCPhysics_ApplyBulletImpact( vecSrc, vecEnd, iBulletType, TRUE, ENT(pev), &tr );
 #endif
 
 		// do damage, paint decals

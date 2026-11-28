@@ -24,6 +24,7 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
@@ -69,6 +70,7 @@ namespace
 	static constexpr ObjectLayer BRUSH_KINEMATIC_OBJECT_LAYER = 2;
 	static constexpr ObjectLayer PUSHABLE_KINEMATIC_OBJECT_LAYER = 3;
 	static constexpr ObjectLayer MOVABLE_KINEMATIC_OBJECT_LAYER = 4;
+	static constexpr ObjectLayer PLAYER_KINEMATIC_OBJECT_LAYER = 5;
 	static constexpr uint32_t RAGDOLL_MAX_BODIES = 4096;
 	static constexpr uint32_t RAGDOLL_MAX_BODY_PAIRS = 8192;
 	static constexpr uint32_t RAGDOLL_MAX_CONTACT_CONSTRAINTS = 8192;
@@ -117,6 +119,8 @@ namespace
 	// Sampled on the main thread before each Jolt frame; declared before the
 	// contact listener that reads it during Jolt callbacks.
 	static bool g_npcPhysicsContactDebugEnabled = false;
+	// Updated from sv_npc_physics_static_corpses before each physics frame.
+	static bool g_npcPhysicsStaticCorpsesEnabled = true;
 
 	class RagdollBroadPhaseLayers final : public BroadPhaseLayerInterface
 	{
@@ -133,7 +137,9 @@ namespace
 			return layer == WORLD_STATIC_OBJECT_LAYER ||
 				layer == BRUSH_KINEMATIC_OBJECT_LAYER ||
 				layer == PUSHABLE_KINEMATIC_OBJECT_LAYER ||
-				layer == MOVABLE_KINEMATIC_OBJECT_LAYER;
+				layer == MOVABLE_KINEMATIC_OBJECT_LAYER ||
+				( !g_npcPhysicsStaticCorpsesEnabled &&
+					layer == PLAYER_KINEMATIC_OBJECT_LAYER );
 		}
 	};
 
@@ -144,9 +150,13 @@ namespace
 		{
 			// The world BSP and inline brush models are triangle meshes. Jolt
 			// does not support mesh-vs-mesh contacts when one mesh is kinematic.
-			// Living actors are represented by kinematic box hulls on the same
-			// layer. Only convex articulated ragdoll bodies need contacts with
-			// environment geometry or actor hulls.
+			// Player hulls use a dedicated layer so static-corpse mode can let
+			// players pass through corpses without disabling world/NPC contacts.
+			if( g_npcPhysicsStaticCorpsesEnabled &&
+				( ( layer1 == RAGDOLL_OBJECT_LAYER && layer2 == PLAYER_KINEMATIC_OBJECT_LAYER ) ||
+				  ( layer2 == RAGDOLL_OBJECT_LAYER && layer1 == PLAYER_KINEMATIC_OBJECT_LAYER ) ) )
+				return false;
+
 			return layer1 == RAGDOLL_OBJECT_LAYER || layer2 == RAGDOLL_OBJECT_LAYER;
 		}
 	};
@@ -289,6 +299,7 @@ namespace
 		bool wasMoving;
 		bool isPushable;
 		bool isMovableObject;
+		bool isPlayer;
 
 		NPCPhysicsActorCollider()
 			: entityIndex( -1 ),
@@ -299,7 +310,8 @@ namespace
 			  halfExtents( 0.0f, 0.0f, 0.0f ),
 			  wasMoving( false ),
 			  isPushable( false ),
-			  isMovableObject( false )
+			  isMovableObject( false ),
+			  isPlayer( false )
 		{
 		}
 	};
@@ -346,6 +358,7 @@ namespace
 		std::vector<Mat44> physicsPoseModelSpace;
 		std::vector<Mat44> studioPoseModelSpace;
 		bool addedToPhysicsSystem;
+		bool isStatic;
 
 		NPCPhysicsRagdoll()
 			: entity( NULL ),
@@ -376,7 +389,8 @@ namespace
 			  blastDebugRootStartPosition( 0.0f, 0.0f, 0.0f ),
 			  blastDebugTime( 0.0f ),
 			  blastDebugPending( false ),
-			  addedToPhysicsSystem( false )
+			  addedToPhysicsSystem( false ),
+			  isStatic( false )
 		{
 		}
 	};
@@ -1256,22 +1270,23 @@ namespace
 	static Ref<Shape> g_worldCollisionShape;
 	static bool g_worldCollisionReady = false;
 
-	static cvar_t g_svNpcVPhysics = { "sv_npc_vphysics", "1", FCVAR_SERVER | FCVAR_ARCHIVE };
-	static cvar_t g_svNpcVPhysicsMass = { "sv_npc_vphysics_mass", "0", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsBulletScale = { "sv_npc_vphysics_bullet_scale", "1.0", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsCrowbarScale = { "sv_npc_vphysics_crowbar_scale", "1.0", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsCrossbowScale = { "sv_npc_vphysics_crossbow_scale", "1.0", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsBlastScale = { "sv_npc_vphysics_blast_scale", "1.0", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsImpactDamageScale = { "sv_npc_vphysics_impact_damage_scale", "0.25", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsPlayerPushMass = { "sv_npc_vphysics_player_push_mass", "350", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsPlayerPushSpeed = { "sv_npc_vphysics_player_push_speed", "50", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsSleepAfterTime = { "sv_npc_vphysics_sleep_after_time", "5.0", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsMaxRagdolls = { "sv_npc_vphysics_max_ragdolls", "8", FCVAR_SERVER | FCVAR_ARCHIVE };
-	static cvar_t g_svNpcVPhysicsMaxImportantRagdolls = { "sv_npc_vphysics_max_important_ragdolls", "2", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsFadeOnRetire = { "sv_npc_vphysics_fade_on_retire", "1", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsLowViolence = { "sv_npc_vphysics_low_violence", "0", FCVAR_SERVER | FCVAR_ARCHIVE };
-	static cvar_t g_svNpcVPhysicsFadeTime = { "sv_npc_vphysics_fade_time", "2.0", FCVAR_SERVER };
-	static cvar_t g_svNpcVPhysicsDebug = { "sv_npc_vphysics_debug", "0", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysics = { "sv_npc_physics", "1", FCVAR_SERVER | FCVAR_ARCHIVE };
+	static cvar_t g_svNpcPhysicsMass = { "sv_npc_physics_mass", "0", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsBulletScale = { "sv_npc_physics_bullet_scale", "1.0", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsCrowbarScale = { "sv_npc_physics_crowbar_scale", "1.0", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsCrossbowScale = { "sv_npc_physics_crossbow_scale", "1.0", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsBlastScale = { "sv_npc_physics_blast_scale", "1.0", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsImpactDamageScale = { "sv_npc_physics_impact_damage_scale", "0.25", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsPlayerPushMass = { "sv_npc_physics_player_push_mass", "350", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsPlayerPushSpeed = { "sv_npc_physics_player_push_speed", "50", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsSleepAfterTime = { "sv_npc_physics_sleep_after_time", "5.0", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsStaticCorpses = { "sv_npc_physics_static_corpses", "1", FCVAR_SERVER | FCVAR_ARCHIVE };
+	static cvar_t g_svNpcPhysicsMaxRagdolls = { "sv_npc_physics_max_ragdolls", "8", FCVAR_SERVER | FCVAR_ARCHIVE };
+	static cvar_t g_svNpcPhysicsMaxImportantRagdolls = { "sv_npc_physics_max_important_ragdolls", "2", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsFadeOnRetire = { "sv_npc_physics_fade_on_retire", "1", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsLowViolence = { "sv_npc_physics_low_violence", "0", FCVAR_SERVER | FCVAR_ARCHIVE };
+	static cvar_t g_svNpcPhysicsFadeTime = { "sv_npc_physics_fade_time", "2.0", FCVAR_SERVER };
+	static cvar_t g_svNpcPhysicsDebug = { "sv_npc_physics_debug", "0", FCVAR_SERVER };
 
 	static float NPCPhysics_GetCvar( const char *name, float fallback )
 	{
@@ -1283,7 +1298,7 @@ namespace
 
 	static bool NPCPhysics_Enabled()
 	{
-		return NPCPhysics_GetCvar( "sv_npc_vphysics", 1.0f ) >= 0.5f;
+		return NPCPhysics_GetCvar( "sv_npc_physics", 1.0f ) >= 0.5f;
 	}
 
 	// Source's default NPC physics impact table is keyed by squared velocity
@@ -1292,7 +1307,7 @@ namespace
 	static float NPCPhysics_CalculateCollisionDamage( float velocityLoss )
 	{
 		const float scale = NPCPhysics_GetCvar(
-			"sv_npc_vphysics_impact_damage_scale", 0.25f );
+			"sv_npc_physics_impact_damage_scale", 0.25f );
 		if( !std::isfinite( velocityLoss ) || velocityLoss <= 0.0f ||
 			!std::isfinite( scale ) || scale <= 0.0f )
 			return 0.0f;
@@ -1572,12 +1587,12 @@ namespace
 	static bool NPCPhysics_StartRagdollFade( edict_t *entity, int serialNumber )
 	{
 		const float fadeEnabled =
-			NPCPhysics_GetCvar( "sv_npc_vphysics_fade_on_retire", 1.0f );
+			NPCPhysics_GetCvar( "sv_npc_physics_fade_on_retire", 1.0f );
 		if( !entity || entity->free || entity->serialnumber != serialNumber ||
 			!std::isfinite( fadeEnabled ) || fadeEnabled < 0.5f )
 			return false;
 
-		float duration = NPCPhysics_GetCvar( "sv_npc_vphysics_fade_time", 2.0f );
+		float duration = NPCPhysics_GetCvar( "sv_npc_physics_fade_time", 2.0f );
 		if( !std::isfinite( duration ) || duration <= 0.0f )
 			return false;
 		duration = (std::min)( duration, 30.0f );
@@ -1702,14 +1717,14 @@ namespace
 	static void NPCPhysics_EnforceRagdollLimits()
 	{
 		int ordinaryLimit = NPCPhysics_GetRagdollLimit(
-			"sv_npc_vphysics_max_ragdolls", 8.0f );
+			"sv_npc_physics_max_ragdolls", 8.0f );
 		int importantLimit = NPCPhysics_GetRagdollLimit(
-			"sv_npc_vphysics_max_important_ragdolls", 2.0f );
+			"sv_npc_physics_max_important_ragdolls", 2.0f );
 
 		// Source low-violence mode fades every server ragdoll instead of
 		// retaining a physics corpse. Force both pools to zero, even when
 		// the ordinary per-pool limits have been configured as unlimited.
-		if( NPCPhysics_GetCvar( "sv_npc_vphysics_low_violence", 0.0f ) >= 0.5f )
+		if( NPCPhysics_GetCvar( "sv_npc_physics_low_violence", 0.0f ) >= 0.5f )
 		{
 			ordinaryLimit = 0;
 			importantLimit = 0;
@@ -2328,6 +2343,7 @@ namespace
 			const bool isMovableObject = !isPushable &&
 				( ent->v.movetype == MOVETYPE_TOSS ||
 				  ent->v.movetype == MOVETYPE_BOUNCE );
+			const bool isPlayer = ( ent->v.flags & FL_CLIENT ) != 0;
 			const float minimumHalfExtent = isMovableObject ? 0.5f : 1.0f;
 			const Vec3 mins( ent->v.mins[0], ent->v.mins[1], ent->v.mins[2] );
 			const Vec3 maxs( ent->v.maxs[0], ent->v.maxs[1], ent->v.maxs[2] );
@@ -2360,6 +2376,7 @@ namespace
 				if( existing.serialNumber != ent->serialnumber ||
 					existing.isPushable != isPushable ||
 					existing.isMovableObject != isMovableObject ||
+					existing.isPlayer != isPlayer ||
 					extentDelta.LengthSq() > 0.0001f )
 				{
 					NPCPhysics_DestroyActorCollider( existing );
@@ -2381,8 +2398,9 @@ namespace
 					Quat::sIdentity(),
 					EMotionType::Kinematic,
 					isPushable ? PUSHABLE_KINEMATIC_OBJECT_LAYER :
-						( isMovableObject ? MOVABLE_KINEMATIC_OBJECT_LAYER
-							: BRUSH_KINEMATIC_OBJECT_LAYER )
+						( isMovableObject ? MOVABLE_KINEMATIC_OBJECT_LAYER :
+							( isPlayer ? PLAYER_KINEMATIC_OBJECT_LAYER
+								: BRUSH_KINEMATIC_OBJECT_LAYER ) )
 				);
 				bodySettings.mUserData = static_cast<uint64_t>( entityIndex );
 				bodySettings.mFriction = 0.65f;
@@ -2404,6 +2422,7 @@ namespace
 				collider.halfExtents = halfExtents;
 				collider.isPushable = isPushable;
 				collider.isMovableObject = isMovableObject;
+				collider.isPlayer = isPlayer;
 				g_actorColliders.push_back( collider );
 
 				ALERT(
@@ -2596,7 +2615,7 @@ namespace
 			return false;
 		}
 
-		// Optional model-level Source VPhysics properties. Keep them before
+		// Optional model-level Source Physics properties. Keep them before
 		// body_count so old v1 sidecars remain byte-for-byte compatible.
 		while( command != "body_count" )
 		{
@@ -3222,7 +3241,7 @@ namespace
 		if( totalWeight <= 0.0001f || !std::isfinite( totalWeight ) )
 			return NPCPhysics_RagdollSetupFailed( "authored NPC hull set has zero combined volume" );
 
-		float totalMass = NPCPhysics_GetCvar( "sv_npc_vphysics_mass", 0.0f );
+		float totalMass = NPCPhysics_GetCvar( "sv_npc_physics_mass", 0.0f );
 		if( totalMass <= 0.0f )
 			totalMass = physicsDefinition->totalMass;
 		totalMass = (std::max)( 10.0f, (std::min)( totalMass, 300.0f ) );
@@ -3690,11 +3709,12 @@ namespace
 		NPCPhysicsRagdoll &ragdoll, BodyInterface &bodyInterface )
 	{
 		if( !ragdoll.entity || ragdoll.entity->free || !gpGlobals ||
-			!ragdoll.physicsRagdoll.GetPtr() || ragdoll.bodyCount <= 0 )
+			!ragdoll.physicsRagdoll.GetPtr() || ragdoll.bodyCount <= 0 ||
+			ragdoll.isStatic )
 			return;
 
 		const float sleepAfterTime = NPCPhysics_GetCvar(
-			"sv_npc_vphysics_sleep_after_time", 5.0f );
+			"sv_npc_physics_sleep_after_time", 5.0f );
 		if( ragdoll.animatedFrictionState == RAGDOLL_FRICTION_IN ||
 			ragdoll.animatedFrictionState == RAGDOLL_FRICTION_HOLD ||
 			ragdoll.animatedFrictionState == RAGDOLL_FRICTION_OUT )
@@ -3751,18 +3771,46 @@ namespace
 		}
 
 		const float stationaryTime = gpGlobals->time - ragdoll.lastOriginChangeTime;
-		if( stationaryTime < sleepAfterTime || !anyActive )
+		if( stationaryTime < sleepAfterTime )
 			return;
 
-		// Sleep the articulated island only after all its bodies have stayed
-		// below the linear and angular velocity thresholds for the full delay.
-		bodyInterface.DeactivateBodies( bodyIDs.data(), static_cast<int>( bodyIDs.size() ) );
-		ALERT(
-			at_console,
-			"[NPC physics] Forced ragdoll sleep after %.2f seconds stationary: entity=%d id=%d bodies=%d.\n",
-			stationaryTime, ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.bodyCount
-		);
-		// Start a fresh settle window if an impact wakes the ragdoll again.
+		if( g_npcPhysicsStaticCorpsesEnabled )
+		{
+			// Keep the final articulated pose and collision hulls in the Jolt
+			// world, but remove the corpse from dynamic simulation permanently.
+			// Static corpses still block world geometry and remain raycastable
+			// for damage/decal handling; the dedicated player layer is filtered
+			// by RagdollObjectLayerFilter above.
+			for( size_t body = 0; body < bodyIDs.size(); ++body )
+			{
+				bodyInterface.SetLinearVelocity( bodyIDs[body], Vec3( 0.0f, 0.0f, 0.0f ) );
+				bodyInterface.SetAngularVelocity( bodyIDs[body], Vec3( 0.0f, 0.0f, 0.0f ) );
+				bodyInterface.SetMotionType(
+					bodyIDs[body], EMotionType::Static, EActivation::DontActivate );
+			}
+			ragdoll.isStatic = true;
+			ALERT(
+				at_console,
+				"[NPC physics] Settled ragdoll converted to static after %.2f seconds: entity=%d id=%d bodies=%d.\n",
+				stationaryTime, ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.bodyCount
+			);
+		}
+		else
+		{
+			if( !anyActive )
+				return;
+
+			// Preserve the previous configurable sleep behavior when static
+			// corpse mode is disabled.
+			bodyInterface.DeactivateBodies( bodyIDs.data(), static_cast<int>( bodyIDs.size() ) );
+			ALERT(
+				at_console,
+				"[NPC physics] Forced ragdoll sleep after %.2f seconds stationary: entity=%d id=%d bodies=%d.\n",
+				stationaryTime, ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.bodyCount
+			);
+		}
+
+		// Start a fresh settle window if an impact wakes a dynamic corpse again.
 		ragdoll.lastOriginChangeTime = gpGlobals->time;
 	}
 
@@ -3887,7 +3935,7 @@ namespace
 		uint8_t blocked[RAGDOLL_DEFINITION_MAX_BODIES] = {};
 		int recoveryCount = 0;
 
-		// Source calls RagdollSolveSeparation when VPhysics reports a ragdoll
+		// Source calls RagdollSolveSeparation when Physics reports a ragdoll
 		// constraint-group error. Jolt has no equivalent group error flag, so
 		// use a persistent joint-anchor error plus Source's two recovery
 		// signals: directional body contact with a blocked separation ray, or
@@ -4075,7 +4123,7 @@ namespace
 				{
 					// The destination is clear, but the full convex body would cross
 					// world/brush geometry on its way there. Do not snap through it.
-					if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+					if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 						ALERT(
 							at_console,
 							"[NPC physics] Ragdoll recovery refused by swept environment check: entity=%d id=%d body=%d parent=%d delta=(%.2f %.2f %.2f).\n",
@@ -4213,7 +4261,7 @@ namespace
 		const NPCPhysicsRagdoll &ragdoll )
 	{
 		if( !ent || !ragdoll.physicsRagdoll.GetPtr() || ragdoll.bodyCount <= 0 ||
-			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) < 0.5f )
+			NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) < 0.5f )
 			return;
 
 		BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
@@ -4277,7 +4325,7 @@ namespace
 			monster->m_iNpcRagdollPersistVersion != 0 ||
 			monster->m_iNpcRagdollPersistBoneCount != 0 ||
 			monster->m_iNpcRagdollPersistBodyCount != 0;
-		const bool debug = NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f;
+		const bool debug = NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f;
 		if( !g_npcPhysics.initialized || g_ragdolls.empty() )
 		{
 			if( hasPriorRagdollSnapshot && debug )
@@ -4421,7 +4469,7 @@ namespace
 		monster->m_iNpcRagdollPersistBoneCount = ragdoll->studioBoneCount;
 		monster->m_iNpcRagdollPersistBodyCount = ragdoll->bodyCount;
 
-		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 			ALERT( at_console,
 				"[NPC physics] Saved transferable ragdoll: entity=%d bones=%d bodies=%d.\n",
 				ENTINDEX( ent ), ragdoll->studioBoneCount, ragdoll->bodyCount );
@@ -4440,7 +4488,7 @@ namespace
 		std::vector<NPCPhysicsPendingContactDiagnostic> pending =
 			g_npcPhysics.contactListener.DrainDiagnostics();
 		if( pending.empty() || !gpGlobals ||
-			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) < 0.5f )
+			NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) < 0.5f )
 			return;
 
 		for( size_t i = 0; i < pending.size(); ++i )
@@ -4544,8 +4592,8 @@ namespace
 		if( pending.empty() || g_ragdolls.empty() )
 			return;
 
-		float massLimit = NPCPhysics_GetCvar( "sv_npc_vphysics_player_push_mass", 350.0f );
-		float speedLimit = NPCPhysics_GetCvar( "sv_npc_vphysics_player_push_speed", 50.0f );
+		float massLimit = NPCPhysics_GetCvar( "sv_npc_physics_player_push_mass", 350.0f );
+		float speedLimit = NPCPhysics_GetCvar( "sv_npc_physics_player_push_speed", 50.0f );
 		if( !std::isfinite( massLimit ) )
 			massLimit = 350.0f;
 		if( !std::isfinite( speedLimit ) )
@@ -4629,7 +4677,7 @@ namespace
 			bodyInterface.SetLinearVelocity(
 				event.ragdollBodyID, correctedLinearVelocity );
 
-			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f &&
+			if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f &&
 				gpGlobals && gpGlobals->time >= ragdoll->nextPlayerPushDebugTime )
 			{
 				ALERT(
@@ -4701,7 +4749,7 @@ namespace
 					event.ragdollPointVelocity.GetZ()
 				};
 				if( NPCPhysics_ApplyPushableRagdollPush( movable, pointVelocity ) &&
-					NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+					NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 				{
 					ALERT(
 						at_console,
@@ -4804,7 +4852,7 @@ namespace
 				}
 			}
 
-			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 				ALERT(
 					at_console,
 					"[NPC physics] Ragdoll pushed toss/bounce entity: entity=%d approach=%.1f delta-v=(%.1f %.1f %.1f) delta-a=(%.1f %.1f %.1f).\n",
@@ -4922,7 +4970,7 @@ namespace
 					projectile, hitEntity, startArray, endArray,
 					hitFraction, hitPosition ) )
 				{
-					if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+					if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 						ALERT(
 							at_console,
 							"[NPC projectile] Explosive projectile intercepted by ragdoll: projectile=%d target=%d fraction=%.3f point=(%.1f %.1f %.1f).\n",
@@ -4944,7 +4992,7 @@ namespace
 			if( NPCPhysics_TriggerHornetProjectileImpact(
 				projectile, hitEntity, startArray, endArray,
 				blockingTrace.flFraction ) &&
-				NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+				NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 			{
 				ALERT(
 					at_console,
@@ -5052,7 +5100,7 @@ namespace
 			}
 			if( !attacker )
 			{
-				if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+				if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 					ALERT(
 						at_console,
 						"[NPC physics] Skipped collision damage: no valid world or contact attacker (entity=%d id=%d other=%d).\n",
@@ -5070,7 +5118,7 @@ namespace
 			// normal monster gib path only after the corpse's remaining health
 			// has been exhausted.
 			ragdoll->nextCollisionDamageTime = gpGlobals->time + 0.25f;
-			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 				ALERT(
 					at_console,
 					"[NPC physics] Applying collision damage: entity=%d id=%d jolt-body=%u inflictor=%d attacker=%d delta-v=%.1f damage=%.1f health=%.1f.\n",
@@ -5081,7 +5129,7 @@ namespace
 				);
 			victim->TakeDamage( attackerVars, attackerVars, damage, DMG_GIB_CORPSE );
 
-			if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 				ALERT(
 					at_console,
 					"[NPC physics] Collision impact damage applied: entity=%d id=%d jolt-body=%u attacker=%d delta-v=%.1f damage=%.1f health=%.1f.\n",
@@ -5118,7 +5166,11 @@ namespace
 			return;
 
 		g_npcPhysicsContactDebugEnabled =
-			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f;
+			NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f;
+		const float staticCorpses = NPCPhysics_GetCvar(
+			"sv_npc_physics_static_corpses", 1.0f );
+		g_npcPhysicsStaticCorpsesEnabled =
+			std::isfinite( staticCorpses ) && staticCorpses >= 0.5f;
 
 		NPCPhysics_UpdateRetiringCorpses();
 		NPCPhysics_RemoveGibbedRagdolls();
@@ -5224,10 +5276,31 @@ namespace
 				ragdoll.blastDebugPending = false;
 			}
 
-			// Move the carrier edict with the simulated root element. Besides
-			// keeping the corpse's network origin useful, this keeps renderer
-			// culling and the entity's PVS bounds near a ragdoll that has fallen.
-			if( ragdoll.rootElement >= 0 &&
+			// Allow the archived cvar to restore already-frozen corpses as
+			// dynamic bodies when static-corpse mode is disabled at runtime.
+			if( ragdoll.isStatic && !g_npcPhysicsStaticCorpsesEnabled )
+			{
+				for( int body = 0; body < ragdoll.bodyCount; ++body )
+					bodyInterface.SetMotionType(
+						ragdoll.physicsRagdoll->GetBodyID( body ),
+						EMotionType::Dynamic, EActivation::Activate );
+				ragdoll.isStatic = false;
+				ragdoll.lastOriginChangeTime = gpGlobals->time;
+				ragdoll.lastSleepOrigin = Vec3(
+					ragdoll.entity->v.origin[0],
+					ragdoll.entity->v.origin[1],
+					ragdoll.entity->v.origin[2] );
+				ALERT(
+					at_console,
+					"[NPC physics] Restored dynamic ragdoll: entity=%d id=%d bodies=%d (static-corpse mode disabled).\n",
+					ENTINDEX( ragdoll.entity ), ragdoll.networkID, ragdoll.bodyCount
+				);
+			}
+
+			// Move only live ragdoll carriers. A static corpse's edict origin was
+			// synchronized on the frame it was frozen and no longer needs updates.
+			if( !ragdoll.isStatic &&
+				ragdoll.rootElement >= 0 &&
 				ragdoll.rootElement < ragdoll.bodyCount &&
 				g_engfuncs.pfnSetOrigin )
 			{
@@ -5241,9 +5314,12 @@ namespace
 				g_engfuncs.pfnSetOrigin( ragdoll.entity, entityOrigin );
 			}
 
-			NPCPhysics_UpdateRagdollSeparation( ragdoll, bodyInterface );
-			NPCPhysics_UpdateRagdollAnimatedFriction( ragdoll, bodyInterface );
-			NPCPhysics_UpdateRagdollSleep( ragdoll, bodyInterface );
+			if( !ragdoll.isStatic )
+			{
+				NPCPhysics_UpdateRagdollSeparation( ragdoll, bodyInterface );
+				NPCPhysics_UpdateRagdollAnimatedFriction( ragdoll, bodyInterface );
+				NPCPhysics_UpdateRagdollSleep( ragdoll, bodyInterface );
+			}
 
 			if( gpGlobals->time >= ragdoll.nextPoseTime )
 			{
@@ -5296,7 +5372,7 @@ int NPCPhysics_ApplyBlastImpulse(
 	float radius,
 	float blastDamage )
 {
-	const float blastScale = NPCPhysics_GetCvar( "sv_npc_vphysics_blast_scale", 1.0f );
+	const float blastScale = NPCPhysics_GetCvar( "sv_npc_physics_blast_scale", 1.0f );
 	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
 		!targetEntity || targetEntity->free || !origin || !targetPoint ||
 		!std::isfinite( radius ) || radius <= 0.001f ||
@@ -5321,7 +5397,7 @@ int NPCPhysics_ApplyBlastImpulse(
 		}
 	}
 
-	if( !targetRagdoll || targetRagdoll->bodyCount <= 0 ||
+	if( !targetRagdoll || targetRagdoll->isStatic || targetRagdoll->bodyCount <= 0 ||
 		targetRagdoll->bodyMasses.size() != static_cast<size_t>( targetRagdoll->bodyCount ) ||
 		targetRagdoll->rootElement < 0 ||
 		targetRagdoll->rootElement >= targetRagdoll->bodyCount )
@@ -5446,7 +5522,7 @@ int NPCPhysics_ApplyBlastImpulse(
 	targetRagdoll->blastDebugTime = gpGlobals ? gpGlobals->time : 0.0f;
 	targetRagdoll->blastDebugPending = true;
 
-	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+	if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
 			"[NPC blast] Immediate velocity: ent=%d body=%d impulse=(%.1f %.1f %.1f) v-before=(%.1f %.1f %.1f) v-after=(%.1f %.1f %.1f) w-before=(%.1f %.1f %.1f) w-after=(%.1f %.1f %.1f).\n",
@@ -5458,7 +5534,7 @@ int NPCPhysics_ApplyBlastImpulse(
 			angularAfter.GetX(), angularAfter.GetY(), angularAfter.GetZ()
 		);
 
-	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+	if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
 			"[NPC blast] Distributed character impulse: ent=%d id=%d body=%d mass=%.1f total-mass=%.1f damage=%.1f radius=%.1f impulse=%.1f random=%.2f scale=%.2f origin=(%.1f %.1f %.1f) target=(%.1f %.1f %.1f) dir=(%.2f %.2f %.2f).\n",
@@ -5486,7 +5562,8 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 	edict_t **hitEntity,
 	bool applyImpulse,
 	bool sendImpactMark,
-	edict_t *requiredTarget )
+	edict_t *requiredTarget,
+	edict_t *ignoredActorEntity )
 {
 	if( !NPCPhysics_Enabled() || !g_npcPhysics.initialized || g_ragdolls.empty() ||
 		!start || !end || !hitFraction || !hitPosition || !hitEntity ||
@@ -5508,7 +5585,25 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 		rayDirection );
 	JPH::RayCastResult hit;
 	hit.mFraction = maxFraction;
-	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+
+	// GoldSrc's trace already ignores the shooter. Mirror that exclusion in
+	// the auxiliary Jolt query so the ray cannot immediately hit its own hull.
+	JPH::BodyID ignoredActorBodyID;
+	if( ignoredActorEntity && !ignoredActorEntity->free )
+	{
+		const int colliderIndex =
+			NPCPhysics_FindActorCollider( ENTINDEX( ignoredActorEntity ) );
+		if( colliderIndex >= 0 )
+		{
+			const NPCPhysicsActorCollider &collider =
+				g_actorColliders[colliderIndex];
+			if( collider.serialNumber == ignoredActorEntity->serialnumber &&
+				!collider.bodyID.IsInvalid() )
+				ignoredActorBodyID = collider.bodyID;
+		}
+	}
+	const JPH::IgnoreSingleBodyFilter bodyFilter( ignoredActorBodyID );
+	if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 		ALERT(
 			at_console,
 			"[NPC projectile] Physics trace: start=(%.1f %.1f %.1f) end=(%.1f %.1f %.1f) base-fraction=%.3f jolt-length=%.1f.\n",
@@ -5516,9 +5611,11 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 			maxFraction, rayLength
 		);
 
-	if( !g_npcPhysics.system->GetNarrowPhaseQuery().CastRay( ray, hit ) )
+	if( !g_npcPhysics.system->GetNarrowPhaseQuery().CastRay(
+		ray, hit, JPH::BroadPhaseLayerFilter(),
+		JPH::ObjectLayerFilter(), bodyFilter ) )
 	{
-		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 			ALERT( at_console, "[NPC projectile] Jolt ray did not hit any physics body.\n" );
 		return FALSE;
 	}
@@ -5555,7 +5652,7 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 	if( !foundRagdollBody || !targetEntity ||
 		( requiredTarget && targetEntity != requiredTarget ) )
 	{
-		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 			ALERT(
 				at_console,
 				"[NPC projectile] Jolt ray hit a non-ragdoll body (fraction %.4f).\n",
@@ -5570,10 +5667,13 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 		JPH::Vec3 impulse = ( rayDirection / rayLength ) * impulseMagnitude;
 		impulse = NPCPhysics_ClampVector( impulse, RAGDOLL_WEAPON_IMPULSE_LIMIT );
 		JPH::BodyInterface &bodyInterface = g_npcPhysics.system->GetBodyInterface();
-		// Source's client ragdoll applies a localized force to the struck physics
-		// object. Explicit activation guarantees that a sleeping Jolt limb wakes.
-		bodyInterface.ActivateBody( hit.mBodyID );
-		bodyInterface.AddImpulse( hit.mBodyID, impulse, impactPoint );
+		// Static corpses keep receiving impact/decal events but do not wake or
+		// re-enter dynamic simulation.
+		if( bodyInterface.GetMotionType( hit.mBodyID ) == JPH::EMotionType::Dynamic )
+		{
+			bodyInterface.ActivateBody( hit.mBodyID );
+			bodyInterface.AddImpulse( hit.mBodyID, impulse, impactPoint );
+		}
 	}
 
 	// A sleeping corpse normally sends only a 5 Hz heartbeat. A weapon strike
@@ -5588,7 +5688,7 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 	{
 		CBaseEntity *hitObject = CBaseEntity::Instance( targetEntity );
 		const int bloodColor = hitObject ? hitObject->BloodColor() : DONT_BLEED;
-		if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 			ALERT(
 				at_console,
 				"[NPC projectile] Hit ragdoll ent=%d id=%d body=%d fraction=%.4f blood=%d msg=%d.\n",
@@ -5629,7 +5729,7 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 					WRITE_BYTE( markColor );
 				MESSAGE_END();
 
-				if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+				if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 					ALERT(
 						at_console,
 						"[NPC projectile] Sent RagdollImpact: ent=%d id=%d studio-bone=%d radius=%.2f color=%d.\n",
@@ -5637,13 +5737,13 @@ static int NPCPhysics_TraceRagdollImpactInternal(
 						bone.studioBoneIndex, markRadius, markColor
 					);
 			}
-			else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			else if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 				ALERT( at_console, "[NPC decals] Hit body has invalid studio bone %d.\n", bone.studioBoneIndex );
 		}
-		else if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+		else if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 			ALERT( at_console, "[NPC decals] Blood mark suppressed by blood color or violence cvar.\n" );
 	}
-	else if( sendImpactMark && NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+	else if( sendImpactMark && NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 		ALERT( at_console, "[NPC projectile] Impact usermessage is not registered or body index is invalid.\n" );
 
 	*hitFraction = hit.mFraction;
@@ -5662,11 +5762,13 @@ int NPCPhysics_TraceAndApplyImpact(
 	float impulseMagnitude,
 	float *hitFraction,
 	float *hitPosition,
-	edict_t **hitEntity )
+	edict_t **hitEntity,
+	edict_t *ignoredEntity )
 {
 	return NPCPhysics_TraceRagdollImpactInternal(
 		start, end, maxFraction, impulseMagnitude,
-		hitFraction, hitPosition, hitEntity, true, true, NULL );
+		hitFraction, hitPosition, hitEntity, true, true, NULL,
+		ignoredEntity );
 }
 
 int NPCPhysics_TraceRagdollImpact(
@@ -5675,11 +5777,13 @@ int NPCPhysics_TraceRagdollImpact(
 	float maxFraction,
 	float *hitFraction,
 	float *hitPosition,
-	edict_t **hitEntity )
+	edict_t **hitEntity,
+	edict_t *ignoredEntity )
 {
 	return NPCPhysics_TraceRagdollImpactInternal(
 		start, end, maxFraction, 0.0f,
-		hitFraction, hitPosition, hitEntity, false, false, NULL );
+		hitFraction, hitPosition, hitEntity, false, false, NULL,
+		ignoredEntity );
 }
 
 int NPCPhysics_SendRagdollImpactMark(
@@ -5697,7 +5801,7 @@ int NPCPhysics_SendRagdollImpactMark(
 	return NPCPhysics_TraceRagdollImpactInternal(
 		start, end, maxFraction, 0.0f,
 		&hitFraction, hitPosition, &hitEntity,
-		false, true, targetEntity );
+		false, true, targetEntity, NULL );
 }
 
 int NPCPhysics_TraceTargetAndApplyImpact(
@@ -5717,7 +5821,7 @@ int NPCPhysics_TraceTargetAndApplyImpact(
 	return NPCPhysics_TraceRagdollImpactInternal(
 		start, end, maxFraction, impulseMagnitude,
 		&hitFraction, hitPosition, &hitEntity,
-		true, true, targetEntity );
+		true, true, targetEntity, NULL );
 }
 
 int NPCPhysics_ApplyImpactImpulseToRagdoll(
@@ -5745,7 +5849,7 @@ int NPCPhysics_ApplyImpactImpulseToRagdoll(
 			break;
 		}
 	}
-	if( !targetRagdoll || targetRagdoll->bodyCount <= 0 )
+	if( !targetRagdoll || targetRagdoll->isStatic || targetRagdoll->bodyCount <= 0 )
 		return FALSE;
 
 	Vec3 impulseDirection( direction[0], direction[1], direction[2] );
@@ -5805,7 +5909,7 @@ int NPCPhysics_ApplyImpactImpulseToRagdoll(
 	if( gpGlobals && targetRagdoll->nextPoseTime > gpGlobals->time )
 		targetRagdoll->nextPoseTime = gpGlobals->time;
 
-	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+	if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 	{
 		const float bodyMass = impactBodyIndex < static_cast<int>( targetRagdoll->bodyMasses.size() )
 			? targetRagdoll->bodyMasses[impactBodyIndex] : 0.0f;
@@ -5874,7 +5978,7 @@ int NPCPhysics_RestorePersistentRagdoll( edict_t *ent )
 		monster->m_iNpcRagdollPersistBodyCount > NPC_RAGDOLL_PERSIST_MAX_BODIES )
 	{
 		if( hasAnyPersistentRagdollData &&
-			NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+			NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 			ALERT( at_console,
 				"[NPC physics] Entity %d has incomplete ragdoll snapshot data (version=%d bones=%d bodies=%d).\n",
 				ENTINDEX( ent ), monster->m_iNpcRagdollPersistVersion,
@@ -5882,7 +5986,7 @@ int NPCPhysics_RestorePersistentRagdoll( edict_t *ent )
 		return FALSE;
 	}
 
-	if( NPCPhysics_GetCvar( "sv_npc_vphysics_debug", 0.0f ) >= 0.5f )
+	if( NPCPhysics_GetCvar( "sv_npc_physics_debug", 0.0f ) >= 0.5f )
 		ALERT( at_console,
 			"[NPC physics] Found transferred ragdoll state: entity=%d bones=%d bodies=%d.\n",
 			ENTINDEX( ent ), monster->m_iNpcRagdollPersistBoneCount,
@@ -5920,22 +6024,23 @@ int NPCPhysics_GetInterface( int version, void *serverAPI, void *callbacks )
 		!serverAPI || !callbacks )
 		return FALSE;
 
-	CVAR_REGISTER( &g_svNpcVPhysics );
-	CVAR_REGISTER( &g_svNpcVPhysicsMass );
-	CVAR_REGISTER( &g_svNpcVPhysicsBulletScale );
-	CVAR_REGISTER( &g_svNpcVPhysicsCrowbarScale );
-	CVAR_REGISTER( &g_svNpcVPhysicsCrossbowScale );
-	CVAR_REGISTER( &g_svNpcVPhysicsBlastScale );
-	CVAR_REGISTER( &g_svNpcVPhysicsImpactDamageScale );
-	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushMass );
-	CVAR_REGISTER( &g_svNpcVPhysicsPlayerPushSpeed );
-	CVAR_REGISTER( &g_svNpcVPhysicsSleepAfterTime );
-	CVAR_REGISTER( &g_svNpcVPhysicsMaxRagdolls );
-	CVAR_REGISTER( &g_svNpcVPhysicsMaxImportantRagdolls );
-	CVAR_REGISTER( &g_svNpcVPhysicsFadeOnRetire );
-	CVAR_REGISTER( &g_svNpcVPhysicsLowViolence );
-	CVAR_REGISTER( &g_svNpcVPhysicsFadeTime );
-	CVAR_REGISTER( &g_svNpcVPhysicsDebug );
+	CVAR_REGISTER( &g_svNpcPhysics );
+	CVAR_REGISTER( &g_svNpcPhysicsMass );
+	CVAR_REGISTER( &g_svNpcPhysicsBulletScale );
+	CVAR_REGISTER( &g_svNpcPhysicsCrowbarScale );
+	CVAR_REGISTER( &g_svNpcPhysicsCrossbowScale );
+	CVAR_REGISTER( &g_svNpcPhysicsBlastScale );
+	CVAR_REGISTER( &g_svNpcPhysicsImpactDamageScale );
+	CVAR_REGISTER( &g_svNpcPhysicsPlayerPushMass );
+	CVAR_REGISTER( &g_svNpcPhysicsPlayerPushSpeed );
+	CVAR_REGISTER( &g_svNpcPhysicsSleepAfterTime );
+	CVAR_REGISTER( &g_svNpcPhysicsStaticCorpses );
+	CVAR_REGISTER( &g_svNpcPhysicsMaxRagdolls );
+	CVAR_REGISTER( &g_svNpcPhysicsMaxImportantRagdolls );
+	CVAR_REGISTER( &g_svNpcPhysicsFadeOnRetire );
+	CVAR_REGISTER( &g_svNpcPhysicsLowViolence );
+	CVAR_REGISTER( &g_svNpcPhysicsFadeTime );
+	CVAR_REGISTER( &g_svNpcPhysicsDebug );
 
 	g_serverPhysicsAPI = reinterpret_cast<xash_server_physics_api_s *>( serverAPI );
 	g_worldCollisionMeshAPI = NULL;
