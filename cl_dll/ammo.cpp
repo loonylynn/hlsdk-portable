@@ -571,9 +571,9 @@ int CHudAmmo::MsgFunc_HideWeapon( const char *pszName, int iSize, void *pbuf )
 	if( gEngfuncs.IsSpectateOnly() )
 		return 1;
 
+	wrect_t nullrc = {0,};
 	if( gHUD.m_iHideHUDDisplay & ( HIDEHUD_WEAPONS | HIDEHUD_ALL ) )
 	{
-		wrect_t nullrc = {0,};
 		gpActiveSel = NULL;
 		SetCrosshair( 0, nullrc, 0, 0, 0 );
 	}
@@ -943,7 +943,7 @@ void CHudAmmo::DrawFreeAimCrosshair( void )
 	const float flYaw = IN_FreeAimGetYaw() * 0.017453292519943295f;
 	const float flPitch = IN_FreeAimGetPitch() * 0.017453292519943295f;
 	const int centerX = ScreenWidth / 2 + (int)( tanf( flYaw ) * flPixelsPerTangent );
-	const int centerY = ScreenHeight / 2 - (int)( tanf( flPitch ) * flPixelsPerTangent );
+	const int centerY = ScreenHeight / 2 + (int)( tanf( flPitch ) * flPixelsPerTangent );
 
 	const wrect_t *rect = &m_pWeapon->rcCrosshair;
 	const int width = rect->right - rect->left;
