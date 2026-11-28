@@ -27,6 +27,7 @@ extern "C"
 //#include "view.h"
 #include <string.h>
 #include <ctype.h>
+#include <stdlib.h>
 
 #include "vgui_TeamFortressViewport.h"
 
