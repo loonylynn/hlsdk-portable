@@ -66,6 +66,7 @@ typedef struct cl_entity_s cl_entity_t;
 struct cl_entity_s
 {
 	int		index;      	// Index into cl_entities ( should match actual slot, but not necessarily )
+	unsigned int renderGeneration;	// Xash3D ABI: local renderer generation
 	qboolean		player;     	// True if this entity is a "player"
 
 	entity_state_t	baseline;   	// The original state from which to delta during an uncompressed message
