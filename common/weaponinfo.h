@@ -16,8 +16,8 @@
 #if !defined(WEAPONINFO_H)
 #define WEAPONINFO_H
 
-// Weapon capability: right-click may activate the independent free-aim state.
-#define ITEM_FLAG_FREE_AIM 64
+// WeaponInfo::iFlags capability bit; kept clear of the legacy weapon status bits.
+#define ITEM_FLAG_FREE_AIM 128
 
 // Info about weapons player might have in his/her possession
 typedef struct weapon_data_s
