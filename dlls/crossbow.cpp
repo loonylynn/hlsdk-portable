@@ -48,7 +48,7 @@ static float NPCPhysics_GetScaledCrossbowImpulse()
 }
 static int NPCPhysics_TraceCrossbowImpact(
 	const Vector &start, const Vector &end, float maxFraction,
-	float impulseMultiplier, TraceResult *trace )
+	float impulseMultiplier, edict_t *ignoredEntity, TraceResult *trace )
 {
 	if( !trace || !std::isfinite( impulseMultiplier ) || impulseMultiplier < 0.0f )
 		return FALSE;
@@ -60,7 +60,7 @@ static int NPCPhysics_TraceCrossbowImpact(
 	edict_t *hitEntity = NULL;
 	if( NPCPhysics_TraceAndApplyImpact(
 		&start[0], &end[0], maxFraction, impulseMagnitude,
-		&hitFraction, hitPosition, &hitEntity ) )
+		&hitFraction, hitPosition, &hitEntity, ignoredEntity ) )
 	{
 		trace->flFraction = hitFraction;
 		trace->vecEndPos = Vector( hitPosition[0], hitPosition[1], hitPosition[2] );
@@ -206,7 +206,7 @@ void CCrossbowBolt::BoltTouch( CBaseEntity *pOther )
 	const float impactMultiplier = g_pGameRules->IsMultiplayer() ? 0.0f : 1.0f;
 	if( !hasSweepTrace &&
 		NPCPhysics_TraceCrossbowImpact(
-			impactStart, impactEnd, 1.0f, impactMultiplier, &tr ) )
+			impactStart, impactEnd, 1.0f, impactMultiplier, pev->owner, &tr ) )
 	{
 		CBaseEntity *ragdollHit = CBaseEntity::Instance( tr.pHit );
 		if( ragdollHit )
@@ -325,7 +325,7 @@ void CCrossbowBolt::BubbleThink( void )
 				edict_t *hitEntity = NULL;
 				if( NPCPhysics_TraceRagdollImpact(
 					&sweepStart[0], &sweepEnd[0], sweptTrace.flFraction,
-					&hitFraction, hitPosition, &hitEntity ) )
+					&hitFraction, hitPosition, &hitEntity, pev->owner ) )
 				{
 					sweptTrace.flFraction = hitFraction;
 					sweptTrace.vecEndPos =
@@ -338,7 +338,8 @@ void CCrossbowBolt::BubbleThink( void )
 			else
 			{
 				hitRagdoll = NPCPhysics_TraceCrossbowImpact(
-					sweepStart, sweepEnd, sweptTrace.flFraction, 1.0f, &sweptTrace );
+					sweepStart, sweepEnd, sweptTrace.flFraction, 1.0f,
+					pev->owner, &sweptTrace );
 			}
 
 			if( hitRagdoll && sweptTrace.pHit )
@@ -556,7 +557,8 @@ void CCrossbow::FireSniperBolt()
 	pendingCrossbowImpact.entity = NULL;
 	pendingCrossbowImpact.serialNumber = -1;
 	pendingCrossbowImpact.impulseMagnitude = 0.0f;
-	NPCPhysics_TraceCrossbowImpact( vecSrc, vecEnd, tr.flFraction, 1.0f, &tr );
+	NPCPhysics_TraceCrossbowImpact(
+		vecSrc, vecEnd, tr.flFraction, 1.0f, m_pPlayer->edict(), &tr );
 	if( tr.pHit && tr.pHit->v.takedamage )
 	{
 		CBaseEntity *pTarget = CBaseEntity::Instance( tr.pHit );
