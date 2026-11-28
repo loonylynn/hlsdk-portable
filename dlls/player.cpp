@@ -4233,6 +4233,9 @@ ReturnSpot:
 
 void CBasePlayer::Spawn( void )
 {
+	m_bFreeAimActive = FALSE;
+	m_flFreeAimYaw = 0.0f;
+	m_flFreeAimPitch = 0.0f;
 	m_flStartCharge = gpGlobals->time;
 	pev->classname = MAKE_STRING( "player" );
 	pev->health = 100;
@@ -5684,6 +5687,16 @@ void CBasePlayer::EnableControl( BOOL fControl )
 //=========================================================
 Vector CBasePlayer::GetAutoaimVector( float flDelta )
 {
+	// Manual free-aim replaces the legacy auto-aim vector while active.
+	// The command payload is validated by CmdStart (and by client prediction).
+	if( m_bFreeAimActive )
+	{
+		UTIL_MakeVectors( pev->v_angle + pev->punchangle +
+			Vector( m_flFreeAimPitch, m_flFreeAimYaw, 0.0f ) );
+		m_fOnTarget = FALSE;
+		return gpGlobals->v_forward;
+	}
+
 	if( g_iSkillLevel == SKILL_HARD )
 	{
 		UTIL_MakeVectors( pev->v_angle + pev->punchangle );
