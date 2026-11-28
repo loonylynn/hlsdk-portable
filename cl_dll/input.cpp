@@ -575,7 +575,9 @@ void IN_Attack2Down( void )
 {
 	// Route right-click to free-aim only for weapons that explicitly opt in.
 	// Other weapons keep their original IN_ATTACK2 behavior.
-	if( gHUD.m_Ammo.IsFreeAimWeapon() )
+	if( gHUD.m_Ammo.IsFreeAimWeapon() &&
+		gHUD.m_Health.m_iHealth > 0 && !gHUD.m_iIntermission &&
+		!gHUD.m_MOTD.m_bShow && !gEngfuncs.IsSpectateOnly() )
 	{
 		KeyDown( &in_freeaim );
 		return;
