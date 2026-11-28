@@ -1,5 +1,6 @@
 #include "hud.h"
 #include "usercmd.h"
+#include <math.h>
 #include "usercmd.h"
 #include "cvardef.h"
 #include "kbutton.h"
@@ -243,7 +244,7 @@ void FWGSInput::IN_Move( float frametime, usercmd_t *cmd )
 	}
 	if( gHUD.m_MOTD.m_bShow )
 		gHUD.m_MOTD.scroll += rel_pitch;
-	else
+	else if( !freeAimActive )
 		viewangles[PITCH] += rel_pitch;
 
 	if( viewangles[PITCH] > cl_pitchdown->value )
