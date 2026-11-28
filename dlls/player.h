@@ -188,6 +188,10 @@ public:
 
 	Vector				m_vecAutoAim;
 	BOOL				m_fOnTarget;
+	// Per-usercmd manual free-aim state; transient and not saved/restored.
+	BOOL				m_bFreeAimActive;
+	float			m_flFreeAimYaw;
+	float			m_flFreeAimPitch;
 	int					m_iDeaths;
 	float				m_flRespawnTimer;	// used in PlayerDeathThink() to make sure players can always respawn
 
