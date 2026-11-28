@@ -122,7 +122,7 @@ int CEgon::GetItemInfo( ItemInfo *p )
 	p->iSlot = 3;
 	p->iPosition = 2;
 	p->iId = m_iId = WEAPON_EGON;
-	p->iFlags = 0;
+	p->iFlags = ITEM_FLAG_FREE_AIM;
 	p->iWeight = EGON_WEIGHT;
 
 	return 1;
@@ -173,7 +173,10 @@ void CEgon::Attack( void )
 		return;
 	}
 
-	UTIL_MakeVectors( m_pPlayer->pev->v_angle + m_pPlayer->pev->punchangle );
+	Vector vecAimAngles = m_pPlayer->pev->v_angle + m_pPlayer->pev->punchangle;
+	if( m_pPlayer->m_bFreeAimActive )
+		vecAimAngles += Vector( m_pPlayer->m_flFreeAimPitch, m_pPlayer->m_flFreeAimYaw, 0.0f );
+	UTIL_MakeVectors( vecAimAngles );
 	Vector vecAiming = gpGlobals->v_forward;
 	Vector vecSrc = m_pPlayer->GetGunPosition();
 
