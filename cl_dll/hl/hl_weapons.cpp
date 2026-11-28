@@ -811,6 +811,7 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 	// that same view direction in the predicted player entity so free-aim
 	// uses an identical base orientation under cl_lw 1.
 	player.pev->v_angle = Vector( cmd->viewangles[0], cmd->viewangles[1], cmd->viewangles[2] );
+	player.pev->punchangle = Vector( from->client.punchangle[0], from->client.punchangle[1], from->client.punchangle[2] );
 
 	player.pev->velocity = from->client.velocity;
 	player.pev->flags = from->client.flags;
