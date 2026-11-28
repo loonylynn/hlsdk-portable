@@ -944,7 +944,8 @@ void CHudAmmo::DrawFreeAimCrosshair( void )
 	const float flYaw = IN_FreeAimGetYaw() * 0.017453292519943295f;
 	const float flPitch = IN_FreeAimGetPitch() * 0.017453292519943295f;
 	const int centerX = ScreenWidth / 2 + (int)( tanf( flYaw ) * flPixelsPerTangent );
-	const int centerY = ScreenHeight / 2 + (int)( tanf( flPitch ) * flPixelsPerTangent );
+	const float flCosYaw = Q_max( 0.001f, cosf( flYaw ) );
+	const int centerY = ScreenHeight / 2 + (int)( tanf( flPitch ) / flCosYaw * flPixelsPerTangent );
 
 	const wrect_t *rect = &m_pWeapon->rcCrosshair;
 	const int width = rect->right - rect->left;
