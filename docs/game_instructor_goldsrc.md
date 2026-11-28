@@ -124,12 +124,15 @@ Implemented properties include:
   `gamepad_binding`, `onscreen_icon`, `offscreen_icon`, `caption_color`,
   `range`, `icon_offset`, `flags`, `no_icon_target`,
   `allow_nodraw_target`, `visible`, `no_offscreen`, `force_caption`,
-  `fixed_position`, `fixed_position_x`, and `fixed_position_y`.
+  `show_when_occluded`, `fixed_position`, `fixed_position_x`, and
+  `fixed_position_y`.
 
 The following Source metadata is accepted but is not rendered by the GoldSrc
-HUD: `vgui_target_name`, `vgui_target_lookup`, `vgui_target_edge`,
-`icon_relative_offset`, and `show_when_occluded`. The HUD has no equivalent
-VGUI target anchors or full Source-style target occlusion trace.
+HUD: `vgui_target_name`, `vgui_target_lookup`, `vgui_target_edge`, and
+`icon_relative_offset`. GoldSrc has no equivalent VGUI target anchors. The
+`show_when_occluded` lesson property is supported for managed locator targets:
+when enabled, a valid target remains visible through occluding geometry; range,
+target validity, and NODRAW checks still apply.
 
 Lesson variables exposed to rules are:
 `local_player`, `entity1`, `entity2`, `icon_target`, `integer1`,

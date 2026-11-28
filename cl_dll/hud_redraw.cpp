@@ -1047,8 +1047,10 @@ int CHud::Redraw( float flTime, int intermission )
 				target->m_flNextOcclusionTest = flTime + 0.25f;
 			}
 			const bool forceCaption = ( target->m_iEffectsFlags & LOCATOR_ICON_FX_FORCE_CAPTION ) != 0;
+			const bool showWhenOccluded =
+				( target->m_iEffectsFlags & LOCATOR_ICON_FX_SHOW_WHEN_OCCLUDED ) != 0;
 			target->SetVisible( targetAllowed &&
-				( !target->m_bOccluded || forceCaption ), flTime, 0.3f );
+				( !target->m_bOccluded || forceCaption || showWhenOccluded ), flTime, 0.3f );
 		}
 
 		// Source CLocatorPanel::ComputeTargetIconPosition measures from

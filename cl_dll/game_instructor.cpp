@@ -2008,7 +2008,8 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 		lesson->m_Binding.c_str(), lesson->m_OnscreenIcon.c_str(),
 		lesson->m_OffscreenIcon.c_str(), lesson->m_iIconTarget, lesson->m_iPriority, 0.0f,
 		lesson->m_iFlags | (lesson->m_bNoOffscreen ? 0x00000200 : 0) |
-			(lesson->m_bAllowNodrawTarget ? 0x00010000 : 0), r, g, b, lesson->m_flRange,
+			(lesson->m_bAllowNodrawTarget ? 0x00010000 : 0) |
+			(lesson->m_bShowWhenOccluded ? 0x00002000 : 0), r, g, b, lesson->m_flRange,
 			lesson->m_flIconOffset, lesson->m_bForceCaption,
 		lesson->m_bFixedPosition, lesson->m_flFixedX, lesson->m_flFixedY);
 	m_bManagedLessonVisible = true;
