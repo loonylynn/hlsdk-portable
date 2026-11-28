@@ -24,6 +24,7 @@
 
 #include "StudioModelRenderer.h"
 #include "GameStudioModelRenderer.h"
+#include "ragdoll.h"
 
 //
 // Override the StudioModelRender virtual member functions here to implement custom bone
