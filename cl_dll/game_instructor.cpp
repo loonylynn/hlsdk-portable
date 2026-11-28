@@ -2010,7 +2010,7 @@ void C_GameInstructor::DisplayLesson(const CScriptedIconLesson *lesson, float no
 		lesson->m_iFlags | (lesson->m_bNoOffscreen ? 0x00000200 : 0) |
 			(lesson->m_bAllowNodrawTarget ? 0x00010000 : 0) |
 			(lesson->m_bShowWhenOccluded ? 0x00002000 : 0), r, g, b, lesson->m_flRange,
-			lesson->m_flIconOffset, lesson->m_bForceCaption,
+			lesson->m_flIconOffset, lesson->m_flRelativeIconOffset, lesson->m_bForceCaption,
 		lesson->m_bFixedPosition, lesson->m_flFixedX, lesson->m_flFixedY);
 	m_bManagedLessonVisible = true;
 }

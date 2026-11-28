@@ -1024,6 +1024,19 @@ int CHud::Redraw( float flTime, int intermission )
 					target->m_vecOrigin[2] +=
 						( managedTarget->curstate.mins[2] + managedTarget->curstate.maxs[2] ) * 0.5f;
 				}
+
+				// Source's icon_relative_offset follows the main view-up axis;
+				// keep icon_offset as the separate world-Z adjustment.
+				if( target->m_flRelativeIconOffset != 0.0f &&
+					gEngfuncs.GetViewAngles && gEngfuncs.pfnAngleVectors )
+				{
+					float viewAngles[3], forward[3], right[3], up[3];
+					gEngfuncs.GetViewAngles( viewAngles );
+					gEngfuncs.pfnAngleVectors( viewAngles, forward, right, up );
+					target->m_vecOrigin[0] += up[0] * target->m_flRelativeIconOffset;
+					target->m_vecOrigin[1] += up[1] * target->m_flRelativeIconOffset;
+					target->m_vecOrigin[2] += up[2] * target->m_flRelativeIconOffset;
+				}
 				if( ( managedTarget->curstate.effects & EF_NODRAW ) &&
 					!( target->m_iEffectsFlags & 0x00010000 ) )
 					targetAllowed = false;

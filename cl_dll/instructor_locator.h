@@ -54,6 +54,7 @@ public:
 	bool m_bManaged;
 	float m_flVisibleSince;
 	float m_flIconOffset;
+	float m_flRelativeIconOffset;
 	bool m_isActive;
 	int m_serialNumber;
 	int m_frameLastUpdated;

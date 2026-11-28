@@ -247,7 +247,7 @@ void GameInstructor_FireEvent(const char *name, int entityIndex, const char *cla
 void HUD_SetManagedInstructorHint(const char *lessonName, int instanceSerial, const char *caption,
 	const char *binding, const char *onscreenIcon, const char *offscreenIcon,
 	int targetIndex, int priority, float timeout, int flags, int colorR, int colorG, int colorB,
-	float range, float iconOffset, bool forceCaption,
+	float range, float iconOffset, float relativeIconOffset, bool forceCaption,
 	bool fixedPosition, float fixedX, float fixedY);
 void HUD_PruneManagedInstructorHints();
 void HUD_ClearManagedInstructorHint();

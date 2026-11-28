@@ -502,7 +502,7 @@ bool HUD_IsManagedInstructorPresentationComplete( const char *lessonName,
 void HUD_SetManagedInstructorHint( const char *lessonName, int instanceSerial, const char *caption,
 	const char *binding, const char *onscreenIcon, const char *offscreenIcon,
 	int targetIndex, int priority, float timeout, int flags, int colorR, int colorG, int colorB,
-	float range, float iconOffset, bool forceCaption,
+	float range, float iconOffset, float relativeIconOffset, bool forceCaption,
 	bool fixedPosition, float fixedX, float fixedY )
 {
 	(void)timeout;
@@ -583,6 +583,7 @@ void HUD_SetManagedInstructorHint( const char *lessonName, int instanceSerial, c
 		target->m_bOriginInScreenspace = false;
 
 	target->m_flIconOffset = iconOffset;
+	target->m_flRelativeIconOffset = relativeIconOffset;
 	target->m_flRange = range;
 	target->m_iEffectsFlags = flags | animationFlags |
 		( forceCaption ? LOCATOR_ICON_FX_FORCE_CAPTION : 0 );
