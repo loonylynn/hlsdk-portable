@@ -906,6 +906,18 @@ void V_CalcNormalRefdef( struct ref_params_s *pparams )
 	// after the player view and GoldSrc stair/train smoothing are finalized.
 	V_ApplyPortal2ViewModelBobAndLag( pparams, view );
 
+	// Apply the detached weapon's angular offset after bob/lag so the
+	// viewmodel and projected free-aim reticle continue to agree.
+	extern "C" float IN_FreeAimGetYaw( void );
+	extern "C" float IN_FreeAimGetPitch( void );
+	extern "C" float IN_FreeAimGetBlend( void );
+	const float freeAimBlend = IN_FreeAimGetBlend();
+	if( freeAimBlend > 0.001f )
+	{
+		view->angles[YAW] += IN_FreeAimGetYaw();
+		view->angles[PITCH] -= IN_FreeAimGetPitch();
+	}
+
 	// Source applies viewmodel shake at 10% after weapon bob and lag.
 	gEngfuncs.V_ApplyShake( view->origin, view->angles, 0.1f );
 
