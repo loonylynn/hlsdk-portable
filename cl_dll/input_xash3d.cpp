@@ -278,7 +278,7 @@ void FWGSInput::IN_Move( float frametime, usercmd_t *cmd )
 	// modder-reserved impact fields. The server validates the tag and weapon.
 	if( cmd )
 	{
-		cmd->impact_index = FREE_AIM_USERCMD_TAG;
+		cmd->impact_index = freeAimActive ? FREE_AIM_USERCMD_TAG : 0;
 		cmd->impact_position[0] = freeAimActive ? s_freeAimYaw : 0.0f;
 		cmd->impact_position[1] = freeAimActive ? s_freeAimPitch : 0.0f;
 		cmd->impact_position[2] = freeAimActive ? 1.0f : 0.0f;
