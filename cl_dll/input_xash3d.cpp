@@ -182,6 +182,11 @@ void FWGSInput::IN_Move( float frametime, usercmd_t *cmd )
 	{
 		IN_FreeAimClearButton();
 		s_freeAimYaw = s_freeAimPitch = s_freeAimBlend = 0.0f;
+		if( cmd )
+		{
+			cmd->impact_index = 0;
+			cmd->impact_position[0] = cmd->impact_position[1] = cmd->impact_position[2] = 0.0f;
+		}
 		return; // we can't move during intermission
 	}
 
