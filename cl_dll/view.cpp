@@ -64,6 +64,11 @@ void VectorAngles( const float *forward, float *angles );
 
 extern engine_studio_api_t IEngineStudio;
 
+extern "C" float IN_FreeAimGetYaw( void );
+extern "C" float IN_FreeAimGetPitch( void );
+extern "C" float IN_FreeAimGetBlend( void );
+
+
 /*
 The view is allowed to move slightly from it's true position for bobbing,
 but if it exceeds 8 pixels linear distance (spherical, not box), the list of
@@ -901,10 +906,6 @@ void V_CalcNormalRefdef( struct ref_params_s *pparams )
 			}
 		}
 	}
-
-extern "C" float IN_FreeAimGetYaw( void );
-extern "C" float IN_FreeAimGetPitch( void );
-extern "C" float IN_FreeAimGetBlend( void );
 
 	// Portal 2 applies weapon bob first, then directional BaseViewModel lag,
 	// after the player view and GoldSrc stair/train smoothing are finalized.
