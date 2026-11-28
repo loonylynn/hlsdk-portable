@@ -45,7 +45,7 @@ Add this inside the top-level object in `instructor_lessons.txt`:
 
     "open"
     {
-        "instructor_primaryattack"
+        "weapon_pickup"
         {
             "local_player is" "player userid"
         }
@@ -53,7 +53,7 @@ Add this inside the top-level object in `instructor_lessons.txt`:
 
     "success"
     {
-        "use_primaryattack"
+        "weapon_fire"
         {
             "local_player is" "player userid"
             "void close" "void"
