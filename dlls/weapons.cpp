@@ -640,14 +640,24 @@ void CBasePlayerWeapon::ItemPostFrame( void )
 
 	if( ( m_pPlayer->pev->button & IN_ATTACK2 ) && CanAttack( m_flNextSecondaryAttack, gpGlobals->time, UseDecrement() ) )
 	{
-		bool bHasAmmo = !pszAmmo2();
+		bool bHasAmmo = false;
 		if( pszAmmo2() )
 		{
 			const int ammoIndex = SecondaryAmmoIndex();
 			bHasAmmo = ammoIndex >= 0 && m_pPlayer->m_rgAmmo[ammoIndex] > 0;
-			if( !bHasAmmo )
-				m_fFireOnEmpty = TRUE;
 		}
+		else if( pszAmmo1() )
+		{
+			if( iMaxClip() == WEAPON_NOCLIP )
+			{
+				const int ammoIndex = PrimaryAmmoIndex();
+				bHasAmmo = ammoIndex >= 0 && m_pPlayer->m_rgAmmo[ammoIndex] > 0;
+			}
+			else
+				bHasAmmo = m_iClip > 0;
+		}
+		if( !bHasAmmo )
+			m_fFireOnEmpty = TRUE;
 
 		m_pPlayer->TabulateAmmo();
 		SecondaryAttack();

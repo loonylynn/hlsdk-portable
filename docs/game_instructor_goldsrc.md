@@ -186,9 +186,21 @@ The server-to-client `InstructorEvent` message currently emits:
 
 Pickup events are sent only after the corresponding pickup succeeds. Weapon
 pickup also retains the older `instructor_primaryattack` event for script
-compatibility. `weapon_fire` is emitted only when the attack method is called
-with the appropriate ammo available. Weapon-specific reload implementations
-that do not use `DefaultReload` can still use the `use_reload` input event.
+compatibility. Event payload fields are:
+
+- `weapon_fire`: `fieldName=mode`, `stringValue=primary|secondary`,
+  `integerValue=weapon ID`
+- `weapon_reload`: `fieldName=weapon`, weapon classname in `stringValue`,
+  weapon ID in `integerValue`, and rounds loaded in `floatValue`
+- `item_pickup` / `weapon_pickup`: item classname in `stringValue`;
+  weapon pickups also provide the weapon ID in `integerValue`
+- `ammo_pickup`: ammo pickup entity classname in `stringValue`
+- `player_health_pickup`: actual health restored in `floatValue`
+- `player_armor_pickup`: actual armor added in `integerValue`
+
+`weapon_fire` is emitted only when the attack method is called with the
+appropriate ammo available. Weapon-specific reload implementations that do
+not use `DefaultReload` can still use the `use_reload` input event.
 
 The message carries one event entity index, classname, targetname, field name,
 string value, integer value, and float value. This is a bounded single-player
