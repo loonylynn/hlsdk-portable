@@ -174,7 +174,8 @@ void CEgon::Attack( void )
 	}
 
 	Vector vecAimAngles = m_pPlayer->pev->v_angle + m_pPlayer->pev->punchangle;
-	if( m_pPlayer->m_bFreeAimActive )
+	if( m_pPlayer->m_bFreeAimActive && m_pPlayer->m_pActiveItem &&
+		( m_pPlayer->m_pActiveItem->iFlags() & ITEM_FLAG_FREE_AIM ) )
 		vecAimAngles += Vector( m_pPlayer->m_flFreeAimPitch, m_pPlayer->m_flFreeAimYaw, 0.0f );
 	UTIL_MakeVectors( vecAimAngles );
 	Vector vecAiming = gpGlobals->v_forward;
