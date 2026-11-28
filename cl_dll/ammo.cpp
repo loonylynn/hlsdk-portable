@@ -27,6 +27,11 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
+
+extern "C" int IN_FreeAimIsActive( void );
+extern "C" float IN_FreeAimGetYaw( void );
+extern "C" float IN_FreeAimGetPitch( void );
 
 #include "ammohistory.h"
 #include "vgui_TeamFortressViewport.h"
@@ -574,7 +579,9 @@ int CHudAmmo::MsgFunc_HideWeapon( const char *pszName, int iSize, void *pbuf )
 	}
 	else
 	{
-		if( m_pWeapon )
+		if( IsFreeAimWeapon() )
+			SetCrosshair( 0, nullrc, 0, 0, 0 );
+		else if( m_pWeapon )
 			SetCrosshair( m_pWeapon->hCrosshair, m_pWeapon->rcCrosshair, 255, 255, 255 );
 	}
 
@@ -638,7 +645,12 @@ int CHudAmmo::MsgFunc_CurWeapon( const char *pszName, int iSize, void *pbuf )
 
 	m_pWeapon = pWeapon;
 
-	if( !( gHUD.m_iHideHUDDisplay & ( HIDEHUD_WEAPONS | HIDEHUD_ALL ) ) )
+	if( IsFreeAimWeapon() )
+	{
+		// Free-aim weapons never expose the fixed center crosshair.
+		SetCrosshair( 0, nullrc, 0, 0, 0 );
+	}
+	else if( !( gHUD.m_iHideHUDDisplay & ( HIDEHUD_WEAPONS | HIDEHUD_ALL ) ) )
 	{
 		if( !gHUD.m_inScope )
 		{
@@ -905,6 +917,42 @@ static void HUD_DrawAmmoDigitGhosts( int x, int y, int digitWidth,
 			SPR_DrawAdditive( 0, x + slot * digitWidth, y, rect );
 		}
 	}
+}
+
+bool CHudAmmo::IsFreeAimWeapon( void ) const
+{
+	return m_pWeapon && ( m_pWeapon->iFlags & ITEM_FLAG_FREE_AIM ) != 0;
+}
+
+void CHudAmmo::DrawFreeAimCrosshair( void )
+{
+	if( !IsFreeAimWeapon() || !IN_FreeAimIsActive() || !m_pWeapon ||
+		!m_pWeapon->hCrosshair ||
+		( gHUD.m_iHideHUDDisplay & ( HIDEHUD_WEAPONS | HIDEHUD_ALL ) ) ||
+		ScreenWidth <= 0 || ScreenHeight <= 0 )
+		return;
+
+	const float flFov = bound( 1.0f, (float)gHUD.m_iFOV, 179.0f );
+	const float flHalfFovTan = tanf( flFov * 0.008726646259971648f );
+	if( flHalfFovTan <= 0.0001f )
+		return;
+
+	// GoldSrc's FOV is horizontal. Equal pixel scaling follows from the
+	// perspective projection for square pixels, including non-4:3 screens.
+	const float flPixelsPerTangent = ( ScreenWidth * 0.5f ) / flHalfFovTan;
+	const float flYaw = IN_FreeAimGetYaw() * 0.017453292519943295f;
+	const float flPitch = IN_FreeAimGetPitch() * 0.017453292519943295f;
+	const int centerX = ScreenWidth / 2 + (int)( tanf( flYaw ) * flPixelsPerTangent );
+	const int centerY = ScreenHeight / 2 - (int)( tanf( flPitch ) * flPixelsPerTangent );
+
+	const wrect_t *rect = &m_pWeapon->rcCrosshair;
+	const int width = rect->right - rect->left;
+	const int height = rect->bottom - rect->top;
+	if( width <= 0 || height <= 0 )
+		return;
+
+	SPR_Set( m_pWeapon->hCrosshair, 255, 255, 255 );
+	SPR_DrawAdditive( 0, centerX - width / 2, centerY - height / 2, rect );
 }
 
 int CHudAmmo::Draw( float flTime )
