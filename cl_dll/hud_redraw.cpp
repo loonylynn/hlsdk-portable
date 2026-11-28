@@ -2307,6 +2307,8 @@ int CHud::Redraw( float flTime, int intermission )
 	}
 	*/
 
+	gHUD.m_Ammo.DrawFreeAimCrosshair();
+
 	return 1;
 }
 
