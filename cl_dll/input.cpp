@@ -573,14 +573,34 @@ extern void __CmdFunc_InputPlayerSpecial( void );
 
 void IN_Attack2Down( void )
 {
-	KeyDown( &in_attack2 );
+	// Route right-click to free-aim only for weapons that explicitly opt in.
+	// Other weapons keep their original IN_ATTACK2 behavior.
+	if( gHUD.m_Ammo.IsFreeAimWeapon() )
+	{
+		KeyDown( &in_freeaim );
+		return;
+	}
 
+	KeyDown( &in_attack2 );
 	gHUD.m_Spectator.HandleButtonsDown( IN_ATTACK2 );
 }
 
 void IN_Attack2Up( void )
 {
-	KeyUp( &in_attack2 );
+	const char *keyArg = gEngfuncs.Cmd_Argv( 1 );
+	if( !keyArg || !keyArg[0] )
+	{
+		// Console-issued -attack2 has no key number: clear either route.
+		KeyUp( &in_freeaim );
+		KeyUp( &in_attack2 );
+		return;
+	}
+
+	const int key = atoi( keyArg );
+	if( in_freeaim.down[0] == key || in_freeaim.down[1] == key )
+		KeyUp( &in_freeaim );
+	else
+		KeyUp( &in_attack2 );
 }
 
 void IN_UseDown( void )
@@ -921,6 +941,25 @@ int CL_IsDead( void )
 	return ( gHUD.m_Health.m_iHealth <= 0 ) ? 1 : 0;
 }
 
+// Free-aim input state is intentionally separate from IN_ATTACK2 so weapons
+// with an existing secondary function cannot have it stolen by this feature.
+extern "C" int IN_FreeAimButtonDown( void )
+{
+	return ( in_freeaim.state & 1 ) != 0;
+}
+
+extern "C" int IN_FreeAimIsActive( void )
+{
+	return IN_FreeAimButtonDown() && gHUD.m_Ammo.IsFreeAimWeapon() &&
+		!CL_IsDead() && !gHUD.m_iIntermission && !gEngfuncs.IsSpectateOnly();
+}
+
+extern "C" void IN_FreeAimClearButton( void )
+{
+	in_freeaim.down[0] = in_freeaim.down[1] = 0;
+	in_freeaim.state = 0;
+}
+
 /*
 ============
 CL_ButtonBits
@@ -1036,6 +1075,7 @@ int CL_ButtonBits( int bResetState )
 		in_moveleft.state &= ~2;
 		in_moveright.state &= ~2;
 		in_attack2.state &= ~2;
+		in_freeaim.state &= ~2;
 		in_reload.state &= ~2;
 		in_alt1.state &= ~2;
 		in_score.state &= ~2;
