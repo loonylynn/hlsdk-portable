@@ -179,7 +179,11 @@ void FWGSInput::IN_Move( float frametime, usercmd_t *cmd )
 	bool fLadder = false;
 
 	if( gHUD.m_iIntermission )
+	{
+		IN_FreeAimClearButton();
+		s_freeAimYaw = s_freeAimPitch = s_freeAimBlend = 0.0f;
 		return; // we can't move during intermission
+	}
 
 	if( cl_laddermode->value != 2 )
 	{
@@ -229,7 +233,7 @@ void FWGSInput::IN_Move( float frametime, usercmd_t *cmd )
 	else
 	{
 		viewangles[YAW] += rel_yaw;
-		viewangles[PITCH] += rel_pitch;
+		// Pitch is applied by the existing shared path below (or to MOTD scroll).
 		s_freeAimYaw += ( 0.0f - s_freeAimYaw ) * freeAimAlpha;
 		s_freeAimPitch += ( 0.0f - s_freeAimPitch ) * freeAimAlpha;
 		if( fabsf( s_freeAimYaw ) < 0.01f ) s_freeAimYaw = 0.0f;
