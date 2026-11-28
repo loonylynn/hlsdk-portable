@@ -1,5 +1,6 @@
 #include "hud.h"
 #include "usercmd.h"
+#include "usercmd.h"
 #include "cvardef.h"
 #include "kbutton.h"
 #include "keydefs.h"
@@ -152,6 +153,18 @@ void FWGSInput::IN_ClientMoveEvent( float forwardmove, float sidemove )
 	ac_movecount++;
 }
 
+
+static float s_freeAimYaw = 0.0f;
+static float s_freeAimPitch = 0.0f;
+static float s_freeAimBlend = 0.0f;
+
+extern "C" int IN_FreeAimIsActive( void );
+extern "C" void IN_FreeAimClearButton( void );
+
+extern "C" float IN_FreeAimGetYaw( void ) { return s_freeAimYaw; }
+extern "C" float IN_FreeAimGetPitch( void ) { return s_freeAimPitch; }
+extern "C" float IN_FreeAimGetBlend( void ) { return s_freeAimBlend; }
+
 void FWGSInput::IN_ClientLookEvent( float relyaw, float relpitch )
 {
 	rel_yaw += relyaw;
@@ -192,7 +205,36 @@ void FWGSInput::IN_Move( float frametime, usercmd_t *cmd )
 	float mouse_sensitivity = gHUD.GetSensitivity() != 0 ? gHUD.GetSensitivity() : IN_GetMouseSensitivity();
 	rel_yaw *= mouse_sensitivity;
 	rel_pitch *= mouse_sensitivity;
-	viewangles[YAW] += rel_yaw;
+
+	// Ease the zoom/recenter envelope with a time-based response. A 0.05s
+	// time constant reaches roughly 95% of its target in the requested 0.15s.
+	const float freeAimDt = bound( 0.0f, frametime, 0.25f );
+	const float freeAimAlpha = 1.0f - expf( -freeAimDt / 0.05f );
+	const bool freeAimActive = IN_FreeAimIsActive() != 0;
+	s_freeAimBlend += ( ( freeAimActive ? 1.0f : 0.0f ) - s_freeAimBlend ) * freeAimAlpha;
+
+	if( freeAimActive )
+	{
+		const float candidateYaw = s_freeAimYaw + rel_yaw;
+		const float candidatePitch = s_freeAimPitch + rel_pitch;
+		s_freeAimYaw = bound( -FREE_AIM_MAX_YAW, candidateYaw, FREE_AIM_MAX_YAW );
+		s_freeAimPitch = bound( -FREE_AIM_MAX_PITCH, candidatePitch, FREE_AIM_MAX_PITCH );
+
+		// Mouse movement that crosses the deadzone boundary transfers into
+		// camera rotation. At the edge, continued input naturally turns the view.
+		viewangles[YAW] += candidateYaw - s_freeAimYaw;
+		viewangles[PITCH] += candidatePitch - s_freeAimPitch;
+	}
+	else
+	{
+		viewangles[YAW] += rel_yaw;
+		viewangles[PITCH] += rel_pitch;
+		s_freeAimYaw += ( 0.0f - s_freeAimYaw ) * freeAimAlpha;
+		s_freeAimPitch += ( 0.0f - s_freeAimPitch ) * freeAimAlpha;
+		if( fabsf( s_freeAimYaw ) < 0.01f ) s_freeAimYaw = 0.0f;
+		if( fabsf( s_freeAimPitch ) < 0.01f ) s_freeAimPitch = 0.0f;
+	}
+
 	if( fLadder )
 	{
 		if( cl_laddermode->value == 1 )
@@ -227,6 +269,16 @@ void FWGSInput::IN_Move( float frametime, usercmd_t *cmd )
 			cmd->sidemove  = ac_sidemove * cl_sidespeed->value / ac_movecount;
 	}
 
+	// Carry the independent aim angles in Xash's already delta-encoded
+	// modder-reserved impact fields. The server validates the tag and weapon.
+	if( cmd )
+	{
+		cmd->impact_index = FREE_AIM_USERCMD_TAG;
+		cmd->impact_position[0] = freeAimActive ? s_freeAimYaw : 0.0f;
+		cmd->impact_position[1] = freeAimActive ? s_freeAimPitch : 0.0f;
+		cmd->impact_position[2] = freeAimActive ? 1.0f : 0.0f;
+	}
+
 	ac_sidemove = ac_forwardmove = rel_pitch = rel_yaw = 0;
 	ac_movecount = 0;
 }
@@ -255,7 +307,8 @@ void FWGSInput::IN_MouseEvent( int mstate )
 
 void FWGSInput::IN_ClearStates( void )
 {
-	//gEngfuncs.Con_Printf( "IN_ClearStates\n" );
+	IN_FreeAimClearButton();
+	s_freeAimYaw = s_freeAimPitch = s_freeAimBlend = 0.0f;
 }
 
 void FWGSInput::IN_ActivateMouse( void )
