@@ -16,8 +16,9 @@ The client loads:
 
 Mod lessons are read first; a lesson name already defined there wins over the
 same name in the common file. Both files use Source-style KeyValues syntax.
-The repository includes empty manifests so the feature is inert until lessons
-are added.
+The repository includes two starter lessons in `scripts/mod_lessons.txt`
+(first weapon use and jumping). The common `scripts/instructor_lessons.txt`
+file remains an empty manifest for shared or map-independent additions.
 
 A lesson definition contains settings and event rules. Event sections are
 `open`, `close`, `success`, `onopen`, and `update`. Rules are evaluated in
@@ -173,15 +174,26 @@ The client-side archived counters are stored as
 
 The server-to-client `InstructorEvent` message currently emits:
 
-- `player_spawn`, `player_death`, `player_jump`, `player_use`
-- `use_primaryattack`, `use_secondaryattack`, `use_reload`
-- `instructor_primaryattack` when a weapon is acquired
-- `player_pushable_push`, `player_pushable_pull` when a pushable actually moves
+- Lifecycle and interaction: `player_spawn`, `player_death`, `player_jump`,
+  `player_use`
+- Input edges: `use_primaryattack`, `use_secondaryattack`, `use_reload`
+- Weapon actions: `weapon_fire` (primary/secondary mode in the string value),
+  `weapon_reload` (when the shared `DefaultReload` helper starts)
+- Pickups: `item_pickup`, `weapon_pickup`, `ammo_pickup`,
+  `player_health_pickup`, `player_armor_pickup`, `player_suit_pickup`
+- Project-specific events: `instructor_primaryattack` when a weapon is acquired,
+  `player_pushable_push`, and `player_pushable_pull` when a pushable actually moves
+
+Pickup events are sent only after the corresponding pickup succeeds. Weapon
+pickup also retains the older `instructor_primaryattack` event for script
+compatibility. `weapon_fire` is emitted only when the attack method is called
+with the appropriate ammo available. Weapon-specific reload implementations
+that do not use `DefaultReload` can still use the `use_reload` input event.
 
 The message carries one event entity index, classname, targetname, field name,
 string value, integer value, and float value. This is a bounded single-player
-event bridge, not the full Source `IGameEvent` registry or its game-specific
-event schemas.
+event bridge, not the full Source `IGameEvent` registry or all of its
+game-specific event schemas.
 
 ## Locator direction sprites
 
@@ -273,8 +285,8 @@ Decluttering is performed across both world-space markers and screen-space/fixed
   separate systems.
 - Source VGUI2 target anchoring, true Source locator target handles, the full
   Source hint/lesson event payload, split-screen/player swapping, team and
-  input-device filters, and Source game-specific weapon/ammo/health actions
-  are not implemented.
+  input-device filters, and game-specific event schemas beyond the documented
+  GoldSrc weapon and pickup events are not implemented.
 - `present start/end` do not run Source's VGUI animation lifecycle;
   `present complete` maps to the lesson having been displayed.
 - Sprite names map to GoldSrc `.spr` files. Source `.vmt/.vtf` art is not

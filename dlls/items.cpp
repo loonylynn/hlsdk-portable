@@ -123,6 +123,8 @@ void CItem::ItemTouch( CBaseEntity *pOther )
 
 	if( MyTouch( pPlayer ) )
 	{
+		pPlayer->FireInstructorEvent( "item_pickup", this, "item",
+			STRING( pev->classname ), 0, 0.0f );
 		SUB_UseTargets( pOther, USE_TOGGLE, 0 );
 		SetTouch( NULL );
 		
@@ -194,6 +196,8 @@ class CItemSuit : public CItem
 			EMIT_SOUND_SUIT( pPlayer->edict(), "!HEV_AAx" );	// long version of suit logon
 
 		pPlayer->pev->weapons = (int)( (unsigned int)pPlayer->pev->weapons | WEAPON_SUIT_MASK );
+		pPlayer->FireInstructorEvent( "player_suit_pickup", this, "item",
+			STRING( pev->classname ), 0, 0.0f );
 		return TRUE;
 	}
 };
@@ -226,8 +230,11 @@ class CItemBattery : public CItem
 			int pct;
 			char szcharge[64];
 
+			const float oldArmor = pPlayer->pev->armorvalue;
 			pPlayer->pev->armorvalue += gSkillData.batteryCapacity;
 			pPlayer->pev->armorvalue = Q_min( pPlayer->pev->armorvalue, MAX_NORMAL_BATTERY );
+			pPlayer->FireInstructorEvent( "player_armor_pickup", this, "armor",
+				STRING( pev->classname ), (int)( pPlayer->pev->armorvalue - oldArmor ), 0.0f );
 
 			EMIT_SOUND( pPlayer->edict(), CHAN_ITEM, "items/gunpickup2.wav", 1, ATTN_NORM );
 

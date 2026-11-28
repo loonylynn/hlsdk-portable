@@ -1,4 +1,68 @@
 "ModLessons"
 {
 	"version number" "1"
+
+	"Basic weapon use"
+	{
+		"instance_type" "1"
+		"priority" "100"
+		"timeout" "45"
+		"success_limit" "1"
+		"caption" "Use your weapon"
+		"binding" "+attack"
+		"onscreen_icon" "use_binding"
+		"no_icon_target" "1"
+		"fixed_position" "1"
+		"fixed_position_x" "0.5"
+		"fixed_position_y" "0.72"
+
+		"open"
+		{
+			"weapon_pickup"
+			{
+				"local_player is" "player userid"
+			}
+		}
+
+		"success"
+		{
+			"weapon_fire"
+			{
+				"local_player is" "player userid"
+				"void close" "void"
+			}
+		}
+	}
+
+	"Basic jumping"
+	{
+		"instance_type" "1"
+		"priority" "60"
+		"timeout" "30"
+		"success_limit" "1"
+		"caption" "Jump to clear obstacles"
+		"binding" "+jump"
+		"onscreen_icon" "use_binding"
+		"no_icon_target" "1"
+		"fixed_position" "1"
+		"fixed_position_x" "0.5"
+		"fixed_position_y" "0.78"
+
+		"open"
+		{
+			"player_spawn"
+			{
+				"local_player is" "player userid"
+			}
+		}
+
+		"success"
+		{
+			"player_jump"
+			{
+				"local_player is" "player userid"
+				"void close" "void"
+			}
+		}
+	}
 }

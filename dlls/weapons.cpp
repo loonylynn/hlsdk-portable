@@ -640,24 +640,42 @@ void CBasePlayerWeapon::ItemPostFrame( void )
 
 	if( ( m_pPlayer->pev->button & IN_ATTACK2 ) && CanAttack( m_flNextSecondaryAttack, gpGlobals->time, UseDecrement() ) )
 	{
-		if( pszAmmo2() && !m_pPlayer->m_rgAmmo[SecondaryAmmoIndex()] )
+		bool bHasAmmo = !pszAmmo2();
+		if( pszAmmo2() )
 		{
-			m_fFireOnEmpty = TRUE;
+			const int ammoIndex = SecondaryAmmoIndex();
+			bHasAmmo = ammoIndex >= 0 && m_pPlayer->m_rgAmmo[ammoIndex] > 0;
+			if( !bHasAmmo )
+				m_fFireOnEmpty = TRUE;
 		}
 
 		m_pPlayer->TabulateAmmo();
 		SecondaryAttack();
+		if( bHasAmmo )
+			m_pPlayer->FireInstructorEvent( "weapon_fire", this, "mode", "secondary", m_iId, 0.0f );
 		m_pPlayer->pev->button &= ~IN_ATTACK2;
 	}
 	else if( ( m_pPlayer->pev->button & IN_ATTACK ) && CanAttack( m_flNextPrimaryAttack, gpGlobals->time, UseDecrement() ) )
 	{
-		if( ( m_iClip == 0 && pszAmmo1() ) || ( iMaxClip() == -1 && !m_pPlayer->m_rgAmmo[PrimaryAmmoIndex()] ) )
+		bool bHasAmmo = !pszAmmo1();
+		if( pszAmmo1() )
 		{
-			m_fFireOnEmpty = TRUE;
+			if( iMaxClip() == WEAPON_NOCLIP )
+			{
+				const int ammoIndex = PrimaryAmmoIndex();
+				bHasAmmo = ammoIndex >= 0 && m_pPlayer->m_rgAmmo[ammoIndex] > 0;
+			}
+			else
+				bHasAmmo = m_iClip > 0;
 		}
+
+		if( !bHasAmmo )
+			m_fFireOnEmpty = TRUE;
 
 		m_pPlayer->TabulateAmmo();
 		PrimaryAttack();
+		if( bHasAmmo )
+			m_pPlayer->FireInstructorEvent( "weapon_fire", this, "mode", "primary", m_iId, 0.0f );
 	}
 	else if( m_pPlayer->pev->button & IN_RELOAD && iMaxClip() != WEAPON_NOCLIP && !m_fInReload ) 
 	{
@@ -1012,6 +1030,8 @@ BOOL CBasePlayerWeapon::DefaultReload( int iClipSize, int iAnim, float fDelay, i
 	SendWeaponAnim( iAnim, UseDecrement() ? 1 : 0 );
 
 	m_fInReload = TRUE;
+	m_pPlayer->FireInstructorEvent( "weapon_reload", this, "weapon",
+		STRING( pev->classname ), m_iId, (float)j );
 
 	m_flTimeWeaponIdle = UTIL_WeaponTimeBase() + 3.0f;
 	return TRUE;
@@ -1100,6 +1120,9 @@ void CBasePlayerAmmo::DefaultTouch( CBaseEntity *pOther )
 
 	if( AddAmmo( pOther ) )
 	{
+		((CBasePlayer *)pOther)->FireInstructorEvent( "ammo_pickup", this, "ammo_item",
+			STRING( pev->classname ), 0, 0.0f );
+
 		if( g_pGameRules->AmmoShouldRespawn( this ) == GR_AMMO_RESPAWN_YES )
 		{
 			Respawn();

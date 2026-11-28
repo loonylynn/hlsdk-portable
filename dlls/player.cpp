@@ -5137,6 +5137,10 @@ int CBasePlayer::AddPlayerItem( CBasePlayerItem *pItem )
 			SwitchWeapon( pItem );
 		}
 
+		FireInstructorEvent( "item_pickup", pItem, "item",
+			STRING( pItem->pev->classname ), pItem->m_iId, 0.0f );
+		FireInstructorEvent( "weapon_pickup", pItem, "weapon",
+			STRING( pItem->pev->classname ), pItem->m_iId, 0.0f );
 		FireInstructorEvent( "instructor_primaryattack", pItem, "weapon",
 			STRING( pItem->pev->classname ), pItem->m_iId, 0.0f );
 		return TRUE;

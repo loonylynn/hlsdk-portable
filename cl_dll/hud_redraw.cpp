@@ -510,7 +510,8 @@ static void HUD_FormatInstructorKeyName( const char *keyName, char *output, size
 
 // Resolve "+use" / "+jump" every frame so changed player key bindings are
 // reflected immediately. The engine API returns the key name, not the command.
-// It currently returns one matching key; literal lesson labels are preserved.
+// The multi-choice locator path uses Key_LookupBindingEx when available;
+// older engines retain the first-key fallback and literal labels stay intact.
 static void HUD_ResolveInstructorBinding( const char *binding, char *output, size_t outputSize )
 {
 	if( !output || outputSize == 0 )

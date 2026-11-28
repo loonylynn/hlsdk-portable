@@ -70,8 +70,12 @@ BOOL CHealthKit::MyTouch( CBasePlayer *pPlayer )
 		return FALSE;
 	}
 
+	const float oldHealth = pPlayer->pev->health;
 	if( pPlayer->TakeHealth( gSkillData.healthkitCapacity, DMG_GENERIC ) )
 	{
+		pPlayer->FireInstructorEvent( "player_health_pickup", this, "health",
+			STRING( pev->classname ), 0, pPlayer->pev->health - oldHealth );
+
 		MESSAGE_BEGIN( MSG_ONE, gmsgItemPickup, NULL, pPlayer->pev );
 			WRITE_STRING( STRING( pev->classname ) );
 		MESSAGE_END();
