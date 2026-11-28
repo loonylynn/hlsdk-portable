@@ -67,6 +67,7 @@ set (SVDLL_SOURCES
 	defaultai.cpp
 	doors.cpp
 	effects.cpp
+	env_fog.cpp
 	egon.cpp
 	explode.cpp
 	flyingmonster.cpp

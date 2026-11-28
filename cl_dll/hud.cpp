@@ -28,6 +28,7 @@
 #include "vgui_int.h"
 #include "vgui_TeamFortressViewport.h"
 #include "ragdoll.h"
+#include "env_fog.h"
 
 #include "demo.h"
 #include "demo_api.h"
@@ -401,6 +402,8 @@ int __MsgFunc_AllowSpec( const char *pszName, int iSize, void *pbuf )
 // This is called every time the DLL is loaded
 void CHud::Init( void )
 {
+	gEngfuncs.pfnHookUserMsg( "EnvFog", EnvFog_MsgFunc );
+	EnvFog_RegisterCommands();
 	HOOK_MESSAGE( Logo );
 	HOOK_MESSAGE( ResetHUD );
 	HOOK_MESSAGE( InstructorHint );

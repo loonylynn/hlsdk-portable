@@ -33,6 +33,7 @@
 #include "weapons.h"
 #include "gamerules.h"
 #include "teamplay_gamerules.h"
+#include "env_fog.h"
 
 extern CGraph WorldGraph;
 extern CSoundEnt *pSoundEnt;
@@ -452,6 +453,7 @@ extern DLL_GLOBAL BOOL		g_fGameOver;
 
 void CWorld::Spawn( void )
 {
+	EnvFog_ResetState();
 	g_fGameOver = FALSE;
 	Precache();
 }

@@ -94,6 +94,7 @@ set (CLDLL_SOURCES
 	health.cpp
 	hud_vgui.cpp
 	hud.cpp
+	env_fog.cpp
 	hud_msg.cpp
 	hud_redraw.cpp
 	hud_spectator.cpp
