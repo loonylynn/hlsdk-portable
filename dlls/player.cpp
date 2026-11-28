@@ -5691,6 +5691,7 @@ Vector CBasePlayer::GetAutoaimVector( float flDelta )
 	// The command payload is validated by CmdStart (and by client prediction).
 	if( m_bFreeAimActive )
 	{
+		ResetAutoaim();
 		UTIL_MakeVectors( pev->v_angle + pev->punchangle +
 			Vector( m_flFreeAimPitch, m_flFreeAimYaw, 0.0f ) );
 		m_fOnTarget = FALSE;
