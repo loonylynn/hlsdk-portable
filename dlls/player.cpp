@@ -5689,7 +5689,8 @@ Vector CBasePlayer::GetAutoaimVector( float flDelta )
 {
 	// Manual free-aim replaces the legacy auto-aim vector while active.
 	// The command payload is validated by CmdStart (and by client prediction).
-	if( m_bFreeAimActive )
+	if( m_bFreeAimActive && m_pActiveItem &&
+		( m_pActiveItem->iFlags() & ITEM_FLAG_FREE_AIM ) )
 	{
 		ResetAutoaim();
 		UTIL_MakeVectors( pev->v_angle + pev->punchangle +
