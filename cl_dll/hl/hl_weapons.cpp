@@ -807,6 +807,10 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 
 	// Set player variables that weapons code might check/alter
 	player.pev->button = cmd->buttons;
+	// The server applies cmd->viewangles before weapon processing. Mirror
+	// that same view direction in the predicted player entity so free-aim
+	// uses an identical base orientation under cl_lw 1.
+	player.pev->v_angle = Vector( cmd->viewangles[0], cmd->viewangles[1], cmd->viewangles[2] );
 
 	player.pev->velocity = from->client.velocity;
 	player.pev->flags = from->client.flags;
