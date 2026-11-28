@@ -931,6 +931,9 @@ static void HUD_DrawInstructorBindingName( int centerX, int centerY,
 		bindingName, 0, 0, 0, alpha, scale );
 }
 
+// Free-aim presentation blend is maintained by the Xash input layer.
+extern "C" float IN_FreeAimGetBlend( void );
+
 // Think
 void CHud::Think( void )
 {
@@ -951,6 +954,14 @@ void CHud::Think( void )
 	if( newfov == 0 )
 	{
 		m_iFOV = default_fov->value;
+		const float freeAimBlend = bound( 0.0f, IN_FreeAimGetBlend(), 1.0f );
+		if( freeAimBlend > 0.001f )
+		{
+			float freeAimFov = CVAR_GET_FLOAT( "cl_freeaim_fov" );
+			freeAimFov = bound( 55.0f, freeAimFov, (float)default_fov->value );
+			m_iFOV = (int)( default_fov->value +
+				( freeAimFov - default_fov->value ) * freeAimBlend + 0.5f );
+		}
 	}
 	else
 	{
@@ -967,7 +978,7 @@ void CHud::Think( void )
 	else
 	{
 		// set a new sensitivity that is proportional to the change from the FOV default
-		m_flMouseSensitivity = sensitivity->value * ((float)newfov / Q_max( default_fov->value, 90 )) * CVAR_GET_FLOAT("zoom_sensitivity_ratio");
+		m_flMouseSensitivity = sensitivity->value * ((float)m_iFOV / Q_max( default_fov->value, 90 )) * CVAR_GET_FLOAT("zoom_sensitivity_ratio");
 	}
 
 	// think about default fov
