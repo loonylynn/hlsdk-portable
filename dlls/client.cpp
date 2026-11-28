@@ -1898,6 +1898,24 @@ void CmdStart( const edict_t *player, const struct usercmd_s *cmd, unsigned int 
 		UTIL_SetGroupTrace( pl->pev->groupinfo, GROUP_OP_AND );
 	}
 
+	// Read the independent free-aim payload from the existing modder-reserved
+	// usercmd impact fields. Reject malformed values and weapons with real alt-fire.
+	pl->m_bFreeAimActive = FALSE;
+	pl->m_flFreeAimYaw = 0.0f;
+	pl->m_flFreeAimPitch = 0.0f;
+	if( cmd && cmd->impact_index == FREE_AIM_USERCMD_TAG &&
+		cmd->impact_position[2] >= 0.5f &&
+		cmd->impact_position[0] >= -FREE_AIM_MAX_YAW &&
+		cmd->impact_position[0] <= FREE_AIM_MAX_YAW &&
+		cmd->impact_position[1] >= -FREE_AIM_MAX_PITCH &&
+		cmd->impact_position[1] <= FREE_AIM_MAX_PITCH &&
+		pl->m_pActiveItem && ( pl->m_pActiveItem->iFlags() & ITEM_FLAG_FREE_AIM ) )
+	{
+		pl->m_bFreeAimActive = TRUE;
+		pl->m_flFreeAimYaw = cmd->impact_position[0];
+		pl->m_flFreeAimPitch = cmd->impact_position[1];
+	}
+
 	pl->random_seed = random_seed;
 }
 
