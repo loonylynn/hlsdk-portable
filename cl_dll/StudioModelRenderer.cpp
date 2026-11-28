@@ -44,6 +44,7 @@ static cvar_t *cl_blobshadows = NULL;
 static cvar_t *cl_blobshadows_opacity = NULL;
 static cvar_t *cl_ragdoll_bloodmarks = NULL;
 static cvar_t *cl_ragdoll_bloodmarks_debug = NULL;
+static cvar_t *cl_ragdoll_studio_pose = NULL;
 static int g_RagdollDebugLastMarkCount[2048];
 static int g_RagdollDebugLastID[2048];
 static model_t *cl_blobshadow_sprite = NULL;
@@ -589,6 +590,9 @@ void CStudioModelRenderer::Init( void )
 	if( !cl_ragdoll_bloodmarks_debug )
 		cl_ragdoll_bloodmarks_debug = CVAR_CREATE(
 			"cl_ragdoll_bloodmarks_debug", "0", FCVAR_ARCHIVE );
+	if( !cl_ragdoll_studio_pose )
+		cl_ragdoll_studio_pose = CVAR_CREATE(
+			"cl_ragdoll_studio_pose", "1", FCVAR_ARCHIVE );
 
 	m_pChromeSprite			= IEngineStudio.GetChromeSprite();
 
@@ -1467,6 +1471,8 @@ void CStudioModelRenderer::StudioSetupBones( void )
 	// the pose on curstate.iuser4. Ragdoll_GetBoneTransform verifies that this
 	// entity has a complete, fresh snapshot before overriding any bone.
 	const qboolean useRagdollPose =
+		cl_ragdoll_studio_pose &&
+		cl_ragdoll_studio_pose->value > 0.0f &&
 		IEngineStudio.IsHardware() &&
 		ragdollEntityIndex > 0;
 	float ragdollTransform[3][4];
