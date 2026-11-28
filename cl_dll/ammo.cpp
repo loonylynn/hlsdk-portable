@@ -932,7 +932,8 @@ void CHudAmmo::DrawFreeAimCrosshair( void )
 		ScreenWidth <= 0 || ScreenHeight <= 0 )
 		return;
 
-	const float flFov = bound( 1.0f, (float)gHUD.m_iFOV, 179.0f );
+	float flFov = ( gHUD.m_iFOV > 1 ) ? (float)gHUD.m_iFOV : CVAR_GET_FLOAT( "default_fov" );
+	flFov = bound( 1.0f, flFov, 179.0f );
 	const float flHalfFovTan = tanf( flFov * 0.008726646259971648f );
 	if( flHalfFovTan <= 0.0001f )
 		return;
