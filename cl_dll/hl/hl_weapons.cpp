@@ -837,6 +837,24 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 		player.m_pActiveItem = g_pWpns[from->client.m_iId];
 	}
 
+	// Mirror the validated usercmd free-aim state into client weapon prediction.
+	player.m_bFreeAimActive = FALSE;
+	player.m_flFreeAimYaw = 0.0f;
+	player.m_flFreeAimPitch = 0.0f;
+	if( cmd && cmd->impact_index == FREE_AIM_USERCMD_TAG &&
+		cmd->impact_position[2] >= 0.5f &&
+		cmd->impact_position[0] >= -FREE_AIM_MAX_YAW &&
+		cmd->impact_position[0] <= FREE_AIM_MAX_YAW &&
+		cmd->impact_position[1] >= -FREE_AIM_MAX_PITCH &&
+		cmd->impact_position[1] <= FREE_AIM_MAX_PITCH &&
+		player.m_pActiveItem &&
+		( player.m_pActiveItem->iFlags() & ITEM_FLAG_FREE_AIM ) )
+	{
+		player.m_bFreeAimActive = TRUE;
+		player.m_flFreeAimYaw = cmd->impact_position[0];
+		player.m_flFreeAimPitch = cmd->impact_position[1];
+	}
+
 	if( player.m_pActiveItem->m_iId == WEAPON_RPG )
 	{
 		( (CRpg *)player.m_pActiveItem )->m_fSpotActive = (int)from->client.vuser2[1];
