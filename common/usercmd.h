@@ -16,6 +16,12 @@
 #if !defined(USERCMD_H)
 #define USERCMD_H
 
+// Project free-aim payload carried in the existing GoldSrc/Xash impact fields.
+// The fields remain part of the 52-byte command; no wire-size change is required.
+#define FREE_AIM_USERCMD_TAG 0x46524149
+#define FREE_AIM_MAX_YAW 8.0f
+#define FREE_AIM_MAX_PITCH 5.0f
+
 typedef struct usercmd_s
 {
 	short		lerp_msec;	// Interpolation time on client
