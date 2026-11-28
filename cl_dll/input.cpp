@@ -951,7 +951,8 @@ extern "C" int IN_FreeAimButtonDown( void )
 extern "C" int IN_FreeAimIsActive( void )
 {
 	return IN_FreeAimButtonDown() && gHUD.m_Ammo.IsFreeAimWeapon() &&
-		!CL_IsDead() && !gHUD.m_iIntermission && !gEngfuncs.IsSpectateOnly();
+		!CL_IsDead() && !gHUD.m_iIntermission && !gHUD.m_MOTD.m_bShow &&
+		!gEngfuncs.IsSpectateOnly();
 }
 
 extern "C" void IN_FreeAimClearButton( void )
